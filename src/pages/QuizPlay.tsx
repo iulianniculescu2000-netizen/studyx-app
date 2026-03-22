@@ -1,0 +1,518 @@
+import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Clock, BookOpen, Layers, Keyboard, Zap, GraduationCap, StickyNote } from 'lucide-react';
+import { useQuizStore } from '../store/quizStore';
+import { useStatsStore } from '../store/statsStore';
+import { useNotesStore } from '../store/notesStore';
+import { useTheme } from '../theme/ThemeContext';
+import type { QuizSession, Question, Option } from '../types';
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+export default function QuizPlay() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const theme = useTheme();
+  const { quizzes, addSession } = useQuizStore();
+  const { recordAnswer, recordStudySession } = useStatsStore();
+  const { getNote, setNote } = useNotesStore();
+  const quiz = quizzes.find((q) => q.id === id);
+  const examMode = (location.state as any)?.mode === 'exam';
+  const timedMode = (location.state as any)?.mode === 'timed';
+  const wrongQuestionsOnly = (location.state as any)?.wrongQuestionsOnly as string[] | undefined;
+  const TIME_PER_Q = 30; // seconds
+
+  // Build shuffled question/option order once
+  const orderedQuestions = useMemo<Question[]>(() => {
+    if (!quiz) return [];
+    let qs = quiz.shuffleQuestions ? shuffle(quiz.questions) : [...quiz.questions];
+    if (wrongQuestionsOnly && wrongQuestionsOnly.length > 0) {
+      qs = qs.filter(q => wrongQuestionsOnly.includes(q.id));
+    }
+    if (quiz.shuffleAnswers) {
+      return qs.map((q) => ({ ...q, options: shuffle(q.options) }));
+    }
+    return qs;
+  }, [quiz, wrongQuestionsOnly]);
+
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [selectedNow, setSelectedNow] = useState<string[]>([]); // for current question
+  const [revealed, setRevealed] = useState(false);
+  const [shakeId, setShakeId] = useState<string | null>(null);
+  const [startedAt] = useState(Date.now());
+  const [timeElapsed, setTimeElapsed] = useState(0);
+  const [showKeys, setShowKeys] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState(false);
+  const [questionTimer, setQuestionTimer] = useState(TIME_PER_Q);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTimeElapsed((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Per-question countdown in timed mode
+  useEffect(() => {
+    if (!timedMode || revealed) return;
+    setQuestionTimer(TIME_PER_Q);
+    const timer = setInterval(() => setQuestionTimer((t) => {
+      if (t <= 1) { clearInterval(timer); return 0; }
+      return t - 1;
+    }), 1000);
+    return () => clearInterval(timer);
+  }, [currentIdx, timedMode, revealed]);
+
+  const question = orderedQuestions[currentIdx];
+  const isLast = currentIdx === orderedQuestions.length - 1;
+  const progress = ((currentIdx + (revealed ? 1 : 0)) / orderedQuestions.length) * 100;
+  const isMultiple = question?.multipleCorrect ?? false;
+
+  const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+
+  const finishQuiz = useCallback((finalAnswers: Record<string, string[]>) => {
+    const score = orderedQuestions.filter((q) => {
+      const userAnswers = finalAnswers[q.id] ?? [];
+      const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
+      return userAnswers.length === correctIds.length && correctIds.every((id) => userAnswers.includes(id));
+    }).length;
+    orderedQuestions.forEach((q) => {
+      const userAnswers = finalAnswers[q.id] ?? [];
+      const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
+      const isCorrect = userAnswers.length === correctIds.length && correctIds.every((id) => userAnswers.includes(id));
+      recordAnswer(quiz!.id, q.id, isCorrect);
+    });
+    const duration = Math.floor((Date.now() - startedAt) / 1000);
+    recordStudySession(duration);
+
+    // ── Rezidențiat penalty scoring ──────────────────────────────────────────
+    // +1 per fully correct answer, -0.25 per wrong option selected.
+    // Only active when quiz.penaltyMode is true. Score net is clamped to ≥ 0.
+    let penalizedScore: number | undefined;
+    if (quiz!.penaltyMode) {
+      let netPoints = 0;
+      orderedQuestions.forEach((q) => {
+        const userAnswers = finalAnswers[q.id] ?? [];
+        if (userAnswers.length === 0) return; // unanswered: no points, no penalty
+        const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
+        const allCorrect =
+          userAnswers.length === correctIds.length &&
+          correctIds.every((id) => userAnswers.includes(id));
+        if (allCorrect) {
+          netPoints += 1;
+        } else {
+          const wrongSelected = userAnswers.filter((id) => !correctIds.includes(id)).length;
+          netPoints -= wrongSelected * 0.25;
+        }
+      });
+      penalizedScore = Math.max(0, Math.round(netPoints * 100) / 100);
+    }
+
+    const session: QuizSession = {
+      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+      quizId: quiz!.id,
+      answers: finalAnswers,
+      startedAt,
+      finishedAt: Date.now(),
+      score,
+      total: orderedQuestions.length,
+      mode: examMode ? 'exam' : timedMode ? 'test' : 'study',
+      ...(penalizedScore !== undefined ? { penalizedScore } : {}),
+    };
+    addSession(session);
+    navigate(`/results/${quiz!.id}`, { state: { session, orderedQuestions } });
+  }, [orderedQuestions, quiz, startedAt, addSession, navigate, recordAnswer, recordStudySession, examMode]);
+
+  const handleSelect = useCallback((optId: string) => {
+    if (revealed) return;
+    if (isMultiple) {
+      setSelectedNow((prev) =>
+        prev.includes(optId) ? prev.filter((id) => id !== optId) : [...prev, optId]
+      );
+    } else {
+      setSelectedNow([optId]);
+      const newAnswers = { ...answers, [question.id]: [optId] };
+      setAnswers(newAnswers);
+      if (examMode) {
+        if (isLast) finishQuiz(newAnswers);
+        else { setCurrentIdx((i) => i + 1); setSelectedNow([]); }
+      } else {
+        setRevealed(true);
+        const isWrong = !question.options.find((o) => o.id === optId)?.isCorrect;
+        if (isWrong) {
+          setShakeId(optId);
+          setTimeout(() => setShakeId(null), 600);
+        }
+      }
+    }
+  }, [revealed, isMultiple, question, answers, examMode, isLast, finishQuiz]);
+
+  const confirmMultiple = useCallback(() => {
+    if (selectedNow.length === 0) return;
+    const newAnswers = { ...answers, [question.id]: selectedNow };
+    setAnswers(newAnswers);
+    if (examMode) {
+      if (isLast) finishQuiz(newAnswers);
+      else { setCurrentIdx((i) => i + 1); setSelectedNow([]); }
+    } else {
+      setRevealed(true);
+    }
+  }, [selectedNow, question, answers, examMode, isLast, finishQuiz]);
+
+  const handleNext = useCallback(() => {
+    if (isLast) {
+      finishQuiz(answers);
+    } else {
+      setCurrentIdx((i) => i + 1);
+      setSelectedNow([]);
+      setRevealed(false);
+    }
+  }, [isLast, answers, finishQuiz]);
+
+  // Auto-advance after reveal
+  useEffect(() => {
+    if (!revealed || !autoAdvance || examMode) return;
+    const t = setTimeout(handleNext, 1500);
+    return () => clearTimeout(t);
+  }, [revealed, autoAdvance, handleNext, examMode]);
+
+  // Timed mode: auto-advance when timer expires (no answer = wrong)
+  useEffect(() => {
+    if (!timedMode || revealed || questionTimer > 0) return;
+    const newAnswers = { ...answers, [question?.id ?? '']: [] };
+    setAnswers(newAnswers);
+    setSelectedNow([]);
+    if (isLast) finishQuiz(newAnswers);
+    else setCurrentIdx(i => i + 1);
+  }, [questionTimer, timedMode, revealed, answers, question, isLast, finishQuiz]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // 1-4 or A-D to select option
+      const keyMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
+      const idx = keyMap[e.key.toLowerCase()];
+      if (idx !== undefined && question?.options[idx]) {
+        handleSelect(question.options[idx].id);
+      }
+      // Enter or Space to confirm/next
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (isMultiple && !revealed) { confirmMultiple(); }
+        else if (revealed) { handleNext(); }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [question, handleSelect, confirmMultiple, handleNext, isMultiple, revealed]);
+
+  if (!quiz || !question) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost găsită.</p>
+          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi la grile</Link>
+        </div>
+      </div>
+    );
+  }
+
+  const correctIds = question.options.filter((o) => o.isCorrect).map((o) => o.id);
+
+  const getOptionStyle = (optId: string): React.CSSProperties => {
+    const isSelected = selectedNow.includes(optId);
+    if (!revealed) {
+      if (isSelected) return { background: `${theme.accent}18`, border: `1px solid ${theme.accent}50` };
+      return { background: theme.surface, border: `1px solid ${theme.border}` };
+    }
+    if (correctIds.includes(optId)) return { background: `${theme.success}14`, border: `1px solid ${theme.success}50` };
+    if (isSelected && !correctIds.includes(optId)) return { background: `${theme.danger}12`, border: `1px solid ${theme.danger}50` };
+    return { background: theme.surface, border: `1px solid ${theme.border}`, opacity: 0.5 };
+  };
+
+  const getOptionTextColor = (optId: string) => {
+    if (!revealed) return selectedNow.includes(optId) ? theme.accent : theme.text;
+    if (correctIds.includes(optId)) return theme.success;
+    if (selectedNow.includes(optId)) return theme.danger;
+    return theme.text3;
+  };
+
+  const difficultyColor = { easy: theme.success, medium: theme.warning, hard: theme.danger };
+  const difficultyLabel = { easy: 'Ușor', medium: 'Mediu', hard: 'Dificil' };
+
+  return (
+    <div className="h-full overflow-y-auto">
+    <div className="min-h-full pt-6 pb-10 px-6 relative z-10 flex flex-col">
+      {/* Top bar */}
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
+        className="max-w-2xl mx-auto w-full mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <Link to={`/quiz/${quiz.id}`}
+            className="flex items-center gap-1.5 text-sm transition-all hover:opacity-80"
+            style={{ color: theme.text3 }}>
+            <ChevronLeft size={15} />{quiz.title}
+          </Link>
+          <div className="flex items-center gap-3">
+            {examMode && (
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: `${theme.danger}18`, color: theme.danger }}>
+                <GraduationCap size={10} />Examen
+              </span>
+            )}
+            {timedMode && (
+              <span className="flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-bold tabular-nums"
+                style={{
+                  background: questionTimer <= 10 ? `${theme.danger}22` : `${theme.warning}18`,
+                  color: questionTimer <= 10 ? theme.danger : theme.warning,
+                  border: `1px solid ${questionTimer <= 10 ? theme.danger + '40' : theme.warning + '30'}`,
+                }}>
+                <Clock size={10} />{questionTimer}s
+              </span>
+            )}
+            {!examMode && (
+              <button onClick={() => setAutoAdvance(!autoAdvance)}
+                title={autoAdvance ? 'Dezactivează auto-avansare' : 'Activează auto-avansare (1.5s)'}
+                className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
+                style={{ color: autoAdvance ? theme.accent : theme.text3 }}>
+                <Zap size={13} fill={autoAdvance ? theme.accent : 'none'} />
+              </button>
+            )}
+            <button onClick={() => setShowKeys(!showKeys)}
+              className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
+              style={{ color: theme.text3 }}>
+              <Keyboard size={13} />
+            </button>
+            <div className="flex items-center gap-1.5 text-sm" style={{ color: theme.text3 }}>
+              <Clock size={13} />{formatTime(timeElapsed)}
+            </div>
+            <div className="flex items-center gap-1.5 text-sm" style={{ color: theme.text3 }}>
+              <BookOpen size={13} />{currentIdx + 1}/{orderedQuestions.length}
+            </div>
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div className="h-1 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
+          <motion.div className="h-full rounded-full"
+            style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          />
+        </div>
+
+        {/* Keyboard hint */}
+        <AnimatePresence>
+          {showKeys && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-3 p-3 rounded-xl text-xs flex flex-wrap gap-3"
+              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text3 }}>
+              {['1-4 / A-D: selectează opțiune', 'Enter / Space: confirmare / următor'].map((hint) => (
+                <span key={hint} className="font-mono">{hint}</span>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Question */}
+      <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
+        <AnimatePresence mode="wait">
+          <motion.div key={`${question.id}-${currentIdx}`}
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-1 flex flex-col"
+          >
+            {/* Question card */}
+            <div className="rounded-3xl p-6 mb-5"
+              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>
+                  Întrebarea {currentIdx + 1}
+                </span>
+                {isMultiple && (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                    style={{ background: `${theme.accent2}18`, color: theme.accent2 }}>
+                    <Layers size={10} />Multi-select
+                  </span>
+                )}
+                {question.difficulty && (
+                  <span className="text-xs px-2 py-0.5 rounded-full"
+                    style={{ background: `${difficultyColor[question.difficulty]}18`, color: difficultyColor[question.difficulty] }}>
+                    {difficultyLabel[question.difficulty]}
+                  </span>
+                )}
+              </div>
+              <p className="text-xl font-semibold leading-snug" style={{ color: theme.text }}>{question.text}</p>
+
+              {/* Question image */}
+              {question.imageUrl && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="mt-4 rounded-2xl overflow-hidden"
+                  style={{ border: `1px solid ${theme.border}` }}
+                >
+                  <img
+                    src={question.imageUrl}
+                    alt="Imagine întrebare"
+                    className="w-full max-h-64 object-contain"
+                    style={{ background: theme.isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)' }}
+                  />
+                </motion.div>
+              )}
+
+              {isMultiple && !revealed && (
+                <p className="text-sm mt-2" style={{ color: theme.text3 }}>
+                  Selectează toate răspunsurile corecte, apoi apasă "Confirmă"
+                </p>
+              )}
+            </div>
+
+            {/* Options */}
+            <div className="space-y-2.5 mb-5">
+              {question.options.map((opt: Option, i: number) => (
+                <motion.button key={opt.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={shakeId === opt.id
+                    ? { x: [0, -10, 10, -8, 8, -4, 4, 0] }
+                    : { opacity: 1, y: 0 }}
+                  transition={shakeId === opt.id
+                    ? { duration: 0.5, ease: 'easeInOut' }
+                    : { delay: i * 0.05 }}
+                  onClick={() => handleSelect(opt.id)}
+                  disabled={revealed && !isMultiple}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
+                  style={getOptionStyle(opt.id)}
+                  whileHover={!revealed ? { scale: 1.01 } : {}}
+                  whileTap={!revealed ? { scale: 0.99 } : {}}
+                >
+                  {/* Checkbox/Radio */}
+                  <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold border-2 transition-all"
+                    style={{
+                      borderColor: selectedNow.includes(opt.id) ? (revealed ? (correctIds.includes(opt.id) ? theme.success : theme.danger) : theme.accent) : theme.border2,
+                      background: selectedNow.includes(opt.id) ? (revealed ? (correctIds.includes(opt.id) ? `${theme.success}20` : `${theme.danger}20`) : `${theme.accent}20`) : 'transparent',
+                      color: getOptionTextColor(opt.id),
+                    }}>
+                    {selectedNow.includes(opt.id) ? (revealed ? (correctIds.includes(opt.id) ? '✓' : '✗') : (isMultiple ? '✓' : String.fromCharCode(65 + i))) : String.fromCharCode(65 + i)}
+                  </div>
+                  <span className="text-sm font-medium" style={{ color: getOptionTextColor(opt.id) }}>
+                    {opt.text}
+                  </span>
+                  {/* Keyboard hint badge */}
+                  {!revealed && (
+                    <span className="ml-auto text-xs font-mono rounded px-1.5 py-0.5 flex-shrink-0"
+                      style={{ background: theme.surface2, color: theme.text3 }}>
+                      {i + 1}
+                    </span>
+                  )}
+                </motion.button>
+              ))}
+            </div>
+
+            {/* Confirm button for multi-select */}
+            <AnimatePresence>
+              {isMultiple && !revealed && (
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  onClick={confirmMultiple}
+                  disabled={selectedNow.length === 0}
+                  className="w-full py-3.5 rounded-2xl font-semibold text-white mb-4 disabled:opacity-30 transition-all hover:opacity-90"
+                  style={{ background: `linear-gradient(135deg, ${theme.accent2} 0%, ${theme.accent} 100%)` }}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  Confirmă selecția ({selectedNow.length} {selectedNow.length === 1 ? 'ales' : 'alese'})
+                </motion.button>
+              )}
+            </AnimatePresence>
+
+            {/* Explanation */}
+            <AnimatePresence>
+              {revealed && !examMode && question.explanation && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-4 p-4 rounded-2xl overflow-hidden"
+                  style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}
+                >
+                  <p className="text-sm" style={{ color: theme.text2 }}>
+                    <span className="font-semibold" style={{ color: theme.accent }}>💡 Explicație: </span>
+                    {question.explanation}
+                  </p>
+                  {autoAdvance && (
+                    <div className="mt-3 h-0.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
+                      <motion.div className="h-full rounded-full"
+                        initial={{ width: '0%' }} animate={{ width: '100%' }}
+                        transition={{ duration: 1.5, ease: 'linear' }}
+                        style={{ background: theme.accent }} />
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Personal note */}
+            <AnimatePresence>
+              {revealed && !examMode && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 rounded-2xl overflow-hidden"
+                  style={{ border: `1px solid ${theme.border}` }}
+                >
+                  <div className="flex items-center gap-2 px-3 py-2"
+                    style={{ background: theme.surface2, borderBottom: `1px solid ${theme.border}` }}>
+                    <StickyNote size={12} style={{ color: theme.warning }} />
+                    <span className="text-xs font-medium" style={{ color: theme.text3 }}>Notița mea</span>
+                  </div>
+                  <textarea
+                    placeholder="Adaugă o notiță pentru această întrebare..."
+                    value={getNote(question.id)}
+                    onChange={e => setNote(question.id, e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 text-xs resize-none bg-transparent"
+                    style={{ color: theme.text2, outline: 'none', border: 'none' }}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Next button */}
+            <AnimatePresence>
+              {revealed && (
+                <motion.button
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  onClick={handleNext}
+                  className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2"
+                  style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {isLast ? '🏁 Vezi rezultatele' : (<>Următor <ChevronRight size={16} /></>)}
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
+    </div>
+  );
+}

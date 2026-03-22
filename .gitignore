@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+
+# Electron builder cache
+.cache/
+
+# Local secrets — nu se commit niciodată
+.env
+.env.local
+.update-config.json
+.update-hashes.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# TypeScript incremental
+*.tsbuildinfo
+tsconfig.tsbuildinfo
