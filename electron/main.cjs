@@ -66,12 +66,9 @@ function createWindow() {
   mainWindow.on('maximize', () => mainWindow?.webContents.send('win:maximized', true));
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('win:maximized', false));
 
-  // Minimize to tray on close
-  mainWindow.on('close', (e) => {
-    if (tray) {
-      e.preventDefault();
-      mainWindow.hide();
-    }
+  // Close button quits the app completely (no background running)
+  mainWindow.on('close', () => {
+    app.quit();
   });
 
   // File import IPC
@@ -306,7 +303,7 @@ app.whenReady().then(async () => {
     ]);
     tray.setToolTip('StudyX');
     tray.setContextMenu(contextMenu);
-    tray.on('click', () => { if (mainWindow) { if (mainWindow.isVisible()) mainWindow.hide(); else mainWindow.show(); } });
+    tray.on('click', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } });
   } catch {}
 });
 

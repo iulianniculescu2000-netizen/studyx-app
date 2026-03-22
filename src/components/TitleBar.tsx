@@ -116,7 +116,7 @@ export default function TitleBar() {
       </div>
 
       {/* ── Right: spacer to avoid overlapping WindowControls overlay ──── */}
-      <div style={{ minWidth: 148, flexShrink: 0 }} />
+      <div style={{ minWidth: 148, flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }} />
     </div>
   );
 }
