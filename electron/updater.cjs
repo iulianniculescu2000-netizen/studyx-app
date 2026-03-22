@@ -211,7 +211,7 @@ function downloadFile(url, destPath, onProgress, attempt = 0) {
   });
 }
 
-/** Get the app root (where dist/ and electron/ live). */
+/** Get the app root (where dist/ and electron/ live) — read-only in Program Files installs. */
 function getAppRoot() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'app');
@@ -219,12 +219,40 @@ function getAppRoot() {
   return path.join(__dirname, '..');
 }
 
-/** Read local version from package.json */
+/**
+ * Overlay dir in writable userData — used instead of app root for updates.
+ * Avoids EPERM when app is installed in C:\Program Files\.
+ */
+function getOverlayRoot() {
+  return path.join(app.getPath('userData'), 'app-overlay');
+}
+
+/** Recursively copy a directory (read from any location, write to userData). */
+function copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name);
+    const d = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyDirSync(s, d);
+    else fs.copyFileSync(s, d);
+  }
+}
+
+/**
+ * Read local version — overlay manifest takes priority over package.json.
+ * This ensures the displayed version matches the running code after an in-place update.
+ */
 function getLocalVersion() {
   try {
+    const overlayManifest = path.join(getOverlayRoot(), 'manifest.json');
+    if (fs.existsSync(overlayManifest)) {
+      const m = JSON.parse(fs.readFileSync(overlayManifest, 'utf-8'));
+      if (m.version) return m.version;
+    }
+  } catch {}
+  try {
     const pkgPath = path.join(getAppRoot(), 'package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    return pkg.version || '1.0.0';
+    return JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version || '1.0.0';
   } catch {
     return '1.0.0';
   }
@@ -283,29 +311,43 @@ function registerUpdaterIPC(mainWindow) {
     };
   });
 
-  /** Download and apply update files */
+  /**
+   * Download and stage update files in userData (always writable).
+   *
+   * Strategy — avoids EPERM on Program Files installs:
+   *   1. Bootstrap overlay: copy the entire dist/ from install dir to
+   *      userData/app-overlay/files/dist/ (read from any location ✓)
+   *   2. Download changed files on top of the overlay (write to userData ✓)
+   *   3. Save manifest.json to overlay so getLocalVersion() returns new version
+   *
+   * On restart, main.cjs loads index.html from the overlay instead of
+   * the install directory — no admin rights needed, ever.
+   */
   ipcMain.handle('updater:download', async (_, manifest) => {
     const files = manifest.files ?? [];
     if (files.length === 0) throw new Error('Manifestul nu conține fișiere de actualizat');
 
-    const appRoot = getAppRoot();
-    let done = 0;
+    const overlayRoot  = getOverlayRoot();
+    const overlayDist  = path.join(overlayRoot, 'files', 'dist');
+    const installDist  = path.join(getAppRoot(), 'dist');
 
-    for (const file of files) {
-      const destPath = path.join(appRoot, file.path);
-
-      // Verify destination directory is writable before starting download
-      try {
-        fs.accessSync(path.dirname(destPath), fs.constants.W_OK);
-      } catch {
-        throw new Error(`Nu am permisiune de scriere la: ${path.dirname(destPath)}. Rulează aplicația ca Administrator.`);
+    // ── Step 1: Bootstrap overlay with full dist/ copy (first update only) ──
+    if (!fs.existsSync(overlayDist) && fs.existsSync(installDist)) {
+      sendToRenderer('updater:progress', { percent: 2, file: 'Pregătire overlay...', received: 0, total: 0 });
+      try { copyDirSync(installDist, overlayDist); } catch (e) {
+        throw new Error(`Nu s-a putut crea overlay-ul local: ${e.message}`);
       }
+    }
 
+    // ── Step 2: Download changed files into overlay ───────────────────────
+    let done = 0;
+    for (const file of files) {
+      const destPath = path.join(overlayRoot, 'files', file.path);
       try {
         await downloadFile(file.url, destPath, (pct, received, total) => {
-          const overall = Math.round(((done + (pct > 0 ? pct / 100 : 0.5)) / files.length) * 100);
+          const overall = Math.round(((done + (pct > 0 ? pct / 100 : 0.5)) / files.length) * 90) + 5;
           sendToRenderer('updater:progress', {
-            percent: Math.min(overall, 99),
+            percent: Math.min(overall, 97),
             file: path.basename(file.path),
             received,
             total,
@@ -313,7 +355,7 @@ function registerUpdaterIPC(mainWindow) {
         });
         done++;
         sendToRenderer('updater:progress', {
-          percent: Math.round((done / files.length) * 100),
+          percent: Math.round((done / files.length) * 90) + 5,
           file: path.basename(file.path),
           received: -1,
           total: -1,
@@ -323,18 +365,25 @@ function registerUpdaterIPC(mainWindow) {
       }
     }
 
-    // Update local package.json version so next check shows "up to date"
+    // ── Step 3: Save overlay manifest (version source of truth) ──────────
     try {
-      const pkgPath = path.join(appRoot, 'package.json');
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-      pkg.version = manifest.version;
-      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2), 'utf-8');
-    } catch {}
+      fs.writeFileSync(
+        path.join(overlayRoot, 'manifest.json'),
+        JSON.stringify({ version: manifest.version, files: manifest.files }),
+        'utf-8',
+      );
+    } catch (e) {
+      throw new Error(`Nu s-a putut salva manifestul local: ${e.message}`);
+    }
 
+    sendToRenderer('updater:progress', { percent: 100, file: 'Gata!', received: -1, total: -1 });
     return true;
   });
 
-  /** Restart app to apply update */
+  /**
+   * Restart app — overlay is already in place, main.cjs picks it up automatically.
+   * No file-copy needed at this stage (already done during download).
+   */
   ipcMain.handle('updater:restart', () => {
     app.relaunch();
     app.quit();

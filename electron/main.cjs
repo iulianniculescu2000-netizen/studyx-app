@@ -51,7 +51,13 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // Prefer overlay in userData (written by in-app updater, always writable even in Program Files).
+    // Falls back to the installed dist/ if no overlay exists yet.
+    const overlayHtml = path.join(app.getPath('userData'), 'app-overlay', 'files', 'dist', 'index.html');
+    const loadPath = fs.existsSync(overlayHtml)
+      ? overlayHtml
+      : path.join(__dirname, '../dist/index.html');
+    mainWindow.loadFile(loadPath);
   }
 
   // Window state IPC
