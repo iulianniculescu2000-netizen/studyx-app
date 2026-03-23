@@ -323,7 +323,7 @@ export default function Tutorial({ profileId }: { profileId: string }) {
   useEffect(() => {
     if (!active || !step?.navigateTo) return;
     navigate(step.navigateTo);
-  }, [active, currentStep]);
+  }, [active, currentStep, navigate]);
 
   if (!active || !step) return null;
 

@@ -110,15 +110,7 @@ function createWindow() {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     const filePath = result.filePaths[0];
-    try {
-      const pdfParse = require('pdf-parse');
-      const buffer = fs.readFileSync(filePath);
-      const data = await pdfParse(buffer);
-      const text = data.text.replace(/\s+/g, ' ').trim();
-      return text.length > 100 ? text : null;
-    } catch (err) {
-      // Fallback: regex extraction for encrypted/unusual PDFs
-      const buffer = fs.readFileSync(filePath);
+    const regexFallback = (buffer) => {
       const raw = buffer.toString('latin1');
       const textChunks = [];
       const parenRe = /\(([^)\\]{1,500})\)\s*(?:Tj|TJ|'|")/g;
@@ -127,8 +119,24 @@ function createWindow() {
         const t = m[1].replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\\\/g, '\\').replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)));
         if (t.trim().length > 2) textChunks.push(t);
       }
-      const text = textChunks.join(' ').replace(/\s+/g, ' ').trim();
-      return text.length > 100 ? text : null;
+      return textChunks.join(' ').replace(/\s+/g, ' ').trim();
+    };
+
+    try {
+      const pdfParse = require('pdf-parse');
+      const buffer = fs.readFileSync(filePath);
+      const data = await pdfParse(buffer);
+      const text = data.text.replace(/\s+/g, ' ').trim();
+      // If pdf-parse got good text, use it; otherwise fall through to regex
+      if (text.length > 100) return text;
+      // pdf-parse succeeded but returned too little text — try regex on same buffer
+      const fallback = regexFallback(buffer);
+      return fallback.length > 100 ? fallback : null;
+    } catch (err) {
+      // Fallback: regex extraction for encrypted/unusual PDFs
+      const buffer = fs.readFileSync(filePath);
+      const fallback = regexFallback(buffer);
+      return fallback.length > 100 ? fallback : null;
     }
   });
 

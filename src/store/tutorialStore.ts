@@ -9,13 +9,13 @@ export type TutorialStepId =
   | 'folders'
   | 'play_modes'
   | 'flashcards'
+  | 'flashcard_session'
   | 'review'
   | 'stats'
   | 'notes'
   | 'search'
   | 'ai_setup'
-  | 'shortcuts'
-  | 'done';
+  | 'shortcuts';
 
 interface TutorialStore {
   active: boolean;

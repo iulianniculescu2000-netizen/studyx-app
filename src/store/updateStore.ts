@@ -95,7 +95,12 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   },
 
   applyUpdate: () => {
-    api()?.updaterRestart?.();
+    const electron = api();
+    if (!electron?.updaterRestart) {
+      set({ status: 'error', error: 'Restart imposibil — redeschide aplicația manual.' });
+      return;
+    }
+    electron.updaterRestart();
   },
 
   dismiss: () => set({ status: 'idle', error: null, manifest: null }),
