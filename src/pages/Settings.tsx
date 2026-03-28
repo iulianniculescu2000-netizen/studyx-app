@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import BackupExport from '../components/BackupExport';
 import AISettings from '../components/AISettings';
+import { useUpdateStore } from '../store/updateStore';
 
 // ── Confirm Dialog ────────────────────────────────────────────────────────────
 function ConfirmDialog({
@@ -171,6 +172,8 @@ export default function Settings() {
   const { focusMode, setFocusMode } = useFocusModeStore();
   const { hasKey } = useAIStore();
 
+  const localVersion = useUpdateStore((s) => s.localVersion);
+
   const [hwAccel, setHwAccel] = useState(true);
   const [hwAccelSaved, setHwAccelSaved] = useState(false);
   const [screenshotProtection, setScreenshotProtection] = useState(false);
@@ -243,7 +246,7 @@ export default function Settings() {
                   whileTap={{ scale: 0.96 }}
                   onClick={() => setTheme(t.id as any)}
                   style={{
-                    background: t.surface2,
+                    background: t.modalBg,
                     border: `2px solid ${themeId === t.id ? t.accent : t.border}`,
                     borderRadius: 12,
                     padding: '10px 10px 8px',
@@ -251,7 +254,7 @@ export default function Settings() {
                     textAlign: 'left',
                     position: 'relative',
                     overflow: 'hidden',
-                    boxShadow: themeId === t.id ? `0 2px 16px ${t.accent}40` : 'none',
+                    boxShadow: themeId === t.id ? `0 2px 16px ${t.accent}40` : '0 2px 8px rgba(0,0,0,0.10)',
                     transition: 'border-color 0.2s, box-shadow 0.2s',
                   }}
                 >
@@ -380,7 +383,7 @@ export default function Settings() {
             {[
               ['Mediu', isElectron ? 'production (StudyX)' : 'browser (dev)'],
               ['Date stocate în', '%APPDATA%\\StudyX'],
-              ['Versiune', '2.0.1'],
+              ['Versiune', localVersion],
             ].map(([label, value]) => (
               <div key={label} style={{ display: 'flex', gap: 8 }}>
                 <span style={{ color: theme.text, fontWeight: 600, minWidth: 130 }}>{label}:</span>

@@ -73,18 +73,15 @@ function UpdatePanel({
   status: string; manifest: any; downloadPercent: number; error: string | null;
   onDownload: () => void; onApply: () => void; onDismiss: () => void; onCheck: () => void; theme: any;
 }) {
-  if (status === 'idle' || status === 'checking' || status === 'up-to-date') return null;
-
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, y: 8, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 8, scale: 0.97 }}
-        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-        className="mx-2 mb-2 rounded-2xl overflow-hidden"
-        style={{ background: theme.modalBg, border: `1px solid ${theme.border2}`, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
-      >
+    <motion.div
+      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.97 }}
+      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+      className="mx-2 mb-2 rounded-2xl overflow-hidden"
+      style={{ background: theme.modalBg, border: `1px solid ${theme.border2}`, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
+    >
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2.5"
           style={{ borderBottom: `1px solid ${theme.border}` }}>
@@ -183,8 +180,7 @@ function UpdatePanel({
             </motion.button>
           </div>
         )}
-      </motion.div>
-    </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -277,6 +273,166 @@ function UpdateButton({
   );
 }
 
+// ── Folder Creation Modal ──────────────────────────────────────────────────────
+function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name: string, emoji: string, color: QuizColor) => void }) {
+  const theme = useTheme();
+  const [name, setName] = useState('');
+  const [emoji, setEmoji] = useState('📁');
+  const [color, setColor] = useState<QuizColor>('blue');
+
+  const handleCreate = () => {
+    if (!name.trim()) return;
+    onAdd(name.trim(), emoji, color);
+    onClose();
+  };
+
+  const canCreate = name.trim().length > 0;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)',
+      }}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0, y: 18 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.9, opacity: 0, y: 18 }}
+        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: theme.modalBg,
+          borderRadius: 24,
+          padding: '28px 28px 24px',
+          maxWidth: 420,
+          width: '92%',
+          border: `1px solid ${theme.border}`,
+          boxShadow: '0 36px 100px rgba(0,0,0,0.45)',
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: theme.text }}>Folder nou</h3>
+            <p style={{ margin: '3px 0 0', fontSize: 12, color: theme.text3 }}>Organizează-ți grilele în foldere</p>
+          </div>
+          <button onClick={onClose}
+            style={{ color: theme.text3, background: theme.surface2, border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Emoji picker */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Pictogramă</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {FOLDER_EMOJIS.map((e) => (
+              <button key={e} onClick={() => setEmoji(e)}
+                style={{
+                  width: 38, height: 38, borderRadius: 11, fontSize: 19,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: emoji === e ? `${theme.accent}22` : theme.surface2,
+                  border: `1.5px solid ${emoji === e ? theme.accent + '55' : 'transparent'}`,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Color picker */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Culoare</div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {FOLDER_COLORS.map((c) => (
+              <button key={c.id} onClick={() => setColor(c.id)}
+                style={{
+                  width: 30, height: 30, borderRadius: '50%',
+                  background: c.bg, border: 'none', cursor: 'pointer',
+                  outline: color === c.id ? `3px solid ${c.bg}` : 'none',
+                  outlineOffset: 3,
+                  transform: color === c.id ? 'scale(1.18)' : 'scale(1)',
+                  transition: 'all 0.15s',
+                  boxShadow: color === c.id ? `0 4px 12px ${c.bg}55` : 'none',
+                }} />
+            ))}
+          </div>
+        </div>
+
+        {/* Name input */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Nume folder</div>
+          <input
+            autoFocus
+            type="text"
+            placeholder="ex: Anatomie, Fiziologie..."
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') onClose(); }}
+            style={{
+              width: '100%', background: theme.inputBg,
+              border: `1.5px solid ${name.length > 0 ? theme.accent + '60' : theme.border}`,
+              borderRadius: 14, padding: '13px 16px',
+              color: theme.text, fontSize: 15, fontWeight: 500,
+              outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+              transition: 'border-color 0.2s',
+            }}
+          />
+        </div>
+
+        {/* Live preview */}
+        <AnimatePresence>
+          {name.trim() && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              style={{ overflow: 'hidden', marginBottom: 16 }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: theme.surface2, border: `1px solid ${theme.border}` }}>
+                <span style={{ fontSize: 20 }}>{emoji}</span>
+                <span style={{ fontWeight: 700, color: theme.text, fontSize: 14, flex: 1 }}>{name.trim()}</span>
+                <span style={{ width: 12, height: 12, borderRadius: '50%', background: FOLDER_COLORS.find(c => c.id === color)?.bg, flexShrink: 0 }} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onClose}
+            style={{ flex: 1, padding: '13px', borderRadius: 14, border: `1px solid ${theme.border}`, background: 'transparent', color: theme.text2, cursor: 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
+            Anulează
+          </button>
+          <motion.button
+            onClick={handleCreate}
+            disabled={!canCreate}
+            whileHover={canCreate ? { scale: 1.02 } : {}}
+            whileTap={canCreate ? { scale: 0.97 } : {}}
+            style={{
+              flex: 2, padding: '13px', borderRadius: 14,
+              background: canCreate ? `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` : theme.surface2,
+              color: canCreate ? '#fff' : theme.text3,
+              border: 'none', cursor: canCreate ? 'pointer' : 'not-allowed',
+              fontSize: 14, fontWeight: 700, fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              boxShadow: canCreate ? `0 8px 24px ${theme.accent}35` : 'none',
+            }}>
+            <Check size={15} />Creează folder
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 /** Active nav indicator — colored left bar */
 function NavItem({
   to, icon, label, badge, end, collapsed,
@@ -352,9 +508,6 @@ export default function Sidebar() {
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [newFolderEmoji, setNewFolderEmoji] = useState('📁');
-  const [newFolderColor, setNewFolderColor] = useState<QuizColor>('blue');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const dueCount = getDueQuestions().length;
@@ -374,12 +527,9 @@ export default function Sidebar() {
     return () => window.removeEventListener('studyx:open-ai-settings', handler);
   }, []);
 
-  const handleCreateFolder = () => {
-    if (!newFolderName.trim()) return;
-    const id = addFolder(newFolderName.trim(), newFolderEmoji, newFolderColor);
+  const handleCreateFolder = (name: string, emoji: string, color: QuizColor) => {
+    const id = addFolder(name, emoji, color);
     setShowNewFolder(false);
-    setNewFolderName('');
-    setNewFolderEmoji('📁');
     navigate(`/folder/${id}`);
   };
 
@@ -603,57 +753,6 @@ export default function Sidebar() {
                 </button>
               </div>
 
-              <AnimatePresence>
-                {showNewFolder && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mb-2 overflow-hidden rounded-2xl p-3 space-y-2"
-                    style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-                    <div className="flex gap-1 flex-wrap">
-                      {FOLDER_EMOJIS.slice(0, 8).map((e) => (
-                        <button key={e} onClick={() => setNewFolderEmoji(e)}
-                          className="w-7 h-7 rounded-lg text-base flex items-center justify-center transition-all"
-                          style={{
-                            background: newFolderEmoji === e ? `${theme.accent}22` : theme.surface2,
-                            border: `1px solid ${newFolderEmoji === e ? theme.accent + '50' : 'transparent'}`,
-                          }}>
-                          {e}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-1">
-                      {FOLDER_COLORS.map((c) => (
-                        <button key={c.id} onClick={() => setNewFolderColor(c.id)}
-                          className="w-5 h-5 rounded-full transition-all"
-                          style={{ background: c.bg, outline: newFolderColor === c.id ? `2px solid ${theme.text}` : 'none', outlineOffset: 2 }} />
-                      ))}
-                    </div>
-                    <input
-                      autoFocus type="text" placeholder="Nume folder..." value={newFolderName}
-                      onChange={(e) => setNewFolderName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') setShowNewFolder(false); }}
-                      className="w-full bg-transparent text-sm px-2 py-1.5 rounded-lg"
-                      style={{ color: theme.text, outline: 'none', border: `1px solid ${theme.border}` }}
-                    />
-                    <div className="flex gap-1">
-                      <button
-                        onClick={handleCreateFolder}
-                        className="flex-1 py-1.5 rounded-xl text-xs font-semibold text-white"
-                        style={{ background: theme.accent }}>
-                        <Check size={12} className="inline mr-1" />Creează
-                      </button>
-                      <button
-                        onClick={() => setShowNewFolder(false)}
-                        className="px-3 py-1.5 rounded-xl text-xs"
-                        style={{ background: theme.surface2, color: theme.text3 }}>
-                        <X size={12} />
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
               <div className="space-y-0.5">
                 {(() => {
@@ -772,6 +871,16 @@ export default function Sidebar() {
 
       <AISettings open={showAISettings} onClose={() => setShowAISettings(false)} />
 
+      {/* ── Centered folder creation modal ── */}
+      <AnimatePresence>
+        {showNewFolder && (
+          <NewFolderModal
+            onClose={() => setShowNewFolder(false)}
+            onAdd={handleCreateFolder}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Bottom: version + collapse ── */}
       <div className="p-2 flex-shrink-0 space-y-1" style={{ borderTop: `1px solid ${theme.border}` }}>
         {/* Logout (collapsed only) */}
@@ -788,19 +897,21 @@ export default function Sidebar() {
         )}
 
         {/* Update panel — shown above button when action needed */}
-        {!collapsed && (
-          <UpdatePanel
-            status={updateStatus}
-            manifest={manifest}
-            downloadPercent={downloadPercent}
-            error={updateError}
-            onCheck={checkForUpdate}
-            onDownload={downloadUpdate}
-            onApply={applyUpdate}
-            onDismiss={dismissUpdate}
-            theme={theme}
-          />
-        )}
+        <AnimatePresence>
+          {!collapsed && updateStatus !== 'idle' && updateStatus !== 'checking' && updateStatus !== 'up-to-date' && (
+            <UpdatePanel
+              status={updateStatus}
+              manifest={manifest}
+              downloadPercent={downloadPercent}
+              error={updateError}
+              onCheck={checkForUpdate}
+              onDownload={downloadUpdate}
+              onApply={applyUpdate}
+              onDismiss={dismissUpdate}
+              theme={theme}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Update button */}
         <UpdateButton
