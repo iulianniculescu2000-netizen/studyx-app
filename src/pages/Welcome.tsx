@@ -280,10 +280,9 @@ export default function Welcome({ onBack }: Props) {
                       whileTap={{ scale: 0.97 }}
                       className="p-3.5 rounded-2xl text-left transition-all relative overflow-hidden"
                       style={{
-                        background: t.surface,
+                        background: t.modalBg,
                         border: `2px solid ${isActive ? t.accent : t.border}`,
-                        backdropFilter: 'blur(20px)',
-                        boxShadow: isActive ? `0 4px 20px ${t.accent}25` : 'none',
+                        boxShadow: isActive ? `0 4px 20px ${t.accent}35` : '0 2px 8px rgba(0,0,0,0.10)',
                       }}>
                       {/* Mini preview */}
                       <div className="w-full h-8 rounded-xl mb-2.5 relative overflow-hidden"

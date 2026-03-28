@@ -31,6 +31,7 @@ function parseImport(data: QuizImportData, folderId?: string | null): Quiz {
   const questions: Question[] = data.questions.map((q) => ({
     id: generateId(),
     text: q.text,
+    imageUrl: q.imageUrl ?? undefined,
     multipleCorrect: q.multipleCorrect ?? false,
     explanation: q.explanation,
     difficulty: q.difficulty,
