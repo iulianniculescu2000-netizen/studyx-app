@@ -1,13 +1,147 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Flame, RefreshCw, Plus, BookOpen, Zap, Target, X, CheckCircle2, Circle } from 'lucide-react';
+import { Flame, RefreshCw, Plus, BookOpen, Zap, Target, X, CheckCircle2, Circle, Sparkles } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
+import { useAIStore } from '../store/aiStore';
+import { generateStudyRecommendation } from '../lib/groq';
+import { buildPerformanceSummary, buildUserContextString } from '../lib/aiContext';
 import QuizCard from '../components/QuizCard';
 import ImportQuizButton from '../components/ImportQuizButton';
+
+// ── AI Study Buddy ────────────────────────────────────────────────────────────
+const AI_REC_KEY = 'studyx-ai-rec';
+
+function AIStudyBuddy() {
+  const theme = useTheme();
+  const { hasKey } = useAIStore();
+  const { quizzes } = useQuizStore();
+  const { questionStats, streak, getDueQuestions, getAccuracy, getStatsByTag } = useStatsStore();
+
+  const [text, setText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Build performance summary (memoized)
+  const summary = useMemo(
+    () => buildPerformanceSummary(questionStats, streak, getDueQuestions, getAccuracy, getStatsByTag, quizzes),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [quizzes.length, streak.currentStreak, streak.lastStudyDate]
+  );
+  const userContext = buildUserContextString(summary);
+
+  const generate = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rec = await generateStudyRecommendation(
+        userContext,
+        summary.dueCount,
+        summary.weakTopics.map(t => t.tag)
+      );
+      const entry = { date: today, text: rec };
+      try { localStorage.setItem(AI_REC_KEY, JSON.stringify(entry)); } catch {}
+      setText(rec);
+    } catch {
+      setText(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [userContext, summary.dueCount, summary.weakTopics, today]);
+
+  useEffect(() => {
+    // Check cached recommendation
+    try {
+      const raw = localStorage.getItem(AI_REC_KEY);
+      if (raw) {
+        const entry = JSON.parse(raw);
+        if (entry.date === today && entry.text) { setText(entry.text); return; }
+      }
+    } catch {}
+    // Generate if AI key is configured
+    if (hasKey()) generate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (dismissed) return null;
+  // Don't show if no AI key and no data
+  if (!hasKey() && summary.totalAnswered === 0) return null;
+
+  const displayText = text ?? (
+    !hasKey()
+      ? (summary.dueCount > 0
+          ? `Ai ${summary.dueCount} întrebări de recapitulat azi. Menține SM-2 activ!`
+          : 'Configurează AI în Setări pentru recomandări personalizate.')
+      : null
+  );
+
+  if (!displayText && !loading) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      className="mb-6 p-4 rounded-2xl relative overflow-hidden"
+      style={{
+        background: `linear-gradient(135deg, ${theme.accent2}12, ${theme.accent}08)`,
+        border: `1px solid ${theme.accent2}25`,
+      }}
+    >
+      {/* Subtle orb */}
+      <div className="absolute top-0 right-0 w-32 h-32 rounded-full pointer-events-none"
+        style={{ background: `radial-gradient(circle at 70% 30%, ${theme.accent2}18, transparent 70%)` }} />
+
+      <div className="relative flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ background: `${theme.accent2}20` }}>
+          <Sparkles size={16} style={{ color: theme.accent2 }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-semibold" style={{ color: theme.accent2 }}>AI Study Buddy</span>
+            {loading && (
+              <motion.div
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ duration: 1, repeat: Infinity }}
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: theme.accent2 }}
+              />
+            )}
+          </div>
+          {loading && !displayText ? (
+            <div className="space-y-1.5">
+              {[70, 90, 55].map((w, i) => (
+                <motion.div key={i}
+                  animate={{ opacity: [0.3, 0.7, 0.3] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.2 }}
+                  className="h-2.5 rounded-full"
+                  style={{ width: `${w}%`, background: theme.surface2 }} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{displayText}</p>
+          )}
+          {!loading && text && (
+            <button
+              onClick={generate}
+              className="mt-2 text-xs hover:opacity-70 transition-opacity"
+              style={{ color: theme.accent2 }}>
+              Regenerează →
+            </button>
+          )}
+        </div>
+        <button onClick={() => setDismissed(true)} style={{ color: theme.text3, flexShrink: 0 }}>
+          <X size={13} />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
 
 function useCountUp(end: number, duration = 700): number {
   const [val, setVal] = useState(0);
@@ -233,6 +367,9 @@ export default function Dashboard() {
               display={s.display} icon={s.icon} color={s.color} delay={0.2 + i * 0.06} />
           ))}
         </motion.div>
+
+        {/* AI Study Buddy */}
+        <AIStudyBuddy />
 
         {/* Quick actions */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}

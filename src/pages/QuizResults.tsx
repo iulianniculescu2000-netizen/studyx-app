@@ -5,6 +5,7 @@ import { Trophy, RotateCcw, Home, Check, X, Star, Download, Bot, Loader2, Scale 
 import confetti from 'canvas-confetti';
 import type { QuizSession, Question } from '../types';
 import { useQuizStore } from '../store/quizStore';
+import { useStatsStore } from '../store/statsStore';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore } from '../store/aiStore';
 import { explainWrongAnswer } from '../lib/groq';
@@ -16,6 +17,7 @@ export default function QuizResults() {
   const theme = useTheme();
   // Hooks must be called unconditionally — before any early returns
   const { hasKey } = useAIStore();
+  const { questionStats, getAccuracy } = useStatsStore();
   const [aiExplanations, setAiExplanations] = useState<Record<string, string>>({});
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
 
@@ -50,8 +52,10 @@ export default function QuizResults() {
   const handleExplain = async (q: Question, userAnswerText: string, correctText: string) => {
     if (aiLoading[q.id] || aiExplanations[q.id]) return;
     setAiLoading((p) => ({ ...p, [q.id]: true }));
+    const total = Object.values(questionStats).reduce((s, qs: any) => s + qs.timesCorrect + qs.timesWrong, 0);
+    const userContext = total > 0 ? `Student medical: ${total} grile rezolvate, acuratețe ${getAccuracy()}%.` : undefined;
     try {
-      const explanation = await explainWrongAnswer(q.text, userAnswerText, correctText);
+      const explanation = await explainWrongAnswer(q.text, userAnswerText, correctText, userContext);
       setAiExplanations((p) => ({ ...p, [q.id]: explanation }));
     } catch (e: any) {
       setAiExplanations((p) => ({ ...p, [q.id]: `Eroare: ${e.message}` }));

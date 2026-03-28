@@ -1,11 +1,13 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Clock, BookOpen, Layers, Keyboard, Zap, GraduationCap, StickyNote } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, BookOpen, Layers, Keyboard, Zap, GraduationCap, StickyNote, Sparkles } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
+import { useAIStore } from '../store/aiStore';
 import { useTheme } from '../theme/ThemeContext';
+import { explainAnswerInline } from '../lib/groq';
 import type { QuizSession, Question, Option } from '../types';
 
 function shuffle<T>(arr: T[]): T[] {
@@ -23,8 +25,9 @@ export default function QuizPlay() {
   const location = useLocation();
   const theme = useTheme();
   const { quizzes, addSession } = useQuizStore();
-  const { recordAnswer, recordStudySession } = useStatsStore();
+  const { recordAnswer, recordStudySession, questionStats, getAccuracy } = useStatsStore();
   const { getNote, setNote } = useNotesStore();
+  const { hasKey } = useAIStore();
   const quiz = quizzes.find((q) => q.id === id);
   const examMode = (location.state as any)?.mode === 'exam';
   const timedMode = (location.state as any)?.mode === 'timed';
@@ -54,6 +57,9 @@ export default function QuizPlay() {
   const [showKeys, setShowKeys] = useState(false);
   const [autoAdvance, setAutoAdvance] = useState(false);
   const [questionTimer, setQuestionTimer] = useState(TIME_PER_Q);
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const aiAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setTimeElapsed((t) => t + 1), 1000);
@@ -168,6 +174,11 @@ export default function QuizPlay() {
   }, [selectedNow, question, answers, examMode, isLast, finishQuiz]);
 
   const handleNext = useCallback(() => {
+    // Cancel any in-progress AI explanation
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    setAiText(null);
+    setAiLoading(false);
     if (isLast) {
       finishQuiz(answers);
     } else {
@@ -176,6 +187,37 @@ export default function QuizPlay() {
       setRevealed(false);
     }
   }, [isLast, answers, finishQuiz]);
+
+  // Build a lightweight user context for AI calls
+  const aiUserContext = useMemo(() => {
+    const total = Object.values(questionStats).reduce((s, q: any) => s + q.timesCorrect + q.timesWrong, 0);
+    if (total === 0) return '';
+    return `Student medical: ${total} grile rezolvate, acuratețe ${getAccuracy()}%.`;
+  }, [questionStats, getAccuracy]);
+
+  const handleAIExplain = useCallback(async () => {
+    if (!question || aiLoading) return;
+    aiAbortRef.current?.abort();
+    const controller = new AbortController();
+    aiAbortRef.current = controller;
+    setAiText('');
+    setAiLoading(true);
+    try {
+      await explainAnswerInline(
+        question.text,
+        question.options,
+        (chunk) => setAiText((prev) => (prev ?? '') + chunk),
+        controller.signal,
+        aiUserContext
+      );
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        setAiText('Nu s-a putut genera explicația. Verifică cheia API în Setări.');
+      }
+    } finally {
+      setAiLoading(false);
+    }
+  }, [question, aiLoading, aiUserContext]);
 
   // Auto-advance after reveal
   useEffect(() => {
@@ -462,6 +504,58 @@ export default function QuizPlay() {
                         transition={{ duration: 1.5, ease: 'linear' }}
                         style={{ background: theme.accent }} />
                     </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* AI inline explanation */}
+            <AnimatePresence>
+              {revealed && !examMode && hasKey() && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4"
+                >
+                  {aiText === null ? (
+                    <button
+                      onClick={handleAIExplain}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
+                      style={{
+                        background: `${theme.accent2}15`,
+                        border: `1px solid ${theme.accent2}30`,
+                        color: theme.accent2,
+                      }}
+                    >
+                      <Sparkles size={12} />
+                      Explică AI
+                    </button>
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="p-4 rounded-2xl"
+                      style={{ background: `${theme.accent2}0C`, border: `1px solid ${theme.accent2}25` }}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Sparkles size={12} style={{ color: theme.accent2 }} />
+                        <span className="text-xs font-semibold" style={{ color: theme.accent2 }}>
+                          Explicație AI
+                        </span>
+                        {aiLoading && (
+                          <motion.div
+                            animate={{ opacity: [1, 0.3, 1] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                            className="w-1.5 h-1.5 rounded-full ml-1"
+                            style={{ background: theme.accent2 }}
+                          />
+                        )}
+                      </div>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: theme.text2 }}>
+                        {aiText}
+                        {aiLoading && <span className="animate-pulse">▊</span>}
+                      </p>
+                    </motion.div>
                   )}
                 </motion.div>
               )}

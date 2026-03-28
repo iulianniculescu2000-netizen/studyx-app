@@ -1,5 +1,6 @@
 import { useAIStore } from '../store/aiStore';
 import { HEART_IMG, ECG_IMG, CELL_IMG, DNA_IMG, NEURON_IMG } from '../data/sampleImages';
+import { getMedicalSystemPrompt } from './aiContext';
 
 export interface GroqMessage {
   role: 'system' | 'user' | 'assistant';
@@ -265,8 +266,8 @@ export async function generateQuestionsFromText(
     5: 'EXPERT: termeni medicali rari, capcane sofisticate, prezentări atipice — nivel rezidențiat.',
   };
   const difficultyInstruction = diffMap[Math.max(1, Math.min(5, difficulty))] ?? diffMap[3];
-  const systemPrompt = `Ești un examinator medical expert. Creezi întrebări EXCLUSIV din textul primit.
-LIMBĂ: ${language}. DIFICULTATE: ${difficultyInstruction}`;
+  const systemPrompt = getMedicalSystemPrompt('examiner') +
+    `\nCreezi întrebări EXCLUSIV din textul primit. LIMBĂ: ${language}. DIFICULTATE: ${difficultyInstruction}`;
 
   // ── Smart chunking: split long texts into digestible pieces ──────────────────
   const chunks = chunkText(cleanText); // max 4 chunks of ~4500 chars
@@ -404,7 +405,7 @@ Format JSON pur (${count} cazuri):
   let raw = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     raw = await groqChat([
-      { role: 'system', content: 'Ești un examinator medical expert în cazuri clinice. Generează EXCLUSIV din textul primit.' },
+      { role: 'system', content: getMedicalSystemPrompt('examiner') + '\nGenerează cazuri clinice EXCLUSIV din textul primit.' },
       { role: 'user', content: userPrompt },
     ], 0.3);
     if (raw.includes('[') && raw.includes(']')) break;
@@ -441,7 +442,7 @@ Format: [{"front":"?","back":"..."}]`;
   let raw = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     raw = await groqChat([
-      { role: 'system', content: 'Ești un asistent medical. Transformi notițe în flashcarduri concise.' },
+      { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nTransformi notițe medicale în flashcarduri concise.' },
       { role: 'user', content: userPrompt },
     ], 0.3);
     if (raw.includes('[') && raw.includes(']')) break;
@@ -461,10 +462,82 @@ Format: [{"front":"?","back":"..."}]`;
 export async function explainWrongAnswer(
   questionText: string,
   userAnswer: string,
+  correctAnswer: string,
+  userContext?: string
+): Promise<string> {
+  return groqChat([
+    { role: 'system', content: getMedicalSystemPrompt('explainer', userContext) },
+    {
+      role: 'user',
+      content: `Explică pe scurt (3-4 fraze) de ce "${correctAnswer}" este corect și nu "${userAnswer}".\n\nÎntrebare: ${questionText}`,
+    },
+  ], 0.4);
+}
+
+// ── New smart AI functions ──────────────────────────────────────────────────────
+
+/**
+ * Streaming inline explanation for a revealed answer in QuizPlay.
+ * Explains the correct answer + why wrong options are wrong.
+ * Personalized via userContext.
+ */
+export async function explainAnswerInline(
+  questionText: string,
+  options: { text: string; isCorrect: boolean }[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+  userContext?: string
+): Promise<void> {
+  const correct = options.find(o => o.isCorrect)?.text ?? '';
+  const wrong = options.filter(o => !o.isCorrect).map(o => `"${o.text}"`).join(', ');
+
+  await groqStream([
+    { role: 'system', content: getMedicalSystemPrompt('explainer', userContext) },
+    {
+      role: 'user',
+      content: `Întrebare: "${questionText}"\nCorect: "${correct}"\nGreșite: ${wrong}\n\nExplică (3-4 fraze) de ce "${correct}" este corect și de ce celelalte sunt greșite. Menționează mecanismul clinic relevant.`,
+    },
+  ], onChunk, 0.3, signal);
+}
+
+/**
+ * Generates a personalized daily study recommendation for Dashboard.
+ * Falls back to a deterministic tip if no AI key or user data.
+ */
+export async function generateStudyRecommendation(
+  userContext: string,
+  dueCount: number,
+  weakTopics: string[]
+): Promise<string> {
+  if (!userContext) {
+    if (dueCount > 0) return `Ai ${dueCount} întrebări de recapitulat azi. Începe cu ele pentru a menține SM-2 activ!`;
+    return 'Rezolvă prima sesiune de grile pentru a activa recomandările personalizate AI!';
+  }
+
+  return groqChat([
+    { role: 'system', content: getMedicalSystemPrompt('advisor', userContext) },
+    {
+      role: 'user',
+      content: `Recomandă-mi ce să studiez azi.${dueCount > 0 ? ` Am ${dueCount} întrebări de recapitulat.` : ''}${weakTopics.length > 0 ? ` Cele mai slabe topicuri: ${weakTopics.join(', ')}.` : ''} Maxim 2 fraze scurte, concrete.`,
+    },
+  ], 0.5);
+}
+
+/**
+ * Generates a medical mnemonic for a hard question answered wrong repeatedly.
+ */
+export async function generateMnemonic(
+  questionText: string,
   correctAnswer: string
 ): Promise<string> {
-  return groqChat([{
-    role: 'user',
-    content: `Ești un profesor medical. Explică pe scurt (3-4 fraze) de ce răspunsul corect este "${correctAnswer}" și nu "${userAnswer}".\n\nÎntrebare: ${questionText}`,
-  }], 0.4);
+  return groqChat([
+    {
+      role: 'system',
+      content: 'Ești expert în mnemonice medicale pentru studenți români. Creezi ajutoare de memorare scurte, amuzante și corecte clinic. Max 2 fraze.',
+    },
+    {
+      role: 'user',
+      content: `Mnemonic pentru a reține că "${correctAnswer}" este răspunsul corect la: "${questionText}"`,
+    },
+  ], 0.7);
 }
