@@ -119,7 +119,7 @@ function ContentPackCard({
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: theme.text3 }}>
             <BookOpen size={10} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />
-            {pack.questionCount} întrebări
+            {pack.questionCount} {pack.questionCount === 1 ? 'întrebare' : 'întrebări'}
           </span>
           <span style={{ fontSize: 11, color: theme.text3 }}>
             <FolderPlus size={10} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />
@@ -183,7 +183,7 @@ export default function UpdateModal() {
   } = useUpdateStore();
 
   const addQuiz = useQuizStore((s) => s.addQuiz);
-  const { folders, addFolder } = useFolderStore();
+  const { addFolder } = useFolderStore();
 
   const [contentError, setContentError] = useState<string | null>(null);
   const [justInstalledIds, setJustInstalledIds] = useState<Set<string>>(new Set());
@@ -357,26 +357,33 @@ export default function UpdateModal() {
                     Actualizare Sistem
                   </div>
 
+                  <AnimatePresence mode="wait">
                   {/* Checking */}
                   {status === 'checking' && (
-                    <div style={{
-                      background: theme.surface2, borderRadius: 14, padding: '18px 20px',
-                      display: 'flex', alignItems: 'center', gap: 12,
-                    }}>
+                    <motion.div key="checking"
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18 }}
+                      style={{
+                        background: theme.surface2, borderRadius: 14, padding: '18px 20px',
+                        display: 'flex', alignItems: 'center', gap: 12,
+                      }}>
                       <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
                         <RefreshCw size={18} color={theme.accent} />
                       </motion.span>
                       <span style={{ fontSize: 14, color: theme.text2 }}>Se verifică actualizările...</span>
-                    </div>
+                    </motion.div>
                   )}
 
                   {/* Up to date */}
                   {(status === 'up-to-date' || status === 'idle') && !hasSystemUpdate && (
-                    <div style={{
-                      background: `${theme.success}0D`, border: `1px solid ${theme.success}25`,
-                      borderRadius: 14, padding: '18px 20px',
-                      display: 'flex', alignItems: 'center', gap: 12,
-                    }}>
+                    <motion.div key="up-to-date"
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18 }}
+                      style={{
+                        background: `${theme.success}0D`, border: `1px solid ${theme.success}25`,
+                        borderRadius: 14, padding: '18px 20px',
+                        display: 'flex', alignItems: 'center', gap: 12,
+                      }}>
                       <div style={{
                         width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
                         background: `${theme.success}20`,
@@ -392,15 +399,18 @@ export default function UpdateModal() {
                           Versiunea {localVersion} este cea mai recentă.
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   )}
 
                   {/* Available */}
                   {status === 'available' && manifest && (
-                    <div style={{
-                      background: `${theme.accent}08`, border: `1px solid ${theme.accent}25`,
-                      borderRadius: 14, overflow: 'hidden',
-                    }}>
+                    <motion.div key="available"
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18 }}
+                      style={{
+                        background: `${theme.accent}08`, border: `1px solid ${theme.accent}25`,
+                        borderRadius: 14, overflow: 'hidden',
+                      }}>
                       {/* Version badge */}
                       <div style={{
                         padding: '16px 20px',
@@ -463,15 +473,18 @@ export default function UpdateModal() {
                           Descarcă v{manifest.version}
                         </motion.button>
                       </div>
-                    </div>
+                    </motion.div>
                   )}
 
                   {/* Downloading */}
                   {status === 'downloading' && (
-                    <div style={{
-                      background: `${theme.accent}08`, border: `1px solid ${theme.accent}25`,
-                      borderRadius: 14, padding: '20px',
-                    }}>
+                    <motion.div key="downloading"
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18 }}
+                      style={{
+                        background: `${theme.accent}08`, border: `1px solid ${theme.accent}25`,
+                        borderRadius: 14, padding: '20px',
+                      }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                         <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
                           <Download size={16} color={theme.accent} />
@@ -493,15 +506,18 @@ export default function UpdateModal() {
                       <p style={{ margin: '10px 0 0', fontSize: 11, color: theme.text3, textAlign: 'center' }}>
                         Nu închide aplicația în timpul descărcării
                       </p>
-                    </div>
+                    </motion.div>
                   )}
 
                   {/* Ready */}
                   {status === 'ready' && (
-                    <div style={{
-                      background: `${theme.success}0D`, border: `1px solid ${theme.success}25`,
-                      borderRadius: 14, padding: '20px',
-                    }}>
+                    <motion.div key="ready"
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18 }}
+                      style={{
+                        background: `${theme.success}0D`, border: `1px solid ${theme.success}25`,
+                        borderRadius: 14, padding: '20px',
+                      }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                         <Check size={18} color={theme.success} />
                         <span style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>
@@ -526,15 +542,18 @@ export default function UpdateModal() {
                         <RotateCcw size={15} />
                         Repornește acum
                       </motion.button>
-                    </div>
+                    </motion.div>
                   )}
 
                   {/* Error */}
                   {status === 'error' && error && (
-                    <div style={{
-                      background: `rgba(239,68,68,0.06)`, border: `1px solid rgba(239,68,68,0.25)`,
-                      borderRadius: 14, padding: '18px 20px',
-                    }}>
+                    <motion.div key="error"
+                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18 }}
+                      style={{
+                        background: `rgba(239,68,68,0.06)`, border: `1px solid rgba(239,68,68,0.25)`,
+                        borderRadius: 14, padding: '18px 20px',
+                      }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                         <AlertCircle size={16} color="#ef4444" />
                         <span style={{ fontSize: 14, fontWeight: 700, color: '#ef4444' }}>
@@ -552,8 +571,9 @@ export default function UpdateModal() {
                       >
                         Încearcă din nou
                       </button>
-                    </div>
+                    </motion.div>
                   )}
+                  </AnimatePresence>
                 </div>
 
                 {/* ── SECTION 2: Content packs ── */}

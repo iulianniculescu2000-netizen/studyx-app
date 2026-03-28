@@ -85,7 +85,7 @@ const QuizCard = memo(function QuizCard({ quiz, index, showDelete = false }: Pro
 
         <div className="flex items-center justify-between">
           <span className="text-sm" style={{ color: theme.text3 }}>
-            {quiz.questions.length} întrebări
+            {quiz.questions.length} {quiz.questions.length === 1 ? 'întrebare' : 'întrebări'}
           </span>
           <motion.div
             animate={{ gap: hovered ? 6 : 4 }}

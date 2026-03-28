@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronRight, RefreshCw, Trophy, Keyboard, Layers } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
+import QuizImage from '../components/QuizImage';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import type { Question, QuestionStat } from '../types';
@@ -165,7 +166,7 @@ export default function ReviewMode() {
                   <span className="font-bold text-lg" style={{ color: theme.text }}>Puncte slabe</span>
                   <span className="ml-auto px-2 py-0.5 rounded-full text-xs font-bold"
                     style={{ background: `${theme.danger}20`, color: theme.danger }}>
-                    {weakCount} întrebări
+                    {weakCount} {weakCount === 1 ? 'întrebare' : 'întrebări'}
                   </span>
                 </div>
                 <p className="text-sm" style={{ color: theme.text2 }}>
@@ -288,7 +289,7 @@ export default function ReviewMode() {
       </div>
 
       <div className="flex-1 flex flex-col max-w-2xl w-full mx-auto mt-3">
-        <AnimatePresence mode="wait">
+        <AnimatePresence>
           <motion.div key={currentIdx}
             initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }}
@@ -313,10 +314,8 @@ export default function ReviewMode() {
               </div>
               <p className="text-xl font-semibold" style={{ color: theme.text }}>{current.question.text}</p>
               {current.question.imageUrl && (
-                <div className="mt-4 rounded-xl overflow-hidden" style={{ border: `1px solid ${theme.border}` }}>
-                  <img src={current.question.imageUrl} alt="Imagine întrebare"
-                    className="w-full max-h-56 object-contain"
-                    style={{ background: theme.isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)' }} />
+                <div className="mt-4">
+                  <QuizImage src={current.question.imageUrl} maxHeight={224} />
                 </div>
               )}
               {isMultiple && !revealed && (

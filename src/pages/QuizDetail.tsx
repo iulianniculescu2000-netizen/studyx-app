@@ -5,6 +5,7 @@ import { Play, Clock, ChevronLeft, Trophy, Star, RotateCcw, Shuffle, Layers, Dow
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useQuizStore } from '../store/quizStore';
 import { useTheme } from '../theme/ThemeContext';
+import QuizImage from '../components/QuizImage';
 import { useAIStore } from '../store/aiStore';
 import { useStatsStore } from '../store/statsStore';
 import { groqStream } from '../lib/groq';
@@ -280,7 +281,7 @@ Comportament:
               <Clock size={14} />{formatTime(estimatedTime)}
             </div>
             <div className="flex items-center gap-1.5 text-white/70 text-sm">
-              <Trophy size={14} />{quiz.questions.length} întrebări
+              <Trophy size={14} />{quiz.questions.length} {quiz.questions.length === 1 ? 'întrebare' : 'întrebări'}
             </div>
             {multipleCount > 0 && (
               <div className="flex items-center gap-1.5 text-white/70 text-sm">
@@ -336,8 +337,9 @@ Comportament:
                 <div className="flex-1 min-w-0">
                   <p className="text-sm" style={{ color: theme.text2 }}>{q.text}</p>
                   {q.imageUrl && (
-                    <img src={q.imageUrl} alt="" className="mt-1.5 max-h-16 object-contain rounded-lg"
-                      style={{ border: `1px solid ${theme.border}` }} />
+                    <div className="mt-1.5">
+                      <QuizImage src={q.imageUrl} maxHeight={64} />
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">

@@ -1,17 +1,23 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { StickyNote, Search, Trash2, BookOpen, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { StickyNote, Search, Trash2, BookOpen, X, Sparkles, Loader2, CreditCard } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useNotesStore } from '../store/notesStore';
 import { useQuizStore } from '../store/quizStore';
+import { useAIStore } from '../store/aiStore';
+import { notesToFlashcards } from '../lib/groq';
 
 export default function Notes() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const { notes, deleteNote } = useNotesStore();
-  const { quizzes } = useQuizStore();
+  const { quizzes, addQuiz } = useQuizStore();
+  const { hasKey } = useAIStore();
   const [search, setSearch] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [aiConverting, setAiConverting] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Build enriched notes list: questionId → { noteText, question, quiz }
   const enriched = useMemo(() => {
@@ -55,18 +61,75 @@ export default function Notes() {
 
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background: `${theme.warning}20`, color: theme.warning }}>
-              <StickyNote size={18} />
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{ background: `${theme.warning}20`, color: theme.warning }}>
+                <StickyNote size={18} />
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight" style={{ color: theme.text }}>
+                Notițele mele
+              </h1>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight" style={{ color: theme.text }}>
-              Notițele mele
-            </h1>
+            {enriched.length > 0 && hasKey() && (
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                disabled={aiConverting}
+                onClick={async () => {
+                  setAiError(null);
+                  setAiConverting(true);
+                  try {
+                    const allText = enriched
+                      .map(n => `Q: ${n.question?.text ?? 'Întrebare'}\nNotiță: ${n.text}`)
+                      .join('\n\n');
+                    const pairs = await notesToFlashcards(allText);
+                    if (pairs.length === 0) throw new Error('Nu s-au generat flashcarduri.');
+
+                    const newQuiz = {
+                      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+                      title: 'Flashcarduri din notițe',
+                      description: `Generat automat din ${enriched.length} notițe`,
+                      emoji: '🃏',
+                      color: 'purple' as const,
+                      category: 'Notițe',
+                      questions: pairs.map((p, i) => ({
+                        id: `fc-${i}-${Date.now()}`,
+                        text: p.front,
+                        options: [
+                          { id: 'a', text: p.back, isCorrect: true },
+                          { id: 'b', text: 'Nu știu', isCorrect: false },
+                        ],
+                        explanation: p.back,
+                        tags: ['flashcard', 'notițe'],
+                      })),
+                      createdAt: Date.now(),
+                    };
+                    addQuiz(newQuiz);
+                    navigate(`/quiz/${newQuiz.id}`);
+                  } catch (e: any) {
+                    setAiError(e.message ?? 'Eroare necunoscută.');
+                  } finally {
+                    setAiConverting(false);
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold flex-shrink-0"
+                style={{
+                  background: aiConverting ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                  color: aiConverting ? theme.text3 : '#fff',
+                  border: `1px solid ${aiConverting ? theme.border : 'transparent'}`,
+                }}>
+                {aiConverting
+                  ? <><Loader2 size={13} className="animate-spin" />Generez...</>
+                  : <><Sparkles size={13} /><CreditCard size={13} />AI Flashcarduri</>}
+              </motion.button>
+            )}
           </div>
           <p className="text-sm ml-12" style={{ color: theme.text3 }}>
             {enriched.length === 0 ? 'Nicio notiță salvată' : `${enriched.length} ${enriched.length === 1 ? 'notiță' : 'notițe'} din ${grouped.size} ${grouped.size === 1 ? 'grilă' : 'grile'}`}
           </p>
+          {aiError && (
+            <p className="text-xs mt-2 ml-12" style={{ color: theme.danger }}>{aiError}</p>
+          )}
         </motion.div>
 
         {/* Search */}

@@ -1,13 +1,14 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Clock, BookOpen, Layers, Keyboard, Zap, GraduationCap, StickyNote, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, BookOpen, Layers, Keyboard, Zap, GraduationCap, StickyNote, Sparkles, Loader2 } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
 import { useAIStore } from '../store/aiStore';
 import { useTheme } from '../theme/ThemeContext';
-import { explainAnswerInline } from '../lib/groq';
+import QuizImage from '../components/QuizImage';
+import { explainAnswerInline, generateMnemonic } from '../lib/groq';
 import type { QuizSession, Question, Option } from '../types';
 
 function shuffle<T>(arr: T[]): T[] {
@@ -60,6 +61,8 @@ export default function QuizPlay() {
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const aiAbortRef = useRef<AbortController | null>(null);
+  const [mnemonicText, setMnemonicText] = useState<string | null>(null);
+  const [mnemonicLoading, setMnemonicLoading] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTimeElapsed((t) => t + 1), 1000);
@@ -179,6 +182,8 @@ export default function QuizPlay() {
     aiAbortRef.current = null;
     setAiText(null);
     setAiLoading(false);
+    setMnemonicText(null);
+    setMnemonicLoading(false);
     if (isLast) {
       finishQuiz(answers);
     } else {
@@ -369,7 +374,7 @@ export default function QuizPlay() {
 
       {/* Question */}
       <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
-        <AnimatePresence mode="wait">
+        <AnimatePresence>
           <motion.div key={`${question.id}-${currentIdx}`}
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
@@ -401,19 +406,9 @@ export default function QuizPlay() {
 
               {/* Question image */}
               {question.imageUrl && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="mt-4 rounded-2xl overflow-hidden"
-                  style={{ border: `1px solid ${theme.border}` }}
-                >
-                  <img
-                    src={question.imageUrl}
-                    alt="Imagine întrebare"
-                    className="w-full max-h-64 object-contain"
-                    style={{ background: theme.isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)' }}
-                  />
-                </motion.div>
+                <div className="mt-4">
+                  <QuizImage src={question.imageUrl} maxHeight={260} />
+                </div>
               )}
 
               {isMultiple && !revealed && (
@@ -559,6 +554,56 @@ export default function QuizPlay() {
                   )}
                 </motion.div>
               )}
+            </AnimatePresence>
+
+            {/* Mnemonic AI — only when answer was wrong */}
+            <AnimatePresence>
+              {revealed && !examMode && hasKey() && (() => {
+                const userSel = answers[question.id] ?? selectedNow;
+                const correctIds = question.options.filter(o => o.isCorrect).map(o => o.id);
+                const wasWrong = !(userSel.length === correctIds.length && correctIds.every(id => userSel.includes(id)));
+                if (!wasWrong) return null;
+                const correctAnswer = question.options.find(o => o.isCorrect)?.text ?? '';
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-4"
+                  >
+                    {mnemonicText === null ? (
+                      <button
+                        disabled={mnemonicLoading}
+                        onClick={async () => {
+                          setMnemonicLoading(true);
+                          try {
+                            const m = await generateMnemonic(question.text, correctAnswer);
+                            setMnemonicText(m);
+                          } catch { setMnemonicText('Nu s-a putut genera mnemonicul.'); }
+                          finally { setMnemonicLoading(false); }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
+                        style={{ background: `${theme.warning}15`, border: `1px solid ${theme.warning}30`, color: theme.warning }}
+                      >
+                        {mnemonicLoading
+                          ? <><Loader2 size={12} className="animate-spin" />Generez mnemonic...</>
+                          : <><Zap size={12} />Mnemonic AI</>}
+                      </button>
+                    ) : (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="p-4 rounded-2xl"
+                        style={{ background: `${theme.warning}0C`, border: `1px solid ${theme.warning}25` }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Zap size={12} style={{ color: theme.warning }} />
+                          <span className="text-xs font-semibold" style={{ color: theme.warning }}>Mnemonic</span>
+                        </div>
+                        <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{mnemonicText}</p>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                );
+              })()}
             </AnimatePresence>
 
             {/* Personal note */}

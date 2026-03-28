@@ -6,7 +6,7 @@ import {
   Plus, Pencil, Trash2, Check, X, RefreshCw, LogOut,
   PanelLeftOpen, StickyNote, CreditCard,
   Download, ArrowDownCircle, RotateCcw, AlertCircle,
-  Settings,
+  Settings, Brain,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
@@ -382,9 +382,8 @@ export default function Sidebar() {
   const { quizzes, getQuizzesByFolder } = useQuizStore();
   const { streak, getDueQuestions } = useStatsStore();
   const [collapsed, toggleCollapsed] = useCollapsed();
-  const { status: updateStatus, localVersion, manifest, downloadPercent,
-    checkForUpdate, downloadUpdate, applyUpdate,
-    showUpdateModal, setShowUpdateModal } = useUpdateStore();
+  const { status: updateStatus, localVersion, downloadPercent,
+    setShowUpdateModal } = useUpdateStore();
 
   const [showAISettings, setShowAISettings] = useState(false);
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
@@ -507,7 +506,7 @@ export default function Sidebar() {
               {streak.currentStreak > 0 ? (
                 <p className="text-xs flex items-center gap-1" style={{ color: theme.warning }}>
                   <Flame size={10} fill={theme.warning} />
-                  {streak.currentStreak} zile streak
+                  {streak.currentStreak} {streak.currentStreak === 1 ? 'zi' : 'zile'} streak
                 </p>
               ) : (
                 <p className="text-xs" style={{ color: theme.text3 }}>Bine ai venit!</p>
@@ -554,6 +553,22 @@ export default function Sidebar() {
                   collapsed
                 />
               </div>
+            </Tip>
+            <Tip label={`Sesiune zilnică${dueCount > 0 ? ` · ${dueCount} de recapitulat` : ''}`}>
+              <NavItem
+                to="/daily-review"
+                icon={
+                  <div className="relative">
+                    <Brain size={17} />
+                    {dueCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[8px] font-bold flex items-center justify-center text-white"
+                        style={{ background: theme.accent }}>{dueCount}</span>
+                    )}
+                  </div>
+                }
+                label="Sesiune zilnică"
+                collapsed
+              />
             </Tip>
             <Tip label="Statistici">
               <div data-tutorial="nav-stats">
@@ -605,6 +620,18 @@ export default function Sidebar() {
                 ) : undefined}
               />
             </div>
+            <NavItem
+              to="/daily-review"
+              icon={<Brain size={16} />}
+              label="Sesiune zilnică"
+              collapsed={false}
+              badge={dueCount > 0 ? (
+                <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
+                  style={{ background: `${theme.accent}28`, color: theme.accent }}>
+                  {dueCount}
+                </span>
+              ) : undefined}
+            />
             <div data-tutorial="nav-stats">
               <NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} />
             </div>

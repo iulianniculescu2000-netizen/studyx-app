@@ -62,7 +62,7 @@ export default function GlobalSearch() {
           quizEmoji: quiz.emoji,
           quizColor: quiz.color,
           label: quiz.title,
-          sub: `${quiz.questions.length} întrebări · ${quiz.category}`,
+          sub: `${quiz.questions.length} ${quiz.questions.length === 1 ? 'întrebare' : 'întrebări'} · ${quiz.category}`,
           href: `/quiz/${quiz.id}`,
         });
       }
