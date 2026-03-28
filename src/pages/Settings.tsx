@@ -8,10 +8,16 @@ import { THEME_LIST } from '../theme/themes';
 import {
   AlertTriangle, Monitor, Trash2, Check,
   Bot, Database, Maximize2, ShieldCheck, Palette,
+  RotateCcw, History,
 } from 'lucide-react';
 import BackupExport from '../components/BackupExport';
 import AISettings from '../components/AISettings';
 import { useUpdateStore } from '../store/updateStore';
+import { useQuizStore } from '../store/quizStore';
+import { useFolderStore } from '../store/folderStore';
+import {
+  getRollbackSnapshot, clearRollbackSnapshot, formatSnapshotDate,
+} from '../lib/rollback';
 
 // ── Confirm Dialog ────────────────────────────────────────────────────────────
 function ConfirmDialog({
@@ -181,6 +187,28 @@ export default function Settings() {
   const [resetting, setResetting] = useState(false);
   const [showBackup, setShowBackup] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
+  const [rollbackSnapshot, setRollbackSnapshot] = useState(() => getRollbackSnapshot());
+  const [confirmRollback, setConfirmRollback] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
+  const [rollbackDone, setRollbackDone] = useState(false);
+
+  const { _hydrate: hydrateQuizzes } = useQuizStore();
+  const { _hydrate: hydrateFolders } = useFolderStore();
+
+  const handleRollback = async () => {
+    const snap = getRollbackSnapshot();
+    if (!snap) return;
+    setRollingBack(true);
+    setConfirmRollback(false);
+    // Restore quiz + folder state from snapshot
+    hydrateQuizzes({ quizzes: snap.quizzes as any, sessions: snap.sessions as any });
+    hydrateFolders({ folders: snap.folders as any });
+    clearRollbackSnapshot();
+    setRollbackSnapshot(null);
+    setRollingBack(false);
+    setRollbackDone(true);
+    setTimeout(() => setRollbackDone(false), 3500);
+  };
 
   useEffect(() => {
     if (!isElectron) return;
@@ -365,6 +393,51 @@ export default function Settings() {
           </AnimatePresence>
         </Section>
 
+        {/* ── Actualizări ── */}
+        <Section title="Actualizări & Rollback">
+          {/* Rollback row — only shown if a snapshot exists */}
+          <ActionRow
+            icon={<History size={16} />}
+            label="Revenire la backup anterior"
+            description={
+              rollbackSnapshot
+                ? `Snapshot salvat ${formatSnapshotDate(rollbackSnapshot.savedAt)} — "${rollbackSnapshot.label}". Restaurează grilele și folderele la starea anterioară instalării.`
+                : 'Nu există niciun snapshot de rollback. Un backup este creat automat înainte de fiecare instalare de conținut.'
+            }
+            buttonLabel={
+              rollingBack ? 'Se restaurează...'
+              : rollbackDone ? '✓ Restaurat'
+              : 'Revenire la backup'
+            }
+            onClick={() => rollbackSnapshot && setConfirmRollback(true)}
+            badge={
+              rollbackSnapshot
+                ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: `${theme.warning}20`, color: theme.warning }}>Disponibil</span>
+                : <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: theme.surface2, color: theme.text3 }}>Indisponibil</span>
+            }
+            danger={!!rollbackSnapshot}
+          />
+          <AnimatePresence>
+            {rollbackDone && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, paddingLeft: 50, fontSize: 12, color: theme.success }}>
+                <Check size={13} /> Rollback aplicat cu succes.
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <Divider />
+
+          <ActionRow
+            icon={<RotateCcw size={16} />}
+            label="Centru Actualizări"
+            description="Descarcă actualizări de sistem și instalează pachete de grile opționale."
+            buttonLabel="Deschide"
+            onClick={() => useUpdateStore.getState().setShowUpdateModal(true)}
+          />
+        </Section>
+
         {/* ── Resetare ── */}
         <Section title="Zone Periculoasă">
           <ActionRow
@@ -408,6 +481,19 @@ export default function Settings() {
             danger
             onConfirm={hardResetApp}
             onCancel={() => setConfirmReset(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmRollback && rollbackSnapshot && (
+          <ConfirmDialog
+            title="Revenire la backup anterior?"
+            message={`Vei restaura grilele și folderele la starea din ${formatSnapshotDate(rollbackSnapshot.savedAt)} ("${rollbackSnapshot.label}"). Modificările făcute după acel moment vor fi pierdute.`}
+            confirmLabel="Da, restaurează"
+            danger
+            onConfirm={handleRollback}
+            onCancel={() => setConfirmRollback(false)}
           />
         )}
       </AnimatePresence>

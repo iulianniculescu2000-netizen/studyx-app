@@ -17,6 +17,7 @@ import { useUpdateStore } from '../store/updateStore';
 import ConfirmDialog from './ConfirmDialog';
 import AISettings from './AISettings';
 import Portal from './Portal';
+import UpdateModal from './UpdateModal';
 import type { QuizColor } from '../types';
 
 const FOLDER_COLORS: { id: QuizColor; bg: string }[] = [
@@ -66,189 +67,68 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-/** Premium update panel — shown above the version button */
-function UpdatePanel({
-  status, manifest, downloadPercent, error,
-  onDownload, onApply, onDismiss, onCheck, theme,
-}: {
-  status: string; manifest: any; downloadPercent: number; error: string | null;
-  onDownload: () => void; onApply: () => void; onDismiss: () => void; onCheck: () => void; theme: any;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 8, scale: 0.97 }}
-      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-      className="mx-2 mb-2 rounded-2xl overflow-hidden"
-      style={{ background: theme.modalBg, border: `1px solid ${theme.border2}`, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
-    >
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2.5"
-          style={{ borderBottom: `1px solid ${theme.border}` }}>
-          <div className="flex items-center gap-1.5">
-            {status === 'error'
-              ? <AlertCircle size={13} style={{ color: theme.danger }} />
-              : status === 'ready'
-              ? <Check size={13} style={{ color: theme.success }} />
-              : status === 'downloading'
-              ? <Download size={13} style={{ color: theme.accent }} />
-              : <ArrowDownCircle size={13} style={{ color: theme.accent }} />}
-            <span className="text-xs font-semibold" style={{
-              color: status === 'error' ? theme.danger : status === 'ready' ? theme.success : theme.accent
-            }}>
-              {status === 'error' ? 'Eroare actualizare' :
-               status === 'ready' ? 'Gata de instalat' :
-               status === 'downloading' ? 'Se descarcă...' :
-               `v${manifest?.version} disponibil`}
-            </span>
-          </div>
-          <button onClick={onDismiss} className="p-1 rounded-lg hover:opacity-70 transition-opacity"
-            style={{ color: theme.text3 }}><X size={11} /></button>
-        </div>
-
-        {/* Error details */}
-        {status === 'error' && error && (
-          <div className="px-3 py-2.5">
-            <p className="text-[11px] leading-relaxed mb-2.5" style={{ color: theme.text2 }}>
-              {error}
-            </p>
-            <button onClick={onCheck}
-              className="w-full py-2 rounded-xl text-xs font-semibold transition-opacity hover:opacity-80"
-              style={{ background: `${theme.danger}18`, color: theme.danger, border: `1px solid ${theme.danger}30` }}>
-              Încearcă din nou
-            </button>
-          </div>
-        )}
-
-        {/* Available — changelog + download */}
-        {status === 'available' && manifest && (
-          <div className="px-3 py-2.5">
-            {manifest.releaseDate && (
-              <p className="text-[10px] mb-1.5" style={{ color: theme.text3 }}>{manifest.releaseDate}</p>
-            )}
-            {manifest.changes?.length > 0 && (
-              <ul className="space-y-1 mb-3">
-                {manifest.changes.slice(0, 4).map((c: string, i: number) => (
-                  <li key={i} className="flex items-start gap-1.5 text-[11px] leading-relaxed"
-                    style={{ color: theme.text2 }}>
-                    <span style={{ color: theme.accent, flexShrink: 0, marginTop: 1 }}>▸</span>
-                    {c}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <motion.button onClick={onDownload}
-              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-              className="w-full py-2.5 rounded-xl text-xs font-semibold text-white flex items-center justify-center gap-1.5"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
-              <Download size={12} />Descarcă v{manifest.version}
-            </motion.button>
-          </div>
-        )}
-
-        {/* Downloading — progress bar */}
-        {status === 'downloading' && (
-          <div className="px-3 py-3">
-            <div className="flex justify-between items-center mb-1.5">
-              <span className="text-[10px]" style={{ color: theme.text3 }}>Descărcare fișiere...</span>
-              <span className="text-[10px] font-semibold tabular-nums" style={{ color: theme.accent }}>{downloadPercent}%</span>
-            </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
-              <motion.div className="h-full rounded-full"
-                style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
-                animate={{ width: `${downloadPercent}%` }}
-                transition={{ duration: 0.4, ease: 'easeOut' }}
-              />
-            </div>
-            <p className="text-[10px] mt-1.5 text-center" style={{ color: theme.text3 }}>
-              Nu închide aplicația
-            </p>
-          </div>
-        )}
-
-        {/* Ready — restart */}
-        {status === 'ready' && (
-          <div className="px-3 py-2.5">
-            <p className="text-[11px] mb-2.5 text-center" style={{ color: theme.text2 }}>
-              Update descărcat cu succes! Repornește pentru a aplica.
-            </p>
-            <motion.button onClick={onApply}
-              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-              className="w-full py-2.5 rounded-xl text-xs font-semibold text-white flex items-center justify-center gap-1.5"
-              style={{ background: `linear-gradient(135deg, ${theme.success}, ${theme.accent})` }}>
-              <RotateCcw size={12} />Repornește acum
-            </motion.button>
-          </div>
-        )}
-    </motion.div>
-  );
-}
-
-/** Update status button shown in the sidebar bottom section */
+/** Update button — opens the premium UpdateModal */
 function UpdateButton({
-  collapsed, status, localVersion, manifest, downloadPercent,
-  onCheck, onDownload, onApply, theme,
+  collapsed, status, localVersion, downloadPercent, onOpen, theme,
 }: {
   collapsed: boolean;
   status: string;
   localVersion: string;
-  manifest: any;
   downloadPercent: number;
-  onCheck: () => void;
-  onDownload: () => void;
-  onApply: () => void;
+  onOpen: () => void;
   theme: any;
 }) {
   if (!window.electronAPI?.updaterCheck) return null;
 
-  // Compact button icon + color based on status
+  const hasAction = status === 'available' || status === 'error' || status === 'ready';
+  const isDownloading = status === 'downloading';
+  const isChecking = status === 'checking';
+
   let icon: React.ReactNode;
   let color: string = theme.text3;
-  let onClick: () => void = onCheck;
 
-  if (status === 'checking') {
+  if (isChecking) {
     icon = <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}><RefreshCw size={14} /></motion.span>;
-    color = theme.text3; onClick = () => {};
+    color = theme.text3;
   } else if (status === 'up-to-date') {
     icon = <Check size={14} />;
-    color = theme.success; onClick = () => {};
+    color = theme.success;
   } else if (status === 'available') {
     icon = <ArrowDownCircle size={14} />;
-    color = theme.accent; onClick = onDownload;
-  } else if (status === 'downloading') {
+    color = theme.accent;
+  } else if (isDownloading) {
     icon = <Download size={14} />;
-    color = theme.accent; onClick = () => {};
+    color = theme.accent;
   } else if (status === 'ready') {
     icon = <RotateCcw size={14} />;
-    color = theme.success; onClick = onApply;
+    color = theme.success;
   } else if (status === 'error') {
     icon = <AlertCircle size={14} />;
-    color = theme.danger; onClick = onCheck;
+    color = theme.danger;
   } else {
     icon = <Download size={14} />;
-    color = theme.text3; onClick = onCheck;
+    color = theme.text3;
   }
 
-  const label = status === 'checking' ? 'Se verifică...'
+  const label = isChecking ? 'Se verifică...'
     : status === 'up-to-date' ? 'La zi ✓'
-    : status === 'available' ? `v${manifest?.version} disponibil`
-    : status === 'downloading' ? `Descărcare ${downloadPercent}%`
-    : status === 'ready' ? 'Repornește pentru update'
-    : status === 'error' ? 'Eroare — click pentru reîncercare'
+    : status === 'available' ? 'Actualizare disponibilă'
+    : isDownloading ? `Descărcare ${downloadPercent}%`
+    : status === 'ready' ? 'Gata de instalat'
+    : status === 'error' ? 'Eroare actualizare'
     : `v${localVersion}`;
 
   return (
     <Tip label={collapsed ? label : ''}>
       <motion.button
-        onClick={onClick}
+        onClick={onOpen}
         whileHover={{ backgroundColor: `${color}14` }}
         whileTap={{ scale: 0.94 }}
         className="w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-colors relative"
         style={{ color, justifyContent: collapsed ? 'center' : 'flex-start' }}
       >
-        {/* Pulsing dot for available/error */}
-        {(status === 'available' || status === 'error' || status === 'ready') && (
+        {/* Pulsing dot for actionable states */}
+        {hasAction && (
           <motion.div
             animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
             transition={{ duration: 1.8, repeat: Infinity }}
@@ -260,8 +140,8 @@ function UpdateButton({
         {!collapsed && (
           <span className="text-xs truncate flex-1 text-left" style={{ color }}>{label}</span>
         )}
-        {/* Download progress bar inline */}
-        {!collapsed && status === 'downloading' && (
+        {/* Inline download progress bar */}
+        {!collapsed && isDownloading && (
           <div className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: theme.surface2 }}>
             <motion.div className="h-full" style={{ background: theme.accent }}
               animate={{ width: `${downloadPercent}%` }}
@@ -502,8 +382,9 @@ export default function Sidebar() {
   const { quizzes, getQuizzesByFolder } = useQuizStore();
   const { streak, getDueQuestions } = useStatsStore();
   const [collapsed, toggleCollapsed] = useCollapsed();
-  const { status: updateStatus, localVersion, manifest, downloadPercent, error: updateError,
-    checkForUpdate, downloadUpdate, applyUpdate, dismiss: dismissUpdate } = useUpdateStore();
+  const { status: updateStatus, localVersion, manifest, downloadPercent,
+    checkForUpdate, downloadUpdate, applyUpdate,
+    showUpdateModal, setShowUpdateModal } = useUpdateStore();
 
   const [showAISettings, setShowAISettings] = useState(false);
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
@@ -872,6 +753,9 @@ export default function Sidebar() {
 
       <AISettings open={showAISettings} onClose={() => setShowAISettings(false)} />
 
+      {/* ── Update modal (premium, portal-based) ── */}
+      <UpdateModal />
+
       {/* ── Centered folder creation modal ── */}
       <Portal>
         <AnimatePresence>
@@ -899,33 +783,13 @@ export default function Sidebar() {
           </Tip>
         )}
 
-        {/* Update panel — shown above button when action needed */}
-        <AnimatePresence>
-          {!collapsed && updateStatus !== 'idle' && updateStatus !== 'checking' && updateStatus !== 'up-to-date' && (
-            <UpdatePanel
-              status={updateStatus}
-              manifest={manifest}
-              downloadPercent={downloadPercent}
-              error={updateError}
-              onCheck={checkForUpdate}
-              onDownload={downloadUpdate}
-              onApply={applyUpdate}
-              onDismiss={dismissUpdate}
-              theme={theme}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Update button */}
+        {/* Update button — opens premium UpdateModal */}
         <UpdateButton
           collapsed={collapsed}
           status={updateStatus}
           localVersion={localVersion}
-          manifest={manifest}
           downloadPercent={downloadPercent}
-          onCheck={checkForUpdate}
-          onDownload={downloadUpdate}
-          onApply={applyUpdate}
+          onOpen={() => setShowUpdateModal(true)}
           theme={theme}
         />
 
