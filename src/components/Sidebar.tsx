@@ -16,6 +16,7 @@ import { useStatsStore } from '../store/statsStore';
 import { useUpdateStore } from '../store/updateStore';
 import ConfirmDialog from './ConfirmDialog';
 import AISettings from './AISettings';
+import Portal from './Portal';
 import type { QuizColor } from '../types';
 
 const FOLDER_COLORS: { id: QuizColor; bg: string }[] = [
@@ -872,14 +873,16 @@ export default function Sidebar() {
       <AISettings open={showAISettings} onClose={() => setShowAISettings(false)} />
 
       {/* ── Centered folder creation modal ── */}
-      <AnimatePresence>
-        {showNewFolder && (
-          <NewFolderModal
-            onClose={() => setShowNewFolder(false)}
-            onAdd={handleCreateFolder}
-          />
-        )}
-      </AnimatePresence>
+      <Portal>
+        <AnimatePresence>
+          {showNewFolder && (
+            <NewFolderModal
+              onClose={() => setShowNewFolder(false)}
+              onAdd={handleCreateFolder}
+            />
+          )}
+        </AnimatePresence>
+      </Portal>
 
       {/* ── Bottom: version + collapse ── */}
       <div className="p-2 flex-shrink-0 space-y-1" style={{ borderTop: `1px solid ${theme.border}` }}>
