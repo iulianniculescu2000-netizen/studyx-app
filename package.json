@@ -2,7 +2,7 @@
   "name": "studyx",
   "productName": "StudyX",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Aplicatie de grile pentru studenti la medicina",
   "author": "StudyX",
   "main": "electron/main.cjs",
@@ -43,7 +43,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
