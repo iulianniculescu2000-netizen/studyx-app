@@ -149,7 +149,8 @@ function FlipCard({
                 style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
                 <p className="text-xs leading-relaxed" style={{ color: theme.text3 }}>
                   💡 {card.question.explanation}
-                </div>
+                </p>
+              </div>
             )}
             {hasKey() && (
               <div className="mt-3 w-full">
