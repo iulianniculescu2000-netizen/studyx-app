@@ -49,6 +49,7 @@ export default function QuizPlay() {
   }, [quiz, wrongQuestionsOnly]);
 
   const [currentIdx, setCurrentIdx] = useState(0);
+  const [questionQueue, setQuestionQueue] = useState<Question[]>(orderedQuestions);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [selectedNow, setSelectedNow] = useState<string[]>([]); // for current question
   const [revealed, setRevealed] = useState(false);
@@ -63,6 +64,14 @@ export default function QuizPlay() {
   const aiAbortRef = useRef<AbortController | null>(null);
   const [mnemonicText, setMnemonicText] = useState<string | null>(null);
   const [mnemonicLoading, setMnemonicLoading] = useState(false);
+
+  useEffect(() => {
+    setQuestionQueue(orderedQuestions);
+    setCurrentIdx(0);
+    setAnswers({});
+    setSelectedNow([]);
+    setRevealed(false);
+  }, [orderedQuestions]);
 
   useEffect(() => {
     const timer = setInterval(() => setTimeElapsed((t) => t + 1), 1000);
@@ -80,20 +89,21 @@ export default function QuizPlay() {
     return () => clearInterval(timer);
   }, [currentIdx, timedMode, revealed]);
 
-  const question = orderedQuestions[currentIdx];
-  const isLast = currentIdx === orderedQuestions.length - 1;
-  const progress = ((currentIdx + (revealed ? 1 : 0)) / orderedQuestions.length) * 100;
+  const question = questionQueue[currentIdx];
+  const isLast = currentIdx === questionQueue.length - 1;
+  const answeredCount = Object.keys(answers).length;
+  const progress = questionQueue.length > 0 ? (answeredCount / questionQueue.length) * 100 : 0;
   const isMultiple = question?.multipleCorrect ?? false;
 
   const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   const finishQuiz = useCallback((finalAnswers: Record<string, string[]>) => {
-    const score = orderedQuestions.filter((q) => {
+    const score = questionQueue.filter((q) => {
       const userAnswers = finalAnswers[q.id] ?? [];
       const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
       return userAnswers.length === correctIds.length && correctIds.every((id) => userAnswers.includes(id));
     }).length;
-    orderedQuestions.forEach((q) => {
+    questionQueue.forEach((q) => {
       const userAnswers = finalAnswers[q.id] ?? [];
       const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
       const isCorrect = userAnswers.length === correctIds.length && correctIds.every((id) => userAnswers.includes(id));
@@ -108,7 +118,7 @@ export default function QuizPlay() {
     let penalizedScore: number | undefined;
     if (quiz!.penaltyMode) {
       let netPoints = 0;
-      orderedQuestions.forEach((q) => {
+      questionQueue.forEach((q) => {
         const userAnswers = finalAnswers[q.id] ?? [];
         if (userAnswers.length === 0) return; // unanswered: no points, no penalty
         const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
@@ -132,13 +142,30 @@ export default function QuizPlay() {
       startedAt,
       finishedAt: Date.now(),
       score,
-      total: orderedQuestions.length,
+      total: questionQueue.length,
       mode: examMode ? 'exam' : timedMode ? 'test' : 'study',
       ...(penalizedScore !== undefined ? { penalizedScore } : {}),
     };
     addSession(session);
-    navigate(`/results/${quiz!.id}`, { state: { session, orderedQuestions } });
-  }, [orderedQuestions, quiz, startedAt, addSession, navigate, recordAnswer, recordStudySession, examMode]);
+    navigate(`/results/${quiz!.id}`, { state: { session, orderedQuestions: questionQueue } });
+  }, [questionQueue, quiz, startedAt, addSession, navigate, recordAnswer, recordStudySession, examMode, timedMode]);
+
+  const handleSkipQuestion = useCallback(() => {
+    // Skip is only meaningful in study mode before revealing the answer.
+    if (examMode || timedMode || revealed || questionQueue.length <= 1 || isLast) return;
+    setAiText(null);
+    setAiLoading(false);
+    setMnemonicText(null);
+    setMnemonicLoading(false);
+    setQuestionQueue((prev) => {
+      const next = [...prev];
+      const [skipped] = next.splice(currentIdx, 1);
+      next.push(skipped);
+      return next;
+    });
+    setSelectedNow([]);
+    setRevealed(false);
+  }, [examMode, timedMode, revealed, questionQueue.length, isLast, currentIdx]);
 
   const handleSelect = useCallback((optId: string) => {
     if (revealed) return;
@@ -334,6 +361,18 @@ export default function QuizPlay() {
                 <Zap size={13} fill={autoAdvance ? theme.accent : 'none'} />
               </button>
             )}
+            {!examMode && !timedMode && !revealed && (
+              <button
+                onClick={handleSkipQuestion}
+                disabled={isLast || questionQueue.length <= 1}
+                title="Sari peste această întrebare și revino la final"
+                className="flex items-center gap-1 text-xs transition-all hover:opacity-80 disabled:opacity-40"
+                style={{ color: theme.warning }}
+              >
+                <ChevronRight size={13} />
+                Skip
+              </button>
+            )}
             <button onClick={() => setShowKeys(!showKeys)}
               className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
               style={{ color: theme.text3 }}>
@@ -343,7 +382,7 @@ export default function QuizPlay() {
               <Clock size={13} />{formatTime(timeElapsed)}
             </div>
             <div className="flex items-center gap-1.5 text-sm" style={{ color: theme.text3 }}>
-              <BookOpen size={13} />{currentIdx + 1}/{orderedQuestions.length}
+              <BookOpen size={13} />{currentIdx + 1}/{questionQueue.length}
             </div>
           </div>
         </div>

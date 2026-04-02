@@ -403,28 +403,30 @@ export default function Flashcard() {
                 style={{
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
-                  transform: 'rotateY(180deg)',
+                  transform: 'rotateY(180deg) translateZ(1px)',
                   background: `linear-gradient(135deg, ${theme.surface} 0%, ${theme.surface2} 100%)`,
                   border: `1px solid ${theme.border}`,
                   boxShadow: `0 12px 40px rgba(0,0,0,0.12)`,
                 }}
               >
-                <div className="text-xs font-semibold uppercase tracking-widest mb-5"
-                  style={{ color: theme.text3 }}>
-                  Răspuns · apasă pentru a întoarce
+                <div style={{ width: '100%', transform: 'translateZ(0)' }}>
+                  <div className="text-xs font-semibold uppercase tracking-widest mb-5"
+                    style={{ color: theme.text3 }}>
+                    Răspuns · apasă pentru a întoarce
+                  </div>
+                  <div className="space-y-2.5 w-full">
+                    {correctAnswers.map((ans, i) => (
+                      <div key={i} className="flex items-center gap-2.5 px-4 py-3 rounded-xl"
+                        style={{ background: `${theme.success}14`, border: `1px solid ${theme.success}30` }}>
+                        <Check size={15} style={{ color: theme.success, flexShrink: 0 }} />
+                        <p className="text-sm font-semibold text-left" style={{ color: theme.text }}>{ans}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {card.explanation && (
+                    <p className="text-xs mt-5 leading-relaxed px-2" style={{ color: theme.text3 }}>{card.explanation}</p>
+                  )}
                 </div>
-                <div className="space-y-2.5 w-full">
-                  {correctAnswers.map((ans, i) => (
-                    <div key={i} className="flex items-center gap-2.5 px-4 py-3 rounded-xl"
-                      style={{ background: `${theme.success}14`, border: `1px solid ${theme.success}30` }}>
-                      <Check size={15} style={{ color: theme.success, flexShrink: 0 }} />
-                      <p className="text-sm font-semibold text-left" style={{ color: theme.text }}>{ans}</p>
-                    </div>
-                  ))}
-                </div>
-                {card.explanation && (
-                  <p className="text-xs mt-5 leading-relaxed px-2" style={{ color: theme.text3 }}>{card.explanation}</p>
-                )}
               </div>
             </motion.div>
           </motion.div>

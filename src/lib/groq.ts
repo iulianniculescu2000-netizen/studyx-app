@@ -226,12 +226,29 @@ export async function groqStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let full = '';
+  let carry = '';
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    for (const line of chunk.split('\n')) {
+    if (done) {
+      // Flush any remaining bytes and process trailing buffered line once.
+      const tail = carry + decoder.decode();
+      if (tail.trim()) {
+        const trimmed = tail.replace(/^data: /, '').trim();
+        if (trimmed && trimmed !== '[DONE]') {
+          try {
+            const json = JSON.parse(trimmed);
+            const delta = json.choices?.[0]?.delta?.content ?? '';
+            if (delta) { full += delta; onChunk(delta); }
+          } catch {}
+        }
+      }
+      break;
+    }
+    const chunk = carry + decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n');
+    carry = lines.pop() ?? '';
+    for (const line of lines) {
       const trimmed = line.replace(/^data: /, '').trim();
       if (!trimmed || trimmed === '[DONE]') continue;
       try {

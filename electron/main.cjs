@@ -255,8 +255,20 @@ function scheduleDailyReminder() {
       mainWindow.webContents.executeJavaScript(`
         (() => {
           try {
-            const stats = JSON.parse(localStorage.getItem('studyx-stats') || '{}');
-            return stats?.state?.streak?.lastStudyDate ?? '';
+            // Newer app versions store stats per-profile under studyx-p-<id>-stats.
+            // Fallback to legacy global key for backward compatibility.
+            const activeRaw = localStorage.getItem('studyx-user');
+            const activeState = activeRaw ? JSON.parse(activeRaw)?.state ?? JSON.parse(activeRaw) : null;
+            const profileId = activeState?.activeProfileId;
+            if (profileId) {
+              const perProfileRaw = localStorage.getItem(\`studyx-p-\${profileId}-stats\`);
+              if (perProfileRaw) {
+                const perProfile = JSON.parse(perProfileRaw);
+                return perProfile?.streak?.lastStudyDate ?? perProfile?.state?.streak?.lastStudyDate ?? '';
+              }
+            }
+            const legacy = JSON.parse(localStorage.getItem('studyx-stats') || '{}');
+            return legacy?.state?.streak?.lastStudyDate ?? legacy?.streak?.lastStudyDate ?? '';
           } catch { return ''; }
         })()
       `).then(lastStudy => {

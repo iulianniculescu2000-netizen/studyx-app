@@ -125,53 +125,54 @@ function FlipCard({
           style={{
             backfaceVisibility: 'hidden',
             WebkitBackfaceVisibility: 'hidden',
-            transform: 'rotateY(180deg)',
+            transform: 'rotateY(180deg) translateZ(1px)',
             background: theme.surface,
             border: `1px solid ${theme.border}`,
           } as any}
         >
-          <div className="text-xs font-semibold uppercase tracking-widest mb-5 opacity-50 text-center"
-            style={{ color: theme.text3 }}>
-            Răspuns corect
-          </div>
-          <div className="space-y-2 w-full">
-            {correctAnswers.map((ans, i) => (
-              <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-2xl"
-                style={{ background: `${theme.success}14`, border: `1px solid ${theme.success}28` }}>
-                <Check size={15} className="flex-shrink-0 mt-0.5" style={{ color: theme.success }} />
-                <p className="text-sm font-medium text-left leading-relaxed" style={{ color: theme.text }}>{ans}</p>
-              </div>
-            ))}
-          </div>
-          {card.question.explanation && (
-            <div className="mt-4 px-4 py-3 rounded-2xl w-full"
-              style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
-              <p className="text-xs leading-relaxed" style={{ color: theme.text3 }}>
-                💡 {card.question.explanation}
-              </p>
+          <div style={{ width: '100%', transform: 'translateZ(0)' }}>
+            <div className="text-xs font-semibold uppercase tracking-widest mb-5 opacity-50 text-center"
+              style={{ color: theme.text3 }}>
+              Răspuns corect
             </div>
-          )}
-          {hasKey() && (
-            <div className="mt-3 w-full">
-              {!aiExpl && (
-                <button onClick={explainWithAI} disabled={aiLoading}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium transition-all"
-                  style={{
-                    background: `${theme.accent}12`,
-                    border: `1px solid ${theme.accent}25`,
-                    color: theme.accent,
-                  }}>
-                  {aiLoading ? <><Loader2 size={11} className="animate-spin" />Generez explicație...</> : <><Bot size={11} />Explică mai mult cu AI</>}
-                </button>
-              )}
-              {aiExpl && (
-                <div className="px-3 py-2.5 rounded-xl text-xs leading-relaxed"
-                  style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20`, color: theme.text2 }}>
-                  🤖 {aiExpl}
+            <div className="space-y-2 w-full">
+              {correctAnswers.map((ans, i) => (
+                <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-2xl"
+                  style={{ background: `${theme.success}14`, border: `1px solid ${theme.success}28` }}>
+                  <Check size={15} className="flex-shrink-0 mt-0.5" style={{ color: theme.success }} />
+                  <p className="text-sm font-medium text-left leading-relaxed" style={{ color: theme.text }}>{ans}</p>
                 </div>
-              )}
+              ))}
             </div>
-          )}
+            {card.question.explanation && (
+              <div className="mt-4 px-4 py-3 rounded-2xl w-full"
+                style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+                <p className="text-xs leading-relaxed" style={{ color: theme.text3 }}>
+                  💡 {card.question.explanation}
+                </div>
+            )}
+            {hasKey() && (
+              <div className="mt-3 w-full">
+                {!aiExpl && (
+                  <button onClick={explainWithAI} disabled={aiLoading}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium transition-all"
+                    style={{
+                      background: `${theme.accent}12`,
+                      border: `1px solid ${theme.accent}25`,
+                      color: theme.accent,
+                    }}>
+                    {aiLoading ? <><Loader2 size={11} className="animate-spin" />Generez explicație...</> : <><Bot size={11} />Explică mai mult cu AI</>}
+                  </button>
+                )}
+                {aiExpl && (
+                  <div className="px-3 py-2.5 rounded-xl text-xs leading-relaxed"
+                    style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20`, color: theme.text2 }}>
+                    🤖 {aiExpl}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </motion.div>
     </div>

@@ -7,8 +7,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   close: () => ipcRenderer.send('win:close'),
   isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
   onMaximized: (cb) => {
-    ipcRenderer.on('win:maximized', (_, v) => cb(v));
-    return () => ipcRenderer.removeAllListeners('win:maximized');
+    const handler = (_, v) => cb(v);
+    ipcRenderer.on('win:maximized', handler);
+    return () => ipcRenderer.removeListener('win:maximized', handler);
   },
   // File dialogs
   openJsonFiles: () => ipcRenderer.invoke('dialog:openJson'),

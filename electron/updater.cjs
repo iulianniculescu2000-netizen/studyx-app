@@ -308,6 +308,7 @@ function registerUpdaterIPC(mainWindow) {
       changes: manifest.changes ?? [],
       localVersion,
       files: manifest.files ?? [],
+      contentUpdates: manifest.contentUpdates ?? [],
     };
   });
 

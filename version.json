@@ -1,0 +1,23 @@
+{
+  "version": "1.1.0",
+  "releaseDate": "2026-04-02",
+  "changes": [
+    "Fix: reminder zilnic compatibil cu profiluri multiple (nu mai notifică greșit)",
+    "Fix: streaming AI stabilizat (nu mai pierde text când chunk-urile sunt fragmentate)",
+    "Fix: updater-ul include acum contentUpdates în răspunsul către UI",
+    "Fix: preload unsubscribe pe eveniment maximizare fără a afecta alți subscriberi",
+    "NOU: buton Skip în modul Study pentru grile, întrebările revin la final",
+    "Fix: flip card în Flashcard Session și Flashcard clasic (fără text inversat pe spate)",
+    "Polish premium teme: Aurora, Sur Glass și Forest (contrast + profunzime vizuală)"
+  ],
+  "files": [
+    {
+      "path": "dist/assets/index.js",
+      "url": "https://raw.githubusercontent.com/iulianniculescu2000-netizen/studyx-updates/main/dist/assets/index.js"
+    },
+    {
+      "path": "dist/assets/index.css",
+      "url": "https://raw.githubusercontent.com/iulianniculescu2000-netizen/studyx-updates/main/dist/assets/index.css"
+    }
+  ]
+}
