@@ -245,7 +245,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8">
+    <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
@@ -301,7 +301,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {checklistItems.map((item) => (
                     <Link key={item.id} to={item.link} style={{ textDecoration: 'none' }}>
                       <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
@@ -330,7 +330,7 @@ export default function Dashboard() {
         {dueCount > 0 && (
           <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1 }}
-            className="mb-6 p-4 rounded-2xl flex items-center justify-between"
+            className="mb-6 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             style={{
               background: `linear-gradient(135deg, ${theme.warning}18, ${theme.accent}10)`,
               border: `1px solid ${theme.warning}35`,
@@ -361,7 +361,7 @@ export default function Dashboard() {
 
         {/* Stats grid */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }} className="grid grid-cols-4 gap-3 mb-8">
+          transition={{ delay: 0.15 }} className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
           {stats.map((s, i) => (
             <StatCard key={s.label} label={s.label} numeric={s.numeric} suffix={s.suffix}
               display={s.display} icon={s.icon} color={s.color} delay={0.2 + i * 0.06} />
@@ -396,7 +396,7 @@ export default function Dashboard() {
             </Link>
           </div>
           {recentQuizzes.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {recentQuizzes.map((quiz, i) => (
                 <QuizCard key={quiz.id} quiz={quiz} index={i} />
               ))}
