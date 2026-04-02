@@ -30,22 +30,25 @@ if (!fs.existsSync(path.join(ROOT, 'dist', 'assets', 'index.js'))) {
   process.exit(1);
 }
 
-// ── Fișierele care se actualizează la fiecare build ──────────────────────────
-// De obicei DOAR index.js și index.css se schimbă (codul aplicației).
-// Librăriile mari (jspdf, html2canvas, recharts) se schimbă rar.
-const ALWAYS_UPDATE = [
-  'dist/assets/index.js',
-  'dist/assets/index.css',
-];
+// ── Full dist update list (safe for jump upgrades) ───────────────────────────
+// We publish the full dist payload so users can upgrade directly from older
+// versions without missing vendor/static files.
+function collectDistFiles(dir, relBase = '') {
+  const abs = path.join(ROOT, dir, relBase);
+  const entries = fs.readdirSync(abs, { withFileTypes: true });
+  const out = [];
+  for (const entry of entries) {
+    const rel = path.join(relBase, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...collectDistFiles(dir, rel));
+    } else {
+      out.push(path.join(dir, rel).replace(/\\/g, '/'));
+    }
+  }
+  return out;
+}
 
-// Fișiere vendor — le includem doar dacă s-au schimbat față de ultima dată
-const VENDOR_FILES = [
-  'dist/assets/typeof.js',
-  'dist/assets/purify.es.min.js',
-  'dist/assets/index.es.js',
-  'dist/assets/html2canvas.js',
-  'dist/assets/jspdf.es.min.js',
-];
+const FULL_DIST_FILES = collectDistFiles('dist');
 
 function fileSize(relPath) {
   try {
@@ -57,7 +60,7 @@ function fileSize(relPath) {
 }
 
 // ── Construiește lista de fișiere pentru update ──────────────────────────────
-const updateFiles = ALWAYS_UPDATE
+const updateFiles = FULL_DIST_FILES
   .filter(f => fs.existsSync(path.join(ROOT, f)))
   .map(f => ({
     path: f,
@@ -86,13 +89,6 @@ console.log('\n' + '─'.repeat(62));
 console.log('\n② Fișiere de copiat în  studyx-updates/files/\n');
 updateFiles.forEach(f => {
   console.log(`   ${f.path.padEnd(36)} ${fileSize(f.path)}`);
-});
-
-console.log('\n   Opțional (doar dacă s-au schimbat librăriile):\n');
-VENDOR_FILES.forEach(f => {
-  if (fs.existsSync(path.join(ROOT, f))) {
-    console.log(`   ${f.padEnd(36)} ${fileSize(f)}`);
-  }
 });
 
 console.log('\n' + '─'.repeat(62));
