@@ -422,6 +422,11 @@ export default function UpdateModal() {
                           <span style={{ fontSize: 15, fontWeight: 800, color: theme.accent }}>
                             v{manifest.version}
                           </span>
+                          {manifest.isSequential && manifest.latestVersion && manifest.latestVersion !== manifest.version && (
+                            <span style={{ fontSize: 11, color: theme.text3, marginLeft: 8 }}>
+                              (pas obligatoriu spre v{manifest.latestVersion})
+                            </span>
+                          )}
                           <span style={{ fontSize: 12, color: theme.text3, marginLeft: 10 }}>
                             {manifest.releaseDate}
                           </span>
@@ -452,6 +457,23 @@ export default function UpdateModal() {
                               </li>
                             ))}
                           </ul>
+                        </div>
+                      )}
+
+                      {/* Sequential upgrade hint */}
+                      {manifest.isSequential && (manifest.stepsRemaining ?? 0) > 1 && (
+                        <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}` }}>
+                          <div style={{
+                            fontSize: 12,
+                            color: theme.warning,
+                            background: `${theme.warning}12`,
+                            border: `1px solid ${theme.warning}30`,
+                            borderRadius: 10,
+                            padding: '8px 10px',
+                          }}>
+                            Upgrade secvențial activ: după instalarea acestei versiuni, verifică din nou pentru următorul pas
+                            ({manifest.stepsRemaining} pași rămași).
+                          </div>
                         </div>
                       )}
 

@@ -37,9 +37,12 @@ export interface ContentUpdate {
 // ── System update manifest ─────────────────────────────────────────────────────
 export interface UpdateManifest {
   version: string;
+  latestVersion?: string;
   releaseDate: string;
   changes: string[];
   files: { path: string; url: string }[];
+  isSequential?: boolean;
+  stepsRemaining?: number;
   /** Optional quiz-pack content updates bundled with this manifest */
   contentUpdates?: ContentUpdate[];
 }
@@ -119,9 +122,12 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
           status: 'available',
           manifest: {
             version: result.version,
+            latestVersion: result.latestVersion ?? result.version,
             releaseDate: result.releaseDate,
             changes: result.changes,
             files: result.files,
+            isSequential: result.isSequential ?? false,
+            stepsRemaining: result.stepsRemaining ?? 1,
             contentUpdates: result.contentUpdates ?? [],
           },
         });

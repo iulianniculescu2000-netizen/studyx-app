@@ -23,6 +23,7 @@ const path = require('path');
 
 // ── Configuration ──────────────────────────────────────────────────────────────
 const MANIFEST_URL = 'https://raw.githubusercontent.com/iulianniculescu2000-netizen/studyx-updates/main/version.json';
+const HISTORY_URL = 'https://raw.githubusercontent.com/iulianniculescu2000-netizen/studyx-updates/main/version-history.json';
 const USER_AGENT = 'StudyX-Updater/2.0 (Electron; Windows)';
 const CONNECT_TIMEOUT_MS = 20000;
 const DOWNLOAD_TIMEOUT_MS = 90000;
@@ -38,6 +39,17 @@ function isNewerVersion(local, remote) {
   if (ra !== la) return ra > la;
   if (rb !== lb) return rb > lb;
   return rc > lc;
+}
+
+/** Compare semver strings. Returns -1, 0, 1. */
+function compareVersion(a, b) {
+  const parse = (v) => v.replace(/^v/, '').split('.').map(Number);
+  const [a1 = 0, a2 = 0, a3 = 0] = parse(a || '0.0.0');
+  const [b1 = 0, b2 = 0, b3 = 0] = parse(b || '0.0.0');
+  if (a1 !== b1) return a1 < b1 ? -1 : 1;
+  if (a2 !== b2) return a2 < b2 ? -1 : 1;
+  if (a3 !== b3) return a3 < b3 ? -1 : 1;
+  return 0;
 }
 
 /** Get the right http/https module for a URL */
@@ -93,6 +105,11 @@ function fetchText(url, attempt = 0) {
       reject(new Error(`Eroare rețea manifest: ${err.message}`));
     });
   });
+}
+
+async function fetchJson(url) {
+  const raw = await fetchText(url);
+  return JSON.parse(raw);
 }
 
 /**
@@ -282,34 +299,71 @@ function registerUpdaterIPC(mainWindow) {
   /** Check for updates */
   ipcMain.handle('updater:check', async () => {
     const localVersion = getLocalVersion();
-    let raw;
     try {
-      raw = await fetchText(MANIFEST_URL);
+      // New protocol: strict sequential upgrades via version-history.json
+      // Users cannot jump directly over intermediate versions.
+      const history = await fetchJson(HISTORY_URL);
+      const entries = Array.isArray(history?.versions) ? history.versions : [];
+      const normalized = entries
+        .filter((e) => e && typeof e.version === 'string' && typeof e.manifestUrl === 'string')
+        .sort((x, y) => compareVersion(x.version, y.version));
+
+      if (normalized.length > 0) {
+        const latest = normalized[normalized.length - 1];
+        const next = normalized.find((e) => compareVersion(localVersion, e.version) < 0);
+        if (!next) {
+          return {
+            hasUpdate: false,
+            version: localVersion,
+            latestVersion: latest.version,
+            releaseDate: '',
+            changes: [],
+            localVersion,
+            files: [],
+            contentUpdates: [],
+            isSequential: true,
+            stepsRemaining: 0,
+          };
+        }
+        let nextManifest;
+        try {
+          nextManifest = await fetchJson(next.manifestUrl);
+        } catch (e) {
+          throw new Error(`Manifestul pentru versiunea ${next.version} nu poate fi încărcat: ${e.message}`);
+        }
+        return {
+          hasUpdate: true,
+          version: nextManifest.version ?? next.version,
+          latestVersion: latest.version,
+          releaseDate: nextManifest.releaseDate ?? '',
+          changes: nextManifest.changes ?? [],
+          localVersion,
+          files: nextManifest.files ?? [],
+          contentUpdates: nextManifest.contentUpdates ?? [],
+          isSequential: true,
+          stepsRemaining: normalized.filter((e) => compareVersion(localVersion, e.version) < 0).length,
+        };
+      }
+
+      // Fallback protocol: single latest manifest (legacy support)
+      const manifest = await fetchJson(MANIFEST_URL);
+      if (!manifest.version) throw new Error('Manifest invalid — câmpul "version" lipsește');
+      const hasUpdate = isNewerVersion(localVersion, manifest.version);
+      return {
+        hasUpdate,
+        version: manifest.version,
+        latestVersion: manifest.version,
+        releaseDate: manifest.releaseDate ?? '',
+        changes: manifest.changes ?? [],
+        localVersion,
+        files: manifest.files ?? [],
+        contentUpdates: manifest.contentUpdates ?? [],
+        isSequential: false,
+        stepsRemaining: hasUpdate ? 1 : 0,
+      };
     } catch (err) {
       throw new Error(`Nu s-a putut contacta serverul de actualizări: ${err.message}`);
     }
-
-    let manifest;
-    try {
-      manifest = JSON.parse(raw);
-    } catch {
-      throw new Error('Răspuns invalid de la serverul de actualizări (JSON malformat)');
-    }
-
-    if (!manifest.version) {
-      throw new Error('Manifest invalid — câmpul "version" lipsește');
-    }
-
-    const hasUpdate = isNewerVersion(localVersion, manifest.version);
-    return {
-      hasUpdate,
-      version: manifest.version,
-      releaseDate: manifest.releaseDate ?? '',
-      changes: manifest.changes ?? [],
-      localVersion,
-      files: manifest.files ?? [],
-      contentUpdates: manifest.contentUpdates ?? [],
-    };
   });
 
   /**
