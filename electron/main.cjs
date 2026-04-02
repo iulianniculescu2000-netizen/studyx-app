@@ -38,6 +38,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
+      defaultEncoding: 'UTF-8',
     },
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     show: false,
