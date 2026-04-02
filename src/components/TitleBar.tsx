@@ -27,6 +27,7 @@ declare global {
       openJsonFiles: () => Promise<{ name: string; content: string }[] | null>;
       openImageFile: () => Promise<string | null>;
       openPdfFile: () => Promise<string | null>;
+      openTextFile: () => Promise<string | null>;
       saveFile: (opts: { defaultPath: string; content: string }) => Promise<boolean>;
       saveCsvFile: (opts: { defaultPath: string; content: string }) => Promise<boolean>;
       // Settings

@@ -1,11 +1,11 @@
 {
-  "version": "1.1.1",
+  "version": "1.1.2",
   "releaseDate": "2026-04-02",
   "changes": [
-    "Hotfix: pachet de update complet (full dist) pentru compatibilitate 1.0.0 -> 1.1.x",
-    "Fix: repară cazurile cu text corupt/diacritice afișate greșit după update parțial",
-    "Fix: restore pentru funcțiile afectate când lipseau asset-uri vendor în overlay",
-    "NOU: updater feed robust pentru utilizatorii care sar direct peste versiuni intermediare"
+    "NOU: bibliotecă AI persistentă (surse PDF/TXT) în Setări AI",
+    "Fix: contextul din biblioteca AI este injectat automat în prompturi (chat/generare/explicații)",
+    "Fix: import TXT/MD nativ în Electron pentru surse AI",
+    "Stabilitate: păstrare robustă a surselor AI în localStorage (limită + validare)"
   ],
   "files": [
     {

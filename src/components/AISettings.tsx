@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Key, Cpu, Eye, EyeOff, ExternalLink, Check } from 'lucide-react';
+import { X, Key, Cpu, Eye, EyeOff, ExternalLink, Check, Library, Trash2, Upload, FileText } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIModel } from '../store/aiStore';
 import Portal from './Portal';
@@ -18,10 +18,15 @@ interface AISettingsProps {
 
 export default function AISettings({ open, onClose }: AISettingsProps) {
   const theme = useTheme();
-  const { apiKey, model, setApiKey, setModel } = useAIStore();
+  const {
+    apiKey, model, setApiKey, setModel,
+    knowledgeSources, addKnowledgeSource, removeKnowledgeSource, clearKnowledgeSources,
+  } = useAIStore();
   const [draft, setDraft] = useState(apiKey);
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [libraryError, setLibraryError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Sync draft with store when modal opens (or when key changes externally)
   useEffect(() => {
@@ -40,6 +45,51 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
     setApiKey(trimmed);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const addFromRaw = (name: string, text: string, type: 'pdf' | 'txt' | 'manual') => {
+    setLibraryError('');
+    if (!text || text.trim().length < 60) {
+      setLibraryError('Fișierul este prea scurt sau nu conține text util.');
+      return;
+    }
+    addKnowledgeSource(name, text, type);
+  };
+
+  const importPdf = async () => {
+    setLibraryError('');
+    try {
+      if (window.electronAPI?.openPdfFile) {
+        const text = await window.electronAPI.openPdfFile();
+        if (!text) {
+          setLibraryError('Nu s-a putut extrage text din PDF.');
+          return;
+        }
+        addFromRaw(`PDF ${new Date().toLocaleString('ro-RO')}`, text, 'pdf');
+        return;
+      }
+      fileRef.current?.click();
+    } catch {
+      setLibraryError('Eroare la importul PDF.');
+    }
+  };
+
+  const importTxt = async () => {
+    setLibraryError('');
+    try {
+      if (window.electronAPI?.openTextFile) {
+        const txt = await window.electronAPI.openTextFile();
+        if (!txt) {
+          setLibraryError('Nu s-a putut citi fișierul text.');
+          return;
+        }
+        addFromRaw(`TXT ${new Date().toLocaleString('ro-RO')}`, txt, 'txt');
+        return;
+      }
+      fileRef.current?.click();
+    } catch {
+      setLibraryError('Eroare la importul fișierului text.');
+    }
   };
 
   return (
@@ -64,6 +114,23 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
             className="fixed z-[201] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-2xl p-6 shadow-2xl"
             style={{ background: theme.modalBg, border: `1px solid ${theme.border}` }}
           >
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".txt,.md,.pdf"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.currentTarget.value = '';
+                if (!file) return;
+                try {
+                  const text = await file.text();
+                  addFromRaw(file.name, text, file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt');
+                } catch {
+                  setLibraryError('Nu s-a putut citi fișierul selectat.');
+                }
+              }}
+            />
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -157,6 +224,62 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               style={{ background: saved ? theme.success : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
               {saved ? <><Check size={15} />Salvat!</> : 'Salvează'}
             </motion.button>
+
+            {/* Knowledge library */}
+            <div className="mt-4 rounded-xl p-3" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2" style={{ color: theme.text }}>
+                  <Library size={14} />
+                  <span className="text-xs font-semibold">Bibliotecă AI ({knowledgeSources.length})</span>
+                </div>
+                {knowledgeSources.length > 0 && (
+                  <button
+                    onClick={clearKnowledgeSources}
+                    className="text-xs"
+                    style={{ color: theme.danger }}
+                  >
+                    Șterge tot
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2 mb-2">
+                <button
+                  onClick={importPdf}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg"
+                  style={{ background: `${theme.accent}14`, color: theme.accent, border: `1px solid ${theme.accent}30` }}
+                >
+                  <Upload size={11} />Import PDF
+                </button>
+                <button
+                  onClick={importTxt}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg"
+                  style={{ background: `${theme.accent2}14`, color: theme.accent2, border: `1px solid ${theme.accent2}30` }}
+                >
+                  <FileText size={11} />Import TXT/MD
+                </button>
+              </div>
+              {libraryError && (
+                <p className="text-xs mb-2" style={{ color: theme.danger }}>{libraryError}</p>
+              )}
+              <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+                {knowledgeSources.length === 0 ? (
+                  <p className="text-xs" style={{ color: theme.text3 }}>
+                    Adaugă PDF/TXT pentru context AI personalizat.
+                  </p>
+                ) : (
+                  knowledgeSources.slice().reverse().map((s) => (
+                    <div key={s.id} className="flex items-center gap-2 mb-1">
+                      <span className="text-[11px] truncate" style={{ color: theme.text2, flex: 1 }}>
+                        {s.name}
+                      </span>
+                      <button onClick={() => removeKnowledgeSource(s.id)} style={{ color: theme.text3 }}>
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </motion.div>
         </>
       )}

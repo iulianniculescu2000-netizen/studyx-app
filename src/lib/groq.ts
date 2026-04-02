@@ -175,14 +175,27 @@ export function recommendImage(questionText: string): string | null {
 
 // ── Core API ──────────────────────────────────────────────────────────────────
 export async function groqChat(messages: GroqMessage[], temperature = 0.7): Promise<string> {
-  const { apiKey, model } = useAIStore.getState();
+  const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
   const key = sanitizeKey(apiKey);
   if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
+  const kb = getKnowledgeContext(6000);
+  const finalMessages: GroqMessage[] = kb
+    ? [
+        {
+          role: 'system',
+          content:
+            'Context suplimentar din biblioteca locală a utilizatorului. ' +
+            'Folosește-l doar când este relevant medical și nu inventa informații absente.\n\n' +
+            kb,
+        },
+        ...messages,
+      ]
+    : messages;
 
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages, temperature, max_tokens: 4096 }),
+    body: JSON.stringify({ model, messages: finalMessages, temperature, max_tokens: 4096 }),
     signal: AbortSignal.timeout(30_000),
   });
 
@@ -200,9 +213,22 @@ export async function groqStream(
   temperature = 0.7,
   signal?: AbortSignal
 ): Promise<string> {
-  const { apiKey, model } = useAIStore.getState();
+  const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
   const key = sanitizeKey(apiKey);
   if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
+  const kb = getKnowledgeContext(4500);
+  const finalMessages: GroqMessage[] = kb
+    ? [
+        {
+          role: 'system',
+          content:
+            'Context suplimentar din biblioteca locală a utilizatorului. ' +
+            'Folosește-l strict ca referință, fără halucinații.\n\n' +
+            kb,
+        },
+        ...messages,
+      ]
+    : messages;
 
   // Combine caller's signal with a 60s timeout (streaming can be slower)
   const timeoutSignal = AbortSignal.timeout(60_000);
@@ -213,7 +239,7 @@ export async function groqStream(
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages, temperature, max_tokens: 4096, stream: true }),
+    body: JSON.stringify({ model, messages: finalMessages, temperature, max_tokens: 4096, stream: true }),
     signal: combinedSignal,
   });
 

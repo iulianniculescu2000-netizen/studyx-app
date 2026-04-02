@@ -140,6 +140,24 @@ function createWindow() {
     }
   });
 
+  // Text import IPC — plain text/markdown files for AI knowledge library
+  ipcMain.handle('dialog:openText', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'Text Files', extensions: ['txt', 'md', 'markdown'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const filePath = result.filePaths[0];
+    try {
+      return fs.readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
+  });
+
   // Image import IPC — returns base64 data URL
   ipcMain.handle('dialog:openImage', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {

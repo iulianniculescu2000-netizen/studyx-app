@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openJsonFiles: () => ipcRenderer.invoke('dialog:openJson'),
   openImageFile: () => ipcRenderer.invoke('dialog:openImage'),
   openPdfFile: () => ipcRenderer.invoke('dialog:openPdf'),
+  openTextFile: () => ipcRenderer.invoke('dialog:openText'),
   saveFile: (opts) => ipcRenderer.invoke('dialog:saveFile', opts),
   // Updater
   updaterCheck: () => ipcRenderer.invoke('updater:check'),
