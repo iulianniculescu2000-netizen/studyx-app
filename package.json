@@ -2,7 +2,7 @@
   "name": "studyx",
   "productName": "StudyX",
   "private": true,
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Aplicatie de grile pentru studenti la medicina",
   "author": "StudyX",
   "main": "electron/main.cjs",

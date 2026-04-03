@@ -47,7 +47,7 @@ export class QuestionGenerator {
           task: 'questions',
           messages: [
             { role: 'system', content: prompt },
-            { role: 'user', content: `Generate ${request.count ?? 1} questions in strict JSON based on the supplied context.` },
+            { role: 'user', content: `Genereaza ${request.count ?? 1} intrebari in JSON strict, exclusiv in limba romana, pe baza contextului furnizat.` },
           ],
         });
       },
@@ -59,8 +59,8 @@ export class QuestionGenerator {
         groqRequest({
           task: 'questions',
           messages: [
-            { role: 'system', content: 'Fix the JSON. Return only valid JSON without trailing commas.' },
-            { role: 'user', content: `Previous JSON was invalid: ${error}` },
+            { role: 'system', content: 'Repara JSON-ul. Returneaza doar JSON valid, fara trailing commas si fara text suplimentar. Pastreaza continutul in romana.' },
+            { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}` },
           ],
         }),
     });
@@ -119,21 +119,21 @@ export async function analyzeAnswer(
         task: 'explanation',
         messages: [
           { role: 'system', content: buildExplanationPrompt(payload.userAnswer, payload.correctAnswer, payload.question, context) },
-          { role: 'user', content: 'Analyze the answer and return strict JSON.' },
+          { role: 'user', content: 'Analizeaza raspunsul si returneaza JSON strict, integral in romana.' },
         ],
       }),
     validate: (raw) => {
       const result = validateJson<AIAnalysisResult>(raw);
       return result.ok && result.value?.explanation ? result.value : null;
     },
-    fix: async (_raw, error) =>
-      groqRequest({
-        task: 'explanation',
-        messages: [
-          { role: 'system', content: 'Fix invalid JSON and keep the same schema.' },
-          { role: 'user', content: `Invalid JSON: ${error}` },
-        ],
-      }),
+      fix: async (_raw, error) =>
+        groqRequest({
+          task: 'explanation',
+          messages: [
+            { role: 'system', content: 'Repara JSON-ul invalid si pastreaza exact aceeasi schema. Nu adauga text in afara JSON-ului. Pastreaza valorile in romana.' },
+            { role: 'user', content: `JSON invalid: ${error}` },
+          ],
+        }),
   });
 
   const nextProfile = updateUserProfileAfterAnswer(profileId, { ...payload, analysis });
@@ -159,7 +159,7 @@ export async function generateHint(question: Question, profileId: string) {
         task: 'hint',
         messages: [
           { role: 'system', content: buildHintPrompt(question, context) },
-          { role: 'user', content: 'Return hint JSON.' },
+          { role: 'user', content: 'Returneaza JSON-ul cu indicii, integral in romana.' },
         ],
       }),
     validate: (raw) => {
@@ -176,7 +176,7 @@ export async function generateMnemonicForConcept(concept: string, profileId: str
     task: 'mnemonic',
     messages: [
       { role: 'system', content: buildMnemonicPrompt(concept, context) },
-      { role: 'user', content: 'Return strict JSON.' },
+      { role: 'user', content: 'Returneaza JSON strict, integral in romana.' },
     ],
   });
   const parsed = validateJson<{ mnemonic: string }>(raw);
@@ -190,7 +190,7 @@ export async function explainWrongOptions(question: Question, profileId: string)
     task: 'explanation',
     messages: [
       { role: 'system', content: buildWrongOptionsPrompt(question, context) },
-      { role: 'user', content: 'Return strict JSON for wrong options only.' },
+      { role: 'user', content: 'Returneaza JSON strict doar pentru optiunile gresite, integral in romana.' },
     ],
   });
   const parsed = validateJson<ExplainWrongOptionsResult>(raw);

@@ -2,20 +2,20 @@ import type { Question } from '../types';
 import type { AIContextPayload, UserProfileData, WeakTopic } from './types';
 
 export const AI_PERSONALITY =
-  'You are a strict but helpful medical tutor. You prioritize understanding over memorization.';
+  'Esti un tutor medical exigent, dar util, pentru studenti la medicina din Romania. Prioritizezi intelegerea, nu memorarea mecanica. Raspunzi exclusiv in limba romana, cu terminologie medicala corecta si formulare clara.';
 
 export const GROUNDING_RULES =
-  'Use ONLY the provided context. If the answer is not in the context, say "I don\'t know". Do NOT invent medical information.';
+  'Foloseste DOAR contextul furnizat. Daca raspunsul nu exista in context, spune exact "Nu stiu pe baza contextului primit.". Nu inventa informatii medicale si nu completa din presupuneri.';
 
 function difficultyText(difficulty: 'easy' | 'medium' | 'hard') {
-  if (difficulty === 'easy') return 'basic recall and simple reasoning';
-  if (difficulty === 'hard') return 'residency-level traps and advanced reasoning';
-  return 'balanced medium difficulty';
+  if (difficulty === 'easy') return 'nivel usor, cu memorare de baza si rationament simplu';
+  if (difficulty === 'hard') return 'nivel avansat, cu capcane de tip rezidentiat si rationament clinic matur';
+  return 'nivel mediu echilibrat, intre memorare si rationament';
 }
 
 function weakTopicsText(weakTopics: WeakTopic[]) {
-  if (weakTopics.length === 0) return 'none';
-  return weakTopics.map((topic) => `${topic.topic} (${topic.accuracy}% accuracy)`).join(', ');
+  if (weakTopics.length === 0) return 'niciun topic slab evident';
+  return weakTopics.map((topic) => `${topic.topic} (${topic.accuracy}% acuratete)`).join(', ');
 }
 
 export function sanitizeUserInput(input: string) {
@@ -35,16 +35,17 @@ export function buildQuestionPrompt(
 ) {
   const safeContext = contextPayload?.summary ?? '';
   const profileLine = profile
-    ? `User level: ${profile.currentDifficulty}, global accuracy ${profile.globalAccuracy}%, streak ${profile.streak}.`
-    : 'User level unavailable.';
+    ? `Nivel utilizator: ${profile.currentDifficulty}, acuratete globala ${profile.globalAccuracy}%, streak ${profile.streak}.`
+    : 'Nivelul utilizatorului nu este disponibil.';
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
     profileLine,
-    `Weak topics: ${weakTopicsText(weakTopics)}.`,
-    `Target difficulty: ${difficultyText(difficulty)}.`,
-    safeContext ? `Context:\n${safeContext}` : 'Context unavailable.',
-    'Return strict JSON: {"questions":[{"text":"","options":[{"text":"","isCorrect":true}],"explanation":"","tags":[""],"difficulty":"easy|medium|hard","sources":[""]}]}',
+    `Topicuri slabe: ${weakTopicsText(weakTopics)}.`,
+    `Dificultate tinta: ${difficultyText(difficulty)}.`,
+    safeContext ? `Context:\n${safeContext}` : 'Context indisponibil.',
+    'Genereaza raspunsul doar in romana.',
+    'Returneaza JSON strict: {"questions":[{"text":"","options":[{"text":"","isCorrect":true}],"explanation":"","tags":[""],"difficulty":"easy|medium|hard","sources":[""]}]}',
   ].join('\n\n');
 }
 
@@ -57,12 +58,12 @@ export function buildExplanationPrompt(
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
-    'Explain why the answer is wrong, identify the error type, add one rule and one short mnemonic if useful.',
-    question ? `Question: ${sanitizeUserInput(question.text)}` : '',
-    `User answer: ${sanitizeUserInput(userAnswer)}`,
-    `Correct answer: ${sanitizeUserInput(correctAnswer)}`,
+    'Explica de ce raspunsul utilizatorului este gresit, identifica tipul erorii, adauga o regula scurta si un mnemonic doar daca ajuta real. Tot raspunsul trebuie sa fie in romana.',
+    question ? `Intrebare: ${sanitizeUserInput(question.text)}` : '',
+    `Raspuns utilizator: ${sanitizeUserInput(userAnswer)}`,
+    `Raspuns corect: ${sanitizeUserInput(correctAnswer)}`,
     contextPayload?.summary ? `Context:\n${contextPayload.summary}` : '',
-    'Return strict JSON: {"explanation":"","mistakeType":"","rule":"","confidence":0.0,"missingConcept":"","recommendedTopic":"","relatedConcepts":[""],"sources":[""]}',
+    'Returneaza JSON strict: {"explanation":"","mistakeType":"","rule":"","confidence":0.0,"missingConcept":"","recommendedTopic":"","relatedConcepts":[""],"sources":[""]}',
   ].filter(Boolean).join('\n\n');
 }
 
@@ -70,9 +71,9 @@ export function buildMnemonicPrompt(concept: string, contextPayload?: AIContextP
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
-    `Create a short mnemonic for: ${sanitizeUserInput(concept)}`,
+    `Creeaza un mnemonic scurt si memorabil pentru: ${sanitizeUserInput(concept)}`,
     contextPayload?.summary ? `Context:\n${contextPayload.summary}` : '',
-    'Return strict JSON: {"mnemonic":""}',
+    'Returneaza JSON strict: {"mnemonic":""}',
   ].filter(Boolean).join('\n\n');
 }
 
@@ -80,9 +81,9 @@ export function buildHintPrompt(question: Question, contextPayload?: AIContextPa
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
-    `Question: ${sanitizeUserInput(question.text)}`,
+    `Intrebare: ${sanitizeUserInput(question.text)}`,
     contextPayload?.summary ? `Context:\n${contextPayload.summary}` : '',
-    'Return strict JSON: {"light":"","medium":"","full":""}',
+    'Returneaza JSON strict: {"light":"","medium":"","full":""}. Valorile trebuie sa fie in romana si progresive: indiciu usor, indiciu mediu, explicatie completa.',
   ].filter(Boolean).join('\n\n');
 }
 
@@ -91,9 +92,9 @@ export function buildWrongOptionsPrompt(question: Question, contextPayload?: AIC
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
-    `Question: ${sanitizeUserInput(question.text)}`,
-    `Options: ${sanitizeUserInput(options)}`,
+    `Intrebare: ${sanitizeUserInput(question.text)}`,
+    `Optiuni: ${sanitizeUserInput(options)}`,
     contextPayload?.summary ? `Context:\n${contextPayload.summary}` : '',
-    'Return strict JSON: {"options":[{"option":"","whyWrong":""}]}',
+    'Returneaza JSON strict: {"options":[{"option":"","whyWrong":""}]}. Explicatiile trebuie sa fie in romana.',
   ].filter(Boolean).join('\n\n');
 }

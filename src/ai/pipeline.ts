@@ -17,11 +17,11 @@ export async function runAIPipeline<T>(steps: {
 
   if (steps.fix) {
     const repair = validateJson<T>(raw);
-    raw = await steps.fix(raw, repair.error ?? 'Invalid JSON');
+    raw = await steps.fix(raw, repair.error ?? 'JSON invalid');
     logAIDebug('pipeline:fixedRaw', raw);
     value = steps.validate(raw);
     if (value) return value;
   }
 
-  throw new Error('AI pipeline validation failed');
+  throw new Error('Validarea raspunsului AI a esuat');
 }

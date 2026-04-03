@@ -233,7 +233,7 @@ export async function groqRequest({
     messages: finalMessages,
   });
 
-  let lastError = 'Unknown error';
+  let lastError = 'Eroare necunoscuta';
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -266,7 +266,7 @@ export async function groqRequest({
     }
   }
 
-  throw new Error(`Groq API error: ${lastError}`);
+  throw new Error(`Eroare Groq API: ${lastError}`);
 }
 
 export async function groqChat(messages: GroqMessage[], temperature = 0.7): Promise<string> {
@@ -311,7 +311,7 @@ export async function groqStream(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`Groq API error: ${(err as any)?.error?.message ?? res.statusText}`);
+    throw new Error(`Eroare Groq API: ${(err as any)?.error?.message ?? res.statusText}`);
   }
   if (!res.body) throw new Error('Răspuns fără corp — încearcă din nou.');
 
