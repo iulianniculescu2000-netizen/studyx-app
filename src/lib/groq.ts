@@ -1,6 +1,8 @@
 import { useAIStore } from '../store/aiStore';
 import { HEART_IMG, ECG_IMG, CELL_IMG, DNA_IMG, NEURON_IMG } from '../data/sampleImages';
 import { getMedicalSystemPrompt } from './aiContext';
+import { logAIDebug } from '../ai/debug';
+import type { AIRequestTask } from '../ai/types';
 
 export interface GroqMessage {
   role: 'system' | 'user' | 'assistant';
@@ -14,6 +16,24 @@ export interface GeneratedQuestion {
   tags?: string[];
   reference?: string;
 }
+
+const TASK_TEMPERATURE: Record<AIRequestTask, number> = {
+  questions: 0.3,
+  explanation: 0.6,
+  mnemonic: 0.8,
+  hint: 0.4,
+  chat: 0.5,
+  analysis: 0.4,
+};
+
+const TASK_MAX_TOKENS: Record<AIRequestTask, number> = {
+  questions: 2200,
+  explanation: 900,
+  mnemonic: 300,
+  hint: 500,
+  chat: 1200,
+  analysis: 1000,
+};
 
 function sanitizeKey(key: string): string {
   // eslint-disable-next-line no-control-regex
@@ -174,7 +194,17 @@ export function recommendImage(questionText: string): string | null {
 }
 
 // ── Core API ──────────────────────────────────────────────────────────────────
-export async function groqChat(messages: GroqMessage[], temperature = 0.7): Promise<string> {
+export async function groqRequest({
+  task,
+  messages,
+  temperature,
+  maxTokens,
+}: {
+  task: AIRequestTask;
+  messages: GroqMessage[];
+  temperature?: number;
+  maxTokens?: number;
+}): Promise<string> {
   const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
   const key = sanitizeKey(apiKey);
   if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
@@ -192,19 +222,55 @@ export async function groqChat(messages: GroqMessage[], temperature = 0.7): Prom
       ]
     : messages;
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages: finalMessages, temperature, max_tokens: 4096 }),
-    signal: AbortSignal.timeout(30_000),
+  const finalTemperature = temperature ?? TASK_TEMPERATURE[task] ?? 0.5;
+  const finalMaxTokens = maxTokens ?? TASK_MAX_TOKENS[task] ?? 1200;
+
+  logAIDebug('groq:request', {
+    task,
+    model,
+    temperature: finalTemperature,
+    maxTokens: finalMaxTokens,
+    messages: finalMessages,
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`Groq API error: ${(err as any)?.error?.message ?? res.statusText}`);
+  let lastError = 'Unknown error';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model,
+          messages: finalMessages,
+          temperature: finalTemperature,
+          max_tokens: finalMaxTokens,
+        }),
+        signal: AbortSignal.timeout(5_000),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error?.message ?? res.statusText);
+      }
+
+      const data = await res.json();
+      const output = (data.choices?.[0]?.message?.content ?? '').trim();
+      logAIDebug('groq:response', { task, output });
+      return output;
+    } catch (error: any) {
+      lastError = error?.message ?? String(error);
+      logAIDebug('groq:error', { task, attempt, error: lastError });
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
   }
-  const data = await res.json();
-  return (data.choices?.[0]?.message?.content ?? '').trim();
+
+  throw new Error(`Groq API error: ${lastError}`);
+}
+
+export async function groqChat(messages: GroqMessage[], temperature = 0.7): Promise<string> {
+  return groqRequest({ task: 'chat', messages, temperature, maxTokens: 4096 });
 }
 
 export async function groqStream(

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Key, Cpu, Eye, EyeOff, ExternalLink, Check, Library, Trash2, Upload, FileText } from 'lucide-react';
+import { X, Key, Cpu, Eye, EyeOff, ExternalLink, Check, Library, Trash2, Upload, FileText, Bug } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIModel } from '../store/aiStore';
 import Portal from './Portal';
@@ -19,7 +19,7 @@ interface AISettingsProps {
 export default function AISettings({ open, onClose }: AISettingsProps) {
   const theme = useTheme();
   const {
-    apiKey, model, setApiKey, setModel,
+    apiKey, model, debugMode, setApiKey, setModel, setDebugMode,
     knowledgeSources, addKnowledgeSource, removeKnowledgeSource, clearKnowledgeSources,
   } = useAIStore();
   const [draft, setDraft] = useState(apiKey);
@@ -224,6 +224,22 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               style={{ background: saved ? theme.success : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
               {saved ? <><Check size={15} />Salvat!</> : 'Salvează'}
             </motion.button>
+
+            <div className="mt-3 rounded-xl p-3" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+              <button
+                onClick={() => setDebugMode(!debugMode)}
+                className="w-full flex items-center justify-between text-left"
+                style={{ color: theme.text }}
+              >
+                <span className="flex items-center gap-2 text-xs font-semibold">
+                  <Bug size={12} />
+                  Debug AI
+                </span>
+                <span className="text-xs" style={{ color: debugMode ? theme.success : theme.text3 }}>
+                  {debugMode ? 'Activ' : 'Oprit'}
+                </span>
+              </button>
+            </div>
 
             {/* Knowledge library */}
             <div className="mt-4 rounded-xl p-3" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>

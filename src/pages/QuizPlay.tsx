@@ -6,10 +6,12 @@ import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
 import { useAIStore } from '../store/aiStore';
+import { useUserStore } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
 import QuizImage from '../components/QuizImage';
-import { explainAnswerInline, generateMnemonic } from '../lib/groq';
+import { analyzeAnswer, generateMnemonicForConcept, getNextQuestion as getNextAIQuestion, getUserProfile, WeaknessAnalyzer } from '../ai/AIEngine';
 import type { QuizSession, Question, Option } from '../types';
+import type { AIAnalysisResult } from '../ai/types';
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -26,9 +28,10 @@ export default function QuizPlay() {
   const location = useLocation();
   const theme = useTheme();
   const { quizzes, addSession } = useQuizStore();
-  const { recordAnswer, recordStudySession, questionStats, getAccuracy } = useStatsStore();
+  const { recordAnswer, recordStudySession } = useStatsStore();
   const { getNote, setNote } = useNotesStore();
   const { hasKey } = useAIStore();
+  const activeProfileId = useUserStore((s) => s.activeProfileId);
   const quiz = quizzes.find((q) => q.id === id);
   const examMode = (location.state as any)?.mode === 'exam';
   const timedMode = (location.state as any)?.mode === 'timed';
@@ -64,6 +67,9 @@ export default function QuizPlay() {
   const aiAbortRef = useRef<AbortController | null>(null);
   const [mnemonicText, setMnemonicText] = useState<string | null>(null);
   const [mnemonicLoading, setMnemonicLoading] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(null);
+  const [analysisQuestionId, setAnalysisQuestionId] = useState<string | null>(null);
+  const [nextTopicHint, setNextTopicHint] = useState<string | null>(null);
 
   useEffect(() => {
     setQuestionQueue(orderedQuestions);
@@ -71,6 +77,9 @@ export default function QuizPlay() {
     setAnswers({});
     setSelectedNow([]);
     setRevealed(false);
+    setAnalysisResult(null);
+    setAnalysisQuestionId(null);
+    setNextTopicHint(null);
   }, [orderedQuestions]);
 
   useEffect(() => {
@@ -157,6 +166,9 @@ export default function QuizPlay() {
     setAiLoading(false);
     setMnemonicText(null);
     setMnemonicLoading(false);
+    setAnalysisResult(null);
+    setAnalysisQuestionId(null);
+    setNextTopicHint(null);
     setQuestionQueue((prev) => {
       const next = [...prev];
       const [skipped] = next.splice(currentIdx, 1);
@@ -211,6 +223,9 @@ export default function QuizPlay() {
     setAiLoading(false);
     setMnemonicText(null);
     setMnemonicLoading(false);
+    setAnalysisResult(null);
+    setAnalysisQuestionId(null);
+    setNextTopicHint(null);
     if (isLast) {
       finishQuiz(answers);
     } else {
@@ -220,36 +235,70 @@ export default function QuizPlay() {
     }
   }, [isLast, answers, finishQuiz]);
 
-  // Build a lightweight user context for AI calls
-  const aiUserContext = useMemo(() => {
-    const total = Object.values(questionStats).reduce((s, q: any) => s + q.timesCorrect + q.timesWrong, 0);
-    if (total === 0) return '';
-    return `Student medical: ${total} grile rezolvate, acuratețe ${getAccuracy()}%.`;
-  }, [questionStats, getAccuracy]);
-
   const handleAIExplain = useCallback(async () => {
-    if (!question || aiLoading) return;
-    aiAbortRef.current?.abort();
-    const controller = new AbortController();
-    aiAbortRef.current = controller;
-    setAiText('');
+    if (!question || aiLoading || !activeProfileId) return;
+    if (analysisResult?.explanation) {
+      setAiText(analysisResult.explanation);
+      return;
+    }
     setAiLoading(true);
     try {
-      await explainAnswerInline(
-        question.text,
-        question.options,
-        (chunk) => setAiText((prev) => (prev ?? '') + chunk),
-        controller.signal,
-        aiUserContext
-      );
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        setAiText('Nu s-a putut genera explicația. Verifică cheia API în Setări.');
-      }
+      const currentAnswers = answers[question.id] ?? selectedNow;
+      const userAnswer = question.options.filter((option) => currentAnswers.includes(option.id)).map((option) => option.text).join(', ');
+      const correctAnswer = question.options.filter((option) => option.isCorrect).map((option) => option.text).join(', ');
+      const correctIdsForQuestion = question.options.filter((option) => option.isCorrect).map((option) => option.id);
+      const isCorrect = currentAnswers.length === correctIdsForQuestion.length && correctIdsForQuestion.every((currentId) => currentAnswers.includes(currentId));
+      const { analysis } = await analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect });
+      setAnalysisResult(analysis);
+      setAnalysisQuestionId(question.id);
+      setAiText(analysis.explanation);
+    } catch {
+      setAiText('Nu s-a putut genera explicația. Verifică cheia API în Setări.');
     } finally {
       setAiLoading(false);
     }
-  }, [question, aiLoading, aiUserContext]);
+  }, [question, aiLoading, activeProfileId, analysisResult, answers, selectedNow]);
+
+  useEffect(() => {
+    if (!revealed || examMode || !question || !activeProfileId || analysisQuestionId === question.id) return;
+    const currentAnswers = answers[question.id] ?? selectedNow;
+    if (currentAnswers.length === 0) return;
+    const userAnswer = question.options.filter((option) => currentAnswers.includes(option.id)).map((option) => option.text).join(', ');
+    const correctIdsForQuestion = question.options.filter((option) => option.isCorrect).map((option) => option.id);
+    const correctAnswer = question.options.filter((option) => option.isCorrect).map((option) => option.text).join(', ');
+    const isCorrect = currentAnswers.length === correctIdsForQuestion.length && correctIdsForQuestion.every((currentId) => currentAnswers.includes(currentId));
+    let cancelled = false;
+
+    setAiLoading(true);
+    analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect })
+      .then(({ analysis, profile }) => {
+        if (cancelled) return;
+        setAnalysisResult(analysis);
+        setAnalysisQuestionId(question.id);
+        if (!isCorrect) setAiText(analysis.explanation);
+        const weakTopics = WeaknessAnalyzer.getWeakTopics(profile.profileId);
+        const suggestion = getNextAIQuestion({
+          previousQuestions: profile.recentQuestions,
+          weakTopics,
+          recentMistakes: profile.recentMistakes,
+          accuracy: profile.globalAccuracy,
+          streak: profile.streak,
+          availableTime: profile.availableTime,
+          preferredDifficulty: profile.currentDifficulty,
+        });
+        setNextTopicHint(suggestion.topic);
+      })
+      .catch(() => {
+        if (!cancelled) setAiText((prev) => prev ?? 'Nu s-a putut genera analiza AI.');
+      })
+      .finally(() => {
+        if (!cancelled) setAiLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [revealed, examMode, question, activeProfileId, analysisQuestionId, answers, selectedNow]);
 
   // Auto-advance after reveal
   useEffect(() => {
@@ -589,6 +638,21 @@ export default function QuizPlay() {
                         {aiText}
                         {aiLoading && <span className="animate-pulse">▊</span>}
                       </p>
+                      {analysisResult?.mistakeType && (
+                        <div className="mt-3 text-xs" style={{ color: theme.text3 }}>
+                          Tip eroare: {analysisResult.mistakeType}
+                        </div>
+                      )}
+                      {analysisResult?.rule && (
+                        <div className="mt-1 text-xs" style={{ color: theme.text3 }}>
+                          Regulă: {analysisResult.rule}
+                        </div>
+                      )}
+                      {nextTopicHint && (
+                        <div className="mt-1 text-xs" style={{ color: theme.text3 }}>
+                          Următor focus AI: {nextTopicHint}
+                        </div>
+                      )}
                     </motion.div>
                   )}
                 </motion.div>
@@ -613,9 +677,14 @@ export default function QuizPlay() {
                       <button
                         disabled={mnemonicLoading}
                         onClick={async () => {
+                          if (!activeProfileId) return;
                           setMnemonicLoading(true);
                           try {
-                            const m = await generateMnemonic(question.text, correctAnswer);
+                            const profile = getUserProfile(activeProfileId);
+                            const concept = analysisResult?.missingConcept || analysisResult?.recommendedTopic || correctAnswer || question.text;
+                            const repeatedMistake = profile.mistakeBank.find((entry) => entry.questionId === question.id)?.wrongCount ?? 0;
+                            const targetConcept = repeatedMistake >= 2 ? concept : `${correctAnswer} | ${question.text}`;
+                            const m = await generateMnemonicForConcept(targetConcept, activeProfileId);
                             setMnemonicText(m);
                           } catch { setMnemonicText('Nu s-a putut genera mnemonicul.'); }
                           finally { setMnemonicLoading(false); }
