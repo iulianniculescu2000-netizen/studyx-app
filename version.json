@@ -1,10 +1,10 @@
 {
-  "version": "1.0.5",
+  "version": "1.0.6",
   "releaseDate": "2026-04-03",
   "changes": [
-    "AI Engine modular nou cu profil utilizator, dificultate adaptivă și analiză post-răspuns",
-    "RAG local pentru surse PDF/TXT: chunking, embeddings, retrieval și grounding pe context",
-    "QuizPlay refactorizat să folosească AIEngine, mistake bank și mnemonic generation"
+    "Fix: sesiunea de flashcarduri refăcută cu front/back clar și UI premium",
+    "Fix: importul PDF funcționează pentru deck-uri și pentru biblioteca AI",
+    "Polish: contraste, margini și suprafețe optimizate pentru temele light/dark"
   ],
   "files": [
     {

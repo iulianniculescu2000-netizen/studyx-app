@@ -6,9 +6,10 @@ import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useAIStore } from '../store/aiStore';
-import { generateQuestionsFromText } from '../lib/groq';
+import { notesToFlashcards } from '../lib/groq';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
 import type { Question, Difficulty } from '../types';
+import { parsePDF } from '../ai/pdfParser';
 
 function generateId() { return crypto.randomUUID().replace(/-/g, '').slice(0, 12); }
 const OPTION_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -56,24 +57,21 @@ export default function FlashcardHub() {
     setAiLoading(true);
     setAiError('');
     try {
-      const generated = await generateQuestionsFromText(text, aiCount);
-      const questions: Question[] = generated.map((g) => ({
+      const generated = await notesToFlashcards(text);
+      const questions: Question[] = generated.slice(0, aiCount).map((g) => ({
         id: generateId(),
-        text: g.text,
+        text: g.front,
         multipleCorrect: false,
         difficulty: 'medium' as Difficulty,
-        explanation: g.explanation ?? '',
-        options: g.options.map((o, i) => ({
-          id: OPTION_IDS[i] ?? generateId(),
-          text: o.text,
-          isCorrect: o.isCorrect,
-        })),
+        explanation: '',
+        options: [{ id: OPTION_IDS[0] ?? generateId(), text: g.back, isCorrect: true }],
       }));
+      if (questions.length === 0) throw new Error('AI nu a putut transforma PDF-ul în flashcarduri utile.');
       const id = generateId();
       addQuiz({
         id,
         title: `Deck AI · ${new Date().toLocaleDateString('ro-RO')}`,
-        description: 'Generat automat din PDF cu AI',
+        description: 'Flashcarduri generate automat din PDF cu AI',
         emoji: '🤖',
         color: 'purple',
         category: 'Altele',
@@ -99,20 +97,10 @@ export default function FlashcardHub() {
       else setAiError('Nu s-a putut extrage text din PDF. Încearcă un alt fișier.');
       return;
     }
-    // Browser fallback
     const input = fileInputRef.current;
     if (!input) return;
     input.value = '';
     input.click();
-    const handler = async (e: Event) => {
-      input.removeEventListener('change', handler);
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const text = await file.text();
-      if (text.trim().length < 100) { setAiError('PDF-ul nu conține text suficient.'); return; }
-      await generateDeckFromPdf(text);
-    };
-    input.addEventListener('change', handler);
   };
 
   /**
@@ -152,10 +140,7 @@ export default function FlashcardHub() {
           multipleCorrect: false,
           difficulty: 'medium' as Difficulty,
           explanation: '',
-          options: [
-            { id: 'a', text: back, isCorrect: true },
-            { id: 'b', text: '—', isCorrect: false },
-          ],
+          options: [{ id: 'a', text: back, isCorrect: true }],
         });
       }
 
@@ -210,7 +195,23 @@ export default function FlashcardHub() {
 
   return (
     <div className="h-full overflow-y-auto px-8 py-8">
-      <input ref={fileInputRef} type="file" accept=".pdf,.txt" className="hidden" />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.txt"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.currentTarget.value = '';
+          if (!file) return;
+          const text = file.name.toLowerCase().endsWith('.pdf') ? await parsePDF(file) : await file.text();
+          if (text.trim().length < 100) {
+            setAiError('PDF-ul nu conține text suficient.');
+            return;
+          }
+          await generateDeckFromPdf(text);
+        }}
+      />
       <input
         ref={csvInputRef}
         type="file"
@@ -260,7 +261,9 @@ export default function FlashcardHub() {
                       className="w-9 h-8 rounded-lg text-xs font-semibold transition-all"
                       style={{
                         background: aiCount === n ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
-                        color: aiCount === n ? '#fff' : theme.text3,
+                        color: aiCount === n ? '#fff' : theme.text2,
+                        border: aiCount === n ? '1px solid transparent' : `1px solid ${theme.border}`,
+                        boxShadow: aiCount === n ? `0 10px 24px ${theme.accent}30` : 'none',
                       }}>{n}</button>
                   ))}
                 </div>
@@ -484,15 +487,19 @@ export default function FlashcardHub() {
                     {/* Action buttons */}
                     <div className="flex flex-col gap-1.5">
                       <Link to={`/flashcards/session/${deck.quiz.id}`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white"
-                        style={{ background: `linear-gradient(135deg, ${deck.colors.from}, ${deck.colors.to})` }}>
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white"
+                        style={{
+                          background: `linear-gradient(135deg, ${deck.colors.from}, ${deck.colors.to})`,
+                          boxShadow: `0 10px 24px ${deck.colors.from.replace('0.85', '0.22').replace('0.9', '0.22')}`,
+                          minWidth: 124,
+                        }}>
                         <Play size={11} fill="white" />
                         {deck.due > 0 ? `${deck.due} scadente` : 'Studiază'}
                       </Link>
                       <Link to={`/flashcards/session/${deck.quiz.id}?mode=all`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs"
-                        style={{ background: theme.surface2, color: theme.text2 }}>
-                        <Circle size={10} />Toate cardurile
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium"
+                        style={{ background: theme.surface2, color: theme.text2, border: `1px solid ${theme.border}` }}>
+                        <Circle size={10} />Previzualizare
                       </Link>
                     </div>
                   </div>

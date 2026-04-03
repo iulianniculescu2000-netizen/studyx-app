@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Key, Cpu, Eye, EyeOff, ExternalLink, Check, Library, Trash2, Upload, FileText, Bug } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIModel } from '../store/aiStore';
+import { parsePDF } from '../ai/pdfParser';
 import Portal from './Portal';
 
 const MODELS: { id: AIModel; name: string; desc: string; speed: string }[] = [
@@ -124,8 +125,9 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                 e.currentTarget.value = '';
                 if (!file) return;
                 try {
-                  const text = await file.text();
-                  addFromRaw(file.name, text, file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt');
+                  const isPdf = file.name.toLowerCase().endsWith('.pdf');
+                  const text = isPdf ? await parsePDF(file) : await file.text();
+                  addFromRaw(file.name, text, isPdf ? 'pdf' : 'txt');
                 } catch {
                   setLibraryError('Nu s-a putut citi fișierul selectat.');
                 }
