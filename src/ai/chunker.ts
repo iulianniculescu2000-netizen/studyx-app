@@ -11,8 +11,8 @@ export interface Chunk {
 function detectTopic(text: string) {
   const firstLine = text.split('\n')[0]?.trim();
   if (firstLine && firstLine.length < 80) return firstLine;
-  const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? 'General';
-  return firstSentence.slice(0, 60) || 'General';
+  const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? 'Topic general';
+  return firstSentence.slice(0, 60) || 'Topic general';
 }
 
 export function chunkText(text: string, source = 'Biblioteca AI'): Chunk[] {

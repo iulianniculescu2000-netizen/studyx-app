@@ -95,7 +95,7 @@ export class AdaptiveDifficulty {
 
 export class LearningStrategist {
   static getNextQuestion(state: AINextQuestionState) {
-    const nextTopic = state.weakTopics[0]?.topic ?? state.recentMistakes[0]?.topic ?? 'General';
+    const nextTopic = state.weakTopics[0]?.topic ?? state.recentMistakes[0]?.topic ?? 'Topic general';
     const difficulty = AdaptiveDifficulty.getAdaptiveDifficulty({
       accuracy: state.accuracy,
       streak: state.streak,
@@ -202,7 +202,7 @@ export class AITutorSession {
     const profile = loadUserProfile(profileId);
     const weakTopics = getWeakTopicsForProfile(profileId);
     return {
-      currentTopic: weakTopics[0]?.topic ?? 'General',
+      currentTopic: weakTopics[0]?.topic ?? 'Topic general',
       difficulty: profile.currentDifficulty,
       progress: 0,
       questionIds: profile.recentQuestions,
@@ -236,4 +236,4 @@ export function generateFromMistakeBank(profileId: string) {
   return generateFromMistakes(profileId);
 }
 
-logAIDebug('AIEngine:init', 'loaded');
+logAIDebug('AIEngine:init', 'initializat');

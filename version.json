@@ -1,10 +1,10 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.8",
   "releaseDate": "2026-04-03",
   "changes": [
-    "Fix: prompturile AI, analiza raspunsurilor si mnemonicile cer acum raspunsuri exclusiv in limba romana",
-    "Polish: biblioteca AI refacuta cu dropzone premium, carduri clare si feedback vizual mai bun",
-    "Fix: mesajele de eroare si fallback-urile AI au fost normalizate pentru o experienta coerenta in romana"
+    "Polish: centrul de actualizari arata acum clar versiunea curenta, urmatorul pas si ultima versiune publicata",
+    "Polish: contraste si delimitari imbunatatite pentru mai multe teme, inclusiv Pearl, Midnight, Sunset si Sur Glass",
+    "Fix: fallback-urile AI folosesc acum topicuri si mesaje implicite coerente in romana"
   ],
   "files": [
     {

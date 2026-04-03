@@ -57,7 +57,7 @@ export function extractWeakTopics({ stats, questions }: WeakTopicInput): WeakTop
 
   for (const stat of Object.values(stats)) {
     const question = byId.get(stat.questionId);
-    const tags = question?.tags?.length ? question.tags : [question?.text?.split(' ').slice(0, 3).join(' ') || 'General'];
+    const tags = question?.tags?.length ? question.tags : [question?.text?.split(' ').slice(0, 3).join(' ') || 'Topic general'];
     for (const tag of tags) {
       if (!topicStats[tag]) {
         topicStats[tag] = { correct: 0, total: 0, wrong: 0, lastWrongAt: 0 };
@@ -135,7 +135,7 @@ export function updateUserProfileAfterAnswer(
   }
 ) {
   const profile = loadUserProfile(profileId);
-  const topics = payload.question.tags?.length ? payload.question.tags : ['General'];
+  const topics = payload.question.tags?.length ? payload.question.tags : ['Topic general'];
   const topicAccuracy = { ...profile.topicAccuracy };
 
   for (const topic of topics) {
