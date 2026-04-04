@@ -12,7 +12,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "generate-icon": "node scripts/generate-icon.cjs",
+    "generate-icon": "node scripts/generate-premium-assets.cjs",
     "prepare-update": "npm run build && node scripts/prepare-update.cjs",
     "electron:dev": "cross-env.cmd NODE_ENV=development concurrently.cmd \"vite.cmd\" \"wait-on.cmd http://localhost:5173 && electron.cmd .\"",
     "electron:build": "npm run generate-icon && npm run build && electron-builder.cmd",
@@ -65,7 +65,9 @@
       "deleteAppDataOnUninstall": true,
       "include": "build/installer.nsh",
       "license": "LICENSE.txt",
-      "runAfterFinish": true
+      "runAfterFinish": true,
+      "installerSidebar": "build/sidebar.bmp",
+      "installerHeader": "build/header.bmp"
     }
   },
   "dependencies": {
