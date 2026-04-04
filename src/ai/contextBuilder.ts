@@ -24,8 +24,8 @@ export function summarizeChunks(texts: string[]) {
   });
 }
 
-export function buildContext(query: string, userProfile: UserProfileData | null): AIContextPayload {
-  const chunks = retrieveRelevantChunks(query, userProfile);
+export async function buildContext(query: string, userProfile: UserProfileData | null): Promise<AIContextPayload> {
+  const chunks = await retrieveRelevantChunks(query, userProfile);
   const rawBlocks = chunks.map((chunk, index) => `[${index + 1}] ${chunk.source} | ${chunk.topic}\n${chunk.text}`);
   const safeBlocks = truncateContextIfNeeded(rawBlocks);
   const compressed = safeBlocks.length < rawBlocks.length ? summarizeChunks(rawBlocks) : safeBlocks;

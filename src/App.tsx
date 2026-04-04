@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ThemeProvider } from './theme/ThemeContext';
+import { useState, useEffect, useRef, Component, type ErrorInfo } from 'react';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider, useTheme } from './theme/ThemeContext';
 import { useUserStore } from './store/userStore';
 import { useFocusModeStore } from './store/focusModeStore';
 import { useTutorialStore } from './store/tutorialStore';
@@ -10,12 +9,15 @@ import { useQuizStore } from './store/quizStore';
 import { useFolderStore } from './store/folderStore';
 import { useStatsStore } from './store/statsStore';
 import { useNotesStore } from './store/notesStore';
+import { useAIStore } from './store/aiStore';
+import { useToastStore } from './store/toastStore';
 import TitleBar from './components/TitleBar';
 import WindowControls from './components/WindowControls';
 import Sidebar from './components/Sidebar';
 import AnimatedBackground from './components/AnimatedBackground';
 import GlobalSearch from './components/GlobalSearch';
 import ToastContainer from './components/ToastContainer';
+import DropzoneOverlay from './components/DropzoneOverlay';
 import Welcome from './pages/Welcome';
 import ProfileSelect from './pages/ProfileSelect';
 import Dashboard from './pages/Dashboard';
@@ -27,7 +29,9 @@ import QuizResults from './pages/QuizResults';
 import FolderView from './pages/FolderView';
 import Stats from './pages/Stats';
 import ReviewMode from './pages/ReviewMode';
+import DailyReview from './pages/DailyReview';
 import FlashcardHub from './pages/FlashcardHub';
+import KnowledgeVault from './pages/KnowledgeVault';
 import FlashcardSession from './pages/FlashcardSession';
 import Notes from './pages/Notes';
 import Settings from './pages/Settings';
@@ -36,182 +40,155 @@ import Tutorial from './components/Tutorial';
 import PomodoroTimer from './components/PomodoroTimer';
 import SplashScreen from './components/SplashScreen';
 import { useAutoBackup } from './hooks/useAutoBackup';
+import { parsePDF } from './ai/pdfParser';
+import { parseDocx } from './ai/docxParser';
+import { parseImageOCR } from './ai/ocrParser';
 
-// Route depth for directional transitions (deeper = slide from right)
-const ROUTE_DEPTH: Record<string, number> = {
-  '/': 0,
-  '/quizzes': 1,
-  '/stats': 1,
-  '/review': 1,
-  '/flashcards': 1,
-  '/notes': 1,
-  '/settings': 1,
-};
-function getDepth(path: string) {
-  if (ROUTE_DEPTH[path] !== undefined) return ROUTE_DEPTH[path];
-  if (path.startsWith('/play/')) return 3;
-  if (path.startsWith('/results/')) return 4;
-  if (path.startsWith('/quiz/')) return 2;
-  if (path.startsWith('/folder/')) return 2;
-  if (path.startsWith('/flashcards/')) return 2;
-  if (path === '/create') return 2;
-  return 1;
-}
-
-/** Smooth page transition wrapper with directional slide */
-function PT({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
-  const depth = getDepth(location.pathname);
-  // useRef instead of module-level mutable variable (prevents React purity violations)
-  const prevDepthRef = useRef(depth);
-  const dir = depth >= prevDepthRef.current ? 1 : -1;
-  prevDepthRef.current = depth;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: dir * 28 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: dir * -20 }}
-      transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-      style={{ height: '100%' }}
-    >
-      {children}
-    </motion.div>
-  );
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, color: 'white', background: '#800', position: 'fixed', inset: 0, zIndex: 9999, overflow: 'auto' }}>
+          <h1>Ceva nu a mers bine.</h1>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{this.state.error?.stack || this.state.error?.message}</pre>
+          <button onClick={() => window.location.reload()} style={{ padding: '10px 20px', marginTop: 20 }}>Reîncarcă aplicația</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function AppContent() {
   const activeProfileId = useUserStore((s) => s.activeProfileId);
-  const profiles = useUserStore((s) => s.profiles);
   const username = useUserStore((s) => s.username);
-  const location = useLocation();
   const { isCompleted, startTutorial, _hasHydrated } = useTutorialStore();
+  const { addKnowledgeSource } = useAIStore();
+  const { addToast } = useToastStore();
 
   const [addingProfile, setAddingProfile] = useState(false);
   const prevProfileIdRef = useRef<string | null>(null);
 
-  // Weekly auto-backup to Documents/StudyX-Backups (Electron only)
+  const handleGlobalDrop = async (files: File[]) => {
+    if (!activeProfileId) return;
+    for (const file of files) {
+      const name = file.name.toLowerCase();
+      const isPdf = name.endsWith('.pdf');
+      const isDocx = name.endsWith('.docx');
+      const isImage = /\.(jpe?g|png|webp|bmp)$/i.test(name);
+      const isTxt = /\.(txt|md)$/i.test(name);
+      if (!isPdf && !isDocx && !isImage && !isTxt) {
+        addToast(`Format neacceptat: ${file.name}`, 'error');
+        continue;
+      }
+      addToast(`Procesăm: ${file.name}...`, 'info', 2000);
+      try {
+        let text = '';
+        let type: any = 'txt';
+        if (isPdf) { text = await parsePDF(file); type = 'pdf'; }
+        else if (isDocx) { text = await parseDocx(file); type = 'docx'; }
+        else if (isImage) { text = await parseImageOCR(file); type = 'image'; }
+        else { text = await file.text(); }
+        if (text.trim().length < 20) {
+          addToast(`Conținut insuficient în ${file.name}`, 'warning');
+          continue;
+        }
+        await addKnowledgeSource(file.name, text, type);
+        addToast(`"${file.name}" adăugat cu succes în Biblioteca AI.`, 'success');
+      } catch (err) {
+        console.error(err);
+        addToast(`Eroare la procesarea ${file.name}`, 'error');
+      }
+    }
+  };
+
   useAutoBackup(activeProfileId ?? null);
 
-  // ── Per-profile data isolation ──────────────────────────────────────
   useEffect(() => {
     const prev = prevProfileIdRef.current;
-
-    if (prev && prev !== activeProfileId) {
-      // Save data for the profile we're leaving
-      saveProfileData(prev);
-    }
-
-    if (activeProfileId && activeProfileId !== prev) {
-      // Load data for the new active profile
-      loadProfileData(activeProfileId);
-    }
-
+    if (prev && prev !== activeProfileId) saveProfileData(prev);
+    if (activeProfileId && activeProfileId !== prev) loadProfileData(activeProfileId);
     prevProfileIdRef.current = activeProfileId;
   }, [activeProfileId]);
 
-  // Auto-save on every store change (debounced via subscribe)
   useEffect(() => {
     if (!activeProfileId) return;
-
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: any;
     const save = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        try { saveProfileData(activeProfileId); } catch (e) { console.warn('[StudyX] Auto-save failed', e); }
+        try { saveProfileData(activeProfileId); } catch (e) {}
       }, 600);
     };
-
     const u1 = useQuizStore.subscribe(save);
     const u2 = useFolderStore.subscribe(save);
     const u3 = useStatsStore.subscribe(save);
     const u4 = useNotesStore.subscribe(save);
-
-    return () => {
-      clearTimeout(timer);
-      u1(); u2(); u3(); u4();
-    };
+    return () => { clearTimeout(timer); u1(); u2(); u3(); u4(); };
   }, [activeProfileId]);
 
-  // Save on tab close
   useEffect(() => {
-    const handler = () => {
-      if (activeProfileId) try { saveProfileData(activeProfileId); } catch {}
-    };
+    const handler = () => { if (activeProfileId) try { saveProfileData(activeProfileId); } catch {} };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [activeProfileId]);
 
-  // ── Tutorial auto-start for new profiles ───────────────────────────
   useEffect(() => {
-    if (!_hasHydrated) return;          // wait for persist to rehydrate
-    if (!activeProfileId) return;
-    if (isCompleted(activeProfileId)) return;
+    if (!_hasHydrated || !activeProfileId || isCompleted(activeProfileId)) return;
     const timer = setTimeout(() => startTutorial(), 1200);
     return () => clearTimeout(timer);
-  }, [activeProfileId, _hasHydrated]); // re-run when profile changes OR hydration completes
+  }, [_hasHydrated, activeProfileId]);
 
-  // Reset addingProfile flag when a profile becomes active
-  useEffect(() => {
-    if (activeProfileId) setAddingProfile(false);
-  }, [activeProfileId]);
+  const focusMode = useFocusModeStore((s) => s.focusMode);
+  const theme = useTheme();
 
-  // Focus mode — Escape to exit
-  const { focusMode } = useFocusModeStore();
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && focusMode) {
-        useFocusModeStore.getState().setFocusMode(false);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [focusMode]);
 
-  // ── Tutorial callbacks with profileId ─────────────────────────────
-  // Expose profile-aware skip/complete to Tutorial via store override
-  // (Tutorial calls skipTutorial/completeTutorial with profileId internally)
-
-  // No active profile
-  if (!activeProfileId) {
-    if (profiles.length === 0 || addingProfile) {
-      return (
-        <Welcome
-          onBack={profiles.length > 0 && addingProfile ? () => setAddingProfile(false) : undefined}
-        />
-      );
-    }
+  if (!username) return <Welcome />;
+  if (!activeProfileId || addingProfile) {
     return <ProfileSelect onAddNew={() => setAddingProfile(true)} />;
   }
 
-  if (!username) return null;
-
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div className={`flex flex-1 overflow-hidden ${theme.isDark ? 'dark' : ''}`}>
       <AnimatedBackground />
+      <DropzoneOverlay onFilesDropped={handleGlobalDrop} />
+      
       {!focusMode && <Sidebar />}
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+      
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
         {!focusMode && <TitleBar />}
         <GlobalSearch />
         <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-          <AnimatePresence mode="wait" initial={false}>
-            <Routes location={location} key={location.pathname}>
-              <Route path="/" element={<PT><Dashboard /></PT>} />
-              <Route path="/quizzes" element={<PT><QuizList /></PT>} />
-              <Route path="/folder/:id" element={<PT><FolderView /></PT>} />
-              <Route path="/quiz/:id" element={<PT><QuizDetail /></PT>} />
-              <Route path="/create" element={<PT><QuizCreate /></PT>} />
-              <Route path="/play/:id" element={<PT><QuizPlay /></PT>} />
-              <Route path="/results/:id" element={<PT><QuizResults /></PT>} />
-              <Route path="/stats" element={<PT><Stats /></PT>} />
-              <Route path="/review" element={<PT><ReviewMode /></PT>} />
-              <Route path="/flashcards" element={<PT><FlashcardHub /></PT>} />
-              <Route path="/flashcards/session/:id" element={<PT><FlashcardSession /></PT>} />
-              <Route path="/notes" element={<PT><Notes /></PT>} />
-              <Route path="/settings" element={<PT><Settings /></PT>} />
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/quizzes" element={<QuizList />} />
+              <Route path="/quiz/:id" element={<QuizDetail />} />
+              <Route path="/folder/:id" element={<FolderView />} />
+              <Route path="/create" element={<QuizCreate />} />
+              <Route path="/play/:id" element={<QuizPlay />} />
+              <Route path="/results/:id" element={<QuizResults />} />
+              <Route path="/stats" element={<Stats />} />
+              <Route path="/review" element={<ReviewMode />} />
+              <Route path="/daily-review" element={<DailyReview />} />
+              <Route path="/vault" element={<KnowledgeVault />} />
+              <Route path="/flashcards" element={<FlashcardHub />} />
+              <Route path="/flashcards/session/:id" element={<FlashcardSession />} />
+              <Route path="/notes" element={<Notes />} />
+              <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-          </AnimatePresence>
+          </ErrorBoundary>
         </main>
       </div>
       <ToastContainer />
@@ -224,11 +201,8 @@ function AppContent() {
 
 export default function App() {
   const [splashVisible, setSplashVisible] = useState(true);
-
   useEffect(() => {
-    // Signal Electron to show the window — eliminates white/black flash
     window.electronAPI?.appReady();
-    // Minimum splash display: 700ms so it feels intentional rather than a flicker
     const t = setTimeout(() => setSplashVisible(false), 700);
     return () => clearTimeout(t);
   }, []);
@@ -236,9 +210,11 @@ export default function App() {
   return (
     <HashRouter>
       <ThemeProvider>
-        <WindowControls />
-        <SplashScreen visible={splashVisible} />
-        <AppContent />
+        <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#1a1a2e]">
+          <WindowControls />
+          <SplashScreen visible={splashVisible} />
+          <AppContent />
+        </div>
       </ThemeProvider>
     </HashRouter>
   );

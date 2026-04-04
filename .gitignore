@@ -26,3 +26,12 @@ desktop.ini
 # TypeScript incremental
 *.tsbuildinfo
 tsconfig.tsbuildinfo
+
+# Large setup files
+*.exe
+release/
+
+
+# Security: Local config
+.claude/
+

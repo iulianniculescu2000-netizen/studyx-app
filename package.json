@@ -3,6 +3,7 @@
   "productName": "StudyX",
   "private": true,
   "version": "1.0.8",
+  "type": "module",
   "description": "Aplicatie de grile pentru studenti la medicina",
   "author": "StudyX",
   "main": "electron/main.cjs",
@@ -13,16 +14,16 @@
     "preview": "vite preview",
     "generate-icon": "node scripts/generate-icon.cjs",
     "prepare-update": "npm run build && node scripts/prepare-update.cjs",
-    "electron:dev": "cross-env NODE_ENV=development concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run generate-icon && npm run build && electron-builder",
-    "electron:build:dir": "npm run generate-icon && npm run build && electron-builder --dir"
+    "electron:dev": "cross-env.cmd NODE_ENV=development concurrently.cmd \"vite.cmd\" \"wait-on.cmd http://localhost:5173 && electron.cmd .\"",
+    "electron:build": "npm run generate-icon && npm run build && electron-builder.cmd",
+    "electron:build:dir": "npm run generate-icon && npm run build && electron-builder.cmd --dir"
   },
   "build": {
     "electronVersion": "41.0.3",
     "appId": "com.studyx.medical",
     "productName": "StudyX",
     "copyright": "Copyright © 2025 StudyX",
-    "asar": false,
+    "asar": true,
     "compression": "maximum",
     "directories": {
       "output": "release",
@@ -47,11 +48,14 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
+      "perMachine": true,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
@@ -59,7 +63,9 @@
       "shortcutName": "StudyX",
       "menuCategory": "StudyX",
       "deleteAppDataOnUninstall": true,
-      "include": "build/installer.nsh"
+      "include": "build/installer.nsh",
+      "license": "LICENSE.txt",
+      "runAfterFinish": true
     }
   },
   "dependencies": {
@@ -71,11 +77,13 @@
     "framer-motion": "^12.38.0",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.577.0",
+    "mammoth": "^1.12.0",
     "pdf-parse": "^2.4.5",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.1",
     "recharts": "^3.8.0",
+    "tesseract.js": "^6.0.1",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -87,8 +95,10 @@
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "electron": "^41.0.3",
+    "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
+    "electron-packager": "^17.1.2",
+    "electron-winstaller": "^5.4.0",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",

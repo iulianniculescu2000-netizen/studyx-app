@@ -1,8 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { Play, Clock, ChevronLeft, Trophy, Star, RotateCcw, Shuffle, Layers, Download, Pencil, Copy, Search, GraduationCap, Archive, ArchiveRestore, Timer, CreditCard, FileText, Bot, SendHorizonal, Loader2, X } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Play, Clock, ChevronLeft, Trophy, RotateCcw, Layers, Download, Pencil, Copy, Search, GraduationCap, Archive, ArchiveRestore, Timer, CreditCard, FileText, Bot, SendHorizonal, Loader2, X, BookOpen } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
 import { useTheme } from '../theme/ThemeContext';
 import QuizImage from '../components/QuizImage';
@@ -265,207 +264,78 @@ Comportament:
 
         {/* Hero card */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="rounded-3xl p-8 mb-6"
-          style={{ background: colors.gradient, boxShadow: `0 20px 60px ${colors.glow}` }}>
-          <div className="text-5xl mb-4">{quiz.emoji}</div>
-          <div className="inline-block px-2.5 py-1 rounded-full text-xs font-medium mb-3"
-            style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
-            {quiz.category}
-          </div>
-          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">{quiz.title}</h1>
-          <p className="text-white/70 mb-5">{quiz.description}</p>
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="rounded-[32px] p-8 mb-8 relative overflow-hidden"
+          style={{ 
+            background: colors.gradient, 
+            boxShadow: `0 24px 60px ${colors.glow}`,
+          }}>
+          {/* Subtle patterns/orbs */}
+          <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-[80px] pointer-events-none"
+            style={{ background: 'rgba(255,255,255,0.15)' }} />
+          
+          <div className="relative z-10">
+            <div className="text-6xl mb-6 drop-shadow-xl">{quiz.emoji}</div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest mb-4"
+              style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', backdropFilter: 'blur(10px)' }}>
+              <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              {quiz.category}
+            </div>
+            <h1 className="text-4xl font-black text-white mb-3 tracking-tight leading-tight">{quiz.title}</h1>
+            <p className="text-white/80 mb-8 max-w-lg font-medium leading-relaxed">{quiz.description}</p>
 
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-1.5 text-white/70 text-sm">
-              <Clock size={14} />{formatTime(estimatedTime)}
+            <div className="flex items-center gap-6 flex-wrap">
+              <div className="flex items-center gap-2 text-white/90 text-xs font-bold uppercase tracking-wider">
+                <Clock size={16} className="opacity-70" />{formatTime(estimatedTime)}
+              </div>
+              <div className="flex items-center gap-2 text-white/90 text-xs font-bold uppercase tracking-wider">
+                <BookOpen size={16} className="opacity-70" />{quiz.questions.length} întrebări
+              </div>
+              {multipleCount > 0 && (
+                <div className="flex items-center gap-2 text-white/90 text-xs font-bold uppercase tracking-wider">
+                  <Layers size={16} className="opacity-70" />{multipleCount} multi
+                </div>
+              )}
+              {bestScore !== null && (
+                <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-xl" 
+                  style={{ background: 'rgba(255,214,10,0.25)', color: '#FFD60A', border: '1px solid rgba(255,214,10,0.3)' }}>
+                  <Trophy size={14} fill="#FFD60A" />Record: {bestScore}%
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-1.5 text-white/70 text-sm">
-              <Trophy size={14} />{quiz.questions.length} {quiz.questions.length === 1 ? 'întrebare' : 'întrebări'}
-            </div>
-            {multipleCount > 0 && (
-              <div className="flex items-center gap-1.5 text-white/70 text-sm">
-                <Layers size={14} />{multipleCount} multi-select
-              </div>
-            )}
-            {quiz.shuffleQuestions && (
-              <div className="flex items-center gap-1.5 text-white/70 text-sm">
-                <Shuffle size={14} />Amestecat
-              </div>
-            )}
-            {bestScore !== null && (
-              <div className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#FFD60A' }}>
-                <Star size={14} fill="#FFD60A" />Best: {bestScore}%
-              </div>
-            )}
           </div>
         </motion.div>
 
-        {/* Questions preview */}
+        {/* Primary Actions Grid */}
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="rounded-2xl p-5 mb-5"
-          style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-          <div className="flex items-center justify-between mb-3 gap-3">
-            <h2 className="text-sm font-semibold flex-shrink-0" style={{ color: theme.text2 }}>
-              Întrebări ({quiz.questions.length})
-            </h2>
-            {quiz.questions.length > 5 && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl flex-1 max-w-[200px]"
-                style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
-                <Search size={12} style={{ color: theme.text3, flexShrink: 0 }} />
-                <input
-                  type="text"
-                  placeholder="Caută..."
-                  value={qSearch}
-                  onChange={e => setQSearch(e.target.value)}
-                  className="flex-1 text-xs bg-transparent"
-                  style={{ color: theme.text, outline: 'none', border: 'none', minWidth: 0 }}
-                />
-              </div>
-            )}
-          </div>
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {quiz.questions
-              .map((q, actualIdx) => ({ q, actualIdx }))
-              .filter(({ q }) => !qSearch || q.text.toLowerCase().includes(qSearch.toLowerCase()))
-              .map(({ q, actualIdx }) => (
-              <div key={q.id} className="flex items-start gap-3">
-                <span className="text-xs font-mono mt-0.5 flex-shrink-0" style={{ color: theme.text3 }}>
-                  {String(actualIdx + 1).padStart(2, '0')}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm" style={{ color: theme.text2 }}>{q.text}</p>
-                  {q.imageUrl && (
-                    <div className="mt-1.5">
-                      <QuizImage src={q.imageUrl} maxHeight={64} />
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {q.multipleCorrect && (
-                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: `${theme.accent2}18`, color: theme.accent2 }}>M</span>
-                  )}
-                  {q.difficulty && (
-                    <span className="text-xs px-1.5 py-0.5 rounded"
-                      style={{ background: `${diffColor[q.difficulty]}15`, color: diffColor[q.difficulty] }}>
-                      {diffLabel[q.difficulty]}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-            {qSearch && quiz.questions.filter(q => q.text.toLowerCase().includes(qSearch.toLowerCase())).length === 0 && (
-              <p className="text-sm text-center py-3" style={{ color: theme.text3 }}>Niciun rezultat</p>
-            )}
-          </div>
+          transition={{ delay: 0.1 }} className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+          <Link to={`/play/${quiz.id}`}
+            className="flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-white text-lg shadow-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
+            style={{ background: colors.gradient, boxShadow: `0 12px 32px ${colors.glow}` }}>
+            <Play size={22} fill="white" />
+            {sessions.length > 0 ? 'Reia Studiu' : 'Începe Grila'}
+          </Link>
+          <Link to={`/play/${quiz.id}`} state={{ mode: 'exam' }}
+            className="flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-lg transition-all hover:scale-[1.03] active:scale-[0.97] shadow-lg"
+            style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text }}>
+            <GraduationCap size={22} />
+            Simulare Examen
+          </Link>
         </motion.div>
 
-        {/* Score trend chart */}
-        {sessions.length >= 2 && (
-          <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="rounded-2xl p-5 mb-5"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-            <h2 className="text-sm font-semibold mb-4" style={{ color: theme.text2 }}>
-              Progres ({sessions.length} sesiuni)
-            </h2>
-            <ResponsiveContainer width="100%" height={120}>
-              <LineChart
-                data={[...sessions].reverse().slice(0, 10).map((s, i) => ({
-                  nr: `#${i + 1}`,
-                  scor: Math.round((s.score / s.total) * 100),
-                }))}
-                margin={{ top: 4, right: 4, bottom: 0, left: -24 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={theme.border} />
-                <XAxis dataKey="nr" tick={{ fill: theme.text3, fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} tick={{ fill: theme.text3, fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, fontSize: 12 }}
-                  labelStyle={{ color: theme.text }}
-                  formatter={(v: any) => [`${v}%`, 'Scor']}
-                />
-                <Line type="monotone" dataKey="scor" stroke={theme.accent}
-                  strokeWidth={2} dot={{ fill: theme.accent, r: 3 }} activeDot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </motion.div>
-        )}
-
-        {/* Actions */}
-        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }} className="space-y-3">
-          {/* Primary: Play */}
-          <div className="grid grid-cols-2 gap-2">
-            <Link to={`/play/${quiz.id}`}
-              className="flex items-center justify-center gap-2 py-4 rounded-2xl font-bold text-white transition-all hover:opacity-90"
-              style={{ background: colors.gradient, boxShadow: `0 8px 30px ${colors.glow}` }}>
-              <Play size={18} fill="white" />
-              {sessions.length > 0 ? 'Din nou' : 'Începe'}
-            </Link>
-            <Link to={`/play/${quiz.id}`} state={{ mode: 'exam' }}
-              className="flex items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border2}`, color: theme.text2 }}>
-              <GraduationCap size={16} />
-              Mod Examen
-            </Link>
-          </div>
-          {/* Study modes row */}
-          <div className="grid grid-cols-2 gap-2">
-            <Link to={`/play/${quiz.id}`} state={{ mode: 'timed' }}
-              className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
-              <Timer size={14} />Cronometrat
-            </Link>
-            <Link to={`/flashcards/session/${quiz.id}?mode=all`}
-              className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
-              <CreditCard size={14} />Flashcarduri
-            </Link>
-          </div>
-          {/* Secondary actions */}
-          <div className="grid grid-cols-6 gap-2">
-            <Link to={`/create?edit=${quiz.id}`}
-              className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
-              <Pencil size={14} />Editează
-            </Link>
-            <button onClick={handleDuplicate}
-              className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
-              <Copy size={14} />Duplică
-            </button>
-            <button onClick={exportQuiz}
-              className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
-              <Download size={14} />JSON
-            </button>
-            <button onClick={exportPDF}
-              className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
-              <FileText size={14} />PDF
-            </button>
-            <button onClick={exportAnki}
-              className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
-              <Download size={14} />Anki
-            </button>
-            <button onClick={() => toggleArchive(quiz.id)}
-              className="flex items-center justify-center gap-1.5 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: quiz.archived ? `${theme.warning}15` : theme.surface, border: `1px solid ${quiz.archived ? theme.warning : theme.border}`, color: quiz.archived ? theme.warning : theme.text2 }}>
-              {quiz.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-              {quiz.archived ? 'Dezarhivat' : 'Arhivă'}
-            </button>
-          </div>
-          {sessions.length > 0 && (
-            <Link to="/review"
-              className="flex items-center justify-center gap-2 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text3 }}>
-              <RotateCcw size={14} />Recapitulare spațiată
-            </Link>
-          )}
-
-          {/* Wrong questions practice button */}
+        {/* Secondary Study Modes */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
+          className="flex gap-3 mb-8 overflow-x-auto pb-2 scrollbar-none">
+          <Link to={`/play/${quiz.id}`} state={{ mode: 'timed' }}
+            className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-white/5 active:scale-[0.98]"
+            style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
+            <Timer size={16} />Cronometrat
+          </Link>
+          <Link to={`/flashcards/session/${quiz.id}?mode=all`}
+            className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-white/5 active:scale-[0.98]"
+            style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
+            <CreditCard size={16} />Flashcarduri
+          </Link>
           <button
             onClick={() => {
               const wrongQIds = Object.entries(questionStats)
@@ -475,36 +345,123 @@ Comportament:
               navigate(`/play/${id}`, { state: { wrongQuestionsOnly: wrongQIds } });
             }}
             disabled={wrongCount === 0}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              background: wrongCount > 0 ? `${theme.danger}12` : theme.surface,
-              border: `1px solid ${wrongCount > 0 ? theme.danger + '40' : theme.border}`,
-              color: wrongCount > 0 ? theme.danger : theme.text3,
-            }}>
-            <RotateCcw size={14} />
-            Practică greșelile {wrongCount > 0 ? `(${wrongCount})` : '(0)'}
+            className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-red-500/5 active:scale-[0.98] disabled:opacity-30"
+            style={{ background: theme.surface, border: `1px solid ${wrongCount > 0 ? theme.danger + '40' : theme.border}`, color: wrongCount > 0 ? theme.danger : theme.text3 }}>
+            <RotateCcw size={16} />Greșeli ({wrongCount})
           </button>
+        </motion.div>
 
-          {/* AI Chat button */}
-          {hasKey() ? (
-            <button
-              onClick={() => { setShowChat(true); window.dispatchEvent(new CustomEvent('studyx:chat', { detail: { open: true } })); }}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium text-sm transition-all hover:opacity-90"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}20, ${theme.accent2}20)`, border: `1px solid ${theme.accent}40`, color: theme.accent }}>
-              <Bot size={15} />Chat AI despre această grilă
-            </button>
-          ) : (
-            <div className="w-full flex items-center gap-2 py-2.5 px-3 rounded-xl text-sm"
-              style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
-              <Bot size={14} style={{ color: theme.text3 }} />
-              <span style={{ color: theme.text3 }} className="flex-1">AI disponibil cu o cheie Groq gratuită</span>
-              <button onClick={() => window.dispatchEvent(new CustomEvent('studyx:open-ai-settings'))}
-                className="text-xs font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80"
-                style={{ background: `${theme.accent}18`, color: theme.accent }}>
-                Configurează →
-              </button>
+        {/* AI Buddy Bar */}
+        {hasKey() ? (
+          <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}
+            onClick={() => { setShowChat(true); window.dispatchEvent(new CustomEvent('studyx:chat', { detail: { open: true } })); }}
+            className="w-full flex items-center justify-between gap-4 p-4 rounded-2xl mb-8 group transition-all"
+            style={{ background: `linear-gradient(135deg, ${theme.accent}12, ${theme.accent2}08)`, border: `1px solid ${theme.accent}30` }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110"
+                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                <Bot size={20} className="text-white" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-black" style={{ color: theme.text }}>Asistent AI Personal</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: theme.text }}>Discută despre conceptele din această grilă</p>
+              </div>
             </div>
-          )}
+            <div className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all group-hover:translate-x-1"
+              style={{ background: `${theme.accent}20`, color: theme.accent }}>
+              Deschide Chat →
+            </div>
+          </motion.button>
+        ) : (
+          <div className="w-full flex items-center gap-3 p-4 rounded-2xl mb-8"
+            style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+            <Bot size={18} style={{ color: theme.text3 }} />
+            <span className="text-xs font-medium flex-1" style={{ color: theme.text3 }}>Activează AI în Setări pentru tutorat personalizat.</span>
+            <button onClick={() => window.dispatchEvent(new CustomEvent('studyx:open-ai-settings'))}
+              className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg transition-all hover:bg-white/5"
+              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.accent }}>
+              Configurare
+            </button>
+          </div>
+        )}
+
+        {/* Utility Actions (Grid) */}
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-8">
+          {[
+            { label: 'Edit', icon: Pencil, action: () => navigate(`/create?edit=${quiz.id}`), color: theme.accent },
+            { label: 'Copy', icon: Copy, action: handleDuplicate, color: theme.text2 },
+            { label: 'JSON', icon: Download, action: exportQuiz, color: theme.text2 },
+            { label: 'PDF', icon: FileText, action: exportPDF, color: theme.text2 },
+            { label: 'Anki', icon: Download, action: exportAnki, color: theme.text2 },
+            { label: quiz.archived ? 'Restore' : 'Archive', icon: quiz.archived ? ArchiveRestore : Archive, action: () => toggleArchive(quiz.id), color: quiz.archived ? theme.warning : theme.text3 },
+          ].map((btn) => (
+            <button key={btn.label} onClick={btn.action}
+              className="flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all hover:scale-[1.05] active:scale-[0.95]"
+              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+              <btn.icon size={16} style={{ color: btn.color }} />
+              <span className="text-[10px] font-black uppercase tracking-tighter opacity-60" style={{ color: theme.text }}>{btn.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Questions preview */}
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="rounded-3xl p-6 mb-8"
+          style={{ background: theme.surface, border: `1px solid ${theme.border}`, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+          <div className="flex items-center justify-between mb-6 gap-4">
+            <div>
+              <h2 className="text-base font-black tracking-tight" style={{ color: theme.text }}>Conținut Grilă</h2>
+              <p className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: theme.text }}>{quiz.questions.length} întrebări totale</p>
+            </div>
+            {quiz.questions.length > 5 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-2xl flex-1 max-w-[220px] transition-all focus-within:ring-2"
+                style={{ background: theme.surface2, border: `1px solid ${theme.border2}`, ringColor: `${theme.accent}33` } as any}>
+                <Search size={14} style={{ color: theme.text3 }} />
+                <input
+                  type="text" placeholder="Caută în întrebări..." value={qSearch}
+                  onChange={e => setQSearch(e.target.value)}
+                  className="flex-1 text-xs font-medium bg-transparent"
+                  style={{ color: theme.text, outline: 'none', border: 'none' }}
+                />
+              </div>
+            )}
+          </div>
+          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+            {quiz.questions
+              .map((q, actualIdx) => ({ q, actualIdx }))
+              .filter(({ q }) => !qSearch || q.text.toLowerCase().includes(qSearch.toLowerCase()))
+              .map(({ q, actualIdx }) => (
+              <div key={q.id} className="p-4 rounded-2xl transition-all hover:bg-white/5 border border-transparent hover:border-white/10"
+                style={{ background: theme.surface2 }}>
+                <div className="flex items-start gap-3">
+                  <span className="text-[10px] font-black opacity-30 mt-1" style={{ color: theme.text }}>
+                    {String(actualIdx + 1).padStart(2, '0')}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium leading-relaxed" style={{ color: theme.text2 }}>{q.text}</p>
+                    {q.imageUrl && (
+                      <div className="mt-3 rounded-xl overflow-hidden shadow-md">
+                        <QuizImage src={q.imageUrl} maxHeight={120} />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 mt-3">
+                      {q.multipleCorrect && (
+                        <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg shadow-sm" 
+                          style={{ background: `linear-gradient(135deg, ${theme.accent2}, ${theme.accent})`, color: '#fff' }}>Multi</span>
+                      )}
+                      {q.difficulty && (
+                        <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg border shadow-sm"
+                          style={{ background: `${diffColor[q.difficulty]}15`, color: diffColor[q.difficulty], borderColor: `${diffColor[q.difficulty]}30` }}>
+                          {diffLabel[q.difficulty]}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </motion.div>
       </div>
     </div>
@@ -532,7 +489,8 @@ Comportament:
                 <p className="text-xs truncate" style={{ color: theme.text3 }}>{quiz!.title}</p>
               </div>
               <motion.button whileHover={{ rotate: 90 }} whileTap={{ scale: 0.88 }}
-                onClick={() => { setShowChat(false); window.dispatchEvent(new CustomEvent('studyx:chat', { detail: { open: false } })); }} style={{ color: theme.text3 }}>
+                onClick={() => { setShowChat(false); window.dispatchEvent(new CustomEvent('studyx:chat', { detail: { open: false } })); }} 
+                style={{ color: theme.text3, cursor: 'pointer' }}>
                 <X size={16} />
               </motion.button>
             </div>

@@ -355,16 +355,29 @@ export default function QuizPlay() {
   const getOptionStyle = (optId: string): React.CSSProperties => {
     const isSelected = selectedNow.includes(optId);
     if (!revealed) {
-      if (isSelected) return { background: `${theme.accent}18`, border: `1px solid ${theme.accent}50` };
+      if (isSelected) return { 
+        background: `${theme.accent}25`, 
+        border: `2px solid ${theme.accent}`,
+        boxShadow: `0 8px 24px ${theme.accent}20`,
+        transform: 'translateY(-1px)'
+      };
       return { background: theme.surface, border: `1px solid ${theme.border}` };
     }
-    if (correctIds.includes(optId)) return { background: `${theme.success}14`, border: `1px solid ${theme.success}50` };
-    if (isSelected && !correctIds.includes(optId)) return { background: `${theme.danger}12`, border: `1px solid ${theme.danger}50` };
-    return { background: theme.surface, border: `1px solid ${theme.border}`, opacity: 0.5 };
+    if (correctIds.includes(optId)) return { 
+      background: `${theme.success}18`, 
+      border: `2px solid ${theme.success}`,
+      boxShadow: `0 8px 24px ${theme.success}15`
+    };
+    if (isSelected && !correctIds.includes(optId)) return { 
+      background: `${theme.danger}15`, 
+      border: `2px solid ${theme.danger}`,
+      boxShadow: `0 8px 24px ${theme.danger}15`
+    };
+    return { background: theme.surface, border: `1px solid ${theme.border}`, opacity: 0.4, filter: 'grayscale(0.5)' };
   };
 
   const getOptionTextColor = (optId: string) => {
-    if (!revealed) return selectedNow.includes(optId) ? theme.accent : theme.text;
+    if (!revealed) return selectedNow.includes(optId) ? theme.text : theme.text;
     if (correctIds.includes(optId)) return theme.success;
     if (selectedNow.includes(optId)) return theme.danger;
     return theme.text3;

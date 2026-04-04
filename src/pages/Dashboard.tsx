@@ -1,5 +1,31 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, Component, type ErrorInfo } from 'react';
+// ...
+
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Dashboard ErrorBoundary caught an error", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 m-4 rounded-2xl" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+          <h2 className="text-red-500 font-bold mb-2">Eroare Dashboard</h2>
+          <p className="text-xs opacity-80 mb-4">{this.state.error?.message}</p>
+          <button onClick={() => window.location.reload()} className="text-xs px-3 py-1.5 bg-red-500 text-white rounded-lg">Reset</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { Link } from 'react-router-dom';
 import { Flame, RefreshCw, Plus, BookOpen, Zap, Target, X, CheckCircle2, Circle, Sparkles } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
@@ -170,8 +196,13 @@ function StatCard({ label, numeric, suffix, display, icon, color, delay }: {
   const count = useCountUp(numeric);
   return (
     <motion.div
+      layout
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ 
+        delay, 
+        layout: { type: "spring", stiffness: 300, damping: 30 },
+        opacity: { duration: 0.2 }
+      }}
       whileHover={{ y: -3, boxShadow: `0 12px 32px ${color}22`, transition: { duration: 0.18 } }}
       className="rounded-2xl p-4 relative overflow-hidden"
       style={{
@@ -194,27 +225,20 @@ function StatCard({ label, numeric, suffix, display, icon, color, delay }: {
           initial={{ scale: 1.18, color: color }}
           animate={{ scale: 1 }}
           transition={{ type: 'spring', stiffness: 400, damping: 18 }}
-          className="text-2xl font-bold mb-0.5"
+          className="text-2xl font-black tracking-tighter mb-0.5"
           style={{ color: theme.text }}>
           {display ?? `${count}${suffix}`}
         </motion.div>
-        <div className="text-xs font-medium" style={{ color: theme.text3 }}>{label}</div>
+        <div className="text-[10px] font-bold uppercase tracking-wider opacity-60" style={{ color: theme.text }}>{label}</div>
       </div>
     </motion.div>
   );
 }
-
 export default function Dashboard() {
   const theme = useTheme();
   const { username } = useUserStore();
-  const { quizzes, sessions } = useQuizStore();
+  const { quizzes, sessions, _hasHydrated } = useQuizStore();
   const { streak, getDueQuestions, getAccuracy, totalStudyTime } = useStatsStore();
-
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Bună dimineața' : hour < 18 ? 'Bună ziua' : 'Bună seara';
-  const dueCount = getDueQuestions().length;
-  const accuracy = getAccuracy();
-  const studyHours = Math.floor(totalStudyTime / 3600);
 
   const recentQuizzes = useMemo(() => [...quizzes]
     .sort((a, b) => {
@@ -227,6 +251,20 @@ export default function Dashboard() {
   const [checklistDismissed, setChecklistDismissed] = useState(() =>
     localStorage.getItem('studyx-checklist-dismissed') === 'true'
   );
+
+  if (!_hasHydrated) {
+    return (
+      <div className="h-full flex items-center justify-center p-8">
+        <div style={{ color: theme.text3 }}>Se încarcă datele...</div>
+      </div>
+    );
+  }
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Bună dimineața' : hour < 18 ? 'Bună ziua' : 'Bună seara';
+  const dueCount = getDueQuestions().length;
+  const accuracy = getAccuracy();
+  const studyHours = Math.floor(totalStudyTime / 3600);
   const checklistItems = [
     { id: 'quiz', label: 'Creează prima grilă', done: quizzes.filter(q => !q.id.startsWith('sample-') && !q.id.startsWith('img-')).length > 0, link: '/create' },
     { id: 'play', label: 'Rezolvă o grilă', done: sessions.length > 0, link: '/quizzes' },
@@ -236,16 +274,17 @@ export default function Dashboard() {
   ];
   const checklistDone = checklistItems.filter(i => i.done).length;
   const showChecklist = !checklistDismissed && checklistDone < checklistItems.length;
+const stats = [
+  { label: 'Grile', numeric: quizzes.length, suffix: '', icon: <BookOpen size={18} />, color: theme.accent },
+  { label: 'Streak', numeric: streak.currentStreak, suffix: '🔥', icon: <Flame size={18} />, color: theme.warning },
+  { label: 'Acuratețe', numeric: accuracy, suffix: '%', display: accuracy > 0 ? undefined : '—', icon: <Target size={18} />, color: theme.success },
+  { label: 'Ore studiu', numeric: studyHours, suffix: 'h', display: studyHours > 0 ? undefined : `${Math.floor(totalStudyTime / 60)}m`, icon: <Zap size={18} />, color: theme.accent2 },
+];
 
-  const stats = [
-    { label: 'Grile', numeric: quizzes.length, suffix: '', icon: <BookOpen size={18} />, color: theme.accent },
-    { label: 'Streak', numeric: streak.currentStreak, suffix: '🔥', icon: <Flame size={18} />, color: theme.warning },
-    { label: 'Acuratețe', numeric: accuracy, suffix: '%', display: accuracy > 0 ? undefined : '—', icon: <Target size={18} />, color: theme.success },
-    { label: 'Ore studiu', numeric: studyHours, suffix: 'h', display: studyHours > 0 ? undefined : `${Math.floor(totalStudyTime / 60)}m`, icon: <Zap size={18} />, color: theme.accent2 },
-  ];
-
-  return (
+return (
+  <ErrorBoundary>
     <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
+...
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
@@ -328,33 +367,36 @@ export default function Dashboard() {
 
         {/* Due review banner */}
         {dueCount > 0 && (
-          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.1 }}
-            className="mb-6 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1, type: "spring", stiffness: 300, damping: 25 }}
+            className="mb-8 p-5 rounded-[24px] flex flex-col sm:flex-row sm:items-center justify-between gap-5"
             style={{
-              background: `linear-gradient(135deg, ${theme.warning}18, ${theme.accent}10)`,
-              border: `1px solid ${theme.warning}35`,
-              boxShadow: `0 4px 24px ${theme.warning}12`,
+              background: `linear-gradient(135deg, ${theme.warning}22, ${theme.accent}12)`,
+              border: `1px solid ${theme.warning}40`,
+              boxShadow: `0 12px 32px ${theme.warning}10`,
             }}>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <motion.div
-                animate={{ scale: [1, 1.15, 1] }}
-                transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-                style={{ background: `${theme.warning}20` }}>
+                animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+                transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
+                className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: `${theme.warning}25`, border: `1px solid ${theme.warning}40` }}>
                 ⚡
               </motion.div>
               <div>
-                <p className="font-semibold" style={{ color: theme.text }}>
-                  {dueCount} {dueCount === 1 ? 'întrebare' : 'întrebări'} de recapitulat
+                <p className="font-bold text-lg leading-tight" style={{ color: theme.text }}>
+                  {dueCount} {dueCount === 1 ? 'întrebare' : 'întrebări'} restante
                 </p>
-                <p className="text-sm" style={{ color: theme.text2 }}>Repetare spațiată · algoritmul SM-2</p>
+                <p className="text-xs font-medium uppercase tracking-wider opacity-60 mt-1" style={{ color: theme.text }}>
+                  Algoritmul SM-2 recomandă recapitularea
+                </p>
               </div>
             </div>
-            <Link to="/review"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-white text-sm"
-              style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, boxShadow: `0 4px 14px ${theme.warning}30` }}>
-              <RefreshCw size={14} />Recapitulează
+            <Link to="/daily-review"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-white text-sm transition-all hover:scale-[1.03] active:scale-[0.98]"
+              style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, boxShadow: `0 8px 20px ${theme.warning}40` }}>
+              <RefreshCw size={14} className="animate-spin-slow" />
+              Recapitulează acum
             </Link>
           </motion.div>
         )}
@@ -417,5 +459,6 @@ export default function Dashboard() {
         </motion.div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

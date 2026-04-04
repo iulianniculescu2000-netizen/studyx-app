@@ -75,24 +75,32 @@ export const useStatsStore = create<StatsStore>()(
       const today = getToday();
       set((s) => {
         const dates = s.streak.studyDates;
-        const hasToday = dates.includes(today);
-        const newDates = hasToday ? dates : [...dates, today].slice(-365);
-        let current = 1;
-        const sortedDates = [...newDates].sort().reverse();
-        for (let i = 1; i < sortedDates.length; i++) {
-          const prev = new Date(sortedDates[i - 1]);
-          const curr = new Date(sortedDates[i]);
-          const diff = (prev.getTime() - curr.getTime()) / 86400000;
-          if (diff <= 1.5) current++;
-          else break;
+        if (dates.includes(today)) {
+          return { totalStudyTime: s.totalStudyTime + durationSeconds };
         }
+        const newDates = [...dates, today].sort();
+        
+        // Calculate streak by counting consecutive calendar days backwards
+        let current = 0;
+        let checkDate = new Date(today);
+        
+        while (true) {
+          const dateStr = checkDate.toISOString().split('T')[0];
+          if (newDates.includes(dateStr)) {
+            current++;
+            checkDate.setDate(checkDate.getDate() - 1);
+          } else {
+            break;
+          }
+        }
+
         return {
           totalStudyTime: s.totalStudyTime + durationSeconds,
           streak: {
             currentStreak: current,
             longestStreak: Math.max(s.streak.longestStreak, current),
             lastStudyDate: today,
-            studyDates: newDates,
+            studyDates: newDates.slice(-365), // Keep last year
           },
         };
       });

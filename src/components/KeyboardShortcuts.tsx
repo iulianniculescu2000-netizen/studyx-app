@@ -140,11 +140,14 @@ export default function KeyboardShortcuts() {
                   <p className="text-xs" style={{ color: theme.text3 }}>Navighează mai rapid</p>
                 </div>
               </div>
-              <button onClick={() => setOpen(false)}
+              <motion.button 
+                whileHover={{ scale: 1.1, rotate: 90 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setOpen(false)}
                 className="p-2 rounded-xl transition-all"
-                style={{ color: theme.text3, background: theme.surface2 }}>
+                style={{ color: theme.text3, background: theme.surface2, cursor: 'pointer' }}>
                 <X size={14} />
-              </button>
+              </motion.button>
             </div>
 
             {/* Content */}

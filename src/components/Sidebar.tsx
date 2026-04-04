@@ -6,7 +6,7 @@ import {
   Plus, Pencil, Trash2, Check, X, RefreshCw, LogOut,
   PanelLeftOpen, StickyNote, CreditCard,
   Download, ArrowDownCircle, RotateCcw, AlertCircle,
-  Settings, Brain,
+  Settings, Brain, Database,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
@@ -189,125 +189,92 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
         onClick={(e) => e.stopPropagation()}
         style={{
           background: theme.modalBg,
-          borderRadius: 24,
-          padding: '28px 28px 24px',
+          borderRadius: 28,
           maxWidth: 420,
           width: '92%',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
           border: `1px solid ${theme.border}`,
           boxShadow: '0 36px 100px rgba(0,0,0,0.45)',
         }}
       >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px 28px 18px', borderBottom: `1px solid ${theme.border}` }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: theme.text }}>Folder nou</h3>
             <p style={{ margin: '3px 0 0', fontSize: 12, color: theme.text3 }}>Organizează-ți grilele în foldere</p>
           </div>
-          <button onClick={onClose}
+          <motion.button 
+            whileHover={{ scale: 1.1, rotate: 90 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={onClose}
             style={{ color: theme.text3, background: theme.surface2, border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={16} />
-          </button>
-        </div>
-
-        {/* Emoji picker */}
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Pictogramă</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {FOLDER_EMOJIS.map((e) => (
-              <button key={e} onClick={() => setEmoji(e)}
-                style={{
-                  width: 38, height: 38, borderRadius: 11, fontSize: 19,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: emoji === e ? `${theme.accent}22` : theme.surface2,
-                  border: `1.5px solid ${emoji === e ? theme.accent + '55' : 'transparent'}`,
-                  cursor: 'pointer', transition: 'all 0.15s',
-                }}>
-                {e}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Color picker */}
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Culoare</div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            {FOLDER_COLORS.map((c) => (
-              <button key={c.id} onClick={() => setColor(c.id)}
-                style={{
-                  width: 30, height: 30, borderRadius: '50%',
-                  background: c.bg, border: 'none', cursor: 'pointer',
-                  outline: color === c.id ? `3px solid ${c.bg}` : 'none',
-                  outlineOffset: 3,
-                  transform: color === c.id ? 'scale(1.18)' : 'scale(1)',
-                  transition: 'all 0.15s',
-                  boxShadow: color === c.id ? `0 4px 12px ${c.bg}55` : 'none',
-                }} />
-            ))}
-          </div>
-        </div>
-
-        {/* Name input */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Nume folder</div>
-          <input
-            autoFocus
-            type="text"
-            placeholder="ex: Anatomie, Fiziologie..."
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') onClose(); }}
-            style={{
-              width: '100%', background: theme.inputBg,
-              border: `1.5px solid ${name.length > 0 ? theme.accent + '60' : theme.border}`,
-              borderRadius: 14, padding: '13px 16px',
-              color: theme.text, fontSize: 15, fontWeight: 500,
-              outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
-              transition: 'border-color 0.2s',
-            }}
-          />
-        </div>
-
-        {/* Live preview */}
-        <AnimatePresence>
-          {name.trim() && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              style={{ overflow: 'hidden', marginBottom: 16 }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: theme.surface2, border: `1px solid ${theme.border}` }}>
-                <span style={{ fontSize: 20 }}>{emoji}</span>
-                <span style={{ fontWeight: 700, color: theme.text, fontSize: 14, flex: 1 }}>{name.trim()}</span>
-                <span style={{ width: 12, height: 12, borderRadius: '50%', background: FOLDER_COLORS.find(c => c.id === color)?.bg, flexShrink: 0 }} />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Buttons */}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={onClose}
-            style={{ flex: 1, padding: '13px', borderRadius: 14, border: `1px solid ${theme.border}`, background: 'transparent', color: theme.text2, cursor: 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
-            Anulează
-          </button>
-          <motion.button
-            onClick={handleCreate}
-            disabled={!canCreate}
-            whileHover={canCreate ? { scale: 1.02 } : {}}
-            whileTap={canCreate ? { scale: 0.97 } : {}}
-            style={{
-              flex: 2, padding: '13px', borderRadius: 14,
-              background: canCreate ? `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` : theme.surface2,
-              color: canCreate ? '#fff' : theme.text3,
-              border: 'none', cursor: canCreate ? 'pointer' : 'not-allowed',
-              fontSize: 14, fontWeight: 700, fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              boxShadow: canCreate ? `0 8px 24px ${theme.accent}35` : 'none',
-            }}>
-            <Check size={15} />Creează folder
           </motion.button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-7 pt-5 custom-scrollbar" style={{ minHeight: 0 }}>
+          {/* Emoji picker */}
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Pictogramă</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {FOLDER_EMOJIS.map((e) => (
+                <button key={e} onClick={() => setEmoji(e)}
+                  style={{
+                    width: 38, height: 38, borderRadius: 11, fontSize: 19,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: emoji === e ? `${theme.accent}22` : theme.surface2,
+                    border: `1.5px solid ${emoji === e ? theme.accent + '55' : 'transparent'}`,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}>
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Color picker */}
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Culoare</div>
+            <div style={{ display: 'flex', gap: 12, paddingLeft: 4 }}>
+              {FOLDER_COLORS.map((c) => (
+                <button key={c.id} onClick={() => setColor(c.id)}
+                  style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    background: c.bg, border: 'none', cursor: 'pointer',
+                    outline: color === c.id ? `3px solid ${c.bg}` : 'none',
+                    outlineOffset: 3,
+                    transform: color === c.id ? 'scale(1.15)' : 'scale(1)',
+                    transition: 'all 0.15s',
+                    boxShadow: color === c.id ? `0 4px 12px ${c.bg}55` : 'none',
+                  }} />
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Nume folder</div>
+            <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+              placeholder="Ex: Anatomie, Cardiologie..."
+              style={{
+                width: '100%', padding: '14px 18px', borderRadius: 16, background: theme.surface2, border: `1px solid ${theme.border}`,
+                color: theme.text, outline: 'none', fontSize: 14, fontWeight: 600,
+              }} />
+          </div>
+
+          <motion.button onClick={handleCreate} disabled={!canCreate}
+            whileHover={canCreate ? { scale: 1.02, y: -2 } : {}}
+            whileTap={canCreate ? { scale: 0.98 } : {}}
+            style={{
+              width: '100%', padding: '16px', borderRadius: 18, border: 'none', fontWeight: 900, fontSize: 14,
+              textTransform: 'uppercase', letterSpacing: '0.05em',
+              cursor: canCreate ? 'pointer' : 'not-allowed', opacity: canCreate ? 1 : 0.5,
+              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff',
+              boxShadow: `0 12px 30px ${theme.accent}40`,
+            }}>Creează Folder</motion.button>
         </div>
       </motion.div>
     </motion.div>
@@ -380,7 +347,7 @@ export default function Sidebar() {
   const { username, logout } = useUserStore();
   const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
   const { quizzes, getQuizzesByFolder } = useQuizStore();
-  const { streak, getDueQuestions } = useStatsStore();
+  const { streak, getDueQuestions, questionStats } = useStatsStore();
   const [collapsed, toggleCollapsed] = useCollapsed();
   const { status: updateStatus, localVersion, downloadPercent,
     setShowUpdateModal } = useUpdateStore();
@@ -393,6 +360,9 @@ export default function Sidebar() {
 
   const dueCount = getDueQuestions().length;
   const avatarLetter = username?.charAt(0).toUpperCase() ?? '?';
+
+  const totalAnswered = Object.values(questionStats).reduce((a, s) => a + s.timesCorrect + s.timesWrong, 0);
+  const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT MEDICINĂ';
 
   // Fetch real version number from Electron on mount
   const { setLocalVersion } = useUpdateStore();
@@ -431,23 +401,22 @@ export default function Sidebar() {
 
   return (
     <motion.div
-      animate={{ width: collapsed ? 60 : 240 }}
-      transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
+      animate={{ width: collapsed ? 64 : 260 }}
+      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
       className="flex flex-col flex-shrink-0 select-none overflow-hidden"
       style={{
-        height: '100vh', // Full window height — top to bottom
+        height: '100vh',
         background: theme.isDark
-          ? 'rgba(0,0,0,0.28)'
-          : 'rgba(255,255,255,0.45)',
+          ? 'rgba(10,10,12,0.85)'
+          : 'rgba(255,255,255,0.75)',
         borderRight: `1px solid ${theme.border}`,
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
+        backdropFilter: 'blur(40px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(40px) saturate(160%)',
         position: 'relative',
-        zIndex: 10,
+        zIndex: 50,
       } as any}
     >
-      {/* ── Drag region at the very top (40px — same height as TitleBar) ── */}
-      {/* This makes the sidebar's top area draggable to match the TitleBar */}
+      {/* ── Drag region matches TitleBar ── */}
       <div
         style={{
           height: 40,
@@ -455,39 +424,37 @@ export default function Sidebar() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: collapsed ? 'center' : 'flex-start',
-          paddingLeft: collapsed ? 0 : 14,
-          paddingRight: collapsed ? 0 : 6,
+          paddingLeft: collapsed ? 0 : 16,
           borderBottom: `1px solid ${theme.border}`,
           WebkitAppRegion: 'drag',
         } as any}
       >
-        {/* App icon — always visible */}
         <div
-          className="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black text-white flex-shrink-0"
+          className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
           style={{
             background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
             boxShadow: `0 4px 12px ${theme.accent}40`,
             WebkitAppRegion: 'no-drag',
           } as any}
         >
-          S
+          SX
         </div>
         {!collapsed && (
           <span
-            className="text-sm font-bold ml-2.5 tracking-tight"
-            style={{ color: theme.text, WebkitAppRegion: 'no-drag' } as any}
+            className="text-[11px] font-black ml-3 tracking-[0.1em] uppercase"
+            style={{ color: theme.text, WebkitAppRegion: 'no-drag', opacity: 0.8 } as any}
           >
             StudyX
           </span>
         )}
       </div>
 
-      {/* ── User header ── */}
-      <div className="p-3 flex-shrink-0" style={{ borderBottom: `1px solid ${theme.border}` }}>
+      {/* ── User header (more compact) ── */}
+      <div className="p-4 flex-shrink-0" style={{ borderBottom: `1px solid ${theme.border}` }}>
         {collapsed ? (
           <Tip label={username ?? ''}>
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white text-sm mx-auto cursor-pointer"
+              className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-xs mx-auto cursor-pointer shadow-lg"
               style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
             >
               {avatarLetter}
@@ -496,31 +463,28 @@ export default function Sidebar() {
         ) : (
           <div className="flex items-center gap-3">
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white text-sm flex-shrink-0"
+              className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-base flex-shrink-0 shadow-lg"
               style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
             >
               {avatarLetter}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate" style={{ color: theme.text }}>{username}</p>
+              <p className="text-sm font-bold truncate leading-tight" style={{ color: theme.text }}>{username}</p>
               {streak.currentStreak > 0 ? (
-                <p className="text-xs flex items-center gap-1" style={{ color: theme.warning }}>
+                <p className="text-[10px] font-bold flex items-center gap-1 mt-0.5" style={{ color: theme.warning }}>
                   <Flame size={10} fill={theme.warning} />
-                  {streak.currentStreak} {streak.currentStreak === 1 ? 'zi' : 'zile'} streak
+                  {streak.currentStreak} ZILE STREAK
                 </p>
               ) : (
-                <p className="text-xs" style={{ color: theme.text3 }}>Bine ai venit!</p>
+                <p className="text-[10px] font-medium opacity-50 mt-0.5" style={{ color: theme.text }}>{medicalRank}</p>
               )}
             </div>
             <button
               onClick={logout}
-              title="Schimbă utilizatorul"
-              className="p-1.5 rounded-lg transition-all"
+              className="p-2 rounded-lg transition-all hover:bg-red-500/10"
               style={{ color: theme.text3 }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = theme.danger)}
-              onMouseLeave={(e) => (e.currentTarget.style.color = theme.text3)}
             >
-              <LogOut size={13} />
+              <LogOut size={14} />
             </button>
           </div>
         )}
@@ -580,6 +544,9 @@ export default function Sidebar() {
                 <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notițe" collapsed />
               </div>
             </Tip>
+            <Tip label="Knowledge Vault (AI)">
+              <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} />
+            </Tip>
             <Tip label="Flashcarduri">
               <div data-tutorial="nav-flashcards">
                 <NavItem to="/flashcards" icon={<CreditCard size={17} />} label="Flashcarduri" collapsed />
@@ -623,8 +590,7 @@ export default function Sidebar() {
             <NavItem
               to="/daily-review"
               icon={<Brain size={16} />}
-              label="Sesiune zilnică"
-              collapsed={false}
+              label="Sesiune zilnică"              collapsed={false}
               badge={dueCount > 0 ? (
                 <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
                   style={{ background: `${theme.accent}28`, color: theme.accent }}>
@@ -638,8 +604,14 @@ export default function Sidebar() {
             <div data-tutorial="nav-notes">
               <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notițe" collapsed={false} />
             </div>
+            <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} />
             <div data-tutorial="nav-flashcards">
-              <NavItem to="/flashcards" icon={<CreditCard size={16} />} label="Flashcarduri" collapsed={false} />
+              <NavItem
+                to="/flashcards"
+                icon={<CreditCard size={16} />}
+                label="Flashcarduri"
+                collapsed={false}
+              />
             </div>
             <div>
               <NavItem to="/settings" icon={<Settings size={16} />} label="Setări" collapsed={false} />

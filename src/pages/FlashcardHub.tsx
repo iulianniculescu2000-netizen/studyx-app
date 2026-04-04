@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMemo, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CreditCard, Clock, CheckCircle, Circle, Play, BookOpen, FileText, Bot, Loader2, AlertCircle, Upload } from 'lucide-react';
+import { CreditCard, Clock, CheckCircle, Circle, Play, BookOpen, FileText, Bot, Loader2, AlertCircle, Upload, Sparkles } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
@@ -194,7 +194,7 @@ export default function FlashcardHub() {
   const totalMastered = decks.reduce((s, d) => s + d.mastered, 0);
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8">
+    <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
       <input
         ref={fileInputRef}
         type="file"
@@ -222,72 +222,115 @@ export default function FlashcardHub() {
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center"
-              style={{ background: `${theme.accent2}20`, color: theme.accent2 }}>
-              <CreditCard size={20} />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight" style={{ color: theme.text }}>
-                Flashcarduri
-              </h1>
-              <p className="text-sm" style={{ color: theme.text3 }}>
-                Repetare spațiată inteligentă · SM-2
-              </p>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+          <div className="flex items-end justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-[18px] flex items-center justify-center shadow-lg"
+                style={{ background: `linear-gradient(135deg, ${theme.accent2} 0%, ${theme.accent} 100%)`, color: '#fff' }}>
+                <CreditCard size={24} />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black tracking-tight mb-0.5" style={{ color: theme.text }}>
+                  Flashcarduri
+                </h1>
+                <p className="text-[11px] font-black uppercase tracking-widest opacity-60" style={{ color: theme.text }}>
+                  Repetare Spațiată · SM-2
+                </p>
+              </div>
             </div>
           </div>
         </motion.div>
 
+        {/* Global stats bar */}
+        <motion.div data-tutorial="flashcard-hub" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="grid grid-cols-3 gap-4 mb-8">
+          {[
+            { label: 'Total carduri', value: totalCards, icon: <CreditCard size={18} />, color: theme.accent },
+            { label: 'De recapitulat', value: totalDue, icon: <Clock size={18} />, color: totalDue > 0 ? theme.warning : theme.success },
+            { label: 'Stăpânite', value: totalMastered, icon: <CheckCircle size={18} />, color: theme.success },
+          ].map((s, i) => (
+            <motion.div key={s.label}
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.12 + i * 0.05 }}
+              whileHover={{ y: -2, boxShadow: `0 8px 24px ${s.color}15` }}
+              className="rounded-2xl p-4 relative overflow-hidden"
+              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+              <div className="absolute top-0 left-0 w-20 h-20 rounded-full pointer-events-none"
+                style={{ background: `radial-gradient(circle at top left, ${s.color}15, transparent 70%)` }} />
+              <div className="flex items-center gap-3 mb-2 relative">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+                  style={{ background: `${s.color}15`, color: s.color }}>
+                  {s.icon}
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider opacity-60" style={{ color: theme.text }}>{s.label}</span>
+              </div>
+              <div className="text-2xl font-black tracking-tighter relative" style={{ color: theme.text }}>{s.value}</div>
+            </motion.div>
+          ))}
+        </motion.div>
+
         {/* AI PDF → Deck */}
         {hasKey() && (
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="mb-6 rounded-2xl p-4"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.2 }}
+            className="mb-8 p-5 rounded-[28px] relative overflow-hidden"
+            style={{ 
+              background: `linear-gradient(135deg, ${theme.accent2}15, ${theme.accent}08)`,
+              border: `1px solid ${theme.accent2}30`,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+            }}>
+            <div className="absolute top-0 right-0 w-40 h-40 rounded-full blur-[60px] pointer-events-none"
+              style={{ background: `${theme.accent2}25` }} />
+
+            <div className="relative flex flex-col md:flex-row md:items-center gap-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-xl"
                 style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
-                <Bot size={16} className="text-white" />
+                <Bot size={28} className="text-white" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold" style={{ color: theme.text }}>Generează deck din PDF cu AI</p>
-                <p className="text-xs" style={{ color: theme.text3 }}>Importă un curs PDF → AI creează flashcarduri instant</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] font-black uppercase tracking-[0.15em]" style={{ color: theme.accent2 }}>AI Flashcard Generator</span>
+                  <Sparkles size={12} style={{ color: theme.accent2 }} />
+                </div>
+                <p className="text-lg font-bold leading-tight" style={{ color: theme.text }}>Transformă cursul în carduri instant</p>
+                <p className="text-sm font-medium opacity-60 mt-1" style={{ color: theme.text }}>Importă un curs PDF și AI-ul va extrage conceptele cheie pentru tine.</p>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <div className="flex gap-1">
-                  {[5, 10, 15, 20].map(n => (
+              
+              <div className="flex flex-col gap-3 flex-shrink-0">
+                <div className="flex gap-1.5 p-1 rounded-xl" style={{ background: theme.surface2 }}>
+                  {[5, 10, 20, 30].map(n => (
                     <button key={n} onClick={() => setAiCount(n)}
-                      className="w-9 h-8 rounded-lg text-xs font-semibold transition-all"
+                      className="flex-1 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all"
                       style={{
-                        background: aiCount === n ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
-                        color: aiCount === n ? '#fff' : theme.text2,
-                        border: aiCount === n ? '1px solid transparent' : `1px solid ${theme.border}`,
-                        boxShadow: aiCount === n ? `0 10px 24px ${theme.accent}30` : 'none',
+                        background: aiCount === n ? theme.accent : 'transparent',
+                        color: aiCount === n ? '#fff' : theme.text3,
+                        boxShadow: aiCount === n ? `0 4px 12px ${theme.accent}40` : 'none',
                       }}>{n}</button>
                   ))}
                 </div>
                 <motion.button
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={handlePdfImport}
                   disabled={aiLoading}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white"
+                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-white shadow-lg"
                   style={{
                     background: aiLoading ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
-                    color: aiLoading ? theme.text3 : 'white',
+                    boxShadow: aiLoading ? 'none' : `0 8px 20px ${theme.accent}40`,
                   }}>
                   {aiLoading
-                    ? <><Loader2 size={13} className="animate-spin" />Generez...</>
-                    : <><FileText size={13} />Import PDF</>}
+                    ? <><Loader2 size={16} className="animate-spin" />Se procesează...</>
+                    : <><FileText size={16} />Selectează PDF</>}
                 </motion.button>
               </div>
             </div>
             <AnimatePresence>
               {aiError && (
-                <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  className="mt-3 flex items-center gap-2 p-2.5 rounded-xl text-xs"
-                  style={{ background: `${theme.danger}12`, border: `1px solid ${theme.danger}30`, color: theme.danger }}>
-                  <AlertCircle size={12} />{aiError}
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                  className="mt-4 flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-bold"
+                  style={{ background: `${theme.danger}15`, border: `1px solid ${theme.danger}30`, color: theme.danger }}>
+                  <AlertCircle size={14} />{aiError}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -296,101 +339,76 @@ export default function FlashcardHub() {
 
         {/* Anki CSV Import */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-4 rounded-2xl p-4"
-          style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: `${theme.accent2}20`, color: theme.accent2 }}>
-              <Upload size={16} />
+          transition={{ delay: 0.25 }}
+          className="mb-8 rounded-3xl p-5 group transition-all hover:translate-y-[-2px]"
+          style={{ background: theme.surface, border: `1px solid ${theme.border}`, boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+              style={{ background: `${theme.accent2}15`, color: theme.accent2 }}>
+              <Upload size={20} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold" style={{ color: theme.text }}>Importă deck Anki (CSV)</p>
-              <p className="text-xs" style={{ color: theme.text3 }}>Format: front;back sau front{'\t'}back · un card per linie</p>
+              <p className="text-sm font-black uppercase tracking-wider" style={{ color: theme.text }}>Import Anki / CSV</p>
+              <p className="text-xs font-medium opacity-60 mt-1" style={{ color: theme.text }}>Încarcă seturile tale existente din alte aplicații.</p>
             </div>
             <motion.button
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
               onClick={handleCsvImport}
               disabled={csvImporting}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all"
               style={{
-                background: csvImporting ? theme.surface2 : `${theme.accent2}18`,
+                background: csvImporting ? theme.surface2 : `${theme.accent2}15`,
                 color: csvImporting ? theme.text3 : theme.accent2,
                 border: `1px solid ${theme.accent2}30`,
               }}>
               {csvImporting
-                ? <><Loader2 size={13} className="animate-spin" />Se importă...</>
-                : <><Upload size={13} />Import CSV</>}
+                ? <><Loader2 size={14} className="animate-spin" />Importare...</>
+                : <><Upload size={14} />Alege Fișier</>}
             </motion.button>
           </div>
           <AnimatePresence>
             {csvError && (
-              <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                className="mt-3 flex items-center gap-2 p-2.5 rounded-xl text-xs"
-                style={{ background: `${theme.danger}12`, border: `1px solid ${theme.danger}30`, color: theme.danger }}>
-                <AlertCircle size={12} />{csvError}
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                className="mt-4 flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-bold"
+                style={{ background: `${theme.danger}15`, border: `1px solid ${theme.danger}30`, color: theme.danger }}>
+                <AlertCircle size={14} />{csvError}
               </motion.div>
             )}
           </AnimatePresence>
         </motion.div>
 
-        {/* Global stats bar */}
-        <motion.div data-tutorial="flashcard-hub" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.08 }}
-          className="grid grid-cols-3 gap-3 mb-6">
-          {[
-            { label: 'Total carduri', value: totalCards, icon: <CreditCard size={16} />, color: theme.accent },
-            { label: 'De recapitulat azi', value: totalDue, icon: <Clock size={16} />, color: totalDue > 0 ? theme.warning : theme.success },
-            { label: 'Stăpânite', value: totalMastered, icon: <CheckCircle size={16} />, color: theme.success },
-          ].map((s, i) => (
-            <motion.div key={s.label}
-              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.12 + i * 0.05 }}
-              className="rounded-2xl p-4 relative overflow-hidden"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-              <div className="absolute top-0 left-0 w-16 h-16 rounded-full pointer-events-none"
-                style={{ background: `radial-gradient(circle at top left, ${s.color}18, transparent 70%)` }} />
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-                  style={{ background: `${s.color}18`, color: s.color }}>
-                  {s.icon}
-                </div>
-                <span className="text-xs font-medium" style={{ color: theme.text3 }}>{s.label}</span>
-              </div>
-              <div className="text-2xl font-bold" style={{ color: theme.text }}>{s.value}</div>
-            </motion.div>
-          ))}
-        </motion.div>
-
-        {/* Review all due button */}
+        {/* Review all due banner */}
         {totalDue > 0 && (
-          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.18 }}
-            className="mb-6 p-4 rounded-2xl flex items-center justify-between"
+          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mb-10 p-5 rounded-[28px] flex flex-col sm:flex-row sm:items-center justify-between gap-5"
             style={{
-              background: `linear-gradient(135deg, ${theme.warning}18, ${theme.accent}10)`,
-              border: `1px solid ${theme.warning}35`,
-              boxShadow: `0 4px 24px ${theme.warning}12`,
+              background: `linear-gradient(135deg, ${theme.warning}22, ${theme.accent}12)`,
+              border: `1px solid ${theme.warning}40`,
+              boxShadow: `0 12px 32px ${theme.warning}12`,
             }}>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <motion.div
-                animate={{ scale: [1, 1.12, 1] }}
-                transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                style={{ background: `${theme.warning}22` }}>
+                animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+                transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
+                className="w-14 h-14 rounded-[20px] flex items-center justify-center text-2xl flex-shrink-0"
+                style={{ background: `${theme.warning}25`, border: `1px solid ${theme.warning}40` }}>
                 ⚡
               </motion.div>
               <div>
-                <p className="font-semibold" style={{ color: theme.text }}>
-                  {totalDue} {totalDue === 1 ? 'card' : 'carduri'} de recapitulat azi
+                <p className="font-black text-lg leading-tight" style={{ color: theme.text }}>
+                  {totalDue} {totalDue === 1 ? 'card' : 'carduri'} restante
                 </p>
-                <p className="text-sm" style={{ color: theme.text2 }}>Studiu eficient · ~{Math.ceil(totalDue * 0.5)} minute</p>
+                <p className="text-xs font-bold uppercase tracking-wider opacity-60 mt-1" style={{ color: theme.text }}>
+                  Timp estimat: ~{Math.ceil(totalDue * 0.5)} minute
+                </p>
               </div>
             </div>
             <Link to="/flashcards/session/all"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-white text-sm flex-shrink-0"
-              style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, boxShadow: `0 4px 14px ${theme.warning}30` }}>
-              <Play size={14} fill="white" />Recapitulează tot
+              className="flex items-center gap-2 px-8 py-3.5 rounded-2xl font-black text-white text-sm shadow-xl transition-all hover:scale-[1.03] active:scale-[0.98]"
+              style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, boxShadow: `0 8px 20px ${theme.warning}40` }}>
+              <Play size={16} fill="white" className="animate-pulse" />Recapitulează Tot
             </Link>
           </motion.div>
         )}
@@ -428,51 +446,55 @@ export default function FlashcardHub() {
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 + i * 0.05, ease: [0.16, 1, 0.3, 1] }}
-                  whileHover={{ y: -1, transition: { duration: 0.15 } }}
-                  className="rounded-2xl p-4 relative overflow-hidden"
-                  style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+                  whileHover={{ y: -2, transition: { duration: 0.2 } }}
+                  className="rounded-3xl p-5 relative overflow-hidden"
+                  style={{ 
+                    background: theme.surface, 
+                    border: `1px solid ${theme.border}`,
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
+                  }}
                 >
-                  {/* Color accent */}
-                  <div className="absolute inset-y-0 left-0 w-1 rounded-l-2xl"
-                    style={{ background: `linear-gradient(180deg, ${deck.colors.from}, ${deck.colors.to})` }} />
+                  {/* Color accent bar */}
+                  <div className="absolute inset-y-0 left-0 w-1.5"
+                    style={{ background: deck.colors.badge }} />
 
-                  <div className="flex items-center gap-4 ml-2">
+                  <div className="flex items-center gap-5 ml-2">
                     {/* Emoji + title */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2.5 mb-1">
-                        <span className="text-2xl leading-none">{deck.quiz.emoji}</span>
+                      <div className="flex items-center gap-3.5 mb-2">
+                        <div className="text-3xl filter drop-shadow-sm">{deck.quiz.emoji}</div>
                         <div className="min-w-0">
-                          <h3 className="font-semibold text-sm leading-snug truncate" style={{ color: theme.text }}>
+                          <h3 className="font-black text-base leading-tight truncate" style={{ color: theme.text }}>
                             {deck.quiz.title}
                           </h3>
-                          <p className="text-xs truncate" style={{ color: theme.text3 }}>
-                            {deck.quiz.category} · {deck.total} {deck.total === 1 ? 'card' : 'carduri'}
+                          <p className="text-[10px] font-black uppercase tracking-wider opacity-50 mt-0.5" style={{ color: theme.text }}>
+                            {deck.quiz.category} · {deck.total} carduri
                           </p>
                         </div>
                       </div>
 
                       {/* Mini progress bar */}
-                      <div className="flex items-center gap-2 mt-2">
-                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
+                      <div className="flex items-center gap-3 mt-3">
+                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
                           <motion.div
                             className="h-full rounded-full"
                             initial={{ width: 0 }}
                             animate={{ width: `${deck.masteryPct}%` }}
-                            transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 + i * 0.05 }}
-                            style={{ background: `linear-gradient(90deg, ${deck.colors.from}, ${deck.colors.to})` }}
+                            transition={{ duration: 1, ease: 'easeOut', delay: 0.3 + i * 0.05 }}
+                            style={{ background: deck.colors.badge }}
                           />
                         </div>
 
                         {/* Stats chips */}
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           {deck.due > 0 && (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                              style={{ background: `${theme.warning}22`, color: theme.warning }}>
-                              {deck.due} scadente
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg"
+                              style={{ background: `${theme.warning}20`, color: theme.warning }}>
+                              {deck.due} restante
                             </span>
                           )}
                           {deck.seen === 0 && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full"
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg"
                               style={{ background: theme.surface2, color: theme.text3 }}>
                               Nou
                             </span>
@@ -485,20 +507,20 @@ export default function FlashcardHub() {
                     <MasteryRing pct={deck.masteryPct} color={deck.due > 0 ? theme.warning : deck.masteryPct >= 80 ? theme.success : theme.accent} />
 
                     {/* Action buttons */}
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-2">
                       <Link to={`/flashcards/session/${deck.quiz.id}`}
-                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white"
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider text-white shadow-lg transition-all hover:scale-[1.05] active:scale-[0.95]"
                         style={{
-                          background: `linear-gradient(135deg, ${deck.colors.from}, ${deck.colors.to})`,
-                          boxShadow: `0 10px 24px ${deck.colors.from.replace('0.85', '0.22').replace('0.9', '0.22')}`,
-                          minWidth: 124,
+                          background: deck.colors.badge,
+                          boxShadow: `0 8px 20px ${deck.colors.badge}40`,
+                          minWidth: 140,
                         }}>
-                        <Play size={11} fill="white" />
-                        {deck.due > 0 ? `${deck.due} scadente` : 'Studiază'}
+                        <Play size={12} fill="white" />
+                        {deck.due > 0 ? 'Recapitulează' : 'Studiază'}
                       </Link>
                       <Link to={`/flashcards/session/${deck.quiz.id}?mode=all`}
-                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium"
-                        style={{ background: theme.surface2, color: theme.text2, border: `1px solid ${theme.border}` }}>
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all hover:bg-white/10 active:scale-[0.98]"
+                        style={{ background: theme.surface2, color: theme.text2, border: `1px solid ${theme.border2}` }}>
                         <Circle size={10} />Previzualizare
                       </Link>
                     </div>

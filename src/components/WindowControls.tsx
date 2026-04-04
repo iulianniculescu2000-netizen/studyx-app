@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Minus, X, Maximize2, Minimize2 } from 'lucide-react';
+import { useTheme } from '../theme/ThemeContext';
 
 interface BtnConfig {
   label: string;
@@ -22,6 +23,7 @@ function WinBtn({
   label, icon, hoverBg, hoverColor, width, isClose, onClick,
 }: BtnConfig & { onClick: () => void }) {
   const [hover, setHover] = useState(false);
+  const theme = useTheme();
 
   return (
     <motion.button
@@ -30,8 +32,8 @@ function WinBtn({
       aria-label={label}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      whileTap={{ scale: 0.82 }}
-      transition={{ duration: 0.08 }}
+      whileTap={{ scale: 0.8 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 10 }}
       style={{
         width,
         height: 40,
@@ -40,18 +42,20 @@ function WinBtn({
         justifyContent: 'center',
         border: 'none',
         outline: 'none',
-        cursor: 'default',
+        cursor: 'pointer',
         background: hover
           ? hoverBg
           : 'transparent',
-        color: hover ? hoverColor : 'rgba(200,200,210,0.72)',
-        transition: 'background 0.12s, color 0.12s',
+        color: hover 
+          ? hoverColor 
+          : theme.text2, // High visibility based on theme
+        transition: 'background 0.15s, color 0.12s',
         flexShrink: 0,
       }}
     >
       <motion.span
-        animate={isClose && hover ? { rotate: [0, -10, 10, -4, 0] } : { rotate: 0 }}
-        transition={{ duration: 0.28, ease: 'easeOut' }}
+        animate={isClose && hover ? { rotate: 90, scale: 1.1 } : { rotate: 0, scale: 1 }}
+        transition={{ duration: 0.2, ease: 'backOut' }}
         style={{ display: 'flex', alignItems: 'center' }}
       >
         {icon}
@@ -63,6 +67,7 @@ function WinBtn({
 export default function WindowControls() {
   const [isMax, setIsMax] = useState(false);
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  const theme = useTheme();
 
   useEffect(() => {
     if (!api) return;
@@ -80,37 +85,40 @@ export default function WindowControls() {
         position: 'fixed',
         top: 0,
         right: 0,
-        zIndex: 9992,          // Above modals (z-200), below splash (z-9999)
+        zIndex: 9999,          // Absolute top
         display: 'flex',
         alignItems: 'center',
+        background: 'transparent',
+        width: 138,            // 46 * 3
+        height: 40,
         // Electron drag region override — buttons must be clickable
         WebkitAppRegion: 'no-drag',
       } as React.CSSProperties & { WebkitAppRegion: string }}
     >
       <WinBtn
         label="Minimizează"
-        icon={<Minus size={14} strokeWidth={2} />}
-        hoverBg="rgba(120,120,130,0.22)"
-        hoverColor="rgba(240,240,250,1)"
+        icon={<Minus size={14} strokeWidth={2.5} />}
+        hoverBg={theme.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}
+        hoverColor={theme.text}
         width={46}
         onClick={() => api.minimize()}
       />
       <WinBtn
         label={isMax ? 'Restaurează' : 'Maximizează'}
         icon={isMax
-          ? <Minimize2 size={13} strokeWidth={2} />
-          : <Maximize2 size={13} strokeWidth={2} />}
-        hoverBg="rgba(48,209,88,0.22)"
-        hoverColor="rgba(240,240,250,1)"
+          ? <Minimize2 size={13} strokeWidth={2.5} />
+          : <Maximize2 size={13} strokeWidth={2.5} />}
+        hoverBg={theme.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}
+        hoverColor={theme.text}
         width={46}
         onClick={() => api.maximize()}
       />
       <WinBtn
         label="Închide"
-        icon={<X size={14} strokeWidth={2} />}
-        hoverBg="rgba(255,69,58,0.88)"
+        icon={<X size={14} strokeWidth={2.5} />}
+        hoverBg="rgba(255,69,58,0.95)"
         hoverColor="#FFFFFF"
-        width={52}
+        width={46}
         isClose
         onClick={() => api.close()}
       />

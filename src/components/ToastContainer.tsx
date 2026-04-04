@@ -1,80 +1,53 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Info, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { useToastStore } from '../store/toastStore';
 import { useTheme } from '../theme/ThemeContext';
-
-const ICONS = { success: Check, error: X, warning: AlertTriangle, info: Info };
+import Portal from './Portal';
 
 export default function ToastContainer() {
-  const { toasts, remove } = useToastStore();
+  const { toasts, removeToast } = useToastStore();
   const theme = useTheme();
-  // Use theme colors so toasts match the active theme
-  const COLORS = {
-    success: theme.success,
-    error: theme.danger,
-    warning: theme.warning,
-    info: theme.accent,
+
+  const icons = {
+    success: <CheckCircle2 size={18} color="#30D158" />,
+    error: <AlertCircle size={18} color="#FF453A" />,
+    info: <Info size={18} color={theme.accent} />,
+    warning: <AlertTriangle size={18} color="#FF9F0A" />,
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-[200] flex flex-col-reverse gap-2 pointer-events-none">
-      <AnimatePresence>
-        {toasts.map((t) => {
-          const Icon = ICONS[t.type];
-          const color = COLORS[t.type];
-          return (
-            <motion.div key={t.id}
-              initial={{ opacity: 0, y: 20, scale: 0.9, x: 40 }}
-              animate={{ opacity: 1, y: 0, scale: 1, x: 0 }}
-              exit={{ opacity: 0, y: 8, scale: 0.95, x: 40 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-              whileHover={{ scale: 1.02, y: -2 }}
-              className="flex flex-col pointer-events-auto min-w-[220px] max-w-[340px] overflow-hidden rounded-2xl"
-              style={{
-                background: theme.modalBg,
-                border: `1px solid ${color}35`,
-                backdropFilter: 'blur(24px)',
-                boxShadow: `0 8px 32px rgba(0,0,0,0.22), 0 0 0 1px ${color}12`,
-              }}>
-              {/* Content row */}
-              <div className="flex items-center gap-3 px-4 py-3">
-                <motion.div
-                  initial={{ scale: 0, rotate: -180 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 20 }}
-                  className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: `${color}18`, color }}>
-                  <Icon size={14} strokeWidth={2.5} />
-                </motion.div>
-                <p className="text-sm font-medium flex-1 leading-snug" style={{ color: theme.text }}>
-                  {t.message}
-                </p>
-                <motion.button
-                  onClick={() => remove(t.id)}
-                  whileHover={{ rotate: 90, scale: 1.15 }}
-                  whileTap={{ scale: 0.85 }}
-                  transition={{ duration: 0.18 }}
-                  className="flex-shrink-0 p-0.5 rounded-lg"
-                  style={{ color: theme.text3 }}>
-                  <X size={12} />
-                </motion.button>
-              </div>
-
-              {/* Progress bar */}
-              <motion.div
-                initial={{ scaleX: 1 }}
-                animate={{ scaleX: 0 }}
-                transition={{ duration: t.duration / 1000, ease: 'linear' }}
-                style={{
-                  height: 2,
-                  background: `linear-gradient(90deg, ${color}, ${color}88)`,
-                  transformOrigin: 'left',
-                }}
-              />
+    <Portal>
+      <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence mode="popLayout">
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              layout
+              initial={{ opacity: 0, x: 20, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.9, transition: { duration: 0.2 } }}
+              className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl min-w-[280px] max-w-sm"
+              style={{ 
+                background: theme.modalBg, 
+                border: `1px solid ${theme.border}`,
+                backdropFilter: 'blur(20px)'
+              }}
+            >
+              <div className="shrink-0">{icons[toast.type]}</div>
+              <p className="flex-1 text-sm font-bold leading-tight" style={{ color: theme.text }}>
+                {toast.message}
+              </p>
+              <button 
+                onClick={() => removeToast(toast.id)}
+                className="shrink-0 p-1 rounded-lg hover:bg-white/5 transition-colors"
+                style={{ color: theme.text3 }}
+              >
+                <X size={14} />
+              </button>
             </motion.div>
-          );
-        })}
-      </AnimatePresence>
-    </div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </Portal>
   );
 }

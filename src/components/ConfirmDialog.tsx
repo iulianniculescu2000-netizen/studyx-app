@@ -83,31 +83,35 @@ export default function ConfirmDialog({
               )}
 
               {/* Actions */}
-              <div className="flex gap-2 mt-4">
-                <button
+              <div className="flex gap-3 mt-6">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={onCancel}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all hover:opacity-80"
-                  style={{ background: theme.surface2, color: theme.text2, border: `1px solid ${theme.border}` }}
+                  className="flex-1 py-3 rounded-2xl text-sm font-bold transition-all"
+                  style={{ background: theme.surface2, color: theme.text2, border: `1px solid ${theme.border2}` }}
                 >
                   {cancelLabel}
-                </button>
-                <button
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02, boxShadow: `0 8px 24px ${variantColor}40` }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={onConfirm}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                  className="flex-1 py-3 rounded-2xl text-sm font-black text-white shadow-lg transition-all"
                   style={{ background: variantColor }}
                 >
                   {confirmLabel}
-                </button>
+                </motion.button>
               </div>
 
               {/* Close X button */}
               <motion.button
                 onClick={onCancel}
-                whileHover={{ rotate: 90, scale: 1.15 }}
+                whileHover={{ rotate: 90, scale: 1.15, background: 'rgba(255,255,255,0.1)' }}
                 whileTap={{ scale: 0.88 }}
                 transition={{ duration: 0.2 }}
                 className="absolute top-4 right-4 p-1.5 rounded-lg"
-                style={{ color: theme.text3 }}
+                style={{ color: theme.text3, cursor: 'pointer' }}
               >
                 <X size={14} />
               </motion.button>

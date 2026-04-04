@@ -247,7 +247,7 @@ export default function Notes() {
                       <div style={{ height: 1, background: theme.border, marginBottom: 8 }} />
 
                       {/* Note content */}
-                      <p className="text-sm whitespace-pre-wrap" style={{ color: theme.text }}>
+                      <p className="text-sm whitespace-pre-wrap pr-16" style={{ color: theme.text }}>
                         {n.text}
                       </p>
 

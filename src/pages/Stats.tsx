@@ -110,110 +110,102 @@ export default function Stats() {
   };
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8">
+    <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
       <div className="max-w-4xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight" style={{ color: theme.text }}>Statistici</h1>
-          <p style={{ color: theme.text2 }}>Progresul tău la studiu</p>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} 
+          transition={{ duration: 0.5 }} className="mb-8">
+          <h1 className="text-3xl font-black tracking-tight mb-1" style={{ color: theme.text }}>
+            Analiză <span style={{
+              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}>Performanță</span>
+          </h1>
+          <p className="text-sm font-medium opacity-60" style={{ color: theme.text }}>Vizualizează progresul și evoluția ta în timp</p>
         </motion.div>
 
         {sessions.length === 0 ? (
-          <div className="text-center py-24 rounded-2xl"
+          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
+            className="text-center py-24 rounded-3xl"
             style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
             <div className="text-6xl mb-6">📊</div>
-            <p className="text-lg font-medium mb-1" style={{ color: theme.text }}>Nicio sesiune înregistrată</p>
-            <p className="text-sm" style={{ color: theme.text3 }}>Rezolvă câteva grile pentru a vedea statistici.</p>
-          </div>
+            <p className="text-lg font-bold mb-1" style={{ color: theme.text }}>Nicio sesiune înregistrată</p>
+            <p className="text-sm font-medium opacity-60" style={{ color: theme.text }}>Rezolvă câteva grile pentru a-ți genera profilul de performanță.</p>
+          </motion.div>
         ) : (
           <>
-            {/* KPI Cards */}
+            {/* KPI Grid */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-              className="grid grid-cols-3 gap-4 mb-8">
+              className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
               {[
-                { label: 'Sesiuni totale', value: sessions.length, icon: <BookOpen size={18} />, color: theme.accent },
-                { label: 'Acuratețe medie', value: `${accuracy}%`, icon: <Target size={18} />, color: theme.success },
-                { label: 'Scor maxim', value: `${bestScore}%`, icon: <Trophy size={18} />, color: '#FFD60A' },
-                { label: 'Streak curent', value: `${streak.currentStreak}d`, icon: <Flame size={18} />, color: theme.warning },
-                { label: 'Streak maxim', value: `${streak.longestStreak}d`, icon: <TrendingUp size={18} />, color: theme.accent2 },
-                { label: 'Ore studiu', value: `${studyHours}h`, icon: <Clock size={18} />, color: theme.text2 },
+                { label: 'Sesiuni Totale', value: sessions.length, icon: <BookOpen size={18} />, color: theme.accent },
+                { label: 'Acuratețe Medie', value: `${accuracy}%`, icon: <Target size={18} />, color: theme.success },
+                { label: 'Scor Maxim', value: `${bestScore}%`, icon: <Trophy size={18} />, color: '#FFD60A' },
+                { label: 'Streak Curent', value: `${streak.currentStreak} zile`, icon: <Flame size={18} />, color: theme.warning },
+                { label: 'Record Streak', value: `${streak.longestStreak} zile`, icon: <TrendingUp size={18} />, color: theme.accent2 },
+                { label: 'Timp Studiu', value: `${studyHours}h`, icon: <Clock size={18} />, color: theme.text2 },
               ].map((stat, i) => (
                 <motion.div key={stat.label}
                   initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 + i * 0.05 }}
-                  className="rounded-2xl p-4"
+                  whileHover={{ y: -3, boxShadow: `0 12px 32px ${stat.color}15` }}
+                  className="rounded-2xl p-4 relative overflow-hidden"
                   style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="absolute top-0 left-0 w-16 h-16 rounded-full pointer-events-none"
+                    style={{ background: `radial-gradient(circle at top left, ${stat.color}15, transparent 70%)` }} />
+                  <div className="flex items-center gap-3 mb-3 relative">
                     <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: `${stat.color}18`, color: stat.color }}>
+                      style={{ background: `${stat.color}15`, color: stat.color }}>
                       {stat.icon}
                     </div>
-                    <span className="text-xs font-medium" style={{ color: theme.text3 }}>{stat.label}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider opacity-60" style={{ color: theme.text }}>{stat.label}</span>
                   </div>
-                  <div className="text-2xl font-bold" style={{ color: theme.text }}>{stat.value}</div>
+                  <div className="text-2xl font-black tracking-tighter relative" style={{ color: theme.text }}>{stat.value}</div>
                 </motion.div>
               ))}
             </motion.div>
 
             {/* Achievements */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-              className="rounded-2xl p-5 mb-5"
+              className="rounded-[32px] p-6 mb-8"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-              <h2 className="font-semibold mb-4 flex items-center gap-2" style={{ color: theme.text }}>
-                <Trophy size={16} style={{ color: '#FFD60A' }} />
-                Realizări
-              </h2>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg"
+                  style={{ background: 'rgba(255,214,10,0.15)', color: '#FFD60A' }}>
+                  <Trophy size={20} />
+                </div>
+                <div>
+                  <h2 className="font-black text-lg leading-tight" style={{ color: theme.text }}>Realizări</h2>
+                  <p className="text-[10px] font-black uppercase tracking-wider opacity-50" style={{ color: theme.text }}>Trofee și Milestone-uri</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {[
-                  {
-                    id: 'first_quiz', emoji: '🎓', label: 'Prima grilă',
-                    desc: 'Ai rezolvat prima sesiune',
-                    earned: sessions.length >= 1,
-                  },
-                  {
-                    id: 'streak7', emoji: '🔥', label: 'O săptămână',
-                    desc: '7 zile de studiu consecutiv',
-                    earned: streak.longestStreak >= 7,
-                  },
-                  {
-                    id: 'perfect', emoji: '🏆', label: 'Perfect',
-                    desc: 'Scor 100% la o sesiune',
-                    earned: sessions.some(s => s.score === s.total && s.total > 0),
-                  },
-                  {
-                    id: 'accuracy90', emoji: '🎯', label: 'Expert',
-                    desc: 'Acuratețe generală ≥ 90%',
-                    earned: accuracy >= 90,
-                  },
-                  {
-                    id: 'studytime', emoji: '⚡', label: 'Dedicat',
-                    desc: '1+ oră de studiu total',
-                    earned: totalStudyTime >= 3600,
-                  },
-                  {
-                    id: 'quizzes10', emoji: '📚', label: 'Colecționar',
-                    desc: '10+ grile create',
-                    earned: quizzes.filter(q => !q.id.startsWith('sample-') && !q.id.startsWith('img-')).length >= 10,
-                  },
+                  { id: 'first_quiz', emoji: '🎓', label: 'Prima Grilă', desc: 'Sesiune inițială', earned: sessions.length >= 1 },
+                  { id: 'streak7', emoji: '🔥', label: 'O Săptămână', desc: '7 zile consecutive', earned: streak.longestStreak >= 7 },
+                  { id: 'perfect', emoji: '🏆', label: 'Scor Perfect', desc: '100% la o sesiune', earned: sessions.some(s => s.score === s.total && s.total > 0) },
+                  { id: 'accuracy90', emoji: '🎯', label: 'Nivel Expert', desc: 'Acuratețe ≥ 90%', earned: accuracy >= 90 },
+                  { id: 'studytime', emoji: '⚡', label: 'Dedicat', desc: '1+ oră de studiu', earned: totalStudyTime >= 3600 },
+                  { id: 'quizzes10', emoji: '📚', label: 'Colecționar', desc: '10+ grile create', earned: quizzes.filter(q => !q.id.startsWith('sample-') && !q.id.startsWith('img-')).length >= 10 },
                 ].map((ach) => (
                   <motion.div
                     key={ach.id}
-                    whileHover={{ scale: ach.earned ? 1.03 : 1 }}
-                    transition={{ duration: 0.15 }}
-                    className="rounded-2xl p-3.5 text-center relative overflow-hidden"
+                    whileHover={ach.earned ? { scale: 1.03, y: -2 } : {}}
+                    className="rounded-[24px] p-4 text-center relative overflow-hidden transition-all shadow-sm"
                     style={{
-                      background: ach.earned ? `${theme.accent}12` : theme.surface2,
-                      border: `1px solid ${ach.earned ? theme.accent + '30' : theme.border}`,
-                      opacity: ach.earned ? 1 : 0.45,
+                      background: ach.earned ? `${theme.accent}10` : theme.surface2,
+                      border: `1px solid ${ach.earned ? theme.accent + '40' : theme.border}`,
+                      opacity: ach.earned ? 1 : 0.5,
                     }}>
-                    <div className="text-3xl mb-2" style={{ filter: ach.earned ? 'none' : 'grayscale(1)' }}>
+                    <div className="text-4xl mb-3" style={{ filter: ach.earned ? 'drop-shadow(0 4px 12px rgba(0,0,0,0.15))' : 'grayscale(1) opacity(0.5)' }}>
                       {ach.emoji}
                     </div>
-                    <p className="text-xs font-bold mb-0.5" style={{ color: theme.text }}>{ach.label}</p>
-                    <p className="text-[10px] leading-snug" style={{ color: theme.text3 }}>{ach.desc}</p>
+                    <p className="text-xs font-black mb-1 uppercase tracking-tight" style={{ color: theme.text }}>{ach.label}</p>
+                    <p className="text-[10px] font-medium leading-snug opacity-60" style={{ color: theme.text }}>{ach.desc}</p>
                     {ach.earned && (
-                      <div className="absolute top-2 right-2 w-4 h-4 rounded-full flex items-center justify-center"
-                        style={{ background: theme.accent }}>
-                        <span className="text-[8px] text-white font-black">✓</span>
+                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center shadow-lg"
+                        style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                        <span className="text-[10px] text-white font-black">✓</span>
                       </div>
                     )}
                   </motion.div>

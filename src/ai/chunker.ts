@@ -1,51 +1,50 @@
-import type { Difficulty } from '../types';
+export function chunkText(text: string, sourceName: string, chunkSize = 1000, overlap = 100): { text: string; id: string }[] {
+  const chunks: { text: string; id: string }[] = [];
+  let currentIndex = 0;
 
-export interface Chunk {
-  id: string;
-  text: string;
-  topic: string;
-  source: string;
-  difficulty: Difficulty;
-}
+  // Normalize whitespace
+  const cleanText = text.replace(/\s+/g, ' ').trim();
 
-function detectTopic(text: string) {
-  const firstLine = text.split('\n')[0]?.trim();
-  if (firstLine && firstLine.length < 80) return firstLine;
-  const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? 'Topic general';
-  return firstSentence.slice(0, 60) || 'Topic general';
-}
-
-export function chunkText(text: string, source = 'Biblioteca AI'): Chunk[] {
-  const sections = text
-    .split(/\n(?=(?:[A-ZĂÂÎȘȚ0-9][^\n]{0,80}:)|(?:- )|(?:\d+\.)|(?:[A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ ]{4,}))/)
-    .map((section) => section.trim())
-    .filter(Boolean);
-
-  const chunks = (sections.length > 0 ? sections : [text])
-    .flatMap((section) => {
-      if (section.length <= 1200) return [section];
-      const sentences = section.split(/(?<=[.!?])\s+/);
-      const grouped: string[] = [];
-      let current = '';
-      for (const sentence of sentences) {
-        const next = current ? `${current} ${sentence}` : sentence;
-        if (next.length > 1200 && current) {
-          grouped.push(current.trim());
-          current = sentence;
-        } else {
-          current = next;
+  while (currentIndex < cleanText.length) {
+    let end = currentIndex + chunkSize;
+    
+    if (end < cleanText.length) {
+      // Try to find a good breaking point: paragraph end, then sentence end, then word end
+      const searchWindow = cleanText.slice(Math.max(currentIndex, end - 200), end + 50);
+      
+      let breakPoint = -1;
+      const markers = ['\n\n', '. ', '? ', '! ', ' '];
+      
+      for (const marker of markers) {
+        const lastIdx = searchWindow.lastIndexOf(marker);
+        if (lastIdx !== -1) {
+          // Adjust breakpoint relative to the start of the window
+          breakPoint = Math.max(currentIndex, end - 200) + lastIdx + marker.length;
+          break;
         }
       }
-      if (current.trim()) grouped.push(current.trim());
-      return grouped;
-    })
-    .filter((section) => section.length > 80);
+      
+      if (breakPoint !== -1) {
+        end = breakPoint;
+      }
+    } else {
+      end = cleanText.length;
+    }
 
-  return chunks.map((chunk, index) => ({
-    id: `chunk-${index}-${Math.random().toString(36).slice(2, 8)}`,
-    text: chunk,
-    topic: detectTopic(chunk),
-    source,
-    difficulty: chunk.length > 700 ? 'hard' : chunk.length > 350 ? 'medium' : 'easy',
-  }));
+    const chunkContent = cleanText.slice(currentIndex, end).trim();
+    if (chunkContent.length > 10) {
+      chunks.push({
+        text: chunkContent,
+        id: `${sourceName}-${currentIndex}`
+      });
+    }
+
+    currentIndex = end - overlap;
+    // Safety check to avoid infinite loops if overlap >= chunkSize
+    if (currentIndex <= currentIndex + overlap - chunkSize) {
+      currentIndex = end;
+    }
+  }
+
+  return chunks;
 }

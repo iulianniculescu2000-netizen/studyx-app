@@ -146,9 +146,13 @@ export default function GlobalSearch() {
                   style={{ color: theme.text, outline: 'none', border: 'none' }}
                 />
                 {query && (
-                  <button onClick={() => setQuery('')} style={{ color: theme.text3 }}>
+                  <motion.button 
+                    whileHover={{ scale: 1.1, rotate: 90 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setQuery('')} 
+                    style={{ color: theme.text3, cursor: 'pointer' }}>
                     <X size={15} />
-                  </button>
+                  </motion.button>
                 )}
                 <kbd className="text-xs px-1.5 py-0.5 rounded-lg font-mono flex-shrink-0"
                   style={{ background: theme.surface2, color: theme.text3 }}>

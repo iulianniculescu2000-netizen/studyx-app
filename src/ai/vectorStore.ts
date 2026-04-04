@@ -1,37 +1,64 @@
+import { idbGet, idbSet, idbRemove } from '../lib/idb';
+import { embedText, cosineSimilarity } from './embeddings';
 import type { ChunkRecord } from './types';
 
-const STORE_KEY = 'studyx-ai-vectors';
+const VECTORS_KEY = 'studyx-vectors-v1';
 
-function loadStore(): ChunkRecord[] {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+// We keep a lightweight memory index for fast searches
+let vectorCache: ChunkRecord[] | null = null;
+
+export async function addChunksToVault(chunks: { text: string; id: string }[], sourceName: string) {
+  const current = await getVaultChunks();
+  
+  // Create records with embeddings
+  const newRecords: ChunkRecord[] = chunks.map(c => ({
+    id: c.id,
+    text: c.text,
+    source: sourceName,
+    embedding: embedText(c.text), // Note: In a real heavy app, this would be a Worker
+    topic: sourceName,
+    difficulty: 'medium',
+    createdAt: Date.now()
+  }));
+
+  const merged = [...current, ...newRecords];
+  vectorCache = merged;
+  await idbSet(VECTORS_KEY, merged);
+  return newRecords.length;
 }
 
-function saveStore(chunks: ChunkRecord[]) {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(chunks.slice(-500)));
-  } catch {}
+export async function getVaultChunks(): Promise<ChunkRecord[]> {
+  if (vectorCache) return vectorCache;
+  const data = await idbGet<ChunkRecord[]>(VECTORS_KEY);
+  vectorCache = Array.isArray(data) ? data : [];
+  return vectorCache;
 }
 
-export function addChunks(chunks: ChunkRecord[]) {
-  const current = loadStore();
-  const merged = [...current.filter((item) => !chunks.some((chunk) => chunk.id === item.id)), ...chunks];
-  saveStore(merged);
-}
+export async function searchVault(query: string, k = 5): Promise<ChunkRecord[]> {
+  const all = await getVaultChunks();
+  if (all.length === 0) return [];
 
-export function getAllChunks() {
-  return loadStore();
-}
+  const queryVector = embedText(query);
+  
+  const scored = all.map(chunk => ({
+    chunk,
+    score: cosineSimilarity(queryVector, chunk.embedding)
+  }));
 
-export function similaritySearch(query: string, k: number, scoreFn: (chunk: ChunkRecord, query: string) => number) {
-  return loadStore()
-    .map((chunk) => ({ chunk, score: scoreFn(chunk, query) }))
+  return scored
     .sort((a, b) => b.score - a.score)
-    .slice(0, k);
+    .slice(0, k)
+    .map(s => s.chunk);
+}
+
+export async function clearVault() {
+  vectorCache = [];
+  await idbRemove(VECTORS_KEY);
+}
+
+export async function removeChunksBySource(sourceName: string) {
+  const current = await getVaultChunks();
+  const next = current.filter(c => c.source !== sourceName);
+  vectorCache = next;
+  await idbSet(VECTORS_KEY, next);
 }

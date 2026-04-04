@@ -14,7 +14,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File dialogs
   openJsonFiles: () => ipcRenderer.invoke('dialog:openJson'),
   openImageFile: () => ipcRenderer.invoke('dialog:openImage'),
+  openOCRImageFile: () => ipcRenderer.invoke('dialog:openOCRImage'),
+  readOCRPath: (path) => ipcRenderer.invoke('image:readOCR', path),
   openPdfFile: () => ipcRenderer.invoke('dialog:openPdf'),
+  readPdfPath: (path) => ipcRenderer.invoke('pdf:readPath', path),
+  openDocxFile: () => ipcRenderer.invoke('dialog:openDocx'),
+  readDocxPath: (path) => ipcRenderer.invoke('docx:readPath', path),
   openTextFile: () => ipcRenderer.invoke('dialog:openText'),
   saveFile: (opts) => ipcRenderer.invoke('dialog:saveFile', opts),
   // Updater

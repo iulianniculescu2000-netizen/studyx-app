@@ -26,7 +26,11 @@ declare global {
       // File dialogs
       openJsonFiles: () => Promise<{ name: string; content: string }[] | null>;
       openImageFile: () => Promise<string | null>;
+      readOCRPath: (path: string) => Promise<string | null>;
       openPdfFile: () => Promise<string | null>;
+      readPdfPath: (path: string) => Promise<string | null>;
+      openDocxFile: () => Promise<string | null>;
+      readDocxPath: (path: string) => Promise<string | null>;
       openTextFile: () => Promise<string | null>;
       saveFile: (opts: { defaultPath: string; content: string }) => Promise<boolean>;
       saveCsvFile: (opts: { defaultPath: string; content: string }) => Promise<boolean>;
@@ -78,62 +82,56 @@ export default function TitleBar() {
         height: 40,
         position: 'relative',
         background: theme.navBg,
-        backdropFilter: 'blur(30px)',
-        WebkitBackdropFilter: 'blur(30px)',
+        backdropFilter: 'blur(30px) saturate(150%)',
+        WebkitBackdropFilter: 'blur(30px) saturate(150%)',
         borderBottom: `1px solid ${theme.border}`,
-      } as React.CSSProperties & { WebkitBackdropFilter: string }}
+        transition: 'background 0.3s ease',
+      } as any}
     >
-      {/*
-       * ── Drag zone — absolutely positioned, covers ONLY the safe center strip.
-       *
-       * NEVER extends into the right 148px (window controls area) or the
-       * left 120px (page title area). This guarantees buttons always receive
-       * mouse events regardless of z-index or stacking context quirks.
-       *
-       * Using a separate absolute element (instead of parent WebkitAppRegion: drag
-       * + no-drag children) is the bulletproof Electron pattern — the drag zone
-       * never "leaks" into sibling fixed-position overlays like WindowControls.
+      {/* 
+       * Bulletproof Drag Zone:
+       * Positioned to never overlap clickable elements like GlobalSearch
        */}
       <div
         style={{
           position: 'absolute',
-          top: 0, bottom: 0,
-          left: 120,   // skip page title
-          right: 148,  // skip window controls
+          top: 0,
+          left: 0,
+          bottom: 0,
+          right: 138, // Leave space for window controls (46 * 3)
           WebkitAppRegion: 'drag',
           zIndex: 0,
-        } as React.CSSProperties & { WebkitAppRegion: string }}
+        } as any}
       />
 
-      {/* ── Content — always above drag zone, always clickable ─────────── */}
       <div
-        className="flex items-center"
-        style={{ position: 'relative', zIndex: 1, width: '100%' }}
+        className="flex items-center w-full"
+        style={{ position: 'relative', zIndex: 1 }}
       >
-        {/* Left: animated page title */}
-        <div className="flex items-center pl-4" style={{ minWidth: 120 }}>
+        {/* Left: Page Title — width matches Sidebar collapse/expand states indirectly */}
+        <div className="flex items-center pl-4 overflow-hidden" style={{ minWidth: 140, WebkitAppRegion: 'no-drag' } as any}>
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
               key={pageTitle}
-              initial={{ opacity: 0, y: -5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 5 }}
-              transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
-              className="text-xs font-semibold tracking-wide truncate"
-              style={{ color: theme.text2 }}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 8 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="text-[11px] font-bold uppercase tracking-[0.12em] truncate"
+              style={{ color: theme.text3 }}
             >
               {pageTitle}
             </motion.span>
           </AnimatePresence>
         </div>
 
-        {/* Center: global search */}
-        <div className="flex-1 flex items-center justify-center">
+        {/* Center: Search — higher z-index to ensure clickability */}
+        <div className="flex-1 flex items-center justify-center px-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
           <GlobalSearchTrigger />
         </div>
 
-        {/* Right: spacer — keeps content away from WindowControls overlay */}
-        <div style={{ minWidth: 148, flexShrink: 0 }} />
+        {/* Right: Window Controls area — must be absolutely NO-DRAG */}
+        <div style={{ minWidth: 138, flexShrink: 0, WebkitAppRegion: 'no-drag' } as any} />
       </div>
     </div>
   );

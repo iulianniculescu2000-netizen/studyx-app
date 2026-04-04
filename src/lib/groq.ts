@@ -208,7 +208,7 @@ export async function groqRequest({
   const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
   const key = sanitizeKey(apiKey);
   if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
-  const kb = getKnowledgeContext(6000);
+  const kb = getKnowledgeContext('6000');
   const finalMessages: GroqMessage[] = kb
     ? [
         {
@@ -282,7 +282,7 @@ export async function groqStream(
   const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
   const key = sanitizeKey(apiKey);
   if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
-  const kb = getKnowledgeContext(4500);
+  const kb = getKnowledgeContext('4500');
   const finalMessages: GroqMessage[] = kb
     ? [
         {

@@ -433,11 +433,14 @@ export default function Tutorial({ profileId }: { profileId: string }) {
                   Pas {currentStep + 1} din {TOTAL_STEPS}
                 </span>
               </div>
-              <button onClick={skip}
+              <motion.button 
+                whileHover={{ scale: 1.1, rotate: 90 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={skip}
                 className="p-1.5 rounded-lg transition-all"
-                style={{ color: theme.text3, background: theme.surface2 }}>
+                style={{ color: theme.text3, background: theme.surface2, cursor: 'pointer' }}>
                 <X size={13} />
-              </button>
+              </motion.button>
             </div>
 
             {/* Progress bar */}

@@ -1,5 +1,5 @@
 import { cosineSimilarity, embedText } from './embeddings';
-import { getAllChunks } from './vectorStore';
+import { getVaultChunks } from './vectorStore';
 import type { RetrievedChunk, UserProfileData } from './types';
 
 function keywordScore(query: string, text: string) {
@@ -13,18 +13,29 @@ function keywordScore(query: string, text: string) {
   return Math.min(score, 1);
 }
 
-export function retrieveRelevantChunks(query: string, userProfile: UserProfileData | null, k = 6): RetrievedChunk[] {
+export async function retrieveRelevantChunks(query: string, userProfile: UserProfileData | null, k = 10): Promise<RetrievedChunk[]> {
+  if (!query) return [];
+  
   const queryEmbedding = embedText(query);
   const weakTopics = new Set((userProfile?.recentMistakes ?? []).map((item) => item.topic.toLowerCase()));
   const recentMistakes = new Set((userProfile?.recentMistakes ?? []).map((item) => item.questionId));
 
-  return getAllChunks()
+  const allChunks = await getVaultChunks();
+  if (allChunks.length === 0) return [];
+
+  return allChunks
     .map((chunk) => {
       const semanticScore = cosineSimilarity(queryEmbedding, chunk.embedding);
       const keyword = keywordScore(query, chunk.text);
-      const weaknessBoost = weakTopics.has(chunk.topic.toLowerCase()) ? 0.2 : 0;
-      const recencyBoost = recentMistakes.has(chunk.id) ? 0.1 : 0;
-      const score = semanticScore + keyword + weaknessBoost + recencyBoost;
+      
+      // Boost relevance for topics where the user has struggled
+      const weaknessBoost = weakTopics.has(chunk.topic.toLowerCase()) ? 0.25 : 0;
+      
+      // Boost recently seen/wrong information
+      const recencyBoost = recentMistakes.has(chunk.id) ? 0.15 : 0;
+      
+      const score = (semanticScore * 0.7) + (keyword * 0.3) + weaknessBoost + recencyBoost;
+      
       return {
         id: chunk.id,
         text: chunk.text,
@@ -38,6 +49,7 @@ export function retrieveRelevantChunks(query: string, userProfile: UserProfileDa
         weaknessBoost,
       };
     })
+    .filter(res => res.score > 0.1) // Minimum relevance threshold
     .sort((a, b) => b.score - a.score)
     .slice(0, k);
 }
