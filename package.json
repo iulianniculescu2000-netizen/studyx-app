@@ -2,7 +2,7 @@
   "name": "studyx",
   "productName": "StudyX",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "description": "Aplicatie de grile pentru studenti la medicina",
   "author": "StudyX",
@@ -18,7 +18,8 @@
     "publish-update": "node scripts/publish-update.cjs",
     "electron:dev": "cross-env.cmd NODE_ENV=development concurrently.cmd \"vite.cmd\" \"wait-on.cmd http://localhost:5173 && electron.cmd .\"",
     "electron:build": "npm run generate-icon && npm run build && electron-builder.cmd",
-    "electron:build:dir": "npm run generate-icon && npm run build && electron-builder.cmd --dir"
+    "electron:build:dir": "npm run generate-icon && npm run build && electron-builder.cmd --dir",
+    "electron:publish": "node scripts/publish-release.cjs"
   },
   "build": {
     "appId": "com.studyx.app",
@@ -48,7 +49,7 @@
       "shortcutName": "StudyX",
       "artifactName": "StudyX-Setup-${version}.${ext}",
       "menuCategory": "StudyX",
-      "deleteAppDataOnUninstall": true,
+      "deleteAppDataOnUninstall": false,
       "include": "build/installer.nsh",
       "installerSidebar": "build/sidebar.bmp",
       "uninstallerSidebar": "build/sidebar.bmp",
@@ -78,6 +79,14 @@
       "!*.docx",
       "!*.png",
       "!.env*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "iulianniculescu2000-netizen",
+        "repo": "studyx-updates",
+        "releaseType": "release"
+      }
     ]
   },
   "dependencies": {
@@ -86,6 +95,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@types/canvas-confetti": "^1.9.0",
     "canvas-confetti": "^1.9.4",
+    "electron-updater": "^6.8.3",
     "framer-motion": "^12.38.0",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.577.0",

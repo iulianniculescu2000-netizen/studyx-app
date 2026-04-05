@@ -37,7 +37,7 @@ export interface UpdateManifest {
   changes: string[];
   files: { path: string; url: string }[];
   installer?: InstallerUpdate;
-  delivery?: 'overlay' | 'installer';
+  delivery?: 'overlay' | 'installer' | 'native';
   isSequential?: boolean;
   stepsRemaining?: number;
   contentUpdates?: ContentUpdate[];
@@ -92,13 +92,13 @@ type CheckResult = {
   changes: string[];
   files: { path: string; url: string }[];
   installer?: InstallerUpdate;
-  delivery?: 'overlay' | 'installer';
+  delivery?: 'overlay' | 'installer' | 'native';
   isSequential?: boolean;
   stepsRemaining?: number;
   contentUpdates?: ContentUpdate[];
 };
 
-type DownloadResult = { mode?: 'overlay' | 'installer'; path?: string } | boolean;
+type DownloadResult = { mode?: 'overlay' | 'installer' | 'native'; path?: string } | boolean;
 
 export const useUpdateStore = create<UpdateState>((set, get) => ({
   status: 'idle',
@@ -139,6 +139,9 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
             contentUpdates: result.contentUpdates ?? [],
           },
         });
+        if (result.delivery === 'native') {
+          void get().downloadUpdate();
+        }
         return;
       }
 
@@ -197,6 +200,17 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   applyUpdate: () => {
     const electron = api();
     const { manifest, downloadedInstallerPath } = get();
+
+    if (manifest?.delivery === 'native') {
+      if (!electron?.updaterInstallDownloaded) {
+        set({ status: 'error', error: 'Actualizarea nativa nu este pregatita.' });
+        return;
+      }
+      electron.updaterInstallDownloaded().catch((err: unknown) => {
+        set({ status: 'error', error: err instanceof Error ? err.message : 'Actualizarea nu a putut fi aplicata.' });
+      });
+      return;
+    }
 
     if (manifest?.delivery === 'installer') {
       if (!downloadedInstallerPath || !electron?.updaterInstallDownloaded) {

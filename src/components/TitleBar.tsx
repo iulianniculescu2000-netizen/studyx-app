@@ -20,7 +20,7 @@ declare global {
       updaterCheck: () => Promise<unknown>;
       updaterDownload: (manifest: unknown) => Promise<unknown>;
       updaterRestart: () => void;
-      updaterInstallDownloaded: (installerPath: string) => Promise<boolean>;
+      updaterInstallDownloaded: (installerPath?: string) => Promise<boolean>;
       updaterGetVersion: () => Promise<string>;
       onUpdateProgress: (cb: (data: { percent: number; file: string }) => void) => () => void;
       openJsonFiles: () => Promise<{ name: string; content: string }[] | null>;

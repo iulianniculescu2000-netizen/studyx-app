@@ -21,6 +21,11 @@ const CONNECT_TIMEOUT_MS = 20000;
 const DOWNLOAD_TIMEOUT_MS = 90000;
 const MAX_RETRIES = 2;
 
+let nativeUpdater = null;
+let nativeUpdaterBound = false;
+let nativeUpdateInfo = null;
+let nativeUpdateDownloaded = false;
+
 function resolveRedirectUrl(baseUrl, location) {
   try {
     return new URL(location, baseUrl).toString();
@@ -224,6 +229,10 @@ function getInstallerDownloadDir() {
   return path.join(app.getPath('userData'), 'installer-updates');
 }
 
+function getAppUpdateConfigPath() {
+  return path.join(process.resourcesPath, 'app-update.yml');
+}
+
 function copyDirSync(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
@@ -237,6 +246,91 @@ function copyDirSync(src, dest) {
 function sanitizeDownloadName(name, fallbackName) {
   const clean = String(name || fallbackName || 'StudyX-Setup.exe').replace(/[^a-z0-9._ -]/gi, '_').trim();
   return clean.toLowerCase().endsWith('.exe') ? clean : `${clean}.exe`;
+}
+
+function normalizeReleaseDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().split('T')[0];
+}
+
+function normalizeReleaseNotes(notes, fallbackVersion) {
+  if (Array.isArray(notes)) {
+    return notes
+      .flatMap((entry) => normalizeReleaseNotes(entry?.note ?? entry, fallbackVersion))
+      .filter(Boolean);
+  }
+
+  if (typeof notes !== 'string') {
+    return fallbackVersion ? [`StudyX ${fallbackVersion}`] : ['StudyX update'];
+  }
+
+  const lines = notes
+    .split(/\r?\n+/)
+    .map((line) => line.replace(/^[-*•\d.\s]+/, '').trim())
+    .filter(Boolean);
+
+  return lines.length > 0 ? lines : (fallbackVersion ? [`StudyX ${fallbackVersion}`] : ['StudyX update']);
+}
+
+function bindNativeUpdaterEvents(autoUpdater) {
+  if (nativeUpdaterBound) return;
+  nativeUpdaterBound = true;
+
+  autoUpdater.on('update-available', (info) => {
+    nativeUpdateInfo = info;
+    nativeUpdateDownloaded = false;
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    nativeUpdateDownloaded = false;
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendToRenderer('updater:progress', {
+      percent: Math.max(0, Math.min(100, Math.round(progress?.percent ?? 0))),
+      file: progress?.bytesPerSecond ? 'Actualizare StudyX' : 'Download update',
+      received: progress?.transferred ?? 0,
+      total: progress?.total ?? 0,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    nativeUpdateInfo = info;
+    nativeUpdateDownloaded = true;
+    sendToRenderer('updater:progress', {
+      percent: 100,
+      file: info?.version ? `StudyX ${info.version}` : 'Actualizare pregatita',
+      received: -1,
+      total: -1,
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[Updater] Native auto-update error:', err);
+  });
+}
+
+function getNativeUpdater() {
+  if (isDev || !app.isPackaged) return null;
+  if (nativeUpdater) return nativeUpdater;
+  if (!fs.existsSync(getAppUpdateConfigPath())) return null;
+
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.disableDifferentialDownload = true;
+    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowDowngrade = false;
+    bindNativeUpdaterEvents(autoUpdater);
+    nativeUpdater = autoUpdater;
+    return nativeUpdater;
+  } catch (err) {
+    console.warn('[Updater] Native auto-updater unavailable, falling back to legacy updater.', err);
+    return null;
+  }
 }
 
 function sha256File(filePath) {
@@ -266,6 +360,12 @@ function normalizeManifest(rawManifest) {
 }
 
 function getLocalVersion() {
+  if (app.isPackaged && getNativeUpdater()) {
+    try {
+      return app.getVersion();
+    } catch {}
+  }
+
   try {
     const overlayManifest = path.join(getOverlayRoot(), 'manifest.json');
     if (fs.existsSync(overlayManifest)) {
@@ -324,6 +424,62 @@ async function downloadInstaller(manifest) {
 
   sendToRenderer('updater:progress', { percent: 100, file: fileName, received: -1, total: -1 });
   return { mode: 'installer', path: destPath, fileName };
+}
+
+async function checkNativeForUpdates() {
+  const autoUpdater = getNativeUpdater();
+  if (!autoUpdater) return null;
+
+  nativeUpdateDownloaded = false;
+  const localVersion = app.getVersion();
+  const result = await autoUpdater.checkForUpdates();
+  const info = result?.updateInfo;
+
+  if (!info?.version) {
+    return {
+      hasUpdate: false,
+      version: localVersion,
+      latestVersion: localVersion,
+      releaseDate: '',
+      changes: [],
+      localVersion,
+      files: [],
+      contentUpdates: [],
+      delivery: 'native',
+      isSequential: false,
+      stepsRemaining: 0,
+    };
+  }
+
+  nativeUpdateInfo = info;
+  const hasUpdate = isNewerVersion(localVersion, info.version);
+
+  return {
+    hasUpdate,
+    version: info.version,
+    latestVersion: info.version,
+    releaseDate: normalizeReleaseDate(info.releaseDate),
+    changes: normalizeReleaseNotes(info.releaseNotes, info.version),
+    localVersion,
+    files: [],
+    installer: info.files?.[0]
+      ? {
+          url: info.files[0].url || '',
+          fileName: info.files[0].url ? path.basename(String(info.files[0].url)) : undefined,
+        }
+      : undefined,
+    delivery: 'native',
+    isSequential: false,
+    stepsRemaining: hasUpdate ? 1 : 0,
+    contentUpdates: [],
+  };
+}
+
+async function downloadNativeUpdate() {
+  const autoUpdater = getNativeUpdater();
+  if (!autoUpdater) throw new Error('Updaterul nativ nu este disponibil.');
+  await autoUpdater.downloadUpdate();
+  return { mode: 'native' };
 }
 
 async function downloadOverlay(manifest) {
@@ -403,6 +559,15 @@ function registerUpdaterIPC(mainWindow) {
   ipcMain.handle('updater:check', async () => {
     const localVersion = getLocalVersion();
     try {
+      try {
+        const nativeResult = await checkNativeForUpdates();
+        if (nativeResult) {
+          return nativeResult;
+        }
+      } catch (nativeErr) {
+        console.warn('[Updater] Native check failed, falling back to legacy updater:', nativeErr);
+      }
+
       const history = await fetchJson(HISTORY_URL);
       const entries = Array.isArray(history?.versions) ? history.versions : [];
       const versions = entries
@@ -468,6 +633,10 @@ function registerUpdaterIPC(mainWindow) {
   });
 
   ipcMain.handle('updater:download', async (_, manifest) => {
+    if (manifest?.delivery === 'native') {
+      return downloadNativeUpdate();
+    }
+
     if (manifest?.delivery === 'installer' || (app.isPackaged && manifest?.installer?.url)) {
       return downloadInstaller(manifest);
     }
@@ -482,6 +651,22 @@ function registerUpdaterIPC(mainWindow) {
   ipcMain.handle('updater:getVersion', () => getLocalVersion());
 
   ipcMain.handle('updater:install-downloaded', async (_, installerPath) => {
+    if (!installerPath) {
+      const autoUpdater = getNativeUpdater();
+      if (!autoUpdater || !nativeUpdateDownloaded) {
+        throw new Error('Actualizarea nativa nu este pregatita.');
+      }
+
+      setImmediate(() => {
+        try {
+          autoUpdater.quitAndInstall(true, true);
+        } catch (err) {
+          console.error('[Updater] Failed to quitAndInstall:', err);
+        }
+      });
+      return true;
+    }
+
     if (!installerPath || typeof installerPath !== 'string') {
       throw new Error('Calea catre installer lipseste.');
     }
