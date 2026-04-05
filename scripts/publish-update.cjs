@@ -14,6 +14,8 @@ const PKG_FILE = path.join(ROOT, 'package.json');
 const UPDATES_OWNER = 'iulianniculescu2000-netizen';
 const UPDATES_REPO = 'studyx-updates';
 const UPDATES_BRANCH = 'main';
+const RAW_BASE_URL = `https://raw.githubusercontent.com/${UPDATES_OWNER}/${UPDATES_REPO}/${UPDATES_BRANCH}`;
+const MEDIA_BASE_URL = `https://media.githubusercontent.com/media/${UPDATES_OWNER}/${UPDATES_REPO}/${UPDATES_BRANCH}`;
 
 function readJson(filePath, fallback) {
   try {
@@ -230,13 +232,13 @@ function buildManifest(version, changeMessage, distFiles, installer) {
     changes: changes.length > 0 ? changes : ['StudyX update'],
     files: distFiles.map((file) => ({
       path: file.relPath,
-      url: `https://raw.githubusercontent.com/${UPDATES_OWNER}/${UPDATES_REPO}/${UPDATES_BRANCH}/files/${file.relPath}`,
+      url: `${RAW_BASE_URL}/files/${file.relPath}`,
     })),
     ...(installer
       ? {
           installer: {
             fileName: path.basename(installer.relPath),
-            url: `https://raw.githubusercontent.com/${UPDATES_OWNER}/${UPDATES_REPO}/${UPDATES_BRANCH}/files/installers/${version}/${path.basename(installer.relPath)}`,
+            url: `${MEDIA_BASE_URL}/files/installers/${version}/${path.basename(installer.relPath)}`,
             sha256: sha256(installer.absPath),
             size: installer.size,
           },

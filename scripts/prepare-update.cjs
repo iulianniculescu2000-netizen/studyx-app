@@ -10,6 +10,8 @@ const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8')
 const REPO = 'iulianniculescu2000-netizen/studyx-updates';
 const BRANCH = 'main';
 const TODAY = new Date().toISOString().split('T')[0];
+const RAW_BASE_URL = `https://raw.githubusercontent.com/${REPO}/${BRANCH}`;
+const MEDIA_BASE_URL = `https://media.githubusercontent.com/media/${REPO}/${BRANCH}`;
 
 function walkFiles(baseDir, relDir = '') {
   const currentDir = path.join(baseDir, relDir);
@@ -61,7 +63,7 @@ if (!fs.existsSync(path.join(distDir, 'assets', 'index.js'))) {
 
 const updateFiles = walkFiles(distDir).map((relPath) => ({
   path: `dist/${relPath}`,
-  url: `https://raw.githubusercontent.com/${REPO}/${BRANCH}/files/dist/${relPath}`,
+  url: `${RAW_BASE_URL}/files/dist/${relPath}`,
 }));
 
 const installer = findInstallerArtifact(PKG.version);
@@ -75,7 +77,7 @@ const manifest = {
     ? {
         installer: {
           fileName: path.basename(installer.file),
-          url: `https://raw.githubusercontent.com/${REPO}/${BRANCH}/files/installers/${PKG.version}/${path.basename(installer.file)}`,
+          url: `${MEDIA_BASE_URL}/files/installers/${PKG.version}/${path.basename(installer.file)}`,
           sha256: sha256(installer.abs),
           size: installer.size,
         },
