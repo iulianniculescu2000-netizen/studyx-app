@@ -17,6 +17,11 @@ export interface GeneratedQuestion {
   reference?: string;
 }
 
+function buildKnowledgeQuery(messages: GroqMessage[]): string {
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
+  return lastUserMessage.slice(0, 1200).trim() || 'Context medical general';
+}
+
 const TASK_TEMPERATURE: Record<AIRequestTask, number> = {
   questions: 0.3,
   explanation: 0.3,
@@ -229,7 +234,7 @@ export async function groqRequest({
     const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
     const key = sanitizeKey(apiKey);
     if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
-    const kb = getKnowledgeContext('6000');
+    const kb = await getKnowledgeContext(buildKnowledgeQuery(messages), 6000);
     const finalMessages: GroqMessage[] = kb
       ? [
           {
@@ -310,7 +315,7 @@ export async function groqStream(
   const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
   const key = sanitizeKey(apiKey);
   if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
-  const kb = getKnowledgeContext('4500');
+  const kb = await getKnowledgeContext(buildKnowledgeQuery(messages), 4500);
   const finalMessages: GroqMessage[] = kb
     ? [
         {

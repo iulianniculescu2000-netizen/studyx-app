@@ -123,6 +123,7 @@ export interface AdaptiveDifficultyInput {
 
 export interface ChunkRecord {
   id: string;
+  sourceId?: string;
   text: string;
   topic: string;
   source: string;

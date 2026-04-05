@@ -7,9 +7,6 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIModel } from '../store/aiStore';
-import { parsePDF } from '../ai/pdfParser';
-import { parseDocx } from '../ai/docxParser';
-import { parseImageOCR } from '../ai/ocrParser';
 import Portal from './Portal';
 
 const MODELS: { id: AIModel; name: string; desc: string; speed: string }[] = [
@@ -72,13 +69,16 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
 
       setProcessProcessingStep('Citim fișierul...');
       if (isPdf) {
+        const { parsePDF } = await import('../ai/pdfParser');
         text = await parsePDF(file);
         type = 'pdf';
       } else if (isDocx) {
+        const { parseDocx } = await import('../ai/docxParser');
         text = await parseDocx(file);
         type = 'docx';
       } else if (isImage) {
         setProcessProcessingStep('Analizăm imaginea (OCR)...');
+        const { parseImageOCR } = await import('../ai/ocrParser');
         text = await parseImageOCR(file);
         type = 'image';
       } else {
@@ -136,11 +136,9 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.93, y: 20 }}
               transition={{ type: 'spring', stiffness: 360, damping: 28 }}
-              className="fixed z-[201] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-[28px] shadow-2xl overflow-hidden flex flex-col"
+              className="fixed z-[201] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-[28px] shadow-2xl overflow-hidden flex flex-col premium-modal"
               style={{
                 maxHeight: '85vh',
-                background: theme.modalBg,
-                border: `1px solid ${theme.border}`,
                 WebkitAppRegion: 'no-drag',
               } as React.CSSProperties}
             >

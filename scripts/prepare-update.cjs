@@ -1,102 +1,107 @@
 #!/usr/bin/env node
-/**
- * scripts/prepare-update.cjs
- *
- * Pregătește un update StudyX pentru publicare pe GitHub.
- *
- * Utilizare:
- *   node scripts/prepare-update.cjs
- *
- * Output:
- *   - version.json gata de copiat în repo-ul studyx-updates
- *   - Lista fișierelor ce trebuie încărcate pe GitHub
- *   - Instrucțiuni pas cu pas
- */
 'use strict';
 
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
-const ROOT   = path.join(__dirname, '..');
-const PKG    = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
-const REPO   = 'iulianniculescu2000-netizen/studyx-updates';
+const ROOT = path.join(__dirname, '..');
+const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
+const REPO = 'iulianniculescu2000-netizen/studyx-updates';
 const BRANCH = 'main';
-const TODAY  = new Date().toISOString().split('T')[0];
+const TODAY = new Date().toISOString().split('T')[0];
 
-// ── Verifică că dist/ există ─────────────────────────────────────────────────
-if (!fs.existsSync(path.join(ROOT, 'dist', 'assets', 'index.js'))) {
-  console.error('\n❌  dist/ nu există sau e incomplet. Rulează mai întâi:\n');
-  console.error('       npm run build\n');
+function walkFiles(baseDir, relDir = '') {
+  const currentDir = path.join(baseDir, relDir);
+  const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const relPath = path.join(relDir, entry.name);
+    if (entry.isDirectory()) files.push(...walkFiles(baseDir, relPath));
+    else files.push(relPath.replace(/\\/g, '/'));
+  }
+  return files;
+}
+
+function fileSizeBytes(filePath) {
+  return fs.statSync(filePath).size;
+}
+
+function sha256(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function findInstallerArtifact(expectedVersion = '') {
+  const releaseDir = path.join(ROOT, 'release');
+  if (!fs.existsSync(releaseDir)) return null;
+
+  const candidates = walkFiles(releaseDir)
+    .filter((file) => file.toLowerCase().endsWith('.exe'))
+    .filter((file) => /studyx/i.test(path.basename(file)))
+    .filter((file) => !/unins/i.test(path.basename(file)))
+    .filter((file) => !expectedVersion || path.basename(file).includes(expectedVersion));
+
+  if (candidates.length === 0) return null;
+
+  const ranked = candidates
+    .map((file) => {
+      const abs = path.join(releaseDir, file);
+      return { file, abs, size: fileSizeBytes(abs) };
+    })
+    .sort((left, right) => right.size - left.size);
+
+  return ranked[0];
+}
+
+const distDir = path.join(ROOT, 'dist');
+if (!fs.existsSync(path.join(distDir, 'assets', 'index.js'))) {
+  console.error('\nMissing dist/. Run "npm run build" first.\n');
   process.exit(1);
 }
 
-// ── Full dist update list (safe for jump upgrades) ───────────────────────────
-// We publish the full dist payload so users can upgrade directly from older
-// versions without missing vendor/static files.
-function collectDistFiles(dir, relBase = '') {
-  const abs = path.join(ROOT, dir, relBase);
-  const entries = fs.readdirSync(abs, { withFileTypes: true });
-  const out = [];
-  for (const entry of entries) {
-    const rel = path.join(relBase, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...collectDistFiles(dir, rel));
-    } else {
-      out.push(path.join(dir, rel).replace(/\\/g, '/'));
-    }
-  }
-  return out;
-}
+const updateFiles = walkFiles(distDir).map((relPath) => ({
+  path: `dist/${relPath}`,
+  url: `https://raw.githubusercontent.com/${REPO}/${BRANCH}/files/dist/${relPath}`,
+}));
 
-const FULL_DIST_FILES = collectDistFiles('dist');
-
-function fileSize(relPath) {
-  try {
-    const s = fs.statSync(path.join(ROOT, relPath)).size;
-    return s > 1024 * 1024
-      ? `${(s / 1024 / 1024).toFixed(1)} MB`
-      : `${(s / 1024).toFixed(1)} KB`;
-  } catch { return '?'; }
-}
-
-// ── Construiește lista de fișiere pentru update ──────────────────────────────
-const updateFiles = FULL_DIST_FILES
-  .filter(f => fs.existsSync(path.join(ROOT, f)))
-  .map(f => ({
-    path: f,
-    url: `https://raw.githubusercontent.com/${REPO}/${BRANCH}/files/${f}`,
-  }));
-
-// ── Generează version.json ───────────────────────────────────────────────────
+const installer = findInstallerArtifact(PKG.version);
 const manifest = {
-  version:     PKG.version,
+  version: PKG.version,
+  latestVersion: PKG.version,
   releaseDate: TODAY,
-  changes: [
-    'Actualizare StudyX',
-  ],
+  changes: ['StudyX update'],
   files: updateFiles,
+  ...(installer
+    ? {
+        installer: {
+          fileName: path.basename(installer.file),
+          url: `https://raw.githubusercontent.com/${REPO}/${BRANCH}/files/installers/${PKG.version}/${path.basename(installer.file)}`,
+          sha256: sha256(installer.abs),
+          size: installer.size,
+        },
+      }
+    : {}),
 };
 
-// ── Output ───────────────────────────────────────────────────────────────────
-console.log('\n' + '═'.repeat(62));
-console.log('  📦  StudyX — Pregătire Update v' + PKG.version);
-console.log('═'.repeat(62));
-
-console.log('\n① Conținut version.json  (editează "changes" dacă vrei)\n');
+console.log('\n==============================================================');
+console.log(` StudyX update manifest v${PKG.version}`);
+console.log('==============================================================\n');
 console.log(JSON.stringify(manifest, null, 2));
+console.log('\nFiles to publish:');
+for (const file of updateFiles) {
+  const abs = path.join(ROOT, file.path);
+  console.log(` - ${file.path} (${Math.round(fileSizeBytes(abs) / 1024)} KB)`);
+}
 
-console.log('\n' + '─'.repeat(62));
-console.log('\n② Fișiere de copiat în  studyx-updates/files/\n');
-updateFiles.forEach(f => {
-  console.log(`   ${f.path.padEnd(36)} ${fileSize(f.path)}`);
-});
+if (installer) {
+  console.log(` - installer: release/${installer.file} (${(installer.size / 1024 / 1024).toFixed(2)} MB)`);
+} else {
+  console.log(' - installer: not found (manifest will stay overlay-only)');
+}
 
-console.log('\n' + '─'.repeat(62));
-console.log('\n③ Pași de urmat în repo-ul  ' + REPO + ':\n');
-console.log('   1.  Copiază fișierele din dist/assets/ → files/dist/assets/');
-console.log('   2.  Înlocuiește version.json cu conținutul de mai sus');
-console.log('   3.  git add .');
-console.log('   4.  git commit -m "release: v' + PKG.version + '"');
-console.log('   5.  git push');
-console.log('\n   ✅  Utilizatorii vor vedea update-ul la următoarea verificare!\n');
-console.log('═'.repeat(62) + '\n');
+console.log('\nNext steps:');
+console.log(' 1. Copy dist files to studyx-updates/files/dist/');
+if (installer) console.log(` 2. Copy installer to studyx-updates/files/installers/${PKG.version}/`);
+console.log(` 3. Save manifest to studyx-updates/manifests/${PKG.version}.json`);
+console.log(' 4. Update version.json and version-history.json');
+console.log(' 5. Commit and push the release repo\n');

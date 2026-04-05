@@ -2,19 +2,29 @@ import { idbGet, idbSet, idbRemove } from '../lib/idb';
 import { embedText, cosineSimilarity } from './embeddings';
 import type { ChunkRecord } from './types';
 
-const VECTORS_KEY = 'studyx-vectors-v1';
+const VECTOR_INDEX_KEY = 'studyx-vectors-index-v2';
 
-// We keep a lightweight memory index for fast searches
+interface VectorSourceIndexEntry {
+  sourceId: string;
+  source: string;
+  key: string;
+  count: number;
+  updatedAt: number;
+}
+
 let vectorCache: ChunkRecord[] | null = null;
-
-// Mutex to prevent race conditions during write operations
+let indexCache: VectorSourceIndexEntry[] | null = null;
 let writeLock: Promise<void> = Promise.resolve();
+
+function getSourceStorageKey(sourceId: string) {
+  return `studyx-vectors-source-${sourceId}`;
+}
 
 async function withLock<T>(operation: () => Promise<T>): Promise<T> {
   const previousLock = writeLock;
   let resolveLock: (value: void) => void;
-  writeLock = new Promise<void>(resolve => { resolveLock = resolve; });
-  
+  writeLock = new Promise<void>((resolve) => { resolveLock = resolve; });
+
   try {
     await previousLock;
     return await operation();
@@ -23,33 +33,65 @@ async function withLock<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-export async function addChunksToVault(chunks: { text: string; id: string }[], sourceName: string) {
+async function getVectorIndex(): Promise<VectorSourceIndexEntry[]> {
+  if (indexCache) return indexCache;
+  const data = await idbGet<VectorSourceIndexEntry[]>(VECTOR_INDEX_KEY);
+  indexCache = Array.isArray(data) ? data : [];
+  return indexCache;
+}
+
+async function saveVectorIndex(entries: VectorSourceIndexEntry[]) {
+  indexCache = entries;
+  await idbSet(VECTOR_INDEX_KEY, entries);
+}
+
+export async function addChunksToVault(
+  chunks: { text: string; id: string }[],
+  sourceName: string,
+  sourceId: string
+) {
   return withLock(async () => {
-    const current = await getVaultChunks();
-    
-    // Create records with embeddings
-    const newRecords: ChunkRecord[] = chunks.map(c => ({
-      id: c.id,
-      text: c.text,
+    const key = getSourceStorageKey(sourceId);
+    const newRecords: ChunkRecord[] = chunks.map((chunk) => ({
+      id: chunk.id,
+      sourceId,
+      text: chunk.text,
       source: sourceName,
-      embedding: embedText(c.text),
+      embedding: embedText(chunk.text),
       topic: sourceName,
       difficulty: 'medium',
-      createdAt: Date.now()
+      createdAt: Date.now(),
     }));
 
-    const merged = [...current, ...newRecords];
-    vectorCache = merged;
-    await idbSet(VECTORS_KEY, merged);
+    await idbSet(key, newRecords);
+
+    const currentIndex = await getVectorIndex();
+    const nextIndex = [
+      ...currentIndex.filter((entry) => entry.sourceId !== sourceId),
+      { sourceId, source: sourceName, key, count: newRecords.length, updatedAt: Date.now() },
+    ];
+    await saveVectorIndex(nextIndex);
+
+    vectorCache = null;
     return newRecords.length;
   });
 }
 
 export async function getVaultChunks(): Promise<ChunkRecord[]> {
   if (vectorCache) return vectorCache;
-  const data = await idbGet<ChunkRecord[]>(VECTORS_KEY);
-  vectorCache = Array.isArray(data) ? data : [];
+
+  const index = await getVectorIndex();
+  const perSource = await Promise.all(index.map((entry) => idbGet<ChunkRecord[]>(entry.key)));
+  vectorCache = perSource.flatMap((items) => Array.isArray(items) ? items : []);
   return vectorCache;
+}
+
+export async function getVaultChunksBySource(sourceId: string): Promise<ChunkRecord[]> {
+  const index = await getVectorIndex();
+  const target = index.find((entry) => entry.sourceId === sourceId);
+  if (!target) return [];
+  const items = await idbGet<ChunkRecord[]>(target.key);
+  return Array.isArray(items) ? items : [];
 }
 
 export async function searchVault(query: string, k = 5): Promise<ChunkRecord[]> {
@@ -57,30 +99,31 @@ export async function searchVault(query: string, k = 5): Promise<ChunkRecord[]> 
   if (all.length === 0) return [];
 
   const queryVector = embedText(query);
-  
-  const scored = all.map(chunk => ({
-    chunk,
-    score: cosineSimilarity(queryVector, chunk.embedding)
-  }));
-
-  return scored
+  return all
+    .map((chunk) => ({ chunk, score: cosineSimilarity(queryVector, chunk.embedding) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, k)
-    .map(s => s.chunk);
+    .map((entry) => entry.chunk);
 }
 
 export async function clearVault() {
   await withLock(async () => {
+    const index = await getVectorIndex();
+    await Promise.all(index.map((entry) => idbRemove(entry.key)));
+    await idbRemove(VECTOR_INDEX_KEY);
     vectorCache = [];
-    await idbRemove(VECTORS_KEY);
+    indexCache = [];
   });
 }
 
-export async function removeChunksBySource(sourceName: string) {
+export async function removeChunksBySource(sourceId: string) {
   await withLock(async () => {
-    const current = await getVaultChunks();
-    const next = current.filter(c => c.source !== sourceName);
-    vectorCache = next;
-    await idbSet(VECTORS_KEY, next);
+    const index = await getVectorIndex();
+    const target = index.find((entry) => entry.sourceId === sourceId);
+    if (!target) return;
+
+    await idbRemove(target.key);
+    await saveVectorIndex(index.filter((entry) => entry.sourceId !== sourceId));
+    vectorCache = null;
   });
 }

@@ -25,6 +25,8 @@ export default function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const theme = useTheme();
+  const performanceLite = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-performance') === 'lite';
 
   const variantColor = variant === 'danger' ? theme.danger : variant === 'warning' ? theme.warning : theme.accent;
   const Icon = variant === 'danger' ? Trash2 : AlertTriangle;
@@ -40,7 +42,7 @@ export default function ConfirmDialog({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
             className="fixed inset-0 z-[100]"
-            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(2px)' : 'blur(6px)' }}
             onClick={onCancel}
           />
 
@@ -58,8 +60,8 @@ export default function ConfirmDialog({
               style={{
                 background: theme.modalBg,
                 border: `1px solid ${theme.border2}`,
-                backdropFilter: 'blur(32px)',
-                WebkitBackdropFilter: 'blur(32px)',
+                backdropFilter: performanceLite ? 'blur(18px)' : 'blur(32px)',
+                WebkitBackdropFilter: performanceLite ? 'blur(18px)' : 'blur(32px)',
               }}
             >
               {/* Icon */}
@@ -88,7 +90,7 @@ export default function ConfirmDialog({
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={onCancel}
-                  className="flex-1 py-3 rounded-2xl text-sm font-bold transition-all"
+                  className="flex-1 py-3 rounded-2xl text-sm font-bold transition-all press-feedback"
                   style={{ background: theme.surface2, color: theme.text2, border: `1px solid ${theme.border2}` }}
                 >
                   {cancelLabel}
@@ -97,7 +99,7 @@ export default function ConfirmDialog({
                   whileHover={{ scale: 1.02, boxShadow: `0 8px 24px ${variantColor}40` }}
                   whileTap={{ scale: 0.97 }}
                   onClick={onConfirm}
-                  className="flex-1 py-3 rounded-2xl text-sm font-black text-white shadow-lg transition-all"
+                  className="flex-1 py-3 rounded-2xl text-sm font-black text-white shadow-lg transition-all press-feedback"
                   style={{ background: variantColor }}
                 >
                   {confirmLabel}
@@ -110,7 +112,7 @@ export default function ConfirmDialog({
                 whileHover={{ rotate: 90, scale: 1.15, background: 'rgba(255,255,255,0.1)' }}
                 whileTap={{ scale: 0.88 }}
                 transition={{ duration: 0.2 }}
-                className="absolute top-4 right-4 p-1.5 rounded-lg"
+                className="absolute top-4 right-4 p-1.5 rounded-lg press-feedback"
                 style={{ color: theme.text3, cursor: 'pointer' }}
               >
                 <X size={14} />

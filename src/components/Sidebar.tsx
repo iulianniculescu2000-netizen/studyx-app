@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -125,7 +125,7 @@ function UpdateButton({
         onClick={onOpen}
         whileHover={{ backgroundColor: `${color}14` }}
         whileTap={{ scale: 0.94 }}
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-colors relative"
+        className="press-feedback w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-colors relative"
         style={{ color, justifyContent: collapsed ? 'center' : 'flex-start' }}
       >
         {/* Pulsing dot for actionable states */}
@@ -179,7 +179,7 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)',
+        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)',
       }}
     >
       <motion.div
@@ -198,7 +198,7 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
           flexDirection: 'column',
           overflow: 'hidden',
           border: `1px solid ${theme.border}`,
-          boxShadow: '0 36px 100px rgba(0,0,0,0.45)',
+          boxShadow: '0 36px 100px rgba(0,0,0,0.32)',
         }}
       >
         {/* Header */}
@@ -211,6 +211,7 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
             whileHover={{ scale: 1.1, rotate: 90 }}
             whileTap={{ scale: 0.9 }}
             onClick={onClose}
+            className="press-feedback"
             style={{ color: theme.text3, background: theme.surface2, border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={16} />
           </motion.button>
@@ -297,17 +298,18 @@ function NavItem({
           whileHover={{ x: collapsed ? 0 : 4, scale: 1.02 }}
           whileTap={{ scale: 0.96 }}
           transition={{ type: "spring", stiffness: 400, damping: 17 }}
-          className="relative flex items-center transition-all"
+          className="relative flex items-center transition-all press-feedback"
           style={{
             gap: collapsed ? 0 : 10,
             padding: collapsed ? '10px' : '6px 10px',
             justifyContent: collapsed ? 'center' as const : 'flex-start' as const,
-            background: isActive ? theme.accent : 'transparent',
+            background: isActive ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
             color: isActive ? '#ffffff' : theme.text2,
             fontSize: 14,
             fontWeight: isActive ? 700 : 500,
             cursor: 'pointer',
-            borderRadius: '10px',
+            borderRadius: '12px',
+            boxShadow: isActive ? `0 10px 22px ${theme.accent}24` : 'none',
           }}
           onMouseEnter={(e) => {
             if (!isActive) {
@@ -347,9 +349,10 @@ function NavItem({
 export default function Sidebar() {
   const theme = useTheme();
   const navigate = useNavigate();
+  const compact = typeof window !== 'undefined' && (window.innerHeight < 820 || window.innerWidth < 1240);
   const { username, logout } = useUserStore();
   const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
-  const { quizzes, getQuizzesByFolder } = useQuizStore();
+  const { quizzes } = useQuizStore();
   const { streak, getDueQuestions, questionStats } = useStatsStore();
   const [collapsed, toggleCollapsed] = useCollapsed();
   const { status: updateStatus, localVersion, downloadPercent,
@@ -372,6 +375,17 @@ export default function Sidebar() {
 
   const totalAnswered = Object.values(questionStats).reduce((a, s) => a + s.timesCorrect + s.timesWrong, 0);
   const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT MEDICINĂ';
+  const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived).length, [quizzes]);
+  const newQuizCount = useMemo(() => quizzes.filter(q => now - q.createdAt < 86400000 * 2).length, [quizzes, now]);
+  const uncategorizedCount = useMemo(() => quizzes.filter(q => !q.folderId).length, [quizzes]);
+  const folderQuizCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const quiz of quizzes) {
+      if (!quiz.folderId) continue;
+      counts.set(quiz.folderId, (counts.get(quiz.folderId) ?? 0) + 1);
+    }
+    return counts;
+  }, [quizzes]);
 
   // Fetch real version number from Electron on mount
   const { setLocalVersion } = useUpdateStore();
@@ -410,25 +424,26 @@ export default function Sidebar() {
 
   return (
     <motion.div
-      animate={{ width: collapsed ? 64 : 260 }}
+      animate={{ width: collapsed ? 64 : compact ? 236 : 260 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className="flex flex-col flex-shrink-0 select-none overflow-hidden glass-panel"
       style={{
-        height: '100vh',
+        height: '100dvh',
         borderRight: `0.5px solid ${theme.border}`,
         position: 'relative',
         zIndex: 50,
+        background: collapsed ? theme.navBg : `linear-gradient(180deg, ${theme.navBg}, color-mix(in srgb, ${theme.surface} 88%, transparent))`,
       } as React.CSSProperties}
     >
       {/* ── Drag region matches TitleBar ── */}
       <div
         style={{
-          height: 48,
+          height: compact ? 42 : 48,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: collapsed ? 'center' : 'flex-start',
-          paddingLeft: collapsed ? 0 : 16,
+          paddingLeft: collapsed ? 0 : compact ? 12 : 16,
           borderBottom: `1px solid ${theme.border}`,
           WebkitAppRegion: 'drag',
         } as React.CSSProperties & { WebkitAppRegion: string }}
@@ -445,7 +460,7 @@ export default function Sidebar() {
       </div>
 
       {/* ── User header (more compact) ── */}
-      <div className="p-4 flex-shrink-0" style={{ borderBottom: `1px solid ${theme.border}` }}>
+      <div className={`${compact ? 'p-3' : 'p-4'} flex-shrink-0`} style={{ borderBottom: `1px solid ${theme.border}` }}>
         {collapsed ? (
           <Tip label={username ?? ''}>
             <div
@@ -456,7 +471,7 @@ export default function Sidebar() {
             </div>
           </Tip>
         ) : (
-          <div className="flex items-center gap-3">
+          <div className="luxe-card flex items-center gap-3 rounded-[24px] px-3.5 py-3.5">
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-base flex-shrink-0 shadow-lg"
               style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
@@ -486,7 +501,7 @@ export default function Sidebar() {
       </div>
 
       {/* ── Nav ── */}
-      <div data-tutorial="sidebar" className="flex-1 overflow-y-auto px-2 pb-2 pt-2 space-y-0.5 overflow-x-hidden">
+      <div data-tutorial="sidebar" className={`flex-1 overflow-y-auto ${compact ? 'px-1.5 pb-1.5 pt-1.5' : 'px-2 pb-2 pt-2'} space-y-0.5 overflow-x-hidden`}>
 
         {collapsed ? (
           <>
@@ -564,14 +579,12 @@ export default function Sidebar() {
               collapsed={false}
               badge={
                 <div className="flex gap-1.5 items-center">
-                  {(() => {
-                    return quizzes.filter(q => now - q.createdAt < 86400000 * 2).length > 0 && (
-                      <span className="w-2 h-2 rounded-full" style={{ background: theme.accent, boxShadow: `0 0 8px ${theme.accent}` }} title="Grile noi" />
-                    );
-                  })()}
+                  {newQuizCount > 0 && (
+                    <span className="w-2 h-2 rounded-full" style={{ background: theme.accent, boxShadow: `0 0 8px ${theme.accent}` }} title="Grile noi" />
+                  )}
                   <span className="text-xs px-1.5 py-0.5 rounded-full"
                     style={{ background: theme.surface2, color: theme.text3 }}>
-                    {quizzes.filter(q => !q.archived).length}
+                    {activeQuizCount}
                   </span>
                 </div>
               }
@@ -616,7 +629,7 @@ export default function Sidebar() {
                 collapsed={false}
               />
             </div>
-            <div>
+            <div data-tutorial="nav-settings">
               <NavItem to="/settings" icon={<Settings size={16} />} label="Setări" collapsed={false} />
             </div>
 
@@ -628,7 +641,7 @@ export default function Sidebar() {
                 </span>
                 <button
                   onClick={() => setShowNewFolder(true)}
-                  className="p-1 rounded-lg transition-all"
+                  className="p-1 rounded-lg transition-all press-feedback"
                   style={{ color: theme.text3 }}
                   onMouseEnter={(e) => (e.currentTarget.style.color = theme.accent)}
                   onMouseLeave={(e) => (e.currentTarget.style.color = theme.text3)}
@@ -640,12 +653,12 @@ export default function Sidebar() {
 
               <div className="space-y-0.5">
                 {(() => {
-                  const count = getQuizzesByFolder(null).length;
+                  const count = uncategorizedCount;
                   return count > 0 ? (
                     <NavLink to="/folder/null" style={{ textDecoration: 'none', display: 'block' }}>
                       {({ isActive }) => (
                         <motion.div
-                          className="relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors"
+                          className="relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors press-feedback"
                           style={{
                             background: isActive ? `${theme.accent}16` : 'transparent',
                             color: isActive ? theme.accent : theme.text2,
@@ -670,7 +683,7 @@ export default function Sidebar() {
                 })()}
 
                 {folders.map((folder) => {
-                  const count = getQuizzesByFolder(folder.id).length;
+                  const count = folderQuizCount.get(folder.id) ?? 0;
                   const colorHex = FOLDER_COLORS.find(c => c.id === folder.color)?.bg ?? '#0A84FF';
 
                   if (editingFolder === folder.id) {
@@ -696,7 +709,7 @@ export default function Sidebar() {
                             initial={{ opacity: 0, scale: 0.85, x: -10 }}
                             animate={{ opacity: 1, scale: 1, x: 0 }}
                             transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-                            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors"
+                            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors press-feedback"
                             style={{
                               background: isActive ? `${theme.accent}16` : 'transparent',
                               color: isActive ? theme.accent : theme.text2,
@@ -776,7 +789,7 @@ export default function Sidebar() {
         {collapsed && (
           <Tip label="Schimbă utilizatorul">
             <button onClick={logout}
-              className="w-full flex items-center justify-center p-2.5 rounded-xl transition-all"
+              className="w-full flex items-center justify-center p-2.5 rounded-xl transition-all press-feedback"
               style={{ color: theme.text3 }}
               onMouseEnter={(e) => (e.currentTarget.style.color = theme.danger)}
               onMouseLeave={(e) => (e.currentTarget.style.color = theme.text3)}>
@@ -801,7 +814,7 @@ export default function Sidebar() {
             onClick={toggleCollapsed}
             whileHover={{ backgroundColor: `${theme.accent}12` }}
             whileTap={{ scale: 0.94 }}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm press-feedback"
             style={{ color: theme.text3, justifyContent: collapsed ? 'center' : 'flex-start' }}>
             <motion.span
               animate={{ rotate: collapsed ? 0 : 180 }}

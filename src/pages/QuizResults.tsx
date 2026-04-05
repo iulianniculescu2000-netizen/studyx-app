@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Trophy, RotateCcw, Home, Check, X, Star, Download, Bot, Loader2, Scale } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { QuizSession, Question, QuestionStat } from '../types';
@@ -8,18 +8,23 @@ import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore } from '../store/aiStore';
+import { useUserStore } from '../store/userStore';
 import { explainWrongAnswer } from '../lib/groq';
+import { buildAdaptiveExamQuiz, buildMistakeFlashcardQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
 
 export default function QuizResults() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
-  const { quizzes } = useQuizStore();
+  const navigate = useNavigate();
+  const { quizzes, addQuiz } = useQuizStore();
   const theme = useTheme();
   // Hooks must be called unconditionally — before any early returns
   const { hasKey } = useAIStore();
   const { questionStats, getAccuracy } = useStatsStore();
+  const activeProfileId = useUserStore((state) => state.activeProfileId);
   const [aiExplanations, setAiExplanations] = useState<Record<string, string>>({});
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
+  const [followUpLoading, setFollowUpLoading] = useState<'flashcards' | 'recovery' | 'exam' | null>(null);
 
   const state = location.state as { session: QuizSession; orderedQuestions?: Question[] } | QuizSession | undefined;
   let session: QuizSession | undefined;
@@ -34,6 +39,9 @@ export default function QuizResults() {
 
   const quiz = quizzes.find((q) => q.id === id);
   const questions = orderedQuestions ?? quiz?.questions ?? [];
+  const isAdaptiveExam = quiz?.tags?.includes('adaptive-exam') ?? false;
+  const isRecoverySession = quiz?.tags?.includes('recovery') ?? false;
+  const isMistakeDeck = quiz?.tags?.includes('mistake-bank') ?? false;
 
   const pct = Math.round(((session?.score ?? 0) / (session?.total ?? 1)) * 100);
 
@@ -109,6 +117,44 @@ export default function QuizResults() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const launchFollowUp = (mode: 'flashcards' | 'recovery' | 'exam') => {
+    if (!activeProfileId) return;
+    setFollowUpLoading(mode);
+    try {
+      const nextQuiz =
+        mode === 'flashcards'
+          ? buildMistakeFlashcardQuiz(activeProfileId, quizzes, questionStats)
+          : mode === 'recovery'
+            ? buildWeaknessRecoveryQuiz(activeProfileId, quizzes, questionStats)
+            : buildAdaptiveExamQuiz(activeProfileId, quizzes, questionStats);
+
+      if (!nextQuiz) return;
+      addQuiz(nextQuiz);
+      navigate(
+        mode === 'flashcards' ? `/flashcards/session/${nextQuiz.id}?mode=all` : `/play/${nextQuiz.id}`,
+        mode === 'exam' ? { state: { mode: 'exam' } } : undefined,
+      );
+    } finally {
+      setFollowUpLoading(null);
+    }
+  };
+
+  const insightTitle = isAdaptiveExam
+    ? (pct >= 85 ? 'Simulare foarte solidă' : pct >= 65 ? 'Ai o bază bună de examen' : 'Mai e loc clar de consolidare')
+    : isRecoverySession
+      ? (pct >= 80 ? 'Recuperarea a prins bine' : 'Mai merită o rundă focalizată')
+      : isMistakeDeck
+        ? (pct >= 85 ? 'Greșelile vechi se fixează' : 'Flashcards-urile mai au valoare pentru consolidare')
+        : (pct >= 85 ? 'Ritm excelent' : 'Poți împinge și mai sus sesiunea următoare');
+
+  const insightText = isAdaptiveExam
+    ? 'Adaptive Exam Mode ți-a calibrat dificultatea după istoricul tău. Pasul următor bun este o sesiune scurtă pe punctele slabe sau un deck de fixare din greșeli.'
+    : isRecoverySession
+      ? 'Weakness Recovery a extras exact zonele unde ai nevoie de consolidare. Dacă mai sunt goluri, transformă-le direct în flashcards sau treci într-o simulare de examen.'
+      : isMistakeDeck
+        ? 'Deck-ul din greșeli e excelent pentru fixare rapidă. După ce scorul urcă, continuă cu o recuperare focalizată sau cu un examen adaptiv.'
+        : 'Poți continua inteligent: recuperezi punctele slabe, creezi flashcards din greșeli sau intri direct într-un examen adaptiv.';
 
   return (
     <div className="h-full overflow-y-auto">
@@ -193,6 +239,52 @@ export default function QuizResults() {
               </div>
             </motion.div>
           )}
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.38 }}
+          className="rounded-[28px] p-5 mb-6 relative overflow-hidden"
+          style={{
+            background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
+            border: `1px solid ${theme.border}`,
+            boxShadow: '0 12px 34px rgba(0,0,0,0.12)',
+          }}>
+          <div
+            className="absolute -top-10 right-0 w-40 h-40 rounded-full blur-3xl pointer-events-none"
+            style={{ background: `${theme.accent}10` }}
+          />
+          <div className="relative">
+            <div className="text-[11px] uppercase tracking-[0.18em] font-black mb-2" style={{ color: theme.accent }}>
+              Smart Follow-Up
+            </div>
+            <h2 className="text-xl font-black tracking-tight mb-1" style={{ color: theme.text }}>{insightTitle}</h2>
+            <p className="text-sm leading-relaxed mb-4 max-w-2xl" style={{ color: theme.text2 }}>{insightText}</p>
+            <div className="grid sm:grid-cols-3 gap-2.5">
+              <button
+                onClick={() => launchFollowUp('flashcards')}
+                disabled={!activeProfileId || followUpLoading !== null}
+                className="rounded-2xl px-4 py-3 text-sm font-semibold text-left transition-all disabled:opacity-55"
+                style={{ background: `${theme.warning}12`, border: `1px solid ${theme.warning}30`, color: theme.text }}>
+                {followUpLoading === 'flashcards' ? 'Generez flashcards...' : 'Smart Flashcards'}
+              </button>
+              <button
+                onClick={() => launchFollowUp('recovery')}
+                disabled={!activeProfileId || followUpLoading !== null}
+                className="rounded-2xl px-4 py-3 text-sm font-semibold text-left transition-all disabled:opacity-55"
+                style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}28`, color: theme.text }}>
+                {followUpLoading === 'recovery' ? 'Construiesc sesiunea...' : 'Weakness Recovery'}
+              </button>
+              <button
+                onClick={() => launchFollowUp('exam')}
+                disabled={!activeProfileId || followUpLoading !== null}
+                className="rounded-2xl px-4 py-3 text-sm font-semibold text-left transition-all disabled:opacity-55"
+                style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}28`, color: theme.text }}>
+                {followUpLoading === 'exam' ? 'Pregătesc simularea...' : 'Adaptive Exam'}
+              </button>
+            </div>
+          </div>
         </motion.div>
 
         {/* Question review */}

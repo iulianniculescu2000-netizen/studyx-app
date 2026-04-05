@@ -1,11 +1,14 @@
 import { motion } from 'framer-motion';
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
 import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
+
+const ActivityBarChart = lazy(() => import('../components/stats/ActivityBarChart'));
+const AccuracyTrendChart = lazy(() => import('../components/stats/AccuracyTrendChart'));
+const CategoryRadarChart = lazy(() => import('../components/stats/CategoryRadarChart'));
 
 
 interface CustomTooltipProps {
@@ -34,8 +37,13 @@ const CustomTooltip = ({ active, payload, label, theme }: CustomTooltipProps) =>
   );
 };
 
+function ChartSkeleton({ height = 180 }: { height?: number }) {
+  return <div className="w-full rounded-2xl skeleton-block" style={{ height }} />;
+}
+
 export default function Stats() {
   const theme = useTheme();
+  const compact = typeof window !== 'undefined' && (window.innerHeight < 860 || window.innerWidth < 1280);
   const { quizzes, sessions } = useQuizStore();
   const { streak, totalStudyTime, questionStats, getWeakQuestions, getAccuracy } = useStatsStore();
   
@@ -43,6 +51,24 @@ export default function Stats() {
   const accuracy = getAccuracy();
   const weakQuestions = getWeakQuestions(5);
   const studyHours = (totalStudyTime / 3600).toFixed(1);
+  const sessionsByDay = useMemo(() => {
+    const grouped = new Map<string, typeof sessions>();
+    for (const session of sessions) {
+      const key = new Date(session.startedAt).toISOString().split('T')[0];
+      const daySessions = grouped.get(key);
+      if (daySessions) daySessions.push(session);
+      else grouped.set(key, [session]);
+    }
+    return grouped;
+  }, [sessions]);
+
+  const sessionCountByQuiz = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const session of sessions) {
+      counts.set(session.quizId, (counts.get(session.quizId) ?? 0) + 1);
+    }
+    return counts;
+  }, [sessions]);
 
   // Heatmap: last 90 days
   const heatmapWeeks = useMemo(() => {
@@ -52,7 +78,7 @@ export default function Stats() {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
       const key = d.toISOString().split('T')[0];
-      const count = sessions.filter(s => new Date(s.startedAt).toISOString().split('T')[0] === key).length;
+      const count = sessionsByDay.get(key)?.length ?? 0;
       cells.push({ date: key, count });
     }
     // Pad to fill complete weeks
@@ -60,7 +86,7 @@ export default function Stats() {
     const weeks: typeof cells[] = [];
     for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
     return weeks;
-  }, [sessions]);
+  }, [sessionsByDay]);
 
   // Sessions per day (last 14 days)
   const last14Days = useMemo(() => Array.from({ length: 14 }, (_, i) => {
@@ -68,23 +94,23 @@ export default function Stats() {
     d.setDate(d.getDate() - (13 - i));
     const key = d.toISOString().split('T')[0];
     const dayStr = d.toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' });
-    const daySessions = sessions.filter(s => new Date(s.startedAt).toISOString().split('T')[0] === key);
+    const daySessions = sessionsByDay.get(key) ?? [];
     const count = daySessions.length;
     const dayAccuracy = daySessions.reduce((acc, s) => acc + s.score / s.total, 0);
     const avg = count > 0 ? Math.round((dayAccuracy / count) * 100) : 0;
     return { day: dayStr, sesiuni: count, acuratete: avg };
-  }), [sessions]);
+  }), [sessionsByDay]);
 
   // Accuracy per quiz
   const quizAccuracyData = useMemo(() => quizzes
     .map(q => ({
       name: q.title.length > 15 ? q.title.substring(0, 15) + '...' : q.title,
       acuratete: getAccuracy(q.id),
-      sesiuni: sessions.filter(s => s.quizId === q.id).length,
+      sesiuni: sessionCountByQuiz.get(q.id) ?? 0,
     }))
     .filter(d => d.sesiuni > 0)
     .sort((a, b) => b.acuratete - a.acuratete),
-  [quizzes, sessions, getAccuracy]);
+  [quizzes, sessionCountByQuiz, getAccuracy]);
 
 
   const bestScore = sessions.length > 0
@@ -123,7 +149,7 @@ export default function Stats() {
 
   return (
     <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-10">
-      <div className="max-w-4xl mx-auto">
+      <div className={`${compact ? 'max-w-[1000px]' : 'max-w-4xl'} mx-auto`}>
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} 
           className="mb-10">
           <h1 className="text-4xl font-black tracking-tighter mb-2" style={{ color: theme.text }}>
@@ -167,7 +193,7 @@ export default function Stats() {
           <>
             {/* KPI Grid */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-              className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+              className={`grid grid-cols-2 ${compact ? 'xl:grid-cols-3' : 'md:grid-cols-3'} gap-4 mb-8`}>
               {[
                 { label: 'Sesiuni Totale', value: sessions.length, icon: <BookOpen size={18} />, color: theme.accent },
                 { label: 'Acuratețe Medie', value: `${accuracy}%`, icon: <Target size={18} />, color: theme.success },
@@ -179,7 +205,7 @@ export default function Stats() {
                 <motion.div key={stat.label}
                   initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 + i * 0.05 }}
-                  whileHover={{ y: -3, boxShadow: `0 12px 32px ${stat.color}15` }}
+                  whileHover={{ y: -2, boxShadow: `0 10px 26px ${stat.color}12` }}
                   className="rounded-2xl p-4 relative overflow-hidden"
                   style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
                   <div className="absolute top-0 left-0 w-16 h-16 rounded-full pointer-events-none"
@@ -285,14 +311,9 @@ export default function Stats() {
               className="rounded-2xl p-5 mb-5"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
               <h2 className="font-semibold mb-4" style={{ color: theme.text }}>Activitate (ultimele 14 zile)</h2>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={last14Days} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-                  <XAxis dataKey="day" tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip theme={theme} />} />
-                  <Bar dataKey="sesiuni" fill={theme.accent} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<ChartSkeleton />}>
+                <ActivityBarChart data={last14Days} theme={theme} tooltip={<CustomTooltip theme={theme} />} />
+              </Suspense>
             </motion.div>
 
             {/* Accuracy trend */}
@@ -301,15 +322,9 @@ export default function Stats() {
                 className="rounded-2xl p-5 mb-5"
                 style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
                 <h2 className="font-semibold mb-4" style={{ color: theme.text }}>Tendință acuratețe (%)</h2>
-                <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={last14Days.filter(d => d.acuratete > 0)} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={theme.border} />
-                    <XAxis dataKey="day" tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis domain={[0, 100]} tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip theme={theme} />} />
-                    <Line type="monotone" dataKey="acuratete" stroke={theme.success} strokeWidth={2} dot={{ fill: theme.success, r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<ChartSkeleton height={160} />}>
+                  <AccuracyTrendChart data={last14Days.filter(d => d.acuratete > 0)} theme={theme} tooltip={<CustomTooltip theme={theme} />} />
+                </Suspense>
               </motion.div>
             )}
 
@@ -356,14 +371,9 @@ export default function Stats() {
                   <Brain size={16} style={{ color: theme.accent2 }} />
                   Progres pe categorii
                 </h2>
-                <ResponsiveContainer width="100%" height={240}>
-                  <RadarChart data={radarData}>
-                    <PolarGrid stroke={theme.border} />
-                    <PolarAngleAxis dataKey="subject" tick={{ fill: theme.text3, fontSize: 11 }} />
-                    <Radar name="Acuratețe" dataKey="acuratete" stroke={theme.accent} fill={theme.accent} fillOpacity={0.22} strokeWidth={2} />
-                    <Tooltip contentStyle={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 12 }} />
-                  </RadarChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<ChartSkeleton height={240} />}>
+                  <CategoryRadarChart data={radarData} theme={theme} />
+                </Suspense>
               </motion.div>
             )}
 

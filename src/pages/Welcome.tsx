@@ -25,7 +25,9 @@ export default function Welcome({ onBack }: Props) {
     setStep('theme');
   };
 
-  const handleFinish = () => setUsername(name.trim());
+  const handleFinish = () => {
+    setUsername(name.trim());
+  };
 
   const avatarLetter = name.trim().charAt(0).toUpperCase() || '?';
   const hasLetter = name.trim().length >= 1;

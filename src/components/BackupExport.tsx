@@ -16,6 +16,8 @@ interface BackupExportProps {
 
 export default function BackupExport({ open, onClose }: BackupExportProps) {
   const theme = useTheme();
+  const performanceLite = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-performance') === 'lite';
   const [status, setStatus] = useState<'idle' | 'ok' | 'error'>('idle');
   const [msg, setMsg] = useState('');
 
@@ -96,7 +98,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
         <>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-[200]"
-            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(2px)' : 'blur(6px)' }}
             onClick={onClose} />
 
           <motion.div
@@ -109,7 +111,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
               maxHeight: '85vh',
               background: theme.modalBg, 
               border: `1px solid ${theme.border}`,
-              boxShadow: '0 40px 120px rgba(0,0,0,0.4)'
+              boxShadow: performanceLite ? '0 20px 52px rgba(0,0,0,0.24)' : '0 40px 120px rgba(0,0,0,0.4)'
             }}>
             
             {/* Header */}

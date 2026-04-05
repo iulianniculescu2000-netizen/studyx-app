@@ -10,6 +10,8 @@ interface Props {
 export default function DropzoneOverlay({ onFilesDropped }: Props) {
   const [active, setActive] = useState(false);
   const theme = useTheme();
+  const performanceLite = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-performance') === 'lite';
 
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
@@ -60,7 +62,7 @@ export default function DropzoneOverlay({ onFilesDropped }: Props) {
           className="fixed inset-0 z-[10000] flex items-center justify-center p-6 sm:p-10 pointer-events-none"
           style={{ 
             background: 'rgba(0,0,0,0.4)', 
-            backdropFilter: 'blur(12px)',
+            backdropFilter: performanceLite ? 'blur(4px)' : 'blur(12px)',
           }}
         >
           <motion.div
@@ -71,16 +73,16 @@ export default function DropzoneOverlay({ onFilesDropped }: Props) {
             style={{ 
               background: theme.modalBg,
               borderColor: theme.accent,
-              boxShadow: `0 0 100px ${theme.accent}44`
+              boxShadow: performanceLite ? `0 0 48px ${theme.accent}22` : `0 0 100px ${theme.accent}44`
             }}
           >
             <motion.div
-              animate={{ 
+              animate={performanceLite ? { y: 0, rotate: 0, scale: 1 } : { 
                 y: [0, -20, 0],
                 rotate: [0, 5, -5, 0],
                 scale: [1, 1.1, 1]
               }}
-              transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
+              transition={performanceLite ? { duration: 0.18 } : { repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
               className="w-28 h-28 rounded-[32px] flex items-center justify-center shadow-2xl"
               style={{ 
                 background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, 

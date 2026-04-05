@@ -1,15 +1,16 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMemo, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CreditCard, Clock, CheckCircle, Circle, Play, BookOpen, FileText, Bot, Loader2, AlertCircle, Upload, Sparkles } from 'lucide-react';
+import { CreditCard, Clock, CheckCircle, Circle, Play, BookOpen, FileText, Bot, Loader2, AlertCircle, Upload, Sparkles, Brain } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useAIStore } from '../store/aiStore';
+import { useUserStore } from '../store/userStore';
 import { notesToFlashcards } from '../lib/groq';
+import { buildMistakeFlashcardQuiz } from '../lib/adaptiveStudy';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
 import type { Question, Difficulty } from '../types';
-import { parsePDF } from '../ai/pdfParser';
 
 function generateId() { return crypto.randomUUID().replace(/-/g, '').slice(0, 12); }
 const OPTION_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -44,6 +45,7 @@ export default function FlashcardHub() {
   const { quizzes, addQuiz } = useQuizStore();
   const { questionStats, getDueQuestions } = useStatsStore();
   const { hasKey } = useAIStore();
+  const activeProfileId = useUserStore((state) => state.activeProfileId);
 
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
@@ -170,6 +172,20 @@ export default function FlashcardHub() {
     }
   };
 
+  const createMistakeDeck = () => {
+    if (!activeProfileId) {
+      setAiError('Nu exista profil activ pentru a citi banca de greseli.');
+      return;
+    }
+    const quiz = buildMistakeFlashcardQuiz(activeProfileId, quizzes, questionStats);
+    if (!quiz) {
+      setAiError('Nu am gasit suficiente greseli utile pentru a crea flashcarduri.');
+      return;
+    }
+    addQuiz(quiz);
+    navigate(`/flashcards/session/${quiz.id}?mode=all`);
+  };
+
   const dueQuestions = getDueQuestions();
   const totalDue = dueQuestions.length;
 
@@ -204,7 +220,9 @@ export default function FlashcardHub() {
           const file = e.target.files?.[0];
           e.currentTarget.value = '';
           if (!file) return;
-          const text = file.name.toLowerCase().endsWith('.pdf') ? await parsePDF(file) : await file.text();
+          const text = file.name.toLowerCase().endsWith('.pdf')
+            ? await (await import('../ai/pdfParser')).parsePDF(file)
+            : await file.text();
           if (text.trim().length < 100) {
             setAiError('PDF-ul pare a fi o imagine scanată fără text digital. Încearcă un alt PDF sau folosește secțiunea "Biblioteca AI" pentru a procesa documentul cu OCR înainte.');
             return;
@@ -380,6 +398,38 @@ export default function FlashcardHub() {
               </motion.div>
             )}
           </AnimatePresence>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28 }}
+          className="mb-8 rounded-3xl p-5 group transition-all hover:translate-y-[-2px]"
+          style={{ background: theme.surface, border: `1px solid ${theme.border}`, boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}
+        >
+          <div className="flex items-center gap-4">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+              style={{ background: `${theme.warning}15`, color: theme.warning }}
+            >
+              <Brain size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black uppercase tracking-wider" style={{ color: theme.text }}>Smart Flashcards from Mistakes</p>
+              <p className="text-xs font-medium opacity-60 mt-1" style={{ color: theme.text }}>
+                Transforma greselile tale recente in carduri scurte, clare si foarte utile pentru fixare.
+              </p>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={createMistakeDeck}
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-[0.14em] text-white"
+              style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, boxShadow: `0 10px 24px ${theme.warning}30` }}
+            >
+              <Sparkles size={14} /> Genereaza
+            </motion.button>
+          </div>
         </motion.div>
 
         {/* Review all due banner */}

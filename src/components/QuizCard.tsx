@@ -63,16 +63,16 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.05, ease: [0.16, 1, 0.3, 1] }}
-      whileHover={{ y: -3, boxShadow: '0 12px 32px rgba(0,0,0,0.10)' }}
+      whileHover={{ y: -3, boxShadow: '0 16px 36px rgba(0,0,0,0.10)' }}
       whileTap={{ scale: 0.98 }}
       onHoverStart={() => setHovered(true)}
       onHoverEnd={() => setHovered(false)}
-      className="relative group rounded-[32px] overflow-hidden glass-panel premium-shadow"
+      className="relative group rounded-[32px] overflow-hidden glass-panel premium-shadow press-feedback"
       style={{
         background: hovered
-          ? `linear-gradient(135deg, ${colors.from}20 0%, ${colors.to}20 100%)`
-          : `linear-gradient(135deg, ${colors.from}10 0%, ${colors.to}10 100%)`,
-        border: `1px solid ${hovered ? colors.badge + '40' : 'rgba(255,255,255,0.06)'}`,
+          ? `linear-gradient(135deg, ${colors.from}22 0%, ${colors.to}22 100%)`
+          : `linear-gradient(135deg, ${colors.from}12 0%, ${colors.to}12 100%)`,
+        border: `1px solid ${hovered ? colors.badge + '55' : 'rgba(255,255,255,0.06)'}`,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
 
@@ -127,11 +127,11 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             className="absolute top-5 right-5 flex items-center gap-1 p-1.5 rounded-2xl shadow-2xl z-20"
-            style={{ background: theme.isDark ? 'rgba(20,20,25,0.85)' : 'rgba(255,255,255,0.9)', border: `1px solid ${theme.border}`, backdropFilter: 'blur(24px)' }}>
+            style={{ background: theme.isDark ? 'rgba(20,20,25,0.82)' : 'rgba(255,255,255,0.88)', border: `1px solid ${theme.border}`, backdropFilter: 'blur(22px) saturate(145%)' }}>
             
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePin(quiz.id); }}
-              className="p-2 rounded-xl transition-colors hover:bg-white/10"
+              className="p-2 rounded-xl transition-colors hover:bg-white/10 press-feedback"
               style={{ color: quiz.pinned ? '#FFD60A' : theme.text2, transition: 'all 0.15s ease-out' }}
               title={quiz.pinned ? 'Scoate Pin' : 'Fixează (Pin)'}>
               {quiz.pinned ? <PinOff size={15} /> : <Pin size={15} />}
@@ -142,14 +142,14 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
                 <div className="w-px h-4 mx-1" style={{ background: theme.border }} />
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/create?edit=${quiz.id}`); }}
-                  className="p-2 rounded-xl transition-colors hover:bg-blue-500/15"
+                  className="p-2 rounded-xl transition-colors hover:bg-blue-500/15 press-feedback"
                   style={{ color: '#0A84FF', transition: 'all 0.15s ease-out' }}
                   title="Editează">
                   <Pencil size={15} />
                 </button>
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDelete(true); }}
-                  className="p-2 rounded-xl transition-colors hover:bg-red-500/15"
+                  className="p-2 rounded-xl transition-colors hover:bg-red-500/15 press-feedback"
                   style={{ color: '#FF453A', transition: 'all 0.15s ease-out' }}
                   title="Șterge">
                   <Trash2 size={15} />
@@ -169,7 +169,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
             exit={{ opacity: 0, scale: 0.8, x: 10 }}
             transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/play/${quiz.id}`); }}
-            className="absolute bottom-6 right-6 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-2xl transition-transform hover:scale-110 active:scale-95"
+            className="absolute bottom-6 right-6 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-2xl transition-transform hover:scale-110 active:scale-95 press-feedback"
             style={{ 
               background: colors.badge,
               color: '#FFFFFF',
@@ -198,13 +198,13 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
             <div className="flex gap-3 w-full max-w-[220px]">
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDelete(false); }}
-                className="flex-1 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all hover:bg-white/10"
+                className="flex-1 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all hover:bg-white/10 press-feedback"
                 style={{ background: theme.surface2, color: theme.text2, transition: 'all 0.15s ease-out' }}>
                 Anulează
               </button>
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteQuiz(quiz.id); }}
-                className="flex-1 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider text-white transition-all hover:opacity-90"
+                className="flex-1 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider text-white transition-all hover:opacity-90 press-feedback"
                 style={{ background: '#FF453A', boxShadow: '0 8px 20px rgba(255,69,58,0.3)', transition: 'all 0.15s ease-out' }}>
                 Șterge
               </button>
@@ -217,4 +217,3 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
 });
 
 export default QuizCard;
-

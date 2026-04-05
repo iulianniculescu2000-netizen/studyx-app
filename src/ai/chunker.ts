@@ -1,62 +1,88 @@
 /**
- * Semantic-Aware Recursive Chunker
- * Împarte textul în fragmente optimizate pentru AI, respectând limitele gramaticale.
+ * Semantic-aware chunker for large medical documents.
+ * Splits safely even when a paragraph is much larger than the target chunk size.
  */
-export function chunkText(text: string, sourceName: string, chunkSize = 1200, overlap = 200): { text: string; id: string }[] {
-  const chunks: { text: string; id: string }[] = [];
-  
-  // 1. Curățare și normalizare (păstrăm noile linii duble pentru paragrafe)
-  const normalizedText = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 
-  // 2. Separatori ierarhici (de la cel mai mare la cel mai mic)
-  const separators = ['\n\n', '\n', '. ', '? ', '! ', '; ', ', ', ' '];
+function normalizeText(text: string) {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
-  function recursiveSplit(content: string): string[] {
-    if (content.length <= chunkSize) return [content];
+function splitOversizedSegment(segment: string, chunkSize: number): string[] {
+  if (segment.length <= chunkSize) return [segment];
 
-    let separator = separators[separators.length - 1];
-    for (const s of separators) {
-      if (content.includes(s)) {
-        separator = s;
-        break;
-      }
-    }
+  const separators = ['\n\n', '\n', '. ', '; ', ', ', ' '];
+  for (const separator of separators) {
+    if (!segment.includes(separator)) continue;
 
-    const parts = content.split(separator);
+    const parts = segment.split(separator);
     const result: string[] = [];
-    let currentChunk = "";
+    let current = '';
 
     for (const part of parts) {
-      if ((currentChunk + separator + part).length <= chunkSize) {
-        currentChunk += (currentChunk ? separator : "") + part;
+      const next = current ? `${current}${separator}${part}` : part;
+      if (next.length <= chunkSize) {
+        current = next;
+        continue;
+      }
+
+      if (current) result.push(current.trim());
+      if (part.length > chunkSize) {
+        result.push(...splitOversizedSegment(part, chunkSize));
+        current = '';
       } else {
-        if (currentChunk) result.push(currentChunk);
-        currentChunk = part;
+        current = part;
       }
     }
-    if (currentChunk) result.push(currentChunk);
-    return result;
+
+    if (current.trim()) result.push(current.trim());
+    if (result.length > 1) return result;
   }
 
-  // 3. Procesare cu Overlap inteligent
-  const initialSplits = recursiveSplit(normalizedText);
-  let globalIndex = 0;
+  const windows: string[] = [];
+  for (let start = 0; start < segment.length; start += chunkSize) {
+    windows.push(segment.slice(start, start + chunkSize).trim());
+  }
+  return windows.filter(Boolean);
+}
 
-  for (let i = 0; i < initialSplits.length; i++) {
-    let content = initialSplits[i];
-    
-    // Adăugăm overlap din fragmentul anterior dacă există
+export function chunkText(
+  text: string,
+  sourceName: string,
+  chunkSize = 1200,
+  overlap = 200
+): { text: string; id: string }[] {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+
+  const paragraphs = normalized.split('\n\n').flatMap((paragraph) => splitOversizedSegment(paragraph, chunkSize));
+  const chunks: { text: string; id: string }[] = [];
+
+  let index = 0;
+  for (let i = 0; i < paragraphs.length; i++) {
+    let content = paragraphs[i].trim();
+    if (!content) continue;
+
     if (i > 0 && overlap > 0) {
-      const prev = initialSplits[i - 1];
-      const overlapText = prev.slice(-overlap);
-      content = overlapText + " " + content;
+      const previousTail = paragraphs[i - 1].slice(-overlap).trim();
+      if (previousTail) {
+        content = `${previousTail}\n${content}`.trim();
+      }
     }
 
-    if (content.trim().length > 20) {
-      chunks.push({
-        text: content.trim(),
-        id: `${sourceName}-${globalIndex++}`
-      });
+    if (content.length > chunkSize + overlap) {
+      for (const segment of splitOversizedSegment(content, chunkSize)) {
+        if (segment.trim().length > 40) {
+          chunks.push({ text: segment.trim(), id: `${sourceName}-${index++}` });
+        }
+      }
+      continue;
+    }
+
+    if (content.length > 40) {
+      chunks.push({ text: content, id: `${sourceName}-${index++}` });
     }
   }
 

@@ -4,7 +4,7 @@ import { runAIPipeline } from './pipeline';
 import { buildExplanationPrompt, buildHintPrompt, buildMnemonicPrompt, buildQuestionPrompt, buildWrongOptionsPrompt } from './prompts';
 import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile, generateFromMistakes } from './UserProfile';
 import { validateJson } from './validator';
-import { searchVault } from './vectorStore';
+import { retrieveRelevantChunks } from './retriever';
 import type {
   AIAnalysisResult,
   AIContextPayload,
@@ -20,6 +20,14 @@ import type {
   RetrievedChunk
 } from './types';
 import { groqRequest } from '../lib/groq';
+
+async function buildRelevantContext(query: string, k: number) {
+  const chunks = await retrieveRelevantChunks(query, null, k);
+  return {
+    chunks,
+    summary: chunks.map((chunk) => `[Sursă: ${chunk.source}]\n${chunk.text}`).join('\n\n'),
+  };
+}
 
 function normalizeQuestion(question: QuestionGenerationResponse['questions'][number], index: number): Question {
   return {
@@ -42,8 +50,7 @@ export class QuestionGenerator {
     const difficulty = request.difficulty ?? profile?.currentDifficulty ?? 'medium';
     
     // RAG: Find the most relevant chunks from the vault for the generation request
-    const vaultResults = await searchVault(request.context || 'General medical knowledge', 10);
-    const contextSummary = vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n');
+    const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(request.context || 'General medical knowledge', 10);
     
     const context: AIContextPayload = {
       summary: contextSummary,
@@ -125,11 +132,7 @@ export async function analyzeAnswer(
 ) {
   // Use RAG to find relevant knowledge for the specific question/answer
   const query = `${payload.question.text} ${payload.correctAnswer}`;
-  const vaultResults = await searchVault(query, 5);
-  
-  const contextSummary = vaultResults.length > 0
-    ? vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n')
-    : '';
+  const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(query, 5);
 
   const context: AIContextPayload = {
     summary: contextSummary,
@@ -177,8 +180,7 @@ export function getNextQuestion(state: AINextQuestionState) {
 
 export async function generateHint(question: Question) {
   const query = question.text;
-  const vaultResults = await searchVault(query, 4);
-  const contextSummary = vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n');
+  const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(query, 4);
   
   const context: AIContextPayload = { 
     summary: contextSummary, 
@@ -206,8 +208,7 @@ export async function generateHint(question: Question) {
 
 export async function generateMnemonicForConcept(concept: string, correctAnswer: string) {
   const query = `${concept} ${correctAnswer}`;
-  const vaultResults = await searchVault(query, 3);
-  const contextSummary = vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n');
+  const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(query, 3);
   const context: AIContextPayload = { 
     summary: contextSummary, 
     query,
@@ -227,8 +228,7 @@ export async function generateMnemonicForConcept(concept: string, correctAnswer:
 
 
 export async function explainWrongOptions(question: Question) {
-  const vaultResults = await searchVault(question.text, 4);
-  const contextSummary = vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n');
+  const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(question.text, 4);
   const context: AIContextPayload = { 
     summary: contextSummary, 
     query: question.text,
@@ -297,10 +297,13 @@ export async function generateChatResponse(
   history: { role: 'user' | 'assistant'; content: string }[] = []
 ): Promise<string> {
   const systemPrompt = [
-    'Esti un asistent medical virtual StudyX, util si precis.',
-    'Foloseste contextul furnizat din biblioteca utilizatorului pentru a raspunde.',
-    'Daca informatia nu este in context, foloseste-ti cunostintele generale medicale, dar mentioneaza acest lucru.',
-    'Raspunde intotdeauna in limba romana, clar si structurat.',
+    'Esti asistentul medical virtual premium din StudyX.',
+    'Prioritizeaza contextul extras din biblioteca utilizatorului atunci cand este relevant.',
+    'Daca raspunsul depaseste contextul disponibil, spune explicit ca acea parte se bazeaza pe cunostinte medicale generale.',
+    'Nu inventa citate, ghiduri sau surse inexistente.',
+    'Raspunde intotdeauna in limba romana, clar, structurat si util pentru invatare.',
+    'Cand contextul contine surse, mentioneaza pe scurt sursa sau documentul relevant.',
+    'Pentru intrebari complexe, structureaza raspunsul in pasi scurti: idee-cheie, explicatie, aplicatie clinica.',
     contextSummary ? `Context relevant din biblioteca:\n${deepCleanText(contextSummary)}` : 'Nu exista context specific furnizat.'
   ].join('\n\n');
 

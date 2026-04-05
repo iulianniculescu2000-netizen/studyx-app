@@ -6,6 +6,8 @@ import { useTheme } from '../theme/ThemeContext';
 import QuizImage from '../components/QuizImage';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
+import { useUserStore } from '../store/userStore';
+import { buildAdaptiveExamQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
 import type { Question, QuestionStat } from '../types';
 
 interface ReviewItem {
@@ -19,6 +21,7 @@ export default function ReviewMode() {
   const navigate = useNavigate();
   const { quizzes, addQuiz } = useQuizStore();
   const { getDueQuestions, getWeakQuestions, recordAnswer, recordStudySession } = useStatsStore();
+  const activeProfileId = useUserStore((state) => state.activeProfileId);
 
   const createQuizFromMistakes = () => {
     const weak = getWeakQuestions(20);
@@ -75,6 +78,22 @@ export default function ReviewMode() {
     const weak = getWeakQuestions(10);
     setItems(buildItems(weak));
     setMode('review');
+  };
+
+  const startRecoverySession = () => {
+    if (!activeProfileId) return;
+    const quiz = buildWeaknessRecoveryQuiz(activeProfileId, quizzes, useStatsStore.getState().questionStats);
+    if (!quiz) return;
+    addQuiz(quiz);
+    navigate(`/play/${quiz.id}`);
+  };
+
+  const startAdaptiveExam = () => {
+    if (!activeProfileId) return;
+    const quiz = buildAdaptiveExamQuiz(activeProfileId, quizzes, useStatsStore.getState().questionStats);
+    if (!quiz) return;
+    addQuiz(quiz);
+    navigate(`/play/${quiz.id}`, { state: { mode: 'exam' } });
   };
 
   const current = items[currentIdx];
@@ -231,6 +250,60 @@ export default function ReviewMode() {
               </div>
               <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
                 Generează o grilă nouă din istoricul tău de erori pentru o sesiune de antrenament rapid.
+              </p>
+            </motion.button>
+
+            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+              onClick={startRecoverySession}
+              disabled={!activeProfileId || weakCount === 0}
+              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              style={{
+                background: theme.surface,
+                border: `1px solid ${theme.success}40`,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+              }}>
+              <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
+                style={{ background: `${theme.success}14` }} />
+
+              <div className="flex items-center gap-4 mb-3 relative">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
+                  style={{ background: `${theme.success}20`, border: `1px solid ${theme.success}40` }}>
+                  ♻️
+                </div>
+                <div>
+                  <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Weakness Recovery</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.success }}>Focused Recovery</span>
+                </div>
+              </div>
+              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+                O sesiune scurtă, ghidată de topicurile unde ai cea mai mare nevoie de consolidare.
+              </p>
+            </motion.button>
+
+            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+              onClick={startAdaptiveExam}
+              disabled={!activeProfileId || quizzes.length === 0}
+              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              style={{
+                background: theme.surface,
+                border: `1px solid ${theme.accent2}40`,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+              }}>
+              <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
+                style={{ background: `${theme.accent2}16` }} />
+
+              <div className="flex items-center gap-4 mb-3 relative">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
+                  style={{ background: `${theme.accent2}20`, border: `1px solid ${theme.accent2}40` }}>
+                  🎓
+                </div>
+                <div>
+                  <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Adaptive Exam Mode</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.accent2 }}>Dynamic Simulation</span>
+                </div>
+              </div>
+              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+                Simulare de examen cu dificultate calibrată după istoricul tău, pentru antrenament realist.
               </p>
             </motion.button>
           </div>

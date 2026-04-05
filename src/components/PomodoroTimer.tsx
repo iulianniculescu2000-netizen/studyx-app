@@ -94,18 +94,19 @@ export default function PomodoroTimer() {
   const mm = String(Math.floor(timeLeft / 60)).padStart(2, '0');
   const ss = String(timeLeft % 60).padStart(2, '0');
 
-  // Sync Logic: Fixed anchored positions
-  const currentRight = chatOpen ? 424 : 24;
+  const dockOffset = chatOpen ? 24 : 92;
+  const currentRight = chatOpen ? 452 : 24;
+  const currentBottom = open ? 24 : dockOffset;
 
   if (!open) {
     return (
       <motion.button
-        animate={{ right: currentRight }}
+        animate={{ right: currentRight, bottom: currentBottom }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.93 }}
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 z-[9999] w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl"
+        className="fixed z-[9997] w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl press-feedback"
         style={{
           background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
           boxShadow: `0 8px 24px ${theme.accent}40`,
@@ -127,16 +128,17 @@ export default function PomodoroTimer() {
         opacity: 1, 
         scale: 1, 
         y: 0,
-        right: currentRight
+        right: currentRight,
+        bottom: currentBottom,
       }}
       exit={{ opacity: 0, scale: 0.88, y: 20 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="fixed bottom-6 z-[9999] rounded-2xl shadow-2xl overflow-hidden"
+      className="fixed z-[9997] rounded-[28px] shadow-2xl overflow-hidden"
       style={{
         width: 280,
-        background: theme.isDark ? 'rgba(18,18,22,0.97)' : 'rgba(255,255,255,0.97)',
+        background: theme.isDark ? 'rgba(18,18,22,0.9)' : 'rgba(255,255,255,0.88)',
         border: `1px solid ${theme.border}`,
-        backdropFilter: 'blur(20px)',
+        backdropFilter: 'blur(22px) saturate(145%)',
       }}>
       <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: `1px solid ${theme.border}` }}>
         <Timer size={15} style={{ color: phaseInfo.color }} />

@@ -1,4 +1,9 @@
 import { useEffect } from 'react';
+import { useFolderStore } from '../store/folderStore';
+import { useNotesStore } from '../store/notesStore';
+import { useQuizStore } from '../store/quizStore';
+import { useStatsStore } from '../store/statsStore';
+import { useUserStore } from '../store/userStore';
 
 const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours (Daily)
 const LAST_BACKUP_KEY = 'studyx-last-auto-backup';
@@ -22,21 +27,28 @@ export function useAutoBackup(activeProfileId: string | null) {
 
     if (now - lastBackup < BACKUP_INTERVAL_MS) return; // not yet due
 
-    // Collect all StudyX localStorage keys
-    const snapshot: Record<string, string> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('studyx')) {
-        const val = localStorage.getItem(key);
-        if (val) snapshot[key] = val;
-      }
-    }
+    const { quizzes, sessions } = useQuizStore.getState();
+    const { folders } = useFolderStore.getState();
+    const { questionStats, streak, totalStudyTime } = useStatsStore.getState();
+    const { notes } = useNotesStore.getState();
+    const { profiles, activeProfileId: currentProfileId, username, themeId } = useUserStore.getState();
 
     const payload = JSON.stringify({
       exportedAt: new Date().toISOString(),
       appVersion: '1.0.0',
       profileId: activeProfileId,
-      stores: snapshot,
+      user: {
+        profiles,
+        activeProfileId: currentProfileId,
+        username,
+        themeId,
+      },
+      stores: {
+        quizzes: { quizzes, sessions },
+        folders: { folders },
+        stats: { questionStats, streak, totalStudyTime },
+        notes: { notes },
+      },
     }, null, 2);
 
     electronAPI.autoBackup(payload)

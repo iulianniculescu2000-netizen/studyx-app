@@ -30,11 +30,15 @@ export default function QuizList() {
     [activeQuizzes]
   );
 
-  const getBestScoreLocal = (quizId: string) => {
-    const qs = sessions.filter(s => s.quizId === quizId);
-    if (!qs.length) return 0;
-    return Math.max(...qs.map(s => Math.round((s.score / s.total) * 100)));
-  };
+  const bestScoreByQuiz = useMemo(() => {
+    const scores = new Map<string, number>();
+    for (const session of sessions) {
+      const score = Math.round((session.score / session.total) * 100);
+      const previous = scores.get(session.quizId) ?? 0;
+      if (score > previous) scores.set(session.quizId, score);
+    }
+    return scores;
+  }, [sessions]);
 
   const sortFn = (a: typeof quizzes[0], b: typeof quizzes[0]) => {
     switch (sort) {
@@ -43,7 +47,7 @@ export default function QuizList() {
       case 'name_az': return a.title.localeCompare(b.title, 'ro');
       case 'name_za': return b.title.localeCompare(a.title, 'ro');
       case 'most_questions': return b.questions.length - a.questions.length;
-      case 'best_score': return getBestScoreLocal(b.id) - getBestScoreLocal(a.id);
+      case 'best_score': return (bestScoreByQuiz.get(b.id) ?? 0) - (bestScoreByQuiz.get(a.id) ?? 0);
       default: return 0;
     }
   };

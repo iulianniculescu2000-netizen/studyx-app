@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Clock, BookOpen, Layers, Keyboard, Zap, GraduationCap, StickyNote, Sparkles, Loader2 } from 'lucide-react';
@@ -10,9 +10,10 @@ import { useUserStore } from '../store/userStore';
 import { useFocusModeStore } from '../store/focusModeStore';
 import { useTheme } from '../theme/ThemeContext';
 import QuizImage from '../components/QuizImage';
-import { analyzeAnswer, generateMnemonicForConcept, getNextQuestion as getNextAIQuestion, getUserProfile, WeaknessAnalyzer, generateHint } from '../ai/AIEngine';
 import type { QuizSession, Question, Option } from '../types';
 import type { AIAnalysisResult, HintResult } from '../ai/types';
+
+const loadAIEngine = () => import('../ai/AIEngine');
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -28,9 +29,13 @@ export default function QuizPlay() {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
+  const reduceMotion = useReducedMotion();
+  const performanceLite = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-performance') === 'lite';
+  const calmMotion = reduceMotion || performanceLite;
   const { quizzes, addSession } = useQuizStore();
   const { recordAnswer, recordStudySession } = useStatsStore();
-  const { getNote, setNote } = useNotesStore();
+  const setNote = useNotesStore((s) => s.setNote);
   const { hasKey } = useAIStore();
   const activeProfileId = useUserStore((s) => s.activeProfileId);
   const quiz = quizzes.find((q) => q.id === id);
@@ -83,6 +88,7 @@ export default function QuizPlay() {
   const answeredCount = Object.keys(answers).length;
   const progress = questionQueue.length > 0 ? (answeredCount / questionQueue.length) * 100 : 0;
   const isMultiple = question?.multipleCorrect ?? false;
+  const currentNote = useNotesStore((s) => (question ? (s.notes[question.id] ?? '') : ''));
 
   const { focusMode, toggleFocusMode } = useFocusModeStore();
 
@@ -108,6 +114,7 @@ export default function QuizPlay() {
 
     setHintLoading(true);
     try {
+      const { generateHint } = await loadAIEngine();
       const result = await generateHint(question);
       setHintData(result);
       setHintLevel(1);
@@ -305,6 +312,7 @@ export default function QuizPlay() {
     }
     setAiLoading(true);
     try {
+      const { analyzeAnswer } = await loadAIEngine();
       const currentAnswers = answers[question.id] ?? selectedNow;
       const userAnswer = question.options.filter((option) => currentAnswers.includes(option.id)).map((option) => option.text).join(', ');
       const correctAnswer = question.options.filter((option) => option.isCorrect).map((option) => option.text).join(', ');
@@ -332,14 +340,19 @@ export default function QuizPlay() {
     let cancelled = false;
 
     setAiLoading(true);
-    analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect })
-      .then(({ analysis, profile }) => {
-        if (cancelled) return;
+    loadAIEngine()
+      .then(({ analyzeAnswer, WeaknessAnalyzer, getNextQuestion }) =>
+        analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect })
+          .then(({ analysis, profile }) => ({ analysis, profile, WeaknessAnalyzer, getNextQuestion }))
+      )
+      .then((result) => {
+        if (!result || cancelled) return;
+        const { profile, WeaknessAnalyzer, getNextQuestion, analysis } = result;
         setAnalysisResult(analysis);
         setAnalysisQuestionId(question.id);
         if (!isCorrect) setAiText(analysis.explanation);
         const weakTopics = WeaknessAnalyzer.getWeakTopics(profile.profileId);
-        const suggestion = getNextAIQuestion({
+        const suggestion = getNextQuestion({
           previousQuestions: profile.recentQuestions,
           weakTopics,
           recentMistakes: profile.recentMistakes,
@@ -473,7 +486,8 @@ export default function QuizPlay() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-0 bg-black/40 pointer-events-none backdrop-blur-[2px]"
+            className="fixed inset-0 z-0 bg-black/40 pointer-events-none"
+            style={{ backdropFilter: calmMotion ? 'none' : 'blur(2px)' }}
           />
         )}
       </AnimatePresence>
@@ -484,7 +498,7 @@ export default function QuizPlay() {
           className="h-full"
           initial={{ width: 0 }}
           animate={{ width: `${progress}%` }}
-          transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+          transition={{ duration: calmMotion ? 0.24 : 0.6, ease: [0.23, 1, 0.32, 1] }}
           style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 0 10px ${theme.accent}60` }}
         />
       </div>
@@ -584,15 +598,17 @@ export default function QuizPlay() {
       <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
         <AnimatePresence mode="wait">
           <motion.div key={`${question.id}-${currentIdx}`}
-            initial={{ opacity: 0, x: 50, scale: 0.98 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -50, scale: 0.98 }}
-            transition={{ 
-              type: "spring",
-              stiffness: 350,
-              damping: 30,
-              opacity: { duration: 0.2 }
-            }}
+            initial={calmMotion ? { opacity: 0 } : { opacity: 0, x: 50, scale: 0.98 }}
+            animate={calmMotion ? { opacity: 1 } : { opacity: 1, x: 0, scale: 1 }}
+            exit={calmMotion ? { opacity: 0 } : { opacity: 0, x: -50, scale: 0.98 }}
+            transition={calmMotion
+              ? { duration: 0.18 }
+              : {
+                  type: "spring",
+                  stiffness: 350,
+                  damping: 30,
+                  opacity: { duration: 0.2 }
+                }}
             className={`flex-1 flex flex-col ${feedbackAnim === 'wrong' ? 'anim-shake' : feedbackAnim === 'correct' ? 'anim-bounce' : ''}`}
           >
             {/* Question card */}
@@ -641,11 +657,11 @@ export default function QuizPlay() {
                       animate={{ 
                         opacity: 1, 
                         y: 0,
-                        scale: showSmartNudge ? [1, 1.05, 1] : 1,
+                        scale: showSmartNudge && !calmMotion ? [1, 1.05, 1] : 1,
                       }}
-                      transition={{
-                        scale: { repeat: Infinity, duration: 2, ease: "easeInOut" }
-                      }}
+                      transition={showSmartNudge && !calmMotion
+                        ? { scale: { repeat: Infinity, duration: 2, ease: "easeInOut" } }
+                        : { duration: 0.18 }}
                       exit={{ opacity: 0, scale: 0.95 }}
                       onClick={handleGetHint}
                       disabled={hintLoading}
@@ -656,19 +672,21 @@ export default function QuizPlay() {
                         color: theme.accent,
                         boxShadow: showSmartNudge ? `0 0 20px ${theme.accent}30` : `0 4px 12px ${theme.accent}10`
                       }}
-                      whileHover={{ scale: 1.02, boxShadow: `0 6px 20px ${theme.accent}30` }}
-                      whileTap={{ scale: 0.98 }}
+                      whileHover={calmMotion ? undefined : { scale: 1.02, boxShadow: `0 6px 20px ${theme.accent}30` }}
+                      whileTap={calmMotion ? undefined : { scale: 0.98 }}
                     >
                       {/* Premium Shimmer Effect */}
-                      <motion.div 
-                        className="absolute inset-0 z-0"
-                        animate={{ x: ['-100%', '200%'] }}
-                        transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
-                        style={{ 
-                          background: `linear-gradient(90deg, transparent, ${theme.accent}15, transparent)`,
-                          width: '50%'
-                        }}
-                      />
+                      {!calmMotion && (
+                        <motion.div 
+                          className="absolute inset-0 z-0"
+                          animate={{ x: ['-100%', '200%'] }}
+                          transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                          style={{ 
+                            background: `linear-gradient(90deg, transparent, ${theme.accent}15, transparent)`,
+                            width: '50%'
+                          }}
+                        />
+                      )}
 
                       <div className="relative z-10 flex items-center gap-2">
                         {hintLoading ? (
@@ -741,8 +759,8 @@ export default function QuizPlay() {
                   disabled={revealed && !isMultiple}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
                   style={getOptionStyle(opt.id)}
-                  whileHover={!revealed ? { scale: 1.01 } : {}}
-                  whileTap={!revealed ? { scale: 0.99 } : {}}
+                  whileHover={!revealed && !calmMotion ? { scale: 1.01 } : {}}
+                  whileTap={!revealed && !calmMotion ? { scale: 0.99 } : {}}
                 >
                   {/* Checkbox/Radio */}
                   <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold border-2 transition-all"
@@ -782,8 +800,8 @@ export default function QuizPlay() {
                   disabled={selectedNow.length === 0}
                   className="w-full py-3.5 rounded-2xl font-semibold text-white mb-4 disabled:opacity-30 transition-all hover:opacity-90"
                   style={{ background: `linear-gradient(135deg, ${theme.accent2} 0%, ${theme.accent} 100%)` }}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={calmMotion ? undefined : { scale: 1.01 }}
+                  whileTap={calmMotion ? undefined : { scale: 0.98 }}
                 >
                   Confirmă selecția ({selectedNow.length} {selectedNow.length === 1 ? 'ales' : 'alese'})
                 </motion.button>
@@ -908,6 +926,7 @@ export default function QuizPlay() {
                           if (!activeProfileId) return;
                           setMnemonicLoading(true);
                           try {
+                            const { getUserProfile, generateMnemonicForConcept } = await loadAIEngine();
                             const profile = getUserProfile(activeProfileId);
                             const concept = analysisResult?.missingConcept || analysisResult?.recommendedTopic || correctAnswer || question.text;
                             const repeatedMistake = profile.mistakeBank.find((entry) => entry.questionId === question.id)?.wrongCount ?? 0;
@@ -959,7 +978,7 @@ export default function QuizPlay() {
                   </div>
                   <textarea
                     placeholder="Adaugă o notiță pentru această întrebare..."
-                    value={getNote(question.id)}
+                    value={currentNote}
                     onChange={e => setNote(question.id, e.target.value)}
                     rows={2}
                     className="w-full px-3 py-2 text-xs resize-none bg-transparent"
@@ -978,8 +997,8 @@ export default function QuizPlay() {
                   onClick={handleNext}
                   className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2"
                   style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.98 }}
+                  whileHover={calmMotion ? undefined : { scale: 1.01 }}
+                  whileTap={calmMotion ? undefined : { scale: 0.98 }}
                 >
                   {isLast ? '🏁 Vezi rezultatele' : (<>Următor <ChevronRight size={16} /></>)}
                 </motion.button>

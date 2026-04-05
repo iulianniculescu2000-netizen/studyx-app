@@ -7,6 +7,8 @@ import Portal from './Portal';
 export default function ToastContainer() {
   const { toasts, removeToast } = useToastStore();
   const theme = useTheme();
+  const performanceLite = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-performance') === 'lite';
 
   const icons = {
     success: <CheckCircle2 size={18} color={theme.success} />,
@@ -30,11 +32,11 @@ export default function ToastContainer() {
               className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl min-w-[280px] max-w-sm"
               style={{ 
                 background: theme.isDark ? 'rgba(28,28,30,0.92)' : 'rgba(255,255,255,0.92)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
+                backdropFilter: performanceLite ? 'blur(12px)' : 'blur(20px)',
+                WebkitBackdropFilter: performanceLite ? 'blur(12px)' : 'blur(20px)',
                 border: `0.5px solid ${theme.border}`,
                 borderRadius: '14px',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+                boxShadow: performanceLite ? '0 6px 18px rgba(0,0,0,0.10)' : '0 8px 32px rgba(0,0,0,0.12)',
                 padding: '12px 16px',
                 display: 'flex',
                 alignItems: 'center',

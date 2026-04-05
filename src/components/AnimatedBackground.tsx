@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useTheme } from '../theme/ThemeContext';
 
 /**
@@ -9,6 +9,10 @@ import { useTheme } from '../theme/ThemeContext';
  */
 const AnimatedBackground: React.FC = () => {
   const theme = useTheme();
+  const reduceMotion = useReducedMotion();
+  const performanceLite = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-performance') === 'lite';
+  const useStaticBackground = reduceMotion || performanceLite;
 
   return (
     <div
@@ -30,13 +34,13 @@ const AnimatedBackground: React.FC = () => {
 
       {/* Very Soft Ambient Glow - Top Right */}
       <motion.div
-        animate={{
-          opacity: [0.08, 0.15, 0.08],
-          scale: [1, 1.2, 1],
-          x: [0, 50, 0],
-          y: [0, 30, 0],
+        animate={useStaticBackground ? { opacity: 0.08, scale: 1, x: 0, y: 0 } : {
+          opacity: [0.06, 0.12, 0.06],
+          scale: [1, 1.14, 1],
+          x: [0, 36, 0],
+          y: [0, 22, 0],
         }}
-        transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+        transition={useStaticBackground ? { duration: 0.2 } : { duration: 18, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: 'absolute',
           top: '-15%',
@@ -44,20 +48,20 @@ const AnimatedBackground: React.FC = () => {
           width: '70vw',
           height: '70vw',
           borderRadius: '50%',
-          background: `radial-gradient(circle, ${theme.accent}30, transparent 70%)`,
-          filter: 'blur(100px)',
+          background: `radial-gradient(circle, ${theme.orb1}, transparent 70%)`,
+          filter: useStaticBackground ? 'blur(88px)' : 'blur(120px)',
         }}
       />
 
       {/* Very Soft Ambient Glow - Bottom Left */}
       <motion.div
-        animate={{
-          opacity: [0.05, 0.12, 0.05],
-          scale: [1, 1.3, 1],
-          x: [0, -40, 0],
-          y: [0, -20, 0],
+        animate={useStaticBackground ? { opacity: 0.06, scale: 1, x: 0, y: 0 } : {
+          opacity: [0.04, 0.1, 0.04],
+          scale: [1, 1.18, 1],
+          x: [0, -28, 0],
+          y: [0, -16, 0],
         }}
-        transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+        transition={useStaticBackground ? { duration: 0.2 } : { duration: 24, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: 'absolute',
           bottom: '-15%',
@@ -65,8 +69,8 @@ const AnimatedBackground: React.FC = () => {
           width: '60vw',
           height: '60vw',
           borderRadius: '50%',
-          background: `radial-gradient(circle, ${theme.accent2}20, transparent 70%)`,
-          filter: 'blur(120px)',
+          background: `radial-gradient(circle, ${theme.orb2}, transparent 70%)`,
+          filter: useStaticBackground ? 'blur(96px)' : 'blur(132px)',
         }}
       />
     </div>

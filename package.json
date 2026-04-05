@@ -2,7 +2,7 @@
   "name": "studyx",
   "productName": "StudyX",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Aplicatie de grile pentru studenti la medicina",
   "author": "StudyX",
@@ -12,10 +12,10 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "dist": "vite build && electron-builder --win --x64",
-    "dist:packager": "npm run build && electron-packager . StudyX --platform=win32 --arch=x64 --out=release --overwrite --icon=public/icon.png",
+    "dist": "npm run electron:build",
     "generate-icon": "node scripts/generate-premium-assets.cjs",
     "prepare-update": "npm run build && node scripts/prepare-update.cjs",
+    "publish-update": "node scripts/publish-update.cjs",
     "electron:dev": "cross-env.cmd NODE_ENV=development concurrently.cmd \"vite.cmd\" \"wait-on.cmd http://localhost:5173 && electron.cmd .\"",
     "electron:build": "npm run generate-icon && npm run build && electron-builder.cmd",
     "electron:build:dir": "npm run generate-icon && npm run build && electron-builder.cmd --dir"
@@ -23,19 +23,61 @@
   "build": {
     "appId": "com.studyx.app",
     "productName": "StudyX",
+    "asar": false,
+    "compression": "maximum",
     "win": {
-      "target": "portable",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "public/icon.png",
-      "forceCodeSigning": false
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "StudyX",
+      "artifactName": "StudyX-Setup-${version}.${ext}",
+      "menuCategory": "StudyX",
+      "deleteAppDataOnUninstall": true,
+      "include": "build/installer.nsh",
+      "installerSidebar": "build/sidebar.bmp",
+      "uninstallerSidebar": "build/sidebar.bmp",
+      "installerHeader": "build/header.bmp"
     },
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "node_modules/**/*",
-      "package.json"
+      "public/icon.png",
+      "public/icon.svg",
+      "package.json",
+      "!**/*.map",
+      "!**/*.ts",
+      "!**/*.tsx",
+      "!**/.git/**",
+      "!**/.claude/**",
+      "!studyx-updates{,/**}",
+      "!studyx-updates-temp{,/**}",
+      "!release{,/**}",
+      "!Chestii utile{,/**}",
+      "!Grile{,/**}",
+      "!SABLON{,/**}",
+      "!*.docx",
+      "!*.png",
+      "!.env*"
     ]
   },
   "dependencies": {

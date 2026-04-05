@@ -44,6 +44,8 @@ export default function KeyboardShortcuts() {
   const [open, setOpen] = useState(false);
   const theme = useTheme();
   const navigate = useNavigate();
+  const performanceLite = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-performance') === 'lite';
 
   // G + key navigation state
   const [gPressed, setGPressed] = useState(false);
@@ -110,7 +112,7 @@ export default function KeyboardShortcuts() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
             className="fixed inset-0 z-[200]"
-            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(2px)' : 'blur(6px)' }}
             onClick={() => setOpen(false)}
           />
 
@@ -124,7 +126,7 @@ export default function KeyboardShortcuts() {
             style={{
               background: theme.modalBg,
               border: `1px solid ${theme.border2}`,
-              boxShadow: '0 32px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.05)',
+              boxShadow: performanceLite ? '0 18px 42px rgba(0,0,0,0.28)' : '0 32px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.05)',
             }}
           >
             {/* Header */}

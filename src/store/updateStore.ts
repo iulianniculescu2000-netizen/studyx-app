@@ -10,124 +10,119 @@ export type UpdateStatus =
   | 'ready'
   | 'error';
 
-// ── Content update (optional quiz pack) ───────────────────────────────────────
 export interface ContentUpdate {
-  /** Unique stable ID (e.g. "derm-2024"). Used to track installed packs. */
   id: string;
-  /** Display title, e.g. "Dermatologie — 85 grile" */
   title: string;
-  /** Subject name used for auto-folder creation, e.g. "Dermatologie" */
   subject: string;
-  /** Short description shown in the modal */
   description: string;
-  /** Emoji used for the auto-created folder */
   emoji: string;
-  /** Color for the auto-created folder */
   color: QuizColor;
-  /** Total question count (display only) */
   questionCount: number;
-  /** Number of quiz objects in the pack */
   quizCount: number;
-  /** URL to the content JSON file (hosted on GitHub raw) */
   url: string;
-  /** ISO date string, e.g. "2024-03-28" */
   publishedAt: string;
 }
 
-// ── System update manifest ─────────────────────────────────────────────────────
+export interface InstallerUpdate {
+  url: string;
+  fileName?: string;
+  sha256?: string;
+  size?: number;
+}
+
 export interface UpdateManifest {
   version: string;
   latestVersion?: string;
   releaseDate: string;
   changes: string[];
   files: { path: string; url: string }[];
+  installer?: InstallerUpdate;
+  delivery?: 'overlay' | 'installer';
   isSequential?: boolean;
   stepsRemaining?: number;
-  /** Optional quiz-pack content updates bundled with this manifest */
   contentUpdates?: ContentUpdate[];
 }
 
-// ── Persistence helpers ────────────────────────────────────────────────────────
 const INSTALLED_KEY = 'studyx-installed-content';
 
 function loadInstalledIds(): string[] {
-  try { return JSON.parse(localStorage.getItem(INSTALLED_KEY) ?? '[]'); }
-  catch { return []; }
-}
-function persistInstalledIds(ids: string[]) {
-  try { localStorage.setItem(INSTALLED_KEY, JSON.stringify(ids)); } catch { /* quota */ }
+  try {
+    return JSON.parse(localStorage.getItem(INSTALLED_KEY) ?? '[]');
+  } catch {
+    return [];
+  }
 }
 
-// ── Store ──────────────────────────────────────────────────────────────────────
+function persistInstalledIds(ids: string[]) {
+  try {
+    localStorage.setItem(INSTALLED_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore quota/storage failures for optional update metadata
+  }
+}
+
 interface UpdateState {
-  // System update
   status: UpdateStatus;
   localVersion: string;
   manifest: UpdateManifest | null;
   downloadPercent: number;
   error: string | null;
-
-  // Content packs
+  downloadedInstallerPath: string | null;
   installedContentIds: string[];
   contentInstalling: string | null;
-
-  // Modal visibility
   showUpdateModal: boolean;
-
-  // System actions
-  setLocalVersion: (v: string) => void;
+  setLocalVersion: (version: string) => void;
   checkForUpdate: () => Promise<void>;
   downloadUpdate: () => Promise<void>;
   applyUpdate: () => void;
   dismiss: () => void;
-
-  // Content actions
   markContentInstalled: (id: string) => void;
   setContentInstalling: (id: string | null) => void;
-
-  // Modal actions
-  setShowUpdateModal: (v: boolean) => void;
+  setShowUpdateModal: (value: boolean) => void;
 }
 
-// Import type — Window interface is declared in TitleBar.tsx (global augmentation)
 const api = () => (typeof window !== 'undefined' ? window.electronAPI : undefined);
 
+type CheckResult = {
+  localVersion: string;
+  hasUpdate: boolean;
+  version: string;
+  latestVersion?: string;
+  releaseDate: string;
+  changes: string[];
+  files: { path: string; url: string }[];
+  installer?: InstallerUpdate;
+  delivery?: 'overlay' | 'installer';
+  isSequential?: boolean;
+  stepsRemaining?: number;
+  contentUpdates?: ContentUpdate[];
+};
+
+type DownloadResult = { mode?: 'overlay' | 'installer'; path?: string } | boolean;
+
 export const useUpdateStore = create<UpdateState>((set, get) => ({
-  // ── System ──
   status: 'idle',
-  localVersion: '—',
+  localVersion: '-',
   manifest: null,
   downloadPercent: 0,
   error: null,
-
-  // ── Content ──
+  downloadedInstallerPath: null,
   installedContentIds: loadInstalledIds(),
   contentInstalling: null,
-
-  // ── Modal ──
   showUpdateModal: false,
 
-  // ── System actions ──
-  setLocalVersion: (v) => set({ localVersion: v }),
+  setLocalVersion: (version) => set({ localVersion: version }),
 
   checkForUpdate: async () => {
     const electron = api();
-    if (!electron?.updaterCheck) return; // Not in Electron
+    if (!electron?.updaterCheck) return;
+
     set({ status: 'checking', error: null });
+
     try {
-      const result = await electron.updaterCheck() as {
-        localVersion: string;
-        hasUpdate: boolean;
-        version: string;
-        latestVersion?: string;
-        releaseDate: string;
-        changes: string[];
-        files: { path: string; url: string }[];
-        isSequential?: boolean;
-        stepsRemaining?: number;
-        contentUpdates?: ContentUpdate[];
-      };
+      const result = await electron.updaterCheck() as CheckResult;
       set({ localVersion: result.localVersion });
+
       if (result.hasUpdate) {
         set({
           status: 'available',
@@ -137,24 +132,37 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
             releaseDate: result.releaseDate,
             changes: result.changes,
             files: result.files,
+            installer: result.installer,
+            delivery: result.delivery ?? 'overlay',
             isSequential: result.isSequential ?? false,
             stepsRemaining: result.stepsRemaining ?? 1,
             contentUpdates: result.contentUpdates ?? [],
           },
         });
-      } else {
-        // Still expose content updates even when app is up-to-date
-        const contentUpdates: ContentUpdate[] = result.contentUpdates ?? [];
-        set({
-          status: 'up-to-date',
-          manifest: contentUpdates.length
-            ? { version: result.localVersion, releaseDate: '', changes: [], files: [], contentUpdates }
-            : null,
-        });
-        setTimeout(() => set((s) => s.status === 'up-to-date' ? { status: 'idle' } : s), 4000);
+        return;
       }
+
+      const contentUpdates = result.contentUpdates ?? [];
+      set({
+        status: 'up-to-date',
+        manifest: contentUpdates.length > 0
+          ? {
+              version: result.localVersion,
+              latestVersion: result.localVersion,
+              releaseDate: '',
+              changes: [],
+              files: [],
+              delivery: 'overlay',
+              contentUpdates,
+            }
+          : null,
+      });
+
+      setTimeout(() => {
+        set((state) => (state.status === 'up-to-date' ? { status: 'idle' } : state));
+      }, 4000);
     } catch (err: unknown) {
-      set({ status: 'error', error: err instanceof Error ? err.message : 'Eroare necunoscută' });
+      set({ status: 'error', error: err instanceof Error ? err.message : 'Eroare necunoscuta' });
     }
   },
 
@@ -163,7 +171,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     const electron = api();
     if (!manifest || !electron?.updaterDownload) return;
 
-    set({ status: 'downloading', downloadPercent: 0, error: null });
+    set({ status: 'downloading', downloadPercent: 0, error: null, downloadedInstallerPath: null });
 
     let unsubscribe: (() => void) | null = null;
     if (electron.onUpdateProgress) {
@@ -173,10 +181,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     }
 
     try {
-      await electron.updaterDownload(manifest);
-      set({ status: 'ready', downloadPercent: 100 });
+      const result = await electron.updaterDownload(manifest) as DownloadResult;
+      set({
+        status: 'ready',
+        downloadPercent: 100,
+        downloadedInstallerPath: typeof result === 'object' && result?.mode === 'installer' ? result.path ?? null : null,
+      });
     } catch (err: unknown) {
-      set({ status: 'error', error: err instanceof Error ? err.message : 'Descărcarea a eșuat' });
+      set({ status: 'error', error: err instanceof Error ? err.message : 'Descarcarea a esuat' });
     } finally {
       unsubscribe?.();
     }
@@ -184,16 +196,28 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   applyUpdate: () => {
     const electron = api();
+    const { manifest, downloadedInstallerPath } = get();
+
+    if (manifest?.delivery === 'installer') {
+      if (!downloadedInstallerPath || !electron?.updaterInstallDownloaded) {
+        set({ status: 'error', error: 'Installerul nu este pregatit pentru lansare.' });
+        return;
+      }
+      electron.updaterInstallDownloaded(downloadedInstallerPath).catch((err: unknown) => {
+        set({ status: 'error', error: err instanceof Error ? err.message : 'Installerul nu a putut fi lansat.' });
+      });
+      return;
+    }
+
     if (!electron?.updaterRestart) {
-      set({ status: 'error', error: 'Restart imposibil — redeschide aplicația manual.' });
+      set({ status: 'error', error: 'Restart imposibil - redeschide aplicatia manual.' });
       return;
     }
     electron.updaterRestart();
   },
 
-  dismiss: () => set({ status: 'idle', error: null, manifest: null }),
+  dismiss: () => set({ status: 'idle', error: null, manifest: null, downloadedInstallerPath: null }),
 
-  // ── Content actions ──
   markContentInstalled: (id) => {
     const next = [...new Set([...get().installedContentIds, id])];
     persistInstalledIds(next);
@@ -202,12 +226,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   setContentInstalling: (id) => set({ contentInstalling: id }),
 
-  // ── Modal actions ──
-  setShowUpdateModal: (v) => {
-    set({ showUpdateModal: v });
-    // Auto-check when modal opens and we haven't checked recently
-    if (v && get().status === 'idle') {
-      get().checkForUpdate();
+  setShowUpdateModal: (value) => {
+    set({ showUpdateModal: value });
+    if (value && get().status === 'idle') {
+      void get().checkForUpdate();
     }
   },
 }));

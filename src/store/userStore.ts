@@ -22,6 +22,7 @@ export interface Profile {
 interface UserStore {
   profiles: Profile[];
   activeProfileId: string | null;
+  pendingTutorialProfileId: string | null;
   // Synced from active profile — kept for backward compat across all components
   username: string | null;
   themeId: ThemeId;
@@ -32,6 +33,7 @@ interface UserStore {
   switchProfile: (id: string) => void;
   removeProfile: (id: string) => void;
   logout: () => void;
+  clearPendingTutorialProfile: (id?: string) => void;
 }
 
 export const useUserStore = create<UserStore>()(
@@ -39,6 +41,7 @@ export const useUserStore = create<UserStore>()(
     (set, get) => ({
       profiles: [],
       activeProfileId: null,
+      pendingTutorialProfileId: null,
       username: null,
       themeId: 'obsidian',
 
@@ -60,6 +63,7 @@ export const useUserStore = create<UserStore>()(
         set((s) => ({ 
           profiles: [...s.profiles, profile],
           activeProfileId: id,
+          pendingTutorialProfileId: id,
           username: profile.username,
           themeId: profile.themeId
         }));
@@ -85,10 +89,14 @@ export const useUserStore = create<UserStore>()(
         set((s) => ({
           profiles: s.profiles.filter((p) => p.id !== id),
           ...(wasActive ? { activeProfileId: null, username: null } : {}),
+          pendingTutorialProfileId: s.pendingTutorialProfileId === id ? null : s.pendingTutorialProfileId,
         }));
       },
 
       logout: () => set({ activeProfileId: null, username: null }),
+      clearPendingTutorialProfile: (id) => set((s) => ({
+        pendingTutorialProfileId: !id || s.pendingTutorialProfileId === id ? null : s.pendingTutorialProfileId,
+      })),
     }),
     {
       name: 'studyx-user',

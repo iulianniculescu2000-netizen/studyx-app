@@ -151,7 +151,7 @@ const STEPS: TutorialStep[] = [
     title: 'AI integrat — Groq gratuit 🤖',
     description: 'StudyX are AI integrat! Poți:\n🧠 Genera grile automat din text/PDF\n💬 Chatea cu AI despre orice grilă\n🔍 Explica greșelile cu AI\n\nPentru a activa: click pe butonul "AI (Groq)" din sidebar → obține o cheie gratuită la console.groq.com → lipiți cheia → Salvează. 14.400 req/zi gratuit!',
     icon: <Bot size={22} />,
-    target: '[data-tutorial="ai-settings-btn"]',
+    target: '[data-tutorial="nav-settings"]',
     targetPadding: 6,
     tooltipPosition: 'right',
     navigateTo: '/',
@@ -174,17 +174,12 @@ interface SpotlightRect {
 function useSpotlight(selector: string | undefined, padding = 8) {
   const [rect, setRect] = useState<SpotlightRect | null>(null);
 
-  if (!selector && rect !== null) {
-    setRect(null);
-  }
-
   useEffect(() => {
     let current: HTMLElement | null = null;
     let ro: ResizeObserver | null = null;
+    let mo: MutationObserver | null = null;
 
-    if (!selector) {
-      return;
-    }
+    if (!selector) return;
 
     const detach = () => {
       if (current) {
@@ -194,6 +189,8 @@ function useSpotlight(selector: string | undefined, padding = 8) {
       }
       ro?.disconnect();
       ro = null;
+      mo?.disconnect();
+      mo = null;
     };
 
     const attach = (el: HTMLElement) => {
@@ -218,8 +215,7 @@ function useSpotlight(selector: string | undefined, padding = 8) {
       });
     };
 
-    // Retry loop: element may not be in DOM yet right after route navigation
-    const tick = () => {
+    const resolveTarget = () => {
       const found = document.querySelector(selector) as HTMLElement | null;
       if (found && found !== current) {
         attach(found);
@@ -231,18 +227,22 @@ function useSpotlight(selector: string | undefined, padding = 8) {
       }
     };
 
-    tick();
-    const t = setInterval(tick, 200);
+    resolveTarget();
+    requestAnimationFrame(resolveTarget);
+    setTimeout(resolveTarget, 180);
+    mo = new MutationObserver(resolveTarget);
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true });
     window.addEventListener('resize', snap);
+    window.addEventListener('scroll', snap, true);
 
     return () => {
       detach();
-      clearInterval(t);
       window.removeEventListener('resize', snap);
+      window.removeEventListener('scroll', snap, true);
     };
   }, [selector, padding]);
 
-  return rect;
+  return selector ? rect : null;
 }
 
 function TooltipArrow({ position }: { position: string }) {

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readOCRPath: (path) => ipcRenderer.invoke('image:readOCR', path),
   openPdfFile: () => ipcRenderer.invoke('dialog:openPdf'),
   readPdfPath: (path) => ipcRenderer.invoke('pdf:readPath', path),
+  readPdfBuffer: (buffer) => ipcRenderer.invoke('pdf:readBuffer', buffer),
   openDocxFile: () => ipcRenderer.invoke('dialog:openDocx'),
   readDocxPath: (path) => ipcRenderer.invoke('docx:readPath', path),
   openTextFile: () => ipcRenderer.invoke('dialog:openText'),
@@ -27,6 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updaterCheck: () => ipcRenderer.invoke('updater:check'),
   updaterDownload: (manifest) => ipcRenderer.invoke('updater:download', manifest),
   updaterRestart: () => ipcRenderer.invoke('updater:restart'),
+  updaterInstallDownloaded: (installerPath) => ipcRenderer.invoke('updater:install-downloaded', installerPath),
   updaterGetVersion: () => ipcRenderer.invoke('updater:getVersion'),
   onUpdateProgress: (cb) => {
     const handler = (_, data) => cb(data);

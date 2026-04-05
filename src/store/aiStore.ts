@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { chunkText } from '../ai/chunker';
 import { setAIDebugEnabled, isAIDebugEnabled } from '../ai/debug';
-import { addChunksToVault, clearVault, removeChunksBySource, searchVault } from '../ai/vectorStore';
+import { addChunksToVault, clearVault, removeChunksBySource } from '../ai/vectorStore';
+import { retrieveRelevantChunks } from '../ai/retriever';
 import { idbGet, idbSet } from '../lib/idb';
 
 export type AIModel = 'llama-3.3-70b-versatile' | 'llama-3.1-8b-instant' | 'mixtral-8x7b-32768';
@@ -14,6 +15,9 @@ export interface AIKnowledgeSource {
   addedAt: number;
   charCount: number;
   wordCount: number;
+  chunkCount: number;
+  qualityScore: number;
+  warnings?: string[];
   preview: string;
 }
 
@@ -59,6 +63,30 @@ function saveSettingsToLS(apiKey: string, model: AIModel, debugMode: boolean) {
   }
 }
 
+function normalizeKnowledgeContent(content: string) {
+  return content
+    .replace(/\r\n/g, '\n')
+    .replace(/-\n(?=\p{Ll})/gu, '')
+    .replace(/[^\S\n]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function scoreKnowledgeQuality(content: string) {
+  const letters = (content.match(/\p{L}/gu) ?? []).length;
+  const digits = (content.match(/\p{N}/gu) ?? []).length;
+  const spaces = (content.match(/\s/gu) ?? []).length;
+  const usefulRatio = (letters + digits + spaces) / Math.max(content.length, 1);
+  const newlineRatio = (content.match(/\n/gu) ?? []).length / Math.max(content.length, 1);
+  const qualityScore = Math.max(0, Math.min(100, Math.round((usefulRatio * 80) + (Math.min(newlineRatio * 600, 20)))));
+  const warnings: string[] = [];
+
+  if (qualityScore < 45) warnings.push('Textul pare extras slab si poate contine zgomot.');
+  if (content.length > 350000) warnings.push('Document mare: indexarea poate dura mai mult.');
+
+  return { qualityScore, warnings };
+}
+
 const initialSettings = loadSettingsFromLS();
 
 export const useAIStore = create<AIStore>()((set, get) => ({
@@ -81,16 +109,22 @@ export const useAIStore = create<AIStore>()((set, get) => ({
   },
   addKnowledgeSource: async (name, content, type) => {
     const cleanName = (name || 'Sursa AI').trim().slice(0, 120);
-    const normalized = content.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    const normalized = normalizeKnowledgeContent(content);
     if (normalized.length < 20) return;
+    const { qualityScore, warnings } = scoreKnowledgeQuality(normalized);
+    const sourceId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    const chunks = chunkText(normalized, cleanName, normalized.length > 180000 ? 1400 : 1200, normalized.length > 180000 ? 180 : 200);
     
     const entry: AIKnowledgeSource = {
-      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+      id: sourceId,
       name: cleanName || 'Sursa AI',
       type,
       addedAt: Date.now(),
       charCount: normalized.length,
       wordCount: normalized.split(/\s+/).filter(Boolean).length,
+      chunkCount: chunks.length,
+      qualityScore,
+      warnings,
       preview: normalized.slice(0, 150),
     };
     
@@ -99,9 +133,7 @@ export const useAIStore = create<AIStore>()((set, get) => ({
     
     await idbSet('ai-knowledge-sources', next);
     
-    // Process into chunks and vectors for RAG
-    const chunks = chunkText(normalized, cleanName);
-    await addChunksToVault(chunks, cleanName);
+    await addChunksToVault(chunks, cleanName, sourceId);
   },
   removeKnowledgeSource: async (id) => {
     const target = get().knowledgeSources.find(s => s.id === id);
@@ -109,7 +141,7 @@ export const useAIStore = create<AIStore>()((set, get) => ({
     set({ knowledgeSources: next });
     await idbSet('ai-knowledge-sources', next);
     if (target) {
-      await removeChunksBySource(target.name);
+      await removeChunksBySource(target.id);
     }
   },
   clearKnowledgeSources: async () => {
@@ -120,8 +152,7 @@ export const useAIStore = create<AIStore>()((set, get) => ({
   getKnowledgeContext: async (query, maxChars = 20000) => {
     if (!query || get().knowledgeSources.length === 0) return '';
     
-    // RAG: Find the most relevant chunks from the entire indexed library
-    const results = await searchVault(query, 10);
+    const results = await retrieveRelevantChunks(query, null, 10);
 
     if (results.length === 0) return '';
 
@@ -166,10 +197,17 @@ export const useAIStore = create<AIStore>()((set, get) => ({
             addedAt: s.addedAt as number,
             charCount: contentStr.length,
             wordCount: contentStr.split(/\s+/).filter(Boolean).length,
+            chunkCount: 0,
+            qualityScore: 60,
             preview: contentStr.slice(0, 150)
           };
         }
-        return item as AIKnowledgeSource;
+        const existing = item as AIKnowledgeSource;
+        return {
+          ...existing,
+          chunkCount: existing.chunkCount ?? 0,
+          qualityScore: existing.qualityScore ?? 60,
+        };
       });
 
       if (rawOld || migrated.some((s, i) => s !== (loaded[i] as unknown))) {

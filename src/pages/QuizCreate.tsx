@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo, memo, useDeferredValue } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Check, ChevronLeft, Sparkles, Layers, ImagePlus, X, Pencil, Tag, GripVertical, Eye, Bot, Loader2, FileText, Scale } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -8,9 +8,17 @@ import { CSS } from '@dnd-kit/utilities';
 import { useQuizStore } from '../store/quizStore';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore } from '../store/aiStore';
-import { generateQuestionsFromText } from '../lib/groq';
 import type { Question, Option, Difficulty, QuizColor } from '../types';
 import type { Theme } from '../theme/themes';
+
+let quizCreateAIPromise: Promise<typeof import('../lib/groq')> | null = null;
+
+function loadQuizCreateAI() {
+  if (!quizCreateAIPromise) {
+    quizCreateAIPromise = import('../lib/groq');
+  }
+  return quizCreateAIPromise;
+}
 
 const EMOJIS = ['📚', '🧠', '💡', '🔬', '🌍', '💻', '🔢', '🎯', '⚡', '🏆', '🎓', '🌱', '🧪', '🗺️', '📖', '🏛️', '🩺', '💊', '❤️', '🦠', '🔭', '🧬'];
 const COLORS: { id: QuizColor; bg: string }[] = [
@@ -77,6 +85,8 @@ function SortableQuestionTab({ id, index, isActive, isValid, onClick, theme }: {
   );
 }
 
+const MemoSortableQuestionTab = memo(SortableQuestionTab);
+
 function newQuestion(): Question {
   return {
     id: generateId(),
@@ -100,6 +110,7 @@ export default function QuizCreate() {
   const editId = searchParams.get('edit');
   const { addQuiz, updateQuiz, quizzes } = useQuizStore();
   const theme = useTheme();
+  const compact = typeof window !== 'undefined' && (window.innerHeight < 860 || window.innerWidth < 1280);
 
   // Pre-load existing quiz for edit mode
   const existingQuiz = editId ? quizzes.find((q) => q.id === editId) : null;
@@ -128,17 +139,15 @@ export default function QuizCreate() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      setQuestions(qs => {
-        const oldIdx = qs.findIndex(q => q.id === active.id);
-        const newIdx = qs.findIndex(q => q.id === over.id);
-        const reordered = arrayMove(qs, oldIdx, newIdx);
-        setActiveQ(newIdx);
-        return reordered;
-      });
+      const oldIdx = questions.findIndex((q) => q.id === active.id);
+      const newIdx = questions.findIndex((q) => q.id === over.id);
+      if (oldIdx === -1 || newIdx === -1) return;
+      setQuestions((qs) => arrayMove(qs, oldIdx, newIdx));
+      setActiveQ(newIdx);
     }
   };
 
-  const currentQ = questions[activeQ];
+  const currentQ = questions[Math.min(activeQ, questions.length - 1)];
 
   const updateQuestion = (id: string, updates: Partial<Question>) =>
     setQuestions((qs) => qs.map((q) => (q.id === id ? { ...q, ...updates } : q)));
@@ -159,7 +168,7 @@ export default function QuizCreate() {
   const addQuestion = () => {
     const q = newQuestion();
     setQuestions((qs) => [...qs, q]);
-    setActiveQ(questions.length);
+    setActiveQ((prev) => Math.max(prev + 1, questions.length));
   };
 
   const removeQuestion = (idx: number) => {
@@ -229,6 +238,7 @@ export default function QuizCreate() {
     setAiLoading(true);
     setAiError('');
     try {
+      const { generateQuestionsFromText } = await loadQuizCreateAI();
       const generated = await generateQuestionsFromText(aiText, aiCount);
       const newQs: Question[] = generated.map((g) => ({
         id: generateId(),
@@ -242,12 +252,13 @@ export default function QuizCreate() {
           isCorrect: o.isCorrect,
         })),
       }));
+      const nextActiveIndex = questions.length === 1 && !questions[0].text.trim() ? 0 : questions.length;
       setQuestions((qs) => {
         // Remove empty placeholder if it's the only question
         const filtered = qs.length === 1 && !qs[0].text.trim() ? [] : qs;
         return [...filtered, ...newQs];
       });
-      setActiveQ(questions.length === 1 && !questions[0].text.trim() ? 0 : questions.length);
+      setActiveQ(nextActiveIndex);
       setQuestionsTab('manual');
     } catch (err: unknown) {
       setAiError(err instanceof Error ? err.message : 'Eroare necunoscută');
@@ -257,11 +268,13 @@ export default function QuizCreate() {
   };
 
   const canProceed = title.trim() && description.trim();
+  const deferredQuestions = useDeferredValue(questions);
   const isQValid = (q: Question) =>
     q.text.trim() &&
     q.options.every((o) => o.text.trim()) &&
     q.options.some((o) => o.isCorrect);
-  const canSave = questions.every(isQValid);
+  const questionValidity = useMemo(() => deferredQuestions.map((q) => !!isQValid(q)), [deferredQuestions]);
+  const canSave = questionValidity.every(Boolean);
 
   const handleSave = () => {
     if (!canSave || !canProceed) return;
@@ -308,13 +321,13 @@ export default function QuizCreate() {
   );
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8">
+    <div className={`h-full overflow-y-auto ${compact ? 'px-4 sm:px-6 py-5 sm:py-6' : 'px-8 py-8'}`}>
       {/* Hidden file input for browser fallback */}
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-      <div className="max-w-2xl mx-auto">
+      <div className={`${compact ? 'max-w-[920px]' : 'max-w-2xl'} mx-auto`}>
 
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 mb-8">
+          className={`flex items-center gap-3 ${compact ? 'mb-6' : 'mb-8'}`}>
           <button onClick={() => step === 'questions' ? setStep('info') : navigate(-1)}
             className="p-2 rounded-xl transition-all hover:opacity-80"
             style={{ background: theme.surface, color: theme.text2 }}>
@@ -338,10 +351,10 @@ export default function QuizCreate() {
 
         <AnimatePresence mode="wait">
           {step === 'info' ? (
-            <motion.div key="info"
+              <motion.div key="info"
               initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.3 }}
-              className="space-y-4">
+              className={compact ? 'space-y-3' : 'space-y-4'}>
 
               {/* Emoji */}
               <Panel theme={theme}>
@@ -626,8 +639,8 @@ export default function QuizCreate() {
                 <SortableContext items={questions.map(q => q.id)} strategy={horizontalListSortingStrategy}>
                   <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
                     {questions.map((q, i) => (
-                      <SortableQuestionTab key={q.id} id={q.id} index={i}
-                        isActive={activeQ === i} isValid={!!isQValid(q)}
+                      <MemoSortableQuestionTab key={q.id} id={q.id} index={i}
+                        isActive={activeQ === i} isValid={questionValidity[i] ?? false}
                         onClick={() => setActiveQ(i)} theme={theme} />
                     ))}
                     <button onClick={addQuestion}
