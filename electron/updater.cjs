@@ -98,7 +98,9 @@ function fetchText(url, attempt = 0) {
 }
 
 async function fetchJson(url) {
-  return JSON.parse(await fetchText(url));
+  const raw = await fetchText(url);
+  const sanitized = String(raw).replace(/^\uFEFF/, '').trim();
+  return JSON.parse(sanitized);
 }
 
 function downloadFile(url, destPath, onProgress, attempt = 0) {
