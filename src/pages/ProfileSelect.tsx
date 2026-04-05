@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Plus, X, Sparkles } from 'lucide-react';
 import { useUserStore, type Profile } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
-import { THEMES } from '../theme/themes';
+import { THEMES, type Theme } from '../theme/themes';
 
 interface Props {
   onAddNew: () => void;
@@ -155,7 +155,7 @@ function ProfileAvatar({ profile, index, isHovered, isSelected, isRemoving, onHo
   onHover: (id: string | null) => void;
   onSelect: (id: string) => void;
   onRemove: (e: React.MouseEvent, id: string) => void;
-  theme: any;
+  theme: Theme;
 }) {
   const profileTheme = THEMES[profile.themeId as keyof typeof THEMES] ?? THEMES.obsidian;
   const accentColor = profileTheme.accent;

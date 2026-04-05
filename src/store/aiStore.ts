@@ -10,9 +10,11 @@ export type AIKnowledgeSourceType = 'pdf' | 'txt' | 'manual' | 'docx' | 'image';
 export interface AIKnowledgeSource {
   id: string;
   name: string;
-  content: string;
   type: AIKnowledgeSourceType;
   addedAt: number;
+  charCount: number;
+  wordCount: number;
+  preview: string;
 }
 
 interface AIStore {
@@ -50,7 +52,11 @@ function loadSettingsFromLS(): { apiKey: string; model: AIModel; debugMode: bool
 }
 
 function saveSettingsToLS(apiKey: string, model: AIModel, debugMode: boolean) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify({ apiKey, model, debugMode })); } catch {}
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ apiKey, model, debugMode }));
+  } catch (err) {
+    console.error('[AIStore] Failed to save settings to localStorage:', err);
+  }
 }
 
 const initialSettings = loadSettingsFromLS();
@@ -81,9 +87,11 @@ export const useAIStore = create<AIStore>()((set, get) => ({
     const entry: AIKnowledgeSource = {
       id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
       name: cleanName || 'Sursa AI',
-      content: normalized,
       type,
       addedAt: Date.now(),
+      charCount: normalized.length,
+      wordCount: normalized.split(/\s+/).filter(Boolean).length,
+      preview: normalized.slice(0, 150),
     };
     
     const next = [...get().knowledgeSources, entry];
@@ -134,20 +142,42 @@ export const useAIStore = create<AIStore>()((set, get) => ({
     if (get().isHydrated) return;
     try {
       const rawOld = localStorage.getItem('studyx-ai');
-      let loaded: AIKnowledgeSource[] = [];
+      let loaded: unknown[] = [];
       if (rawOld) {
         const p = JSON.parse(rawOld);
         if (Array.isArray(p.knowledgeSources) && p.knowledgeSources.length > 0) {
           loaded = p.knowledgeSources;
-          await idbSet('ai-knowledge-sources', loaded);
           localStorage.removeItem('studyx-ai');
         }
       } else {
-        const idbData = await idbGet<AIKnowledgeSource[]>('ai-knowledge-sources');
+        const idbData = await idbGet<unknown[]>('ai-knowledge-sources');
         if (idbData) loaded = idbData;
       }
-      set({ knowledgeSources: loaded, isHydrated: true });
-    } catch (e) {
+
+      // Migrate legacy sources that might still have 'content' instead of charCount/wordCount
+      const migrated: AIKnowledgeSource[] = loaded.map(item => {
+        const s = item as Record<string, unknown>; // Cast locally to check properties
+        if (s && typeof s === 'object' && 'content' in s) {
+          const contentStr = s.content as string;
+          return {
+            id: s.id as string,
+            name: s.name as string,
+            type: s.type as AIKnowledgeSourceType,
+            addedAt: s.addedAt as number,
+            charCount: contentStr.length,
+            wordCount: contentStr.split(/\s+/).filter(Boolean).length,
+            preview: contentStr.slice(0, 150)
+          };
+        }
+        return item as AIKnowledgeSource;
+      });
+
+      if (rawOld || migrated.some((s, i) => s !== (loaded[i] as unknown))) {
+        await idbSet('ai-knowledge-sources', migrated);
+      }
+
+      set({ knowledgeSources: migrated, isHydrated: true });
+    } catch {
       set({ knowledgeSources: [], isHydrated: true });
     }
   },

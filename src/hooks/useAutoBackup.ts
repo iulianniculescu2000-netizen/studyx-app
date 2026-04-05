@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const BACKUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours (Daily)
 const LAST_BACKUP_KEY = 'studyx-last-auto-backup';
 
 /**
@@ -34,7 +34,7 @@ export function useAutoBackup(activeProfileId: string | null) {
 
     const payload = JSON.stringify({
       exportedAt: new Date().toISOString(),
-      appVersion: '2.0.1',
+      appVersion: '1.0.0',
       profileId: activeProfileId,
       stores: snapshot,
     }, null, 2);

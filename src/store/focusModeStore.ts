@@ -3,24 +3,37 @@ import { persist } from 'zustand/middleware';
 
 interface FocusModeStore {
   focusMode: boolean;
+  examMode: boolean;
+  screenshotProtection: boolean;
   toggleFocusMode: () => void;
   setFocusMode: (v: boolean) => void;
+  setExamMode: (v: boolean) => void;
+  setContentProtection: (v: boolean) => void;
 }
 
 export const useFocusModeStore = create<FocusModeStore>()(
   persist(
     (set) => ({
       focusMode: false,
+      examMode: false,
+      screenshotProtection: false,
       toggleFocusMode: () => set((s) => ({ focusMode: !s.focusMode })),
       setFocusMode: (v) => set({ focusMode: v }),
+      setExamMode: (v) => set({ examMode: v, focusMode: v }), // Exam implies focus
+      setContentProtection: (v) => {
+        set({ screenshotProtection: v });
+        if (window.electronAPI) {
+          window.electronAPI.setContentProtection(v);
+        }
+      },
     }),
     {
       name: 'studyx-focus-mode',
-      // Always reset focus mode on load — it's a UI state, not user data.
-      // Persisting only the preference prevents stuck focus mode after crash.
       onRehydrateStorage: () => (state) => {
-        // Safety: if the app crashed in focus mode, exit it on next launch
-        if (state) state.focusMode = false;
+        if (state) {
+          state.focusMode = false;
+          state.examMode = false;
+        }
       },
     },
   ),

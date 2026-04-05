@@ -5,8 +5,9 @@ export async function parseDocx(file: File | string): Promise<string> {
 
   // Handle Electron environment
   if (window.electronAPI) {
-    if (file instanceof File && (file as any).path) {
-      const text = await window.electronAPI.readDocxPath((file as any).path);
+    const filePath = (file as { path?: string }).path;
+    if (file instanceof File && filePath) {
+      const text = await window.electronAPI.readDocxPath(filePath);
       if (text) return cleanText(text);
     }
     

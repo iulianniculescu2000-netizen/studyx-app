@@ -55,7 +55,7 @@ export function sanitizeUserInput(input: string) {
     .replace(/<\|.*?\|>/g, '')
     .replace(/system prompt/gi, '')
     .replace(/ignore previous instructions/gi, '')
-    .split('').filter(c => c.charCodeAt(0) !== 0).join('')
+    .replace(/\u0000/g, '')
     .trim();
 }
 

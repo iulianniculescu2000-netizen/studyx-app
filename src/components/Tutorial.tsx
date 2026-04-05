@@ -174,11 +174,17 @@ interface SpotlightRect {
 function useSpotlight(selector: string | undefined, padding = 8) {
   const [rect, setRect] = useState<SpotlightRect | null>(null);
 
-  useEffect(() => {
-    if (!selector) { setRect(null); return; }
+  if (!selector && rect !== null) {
+    setRect(null);
+  }
 
+  useEffect(() => {
     let current: HTMLElement | null = null;
     let ro: ResizeObserver | null = null;
+
+    if (!selector) {
+      return;
+    }
 
     const detach = () => {
       if (current) {
@@ -323,7 +329,7 @@ export default function Tutorial({ profileId }: { profileId: string }) {
   useEffect(() => {
     if (!active || !step?.navigateTo) return;
     navigate(step.navigateTo);
-  }, [active, currentStep, navigate]);
+  }, [active, currentStep, navigate, step?.navigateTo]);
 
   if (!active || !step) return null;
 
@@ -407,9 +413,9 @@ export default function Tutorial({ profileId }: { profileId: string }) {
           style={{
             ...tooltipStyle,
             background: theme.modalBg,
-            border: `1px solid ${accentColor}40`,
-            borderRadius: 20,
-            boxShadow: `0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px ${accentColor}20, 0 4px 16px ${accentColor}20`,
+            border: `1px solid ${accentColor}30`,
+            borderRadius: 28,
+            boxShadow: `0 32px 80px rgba(0,0,0,0.4), 0 0 0 1px ${accentColor}15, 0 8px 32px ${accentColor}15`,
             zIndex: 501,
             pointerEvents: 'auto',
           }}
@@ -418,59 +424,59 @@ export default function Tutorial({ profileId }: { profileId: string }) {
           <TooltipArrow position={tooltipPos} />
 
           {/* Accent top bar */}
-          <div style={{ height: 3, background: `linear-gradient(90deg, ${accentColor}, ${accentColor}55)` }} />
+          <div style={{ height: 4, background: `linear-gradient(90deg, ${accentColor}, ${accentColor}44)` }} />
 
-          <div className="p-5">
+          <div className="p-7">
             {/* Step counter */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-                  style={{ background: `${accentColor}20`, color: accentColor }}>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg"
+                  style={{ background: `linear-gradient(135deg, ${accentColor}25, ${accentColor}10)`, color: accentColor, border: `1px solid ${accentColor}20` }}>
                   {step.icon}
                 </div>
-                <span className="text-xs font-semibold uppercase tracking-wider"
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70"
                   style={{ color: accentColor }}>
-                  Pas {currentStep + 1} din {TOTAL_STEPS}
+                  Pas {currentStep + 1} / {TOTAL_STEPS}
                 </span>
               </div>
               <motion.button 
                 whileHover={{ scale: 1.1, rotate: 90 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={skip}
-                className="p-1.5 rounded-lg transition-all"
+                className="p-2 rounded-xl transition-all"
                 style={{ color: theme.text3, background: theme.surface2, cursor: 'pointer' }}>
-                <X size={13} />
+                <X size={14} />
               </motion.button>
             </div>
 
             {/* Progress bar */}
-            <div className="w-full h-1 rounded-full mb-4" style={{ background: theme.surface2 }}>
+            <div className="w-full h-1.5 rounded-full mb-6" style={{ background: theme.surface2 }}>
               <motion.div
                 className="h-full rounded-full"
                 animate={{ width: `${((currentStep + 1) / TOTAL_STEPS) * 100}%` }}
-                transition={{ duration: 0.4, ease: 'easeOut' }}
-                style={{ background: `linear-gradient(90deg, ${accentColor}, ${accentColor}99)` }}
+                transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+                style={{ background: `linear-gradient(90deg, ${accentColor}, ${accentColor}cc)` }}
               />
             </div>
 
             {/* Content */}
-            <h3 className="text-base font-bold mb-2 leading-snug" style={{ color: theme.text }}>
+            <h3 className="text-lg font-black mb-2.5 leading-tight tracking-tight" style={{ color: theme.text }}>
               {step.title}
             </h3>
-            <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: theme.text2 }}>
+            <p className="text-sm font-medium leading-relaxed opacity-70 mb-6" style={{ color: theme.text }}>
               {step.description}
             </p>
 
             {/* Step dots */}
-            <div className="flex items-center justify-center gap-1.5 my-4">
+            <div className="flex items-center justify-center gap-2 mb-8">
               {STEPS.map((_, i) => (
                 <motion.div
                   key={i}
                   animate={{
-                    width: i === currentStep ? 20 : 6,
-                    opacity: i === currentStep ? 1 : i < currentStep ? 0.5 : 0.25,
+                    width: i === currentStep ? 24 : 6,
+                    opacity: i === currentStep ? 1 : i < currentStep ? 0.6 : 0.2,
                   }}
-                  transition={{ duration: 0.25 }}
+                  transition={{ duration: 0.3, ease: 'circOut' }}
                   className="h-1.5 rounded-full"
                   style={{ background: i <= currentStep ? accentColor : theme.text3 }}
                 />
@@ -489,21 +495,21 @@ export default function Tutorial({ profileId }: { profileId: string }) {
               )}
               <motion.button
                 onClick={isLast ? complete : nextStep}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white"
-                style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)` }}>
+                whileHover={{ scale: 1.02, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black uppercase tracking-[0.15em] text-white shadow-2xl"
+                style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`, boxShadow: `0 12px 24px ${accentColor}40` }}>
                 {isLast
-                  ? <><Check size={15} />Terminat!</>
-                  : <>{isFirst ? 'Să începem' : 'Continuă'}<ChevronRight size={15} /></>}
-
+                  ? <><Check size={16} /> Finalizează</>
+                  : <>{isFirst ? 'Hai să începem' : 'Continuă'} <ChevronRight size={16} /></>}
               </motion.button>
+
             </div>
 
             {/* Skip link */}
             {!isLast && (
               <button onClick={skip}
-                className="w-full text-center text-xs mt-2 opacity-40 hover:opacity-60 transition-opacity"
+                className="w-full text-center text-[10px] font-black uppercase tracking-widest mt-4 opacity-30 hover:opacity-60 transition-all"
                 style={{ color: theme.text3 }}>
                 Sari peste tutorial
               </button>

@@ -26,22 +26,46 @@ function getToday(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-function calcNextReview(stat: QuestionStat, correct: boolean): { nextReview: number; interval: number; eFactor?: number } {
-  const eFactor = stat.eFactor ?? 2.5;
+/**
+ * SuperMemo-2 (SM-2) Pro Algorithm
+ * Used by Anki and professional SRS systems.
+ */
+function calcNextReview(stat: QuestionStat, correct: boolean): { nextReview: number; interval: number; eFactor: number } {
+  let eFactor = stat.eFactor ?? 2.5;
+  let interval = stat.interval ?? 0;
+  const n = (stat.timesCorrect + (correct ? 1 : 0));
+
   if (!correct) {
-    // Wrong: reset interval to 1 day, reduce E-factor
-    const newEF = Math.max(1.3, eFactor - 0.2);
-    return { nextReview: Date.now() + 86400000, interval: 1, eFactor: newEF };
+    // Lapse: Re-learning phase
+    // Reduce eFactor (punish ease) and reset interval to 1 day
+    eFactor = Math.max(1.3, eFactor - 0.2);
+    return { 
+      nextReview: Date.now() + 86400000, // 1 day
+      interval: 1, 
+      eFactor 
+    };
   }
-  // Correct: SM-2 interval calculation
-  const n = stat.timesCorrect + 1;
-  let interval: number;
-  if (n === 1) interval = 1;
-  else if (n === 2) interval = 3;
-  else interval = Math.round((stat.interval ?? 3) * eFactor);
-  interval = Math.min(interval, 180); // cap at 6 months
-  const newEF = Math.min(2.7, eFactor + 0.1);
-  return { nextReview: Date.now() + interval * 86400000, interval, eFactor: newEF };
+
+  // Correct answer: Calculate next interval
+  if (n <= 1) {
+    interval = 1;
+  } else if (n === 2) {
+    interval = 4; // Standard SM-2 leap
+  } else {
+    interval = Math.round(interval * eFactor);
+  }
+
+  // Cap interval at 1 year for medical students (long-term memory)
+  interval = Math.min(interval, 365);
+
+  // Slightly increase eFactor for correct answers (reward ease)
+  eFactor = Math.min(3.0, eFactor + 0.1);
+
+  return { 
+    nextReview: Date.now() + interval * 86400000, 
+    interval, 
+    eFactor 
+  };
 }
 
 export const useStatsStore = create<StatsStore>()(
@@ -56,17 +80,21 @@ export const useStatsStore = create<StatsStore>()(
         const existing: QuestionStat = s.questionStats[key] ?? {
           questionId, quizId,
           timesCorrect: 0, timesWrong: 0,
-          lastSeen: 0, nextReview: 0, interval: 0,
+          lastSeen: 0, nextReview: 0, interval: 0, eFactor: 2.5
         };
+        
         const review = calcNextReview(existing, correct);
+        
         const updated: QuestionStat = {
           ...existing,
           timesCorrect: existing.timesCorrect + (correct ? 1 : 0),
           timesWrong: existing.timesWrong + (correct ? 0 : 1),
           lastSeen: Date.now(),
-          ...review,
-          eFactor: review.eFactor ?? existing.eFactor ?? 2.5,
+          nextReview: review.nextReview,
+          interval: review.interval,
+          eFactor: review.eFactor,
         };
+        
         return { questionStats: { ...s.questionStats, [key]: updated } };
       });
     },
@@ -80,9 +108,9 @@ export const useStatsStore = create<StatsStore>()(
         }
         const newDates = [...dates, today].sort();
         
-        // Calculate streak by counting consecutive calendar days backwards
+        // Accurate consecutive days streak calculation
         let current = 0;
-        let checkDate = new Date(today);
+        const checkDate = new Date(today);
         
         while (true) {
           const dateStr = checkDate.toISOString().split('T')[0];
@@ -100,7 +128,7 @@ export const useStatsStore = create<StatsStore>()(
             currentStreak: current,
             longestStreak: Math.max(s.streak.longestStreak, current),
             lastStudyDate: today,
-            studyDates: newDates.slice(-365), // Keep last year
+            studyDates: newDates.slice(-365),
           },
         };
       });
@@ -122,7 +150,6 @@ export const useStatsStore = create<StatsStore>()(
           const accA = a.timesCorrect / totalA;
           const accB = b.timesCorrect / totalB;
           if (accA !== accB) return accA - accB;
-          // Tie-break: more attempts = more relevant
           return totalB - totalA;
         })
         .slice(0, limit),

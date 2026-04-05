@@ -72,10 +72,10 @@ export interface RetrievedChunk {
 export interface AIContextPayload {
   query: string;
   summary: string;
-  chunks: RetrievedChunk[];
-  weakTopics: WeakTopic[];
-  recentMistakes: RecentMistake[];
-  level: Difficulty;
+  chunks?: ChunkRecord[] | RetrievedChunk[];
+  weakTopics?: WeakTopic[];
+  recentMistakes?: RecentMistake[];
+  level?: Difficulty;
   availableTime?: number;
 }
 

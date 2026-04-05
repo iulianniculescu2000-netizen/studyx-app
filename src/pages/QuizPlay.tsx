@@ -7,11 +7,12 @@ import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
 import { useAIStore } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
+import { useFocusModeStore } from '../store/focusModeStore';
 import { useTheme } from '../theme/ThemeContext';
 import QuizImage from '../components/QuizImage';
-import { analyzeAnswer, generateMnemonicForConcept, getNextQuestion as getNextAIQuestion, getUserProfile, WeaknessAnalyzer } from '../ai/AIEngine';
+import { analyzeAnswer, generateMnemonicForConcept, getNextQuestion as getNextAIQuestion, getUserProfile, WeaknessAnalyzer, generateHint } from '../ai/AIEngine';
 import type { QuizSession, Question, Option } from '../types';
-import type { AIAnalysisResult } from '../ai/types';
+import type { AIAnalysisResult, HintResult } from '../ai/types';
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -33,9 +34,10 @@ export default function QuizPlay() {
   const { hasKey } = useAIStore();
   const activeProfileId = useUserStore((s) => s.activeProfileId);
   const quiz = quizzes.find((q) => q.id === id);
-  const examMode = (location.state as any)?.mode === 'exam';
-  const timedMode = (location.state as any)?.mode === 'timed';
-  const wrongQuestionsOnly = (location.state as any)?.wrongQuestionsOnly as string[] | undefined;
+  const state = location.state as { mode?: string; wrongQuestionsOnly?: string[] } | null;
+  const examMode = state?.mode === 'exam';
+  const timedMode = state?.mode === 'timed';
+  const wrongQuestionsOnly = state?.wrongQuestionsOnly;
   const TIME_PER_Q = 30; // seconds
 
   // Build shuffled question/option order once
@@ -57,6 +59,7 @@ export default function QuizPlay() {
   const [selectedNow, setSelectedNow] = useState<string[]>([]); // for current question
   const [revealed, setRevealed] = useState(false);
   const [shakeId, setShakeId] = useState<string | null>(null);
+  const [feedbackAnim, setFeedbackAnim] = useState<'correct' | 'wrong' | null>(null);
   const [startedAt] = useState(Date.now());
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [showKeys, setShowKeys] = useState(false);
@@ -70,6 +73,50 @@ export default function QuizPlay() {
   const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(null);
   const [analysisQuestionId, setAnalysisQuestionId] = useState<string | null>(null);
   const [nextTopicHint, setNextTopicHint] = useState<string | null>(null);
+  const [hintLevel, setHintLevel] = useState(0); // 0: none, 1: light, 2: medium, 3: full
+  const [hintData, setHintData] = useState<HintResult | null>(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [showSmartNudge, setShowSmartNudge] = useState(false);
+
+  const question = questionQueue[currentIdx];
+  const isLast = currentIdx === questionQueue.length - 1;
+  const answeredCount = Object.keys(answers).length;
+  const progress = questionQueue.length > 0 ? (answeredCount / questionQueue.length) * 100 : 0;
+  const isMultiple = question?.multipleCorrect ?? false;
+
+  const { focusMode, toggleFocusMode } = useFocusModeStore();
+
+  const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+
+  // Smart nudge logic: if user is stuck for >12s, pulse the hint button
+  useEffect(() => {
+    if (revealed || examMode || hintLevel > 0) {
+      setShowSmartNudge(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowSmartNudge(true), 12000);
+    return () => clearTimeout(timer);
+  }, [currentIdx, revealed, examMode, hintLevel]);
+
+  const handleGetHint = useCallback(async () => {
+    if (!question || !activeProfileId || hintLoading || hintLevel >= 3) return;
+    
+    if (hintLevel > 0 && hintData) {
+      setHintLevel(prev => prev + 1);
+      return;
+    }
+
+    setHintLoading(true);
+    try {
+      const result = await generateHint(question);
+      setHintData(result);
+      setHintLevel(1);
+    } catch {
+      // Fallback
+    } finally {
+      setHintLoading(false);
+    }
+  }, [question, activeProfileId, hintLoading, hintLevel, hintData]);
 
   useEffect(() => {
     setQuestionQueue(orderedQuestions);
@@ -81,6 +128,11 @@ export default function QuizPlay() {
     setAnalysisQuestionId(null);
     setNextTopicHint(null);
   }, [orderedQuestions]);
+
+  useEffect(() => {
+    setHintLevel(0);
+    setHintData(null);
+  }, [currentIdx]);
 
   useEffect(() => {
     const timer = setInterval(() => setTimeElapsed((t) => t + 1), 1000);
@@ -97,14 +149,6 @@ export default function QuizPlay() {
     }), 1000);
     return () => clearInterval(timer);
   }, [currentIdx, timedMode, revealed]);
-
-  const question = questionQueue[currentIdx];
-  const isLast = currentIdx === questionQueue.length - 1;
-  const answeredCount = Object.keys(answers).length;
-  const progress = questionQueue.length > 0 ? (answeredCount / questionQueue.length) * 100 : 0;
-  const isMultiple = question?.multipleCorrect ?? false;
-
-  const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   const finishQuiz = useCallback((finalAnswers: Record<string, string[]>) => {
     const score = questionQueue.filter((q) => {
@@ -169,6 +213,8 @@ export default function QuizPlay() {
     setAnalysisResult(null);
     setAnalysisQuestionId(null);
     setNextTopicHint(null);
+    setHintLevel(0);
+    setHintData(null);
     setQuestionQueue((prev) => {
       const next = [...prev];
       const [skipped] = next.splice(currentIdx, 1);
@@ -194,8 +240,13 @@ export default function QuizPlay() {
         else { setCurrentIdx((i) => i + 1); setSelectedNow([]); }
       } else {
         setRevealed(true);
-        const isWrong = !question.options.find((o) => o.id === optId)?.isCorrect;
-        if (isWrong) {
+        const isCorrect = question.options.find((o) => o.id === optId)?.isCorrect;
+        if (isCorrect) {
+          setFeedbackAnim('correct');
+          setTimeout(() => setFeedbackAnim(null), 400);
+        } else {
+          setFeedbackAnim('wrong');
+          setTimeout(() => setFeedbackAnim(null), 450);
           setShakeId(optId);
           setTimeout(() => setShakeId(null), 600);
         }
@@ -212,6 +263,15 @@ export default function QuizPlay() {
       else { setCurrentIdx((i) => i + 1); setSelectedNow([]); }
     } else {
       setRevealed(true);
+      const correctIdsForQuestion = question.options.filter((option) => option.isCorrect).map((option) => option.id);
+      const isCorrect = selectedNow.length === correctIdsForQuestion.length && correctIdsForQuestion.every((currentId) => selectedNow.includes(currentId));
+      if (isCorrect) {
+        setFeedbackAnim('correct');
+        setTimeout(() => setFeedbackAnim(null), 400);
+      } else {
+        setFeedbackAnim('wrong');
+        setTimeout(() => setFeedbackAnim(null), 450);
+      }
     }
   }, [selectedNow, question, answers, examMode, isLast, finishQuiz]);
 
@@ -226,6 +286,8 @@ export default function QuizPlay() {
     setAnalysisResult(null);
     setAnalysisQuestionId(null);
     setNextTopicHint(null);
+    setHintLevel(0);
+    setHintData(null);
     if (isLast) {
       finishQuiz(answers);
     } else {
@@ -302,10 +364,10 @@ export default function QuizPlay() {
 
   // Auto-advance after reveal
   useEffect(() => {
-    if (!revealed || !autoAdvance || examMode) return;
-    const t = setTimeout(handleNext, 1500);
+    if (!revealed || !autoAdvance || examMode || aiLoading || mnemonicLoading) return;
+    const t = setTimeout(handleNext, 2000);
     return () => clearTimeout(t);
-  }, [revealed, autoAdvance, handleNext, examMode]);
+  }, [revealed, autoAdvance, handleNext, examMode, aiLoading, mnemonicLoading]);
 
   // Timed mode: auto-advance when timer expires (no answer = wrong)
   useEffect(() => {
@@ -317,27 +379,42 @@ export default function QuizPlay() {
     else setCurrentIdx(i => i + 1);
   }, [questionTimer, timedMode, revealed, answers, question, isLast, finishQuiz]);
 
+  // Maintain latest state for keyboard handler without re-binding listener
+  const kbStateRef = useRef({ question, handleSelect, confirmMultiple, handleNext, handleGetHint, isMultiple, revealed, examMode });
+  useEffect(() => {
+    kbStateRef.current = { question, handleSelect, confirmMultiple, handleNext, handleGetHint, isMultiple, revealed, examMode };
+  });
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const state = kbStateRef.current;
+      if (
+        document.activeElement instanceof HTMLInputElement || 
+        document.activeElement instanceof HTMLTextAreaElement ||
+        document.activeElement?.hasAttribute('contenteditable')
+      ) return;
 
       // 1-4 or A-D to select option
       const keyMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
       const idx = keyMap[e.key.toLowerCase()];
-      if (idx !== undefined && question?.options[idx]) {
-        handleSelect(question.options[idx].id);
+      if (idx !== undefined && state.question?.options[idx]) {
+        state.handleSelect(state.question.options[idx].id);
       }
       // Enter or Space to confirm/next
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        if (isMultiple && !revealed) { confirmMultiple(); }
-        else if (revealed) { handleNext(); }
+        if (state.isMultiple && !state.revealed) { state.confirmMultiple(); }
+        else if (state.revealed) { state.handleNext(); }
+      }
+      // 'H' for Hint
+      if (e.key.toLowerCase() === 'h' && !state.revealed && !state.examMode) {
+        state.handleGetHint();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [question, handleSelect, confirmMultiple, handleNext, isMultiple, revealed]);
+  }, []);
 
   if (!quiz || !question) {
     return (
@@ -354,6 +431,7 @@ export default function QuizPlay() {
 
   const getOptionStyle = (optId: string): React.CSSProperties => {
     const isSelected = selectedNow.includes(optId);
+    const isCorrect = correctIds.includes(optId);
     if (!revealed) {
       if (isSelected) return { 
         background: `${theme.accent}25`, 
@@ -363,13 +441,13 @@ export default function QuizPlay() {
       };
       return { background: theme.surface, border: `1px solid ${theme.border}` };
     }
-    if (correctIds.includes(optId)) return { 
-      background: `${theme.success}18`, 
+    if (isCorrect) return { 
+      background: `${theme.success}12`, 
       border: `2px solid ${theme.success}`,
       boxShadow: `0 8px 24px ${theme.success}15`
     };
-    if (isSelected && !correctIds.includes(optId)) return { 
-      background: `${theme.danger}15`, 
+    if (isSelected && !isCorrect) return { 
+      background: `${theme.danger}12`, 
       border: `2px solid ${theme.danger}`,
       boxShadow: `0 8px 24px ${theme.danger}15`
     };
@@ -387,7 +465,30 @@ export default function QuizPlay() {
   const difficultyLabel = { easy: 'Ușor', medium: 'Mediu', hard: 'Dificil' };
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto relative">
+      {/* Dark overlay for Focus Mode */}
+      <AnimatePresence>
+        {focusMode && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-0 bg-black/40 pointer-events-none backdrop-blur-[2px]"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Top thin progress bar */}
+      <div className="fixed top-0 left-0 w-full h-1 z-[100] pointer-events-none" style={{ background: `${theme.accent}10` }}>
+        <motion.div 
+          className="h-full"
+          initial={{ width: 0 }}
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+          style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 0 10px ${theme.accent}60` }}
+        />
+      </div>
+
     <div className="min-h-full pt-6 pb-10 px-6 relative z-10 flex flex-col">
       {/* Top bar */}
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
@@ -440,6 +541,12 @@ export default function QuizPlay() {
               style={{ color: theme.text3 }}>
               <Keyboard size={13} />
             </button>
+            <button onClick={toggleFocusMode}
+              title={focusMode ? 'Ieși din Modul Focus' : 'Intră în Modul Focus'}
+              className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
+              style={{ color: focusMode ? theme.accent : theme.text3 }}>
+              <Zap size={13} fill={focusMode ? theme.accent : 'none'} />
+            </button>
             <div className="flex items-center gap-1.5 text-sm" style={{ color: theme.text3 }}>
               <Clock size={13} />{formatTime(timeElapsed)}
             </div>
@@ -475,13 +582,18 @@ export default function QuizPlay() {
 
       {/* Question */}
       <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           <motion.div key={`${question.id}-${currentIdx}`}
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="flex-1 flex flex-col"
+            initial={{ opacity: 0, x: 50, scale: 0.98 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -50, scale: 0.98 }}
+            transition={{ 
+              type: "spring",
+              stiffness: 350,
+              damping: 30,
+              opacity: { duration: 0.2 }
+            }}
+            className={`flex-1 flex flex-col ${feedbackAnim === 'wrong' ? 'anim-shake' : feedbackAnim === 'correct' ? 'anim-bounce' : ''}`}
           >
             {/* Question card */}
             <div className="rounded-3xl p-6 mb-5"
@@ -519,17 +631,112 @@ export default function QuizPlay() {
               )}
             </div>
 
+            {/* AI Hint Button (Premium & Smart) */}
+            {!revealed && !examMode && hasKey() && (
+              <div className="mb-5">
+                <AnimatePresence mode="wait">
+                  {hintLevel === 0 ? (
+                    <motion.button
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ 
+                        opacity: 1, 
+                        y: 0,
+                        scale: showSmartNudge ? [1, 1.05, 1] : 1,
+                      }}
+                      transition={{
+                        scale: { repeat: Infinity, duration: 2, ease: "easeInOut" }
+                      }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      onClick={handleGetHint}
+                      disabled={hintLoading}
+                      className="group relative flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all overflow-hidden"
+                      style={{ 
+                        background: theme.surface, 
+                        border: `1px solid ${showSmartNudge ? theme.accent : theme.border}`,
+                        color: theme.accent,
+                        boxShadow: showSmartNudge ? `0 0 20px ${theme.accent}30` : `0 4px 12px ${theme.accent}10`
+                      }}
+                      whileHover={{ scale: 1.02, boxShadow: `0 6px 20px ${theme.accent}30` }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {/* Premium Shimmer Effect */}
+                      <motion.div 
+                        className="absolute inset-0 z-0"
+                        animate={{ x: ['-100%', '200%'] }}
+                        transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                        style={{ 
+                          background: `linear-gradient(90deg, transparent, ${theme.accent}15, transparent)`,
+                          width: '50%'
+                        }}
+                      />
+
+                      <div className="relative z-10 flex items-center gap-2">
+                        {hintLoading ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Sparkles size={13} className={showSmartNudge ? "animate-pulse" : ""} />
+                        )}
+                        <span>{hintLoading ? 'Analizez...' : 'Indiciu AI'}</span>
+                        <span className="ml-1 font-mono text-[9px] border border-current px-1 rounded" style={{ color: theme.text3 }}>H</span>
+                      </div>
+                    </motion.button>
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      className="p-4 rounded-[24px] relative overflow-hidden glass-panel"
+                      style={{ 
+                        background: `${theme.accent}08`, 
+                        border: `1px solid ${theme.accent}25`,
+                        boxShadow: `0 8px 32px ${theme.accent}10`
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles size={14} style={{ color: theme.accent }} />
+                          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accent }}>
+                            Indiciu AI • Nivel {hintLevel}/3
+                          </span>
+                        </div>
+                        {hintLevel < 3 && (
+                          <button 
+                            onClick={handleGetHint}
+                            className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all hover:opacity-80"
+                            style={{ background: `${theme.accent}15`, color: theme.accent }}>
+                            + Mai mult
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium leading-relaxed italic" style={{ color: theme.text }}>
+                        "{hintLevel === 1 ? hintData?.light : hintLevel === 2 ? hintData?.medium : hintData?.full}"
+                      </p>
+                      
+                      {/* Subtle decorative glow */}
+                      <div className="absolute -right-10 -top-10 w-32 h-32 rounded-full blur-[60px] opacity-20"
+                        style={{ background: theme.accent }} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
             {/* Options */}
             <div className="space-y-2.5 mb-5">
               {question.options.map((opt: Option, i: number) => (
                 <motion.button key={opt.id}
                   initial={{ opacity: 0, y: 10 }}
-                  animate={shakeId === opt.id
-                    ? { x: [0, -10, 10, -8, 8, -4, 4, 0] }
-                    : { opacity: 1, y: 0 }}
+                  animate={
+                    shakeId === opt.id
+                      ? { x: [0, -10, 10, -8, 8, -4, 4, 0], opacity: 1, y: 0 }
+                      : (revealed && correctIds.includes(opt.id))
+                        ? { opacity: 1, y: 0, scale: [1, 1.05, 1] }
+                        : { opacity: 1, y: 0 }
+                  }
                   transition={shakeId === opt.id
-                    ? { duration: 0.5, ease: 'easeInOut' }
-                    : { delay: i * 0.05 }}
+                    ? { duration: 0.3, ease: 'easeInOut' }
+                    : (revealed && correctIds.includes(opt.id))
+                      ? { duration: 0.6, repeat: 0 }
+                      : { delay: i * 0.05 }}
                   onClick={() => handleSelect(opt.id)}
                   disabled={revealed && !isMultiple}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
@@ -540,11 +747,15 @@ export default function QuizPlay() {
                   {/* Checkbox/Radio */}
                   <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold border-2 transition-all"
                     style={{
-                      borderColor: selectedNow.includes(opt.id) ? (revealed ? (correctIds.includes(opt.id) ? theme.success : theme.danger) : theme.accent) : theme.border2,
-                      background: selectedNow.includes(opt.id) ? (revealed ? (correctIds.includes(opt.id) ? `${theme.success}20` : `${theme.danger}20`) : `${theme.accent}20`) : 'transparent',
+                      borderColor: (revealed && correctIds.includes(opt.id)) ? theme.success : (selectedNow.includes(opt.id) ? (revealed ? theme.danger : theme.accent) : theme.border2),
+                      background: (revealed && correctIds.includes(opt.id)) ? `${theme.success}20` : (selectedNow.includes(opt.id) ? (revealed ? `${theme.danger}20` : `${theme.accent}20`) : 'transparent'),
                       color: getOptionTextColor(opt.id),
                     }}>
-                    {selectedNow.includes(opt.id) ? (revealed ? (correctIds.includes(opt.id) ? '✓' : '✗') : (isMultiple ? '✓' : String.fromCharCode(65 + i))) : String.fromCharCode(65 + i)}
+                    {revealed && correctIds.includes(opt.id) 
+                      ? '✓' 
+                      : (selectedNow.includes(opt.id) 
+                          ? (revealed ? '✗' : (isMultiple ? '✓' : String.fromCharCode(65 + i))) 
+                          : String.fromCharCode(65 + i))}
                   </div>
                   <span className="text-sm font-medium" style={{ color: getOptionTextColor(opt.id) }}>
                     {opt.text}
@@ -606,11 +817,13 @@ export default function QuizPlay() {
             </AnimatePresence>
 
             {/* AI inline explanation */}
-            <AnimatePresence>
+            <AnimatePresence mode="wait">
               {revealed && !examMode && hasKey() && (
                 <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, y: 15, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
                   className="mb-4"
                 >
                   {aiText === null ? (
@@ -628,14 +841,15 @@ export default function QuizPlay() {
                     </button>
                   ) : (
                     <motion.div
-                      initial={{ opacity: 0, scale: 0.98 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="p-4 rounded-2xl"
-                      style={{ background: `${theme.accent2}0C`, border: `1px solid ${theme.accent2}25` }}
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="p-5 rounded-3xl"
+                      style={{ background: `${theme.accent2}0C`, border: `1.5px solid ${theme.accent2}25` }}
                     >
-                      <div className="flex items-center gap-2 mb-2">
-                        <Sparkles size={12} style={{ color: theme.accent2 }} />
-                        <span className="text-xs font-semibold" style={{ color: theme.accent2 }}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <Sparkles size={14} style={{ color: theme.accent2 }} />
+                        <span className="text-xs font-black uppercase tracking-widest" style={{ color: theme.accent2 }}>
                           Explicație AI
                         </span>
                         {aiLoading && (
@@ -647,23 +861,24 @@ export default function QuizPlay() {
                           />
                         )}
                       </div>
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: theme.text2 }}>
+                      <p className="text-sm leading-generous whitespace-pre-wrap" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
                         {aiText}
                         {aiLoading && <span className="animate-pulse">▊</span>}
                       </p>
                       {analysisResult?.mistakeType && (
-                        <div className="mt-3 text-xs" style={{ color: theme.text3 }}>
-                          Tip eroare: {analysisResult.mistakeType}
+                        <div className="mt-4 pt-4 border-t border-dashed opacity-60" style={{ borderColor: `${theme.accent2}30` }}>
+                          <div className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: theme.accent2 }}>Analiză eroare</div>
+                          <div className="text-xs" style={{ color: theme.text3 }}>{analysisResult.mistakeType}</div>
                         </div>
                       )}
                       {analysisResult?.rule && (
-                        <div className="mt-1 text-xs" style={{ color: theme.text3 }}>
+                        <div className="mt-2 text-xs italic" style={{ color: theme.text3 }}>
                           Regulă: {analysisResult.rule}
                         </div>
                       )}
                       {nextTopicHint && (
-                        <div className="mt-1 text-xs" style={{ color: theme.text3 }}>
-                          Următor focus AI: {nextTopicHint}
+                        <div className="mt-2 text-xs font-bold" style={{ color: theme.accent }}>
+                          Focus AI recomandat: {nextTopicHint}
                         </div>
                       )}
                     </motion.div>
@@ -696,8 +911,9 @@ export default function QuizPlay() {
                             const profile = getUserProfile(activeProfileId);
                             const concept = analysisResult?.missingConcept || analysisResult?.recommendedTopic || correctAnswer || question.text;
                             const repeatedMistake = profile.mistakeBank.find((entry) => entry.questionId === question.id)?.wrongCount ?? 0;
-                            const targetConcept = repeatedMistake >= 2 ? concept : `${correctAnswer} | ${question.text}`;
-                            const m = await generateMnemonicForConcept(targetConcept, activeProfileId);
+                            const correctAnswerStr = question.options.find((o) => o.isCorrect)?.text || '';
+                            const targetConcept = repeatedMistake >= 2 ? concept : `${correctAnswerStr} | ${question.text}`;
+                            const m = await generateMnemonicForConcept(targetConcept, correctAnswerStr);
                             setMnemonicText(m);
                           } catch { setMnemonicText('Nu s-a putut genera mnemonicul.'); }
                           finally { setMnemonicLoading(false); }

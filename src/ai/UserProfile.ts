@@ -42,7 +42,9 @@ export function loadUserProfile(profileId: string): UserProfileData {
 export function saveUserProfile(profile: UserProfileData) {
   try {
     localStorage.setItem(getProfileKey(profile.profileId), JSON.stringify({ ...profile, updatedAt: Date.now() }));
-  } catch {}
+  } catch (err) {
+    console.error('[UserProfile] Failed to save profile:', err);
+  }
 }
 
 function difficultyFromAccuracy(accuracy: number): 'easy' | 'medium' | 'hard' {

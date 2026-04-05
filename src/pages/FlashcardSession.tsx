@@ -1,16 +1,15 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
-import {
-  ChevronLeft, RotateCcw, Check, Brain, Clock,
-  ArrowLeft, SkipForward, Bot, Loader2,
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { 
+  ChevronLeft, Check, Brain, 
+  Sparkles, Trophy, Loader2, Bot
 } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useTheme } from '../theme/ThemeContext';
-import { useAIStore } from '../store/aiStore';
-import { groqChat } from '../lib/groq';
-import { HERO_COLOR_MAP, CARD_COLOR_MAP } from '../theme/colorMaps';
+import { explainWrongAnswer } from '../lib/groq';
+import QuizImage from '../components/QuizImage';
 import type { Question, Quiz } from '../types';
 
 interface CardItem {
@@ -18,324 +17,15 @@ interface CardItem {
   quiz: Quiz;
 }
 
-type Rating = 'easy' | 'ok' | 'hard';
+type Rating = 'hard' | 'good' | 'easy';
 
-function shuffleArr<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
+function shuffleArr<T>(array: T[]): T[] {
+  const next = [...array];
+  for (let i = next.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+    [next[i], next[j]] = [next[j], next[i]];
   }
-  return a;
-}
-
-function formatDuration(seconds: number) {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}m ${s}s`;
-}
-
-function FlipCard({
-  card, flipped, onFlip, colors,
-}: {
-  card: CardItem; flipped: boolean; onFlip: () => void; colors: { gradient: string; glow: string };
-}) {
-  const theme = useTheme();
-  const { hasKey } = useAIStore();
-  const correctAnswers = card.question.options.filter((o) => o.isCorrect).map((o) => o.text);
-  const [aiExpl, setAiExpl] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const explainWithAI = async () => {
-    if (aiLoading || aiExpl) return;
-    setAiLoading(true);
-    try {
-      const correct = correctAnswers.join(', ');
-      const result = await groqChat([{
-        role: 'user',
-        content: `Explică pe scurt (3-4 fraze, în română) conceptul medical din spatele acestei întrebări de grilă:\n\nÎntrebare: ${card.question.text}\nRăspuns corect: ${correct}${card.question.explanation ? `\nExplicație existentă: ${card.question.explanation}` : ''}\n\nFii concis și practic, ca un profesor medical.`,
-      }], 0.4);
-      if (mountedRef.current) setAiExpl(result);
-    } catch {
-      if (mountedRef.current) setAiExpl('Nu s-a putut genera explicația.');
-    } finally {
-      if (mountedRef.current) setAiLoading(false);
-    }
-  };
-
-  return (
-    <div className="relative select-none">
-      <AnimatePresence mode="wait" initial={false}>
-        {!flipped ? (
-          <motion.button
-            key="front"
-            type="button"
-            onClick={onFlip}
-            initial={{ opacity: 0, rotateX: -10, y: 18 }}
-            animate={{ opacity: 1, rotateX: 0, y: 0 }}
-            exit={{ opacity: 0, rotateX: 8, y: -18 }}
-            transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full rounded-[28px] p-8 text-left overflow-hidden"
-            style={{
-              minHeight: 320,
-              background: colors.gradient,
-              boxShadow: `0 24px 64px ${colors.glow}`,
-            }}
-          >
-            <div
-              className="absolute top-0 right-0 w-40 h-40 rounded-full opacity-10"
-              style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)', transform: 'translate(30%, -30%)' }}
-            />
-            <div
-              className="absolute bottom-0 left-0 w-32 h-32 rounded-full opacity-10"
-              style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)', transform: 'translate(-30%, 30%)' }}
-            />
-            <div className="relative z-10 flex h-full flex-col">
-              <div className="flex items-center justify-between mb-6">
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Față</span>
-                <span
-                  className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold text-white"
-                  style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.14)' }}
-                >
-                  <RotateCcw size={12} />
-                  Întoarce
-                </span>
-              </div>
-
-              <div className="flex-1 flex flex-col justify-center">
-                {card.question.imageUrl && (
-                  <img
-                    src={card.question.imageUrl}
-                    alt=""
-                    className="max-h-40 object-contain rounded-2xl mb-5 mx-auto"
-                    style={{ boxShadow: '0 10px 26px rgba(0,0,0,0.26)' }}
-                  />
-                )}
-                <p className="text-[1.15rem] font-semibold text-white leading-relaxed text-center">{card.question.text}</p>
-              </div>
-
-              <div className="mt-6 flex items-center justify-between text-white/70 text-xs">
-                <span>{card.quiz.title}</span>
-                <span>apasă pentru răspuns</span>
-              </div>
-            </div>
-          </motion.button>
-        ) : (
-          <motion.div
-            key="back"
-            initial={{ opacity: 0, rotateX: 10, y: 18 }}
-            animate={{ opacity: 1, rotateX: 0, y: 0 }}
-            exit={{ opacity: 0, rotateX: -8, y: -18 }}
-            transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full rounded-[28px] p-8 overflow-hidden"
-            style={{
-              minHeight: 320,
-              background: `linear-gradient(180deg, ${theme.surface2} 0%, ${theme.surface} 100%)`,
-              border: `1px solid ${theme.border}`,
-              boxShadow: `0 20px 48px rgba(0,0,0,${theme.isDark ? 0.28 : 0.10})`,
-            }}
-          >
-            <div className="flex items-center justify-between mb-5">
-              <span className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: theme.text3 }}>Spate</span>
-              <button
-                type="button"
-                onClick={onFlip}
-                className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold"
-                style={{ background: theme.surface, color: theme.text2, border: `1px solid ${theme.border}` }}
-              >
-                <RotateCcw size={12} />
-                Revino
-              </button>
-            </div>
-
-            <div className="space-y-3 w-full">
-              {correctAnswers.map((ans, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-3 px-4 py-3 rounded-2xl"
-                  style={{
-                    background: `${theme.success}12`,
-                    border: `1px solid ${theme.success}28`,
-                    boxShadow: `inset 0 1px 0 ${theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.65)'}`,
-                  }}
-                >
-                  <Check size={15} className="flex-shrink-0 mt-0.5" style={{ color: theme.success }} />
-                  <p className="text-sm font-semibold text-left leading-relaxed" style={{ color: theme.text }}>{ans}</p>
-                </div>
-              ))}
-            </div>
-
-            {card.question.explanation && (
-              <div className="mt-4 px-4 py-3 rounded-2xl w-full" style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-                <p className="text-xs leading-relaxed" style={{ color: theme.text2 }}>
-                  💡 {card.question.explanation}
-                </p>
-              </div>
-            )}
-
-            {hasKey() && (
-              <div className="mt-4 w-full">
-                {!aiExpl ? (
-                  <button
-                    onClick={explainWithAI}
-                    disabled={aiLoading}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl text-xs font-semibold transition-all"
-                    style={{
-                      background: `${theme.accent}12`,
-                      border: `1px solid ${theme.accent}28`,
-                      color: theme.accent,
-                      boxShadow: `0 10px 22px ${theme.accent}12`,
-                    }}
-                  >
-                    {aiLoading ? <><Loader2 size={12} className="animate-spin" />Generez explicație...</> : <><Bot size={12} />Explică mai clar cu AI</>}
-                  </button>
-                ) : (
-                  <div className="px-4 py-3 rounded-2xl text-xs leading-relaxed" style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20`, color: theme.text2 }}>
-                    🤖 {aiExpl}
-                  </div>
-                )}
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function SessionSummary({
-  ratings, durationSeconds, onRestart, onBack,
-}: {
-  ratings: Rating[];
-  cards?: CardItem[];
-  durationSeconds: number;
-  onRestart: () => void;
-  onBack: () => void;
-}) {
-  const theme = useTheme();
-  const easy = ratings.filter((r) => r === 'easy').length;
-  const ok = ratings.filter((r) => r === 'ok').length;
-  const hard = ratings.filter((r) => r === 'hard').length;
-  const total = ratings.length;
-  const accuracy = total > 0 ? Math.round(((easy + ok) / total) * 100) : 0;
-
-  const emoji = accuracy >= 90 ? '🏆' : accuracy >= 70 ? '⭐' : accuracy >= 50 ? '💪' : '📚';
-  const message = accuracy >= 90 ? 'Excelent! Stăpânești materia!'
-    : accuracy >= 70 ? 'Foarte bine! Continuă!'
-    : accuracy >= 50 ? 'Bun progres! Mai exersează!'
-    : 'Practică face perfectul!';
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95, y: 20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="max-w-md mx-auto px-4 py-8"
-    >
-      <div className="text-center mb-8">
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ delay: 0.15, type: 'spring', stiffness: 280, damping: 18 }}
-          className="text-6xl mb-4"
-        >
-          {emoji}
-        </motion.div>
-        <h2 className="text-2xl font-bold mb-2" style={{ color: theme.text }}>{message}</h2>
-        <p className="text-sm" style={{ color: theme.text3 }}>
-          {total} carduri · {formatDuration(durationSeconds)}
-        </p>
-      </div>
-
-      <div className="rounded-3xl p-6 mb-4" style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-        <div className="flex items-center justify-center mb-6">
-          <div className="relative w-28 h-28">
-            <svg className="w-full h-full -rotate-90" viewBox="0 0 112 112">
-              <circle cx="56" cy="56" r="48" fill="none" stroke={`${theme.accent}20`} strokeWidth="8" />
-              <motion.circle
-                cx="56"
-                cy="56"
-                r="48"
-                fill="none"
-                stroke={theme.accent}
-                strokeWidth="8"
-                strokeDasharray={2 * Math.PI * 48}
-                initial={{ strokeDashoffset: 2 * Math.PI * 48 }}
-                animate={{ strokeDashoffset: 2 * Math.PI * 48 * (1 - accuracy / 100) }}
-                transition={{ duration: 1.2, ease: 'easeOut', delay: 0.3 }}
-                strokeLinecap="round"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-bold" style={{ color: theme.accent }}>{accuracy}%</span>
-              <span className="text-xs" style={{ color: theme.text3 }}>acuratețe</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Ușor', count: easy, color: theme.success, icon: '✓' },
-            { label: 'Ok', count: ok, color: theme.accent, icon: '◎' },
-            { label: 'Greu', count: hard, color: theme.danger, icon: '✕' },
-          ].map(({ label, count, color, icon }) => (
-            <div key={label} className="text-center p-3 rounded-2xl" style={{ background: `${color}12`, border: `1px solid ${color}25` }}>
-              <div className="text-lg font-bold" style={{ color }}>{icon}</div>
-              <div className="text-xl font-bold" style={{ color }}>{count}</div>
-              <div className="text-xs" style={{ color: theme.text3 }}>{label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="p-4 rounded-2xl flex items-center gap-3" style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-          <Clock size={18} style={{ color: theme.accent }} />
-          <div>
-            <p className="text-xs" style={{ color: theme.text3 }}>Durată</p>
-            <p className="font-semibold text-sm" style={{ color: theme.text }}>{formatDuration(durationSeconds)}</p>
-          </div>
-        </div>
-        <div className="p-4 rounded-2xl flex items-center gap-3" style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-          <Brain size={18} style={{ color: theme.accent2 }} />
-          <div>
-            <p className="text-xs" style={{ color: theme.text3 }}>Carduri/min</p>
-            <p className="font-semibold text-sm" style={{ color: theme.text }}>
-              {durationSeconds > 0 ? (total / (durationSeconds / 60)).toFixed(1) : '-'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-medium flex-1"
-          style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}
-        >
-          <ArrowLeft size={15} />
-          Înapoi la deck-uri
-        </button>
-        <button
-          onClick={onRestart}
-          className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold text-white flex-1"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
-        >
-          <RotateCcw size={15} />
-          Reia sesiunea
-        </button>
-      </div>
-    </motion.div>
-  );
+  return next;
 }
 
 export default function FlashcardSession() {
@@ -346,11 +36,15 @@ export default function FlashcardSession() {
   const { quizzes } = useQuizStore();
   const { questionStats, recordAnswer, recordStudySession } = useStatsStore();
 
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const modeAll = searchParams.get('mode') === 'all';
 
   const initialCards = useMemo<CardItem[]>(() => {
-    const now = Date.now();
-
     if (id === 'all') {
       const items: CardItem[] = [];
       quizzes.filter((q) => !q.archived && q.questions.length > 0).forEach((quiz) => {
@@ -376,278 +70,280 @@ export default function FlashcardSession() {
       .map((question) => ({ question, quiz }));
 
     return modeAll ? items : shuffleArr(items);
-  }, [id, quizzes, questionStats, modeAll]);
+  }, [id, quizzes, questionStats, modeAll, now]);
 
-  const [cards, setCards] = useState<CardItem[]>(initialCards);
+  const [cards] = useState<CardItem[]>(initialCards);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [sessionDone, setSessionDone] = useState(false);
   const [cardKey, setCardKey] = useState(0);
 
-  const startTime = useRef(Date.now());
+  const startTime = useRef(0);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
+    startTime.current = Date.now();
     const timer = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startTime.current) / 1000));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const currentCard = cards[currentIdx];
-  const progress = cards.length > 0 ? (currentIdx / cards.length) * 100 : 0;
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const handleRating = useCallback((rating: Rating) => {
-    if (!currentCard || !flipped) return;
+    if (!cards[currentIdx]) return;
+    const { question, quiz } = cards[currentIdx];
+    
+    // In SM-2 context for Flashcards:
+    // Easy -> correct=true
+    // Good -> correct=true
+    // Hard -> correct=false (reset interval)
+    const isCorrect = rating !== 'hard';
+    recordAnswer(quiz.id, question.id, isCorrect);
+    setRatings(prev => [...prev, rating]);
 
-    const correct = rating !== 'hard';
-    recordAnswer(currentCard.quiz.id, currentCard.question.id, correct);
-
-    const newRatings = [...ratings, rating];
-    setRatings(newRatings);
-
-    if (currentIdx + 1 >= cards.length) {
-      const duration = Math.floor((Date.now() - startTime.current) / 1000);
-      recordStudySession(duration);
-      setSessionDone(true);
-    } else {
+    if (currentIdx + 1 < cards.length) {
       setFlipped(false);
-      setTimeout(() => {
-        setCurrentIdx((i) => i + 1);
-        setCardKey((k) => k + 1);
-      }, 120);
-    }
-  }, [currentCard, flipped, ratings, currentIdx, cards.length, recordAnswer, recordStudySession]);
-
-  const handleSkip = useCallback(() => {
-    if (currentIdx + 1 >= cards.length) {
-      const duration = Math.floor((Date.now() - startTime.current) / 1000);
-      recordStudySession(duration);
-      setSessionDone(true);
+      setAiExplanation(null);
+      setCurrentIdx(i => i + 1);
+      setCardKey(k => k + 1);
     } else {
-      setFlipped(false);
-      setTimeout(() => {
-        setCurrentIdx((i) => i + 1);
-        setCardKey((k) => k + 1);
-      }, 120);
+      recordStudySession(elapsed);
+      setSessionDone(true);
     }
-  }, [currentIdx, cards.length, recordStudySession]);
+  }, [cards, currentIdx, recordAnswer, recordStudySession, elapsed]);
+
+  const handleExplain = async () => {
+    if (aiLoading || !cards[currentIdx]) return;
+    setAiLoading(true);
+    const { question } = cards[currentIdx];
+    const correctText = question.options.filter(o => o.isCorrect).map(o => o.text).join(', ');
+    try {
+      const exp = await explainWrongAnswer(question.text, 'Am uitat contextul', correctText);
+      setAiExplanation(exp);
+    } catch {
+      setAiExplanation('Nu s-a putut genera explicația.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    const handleKeys = (e: KeyboardEvent) => {
       if (sessionDone) return;
-
-      if (e.code === 'Space' || e.code === 'Enter') {
-        e.preventDefault();
-        setFlipped((prev) => !prev);
+      if (e.code === 'Space' || e.key === 'Enter') {
+        if (!flipped) setFlipped(true);
       }
       if (flipped) {
         if (e.key === '1') handleRating('hard');
-        if (e.key === '2') handleRating('ok');
+        if (e.key === '2') handleRating('good');
         if (e.key === '3') handleRating('easy');
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [flipped, sessionDone, handleRating]);
-
-  const handleRestart = () => {
-    setCards(shuffleArr(initialCards));
-    setCurrentIdx(0);
-    setFlipped(false);
-    setRatings([]);
-    setSessionDone(false);
-    setCardKey((k) => k + 1);
-    startTime.current = Date.now();
-    setElapsed(0);
-  };
-
-  const colors = currentCard
-    ? (HERO_COLOR_MAP[currentCard.quiz.color] ?? HERO_COLOR_MAP.blue)
-    : HERO_COLOR_MAP.blue;
-  const cardColors = currentCard
-    ? (CARD_COLOR_MAP[currentCard.quiz.color] ?? CARD_COLOR_MAP.blue)
-    : CARD_COLOR_MAP.blue;
-
-  if (initialCards.length === 0) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center px-8 py-12">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center max-w-sm">
-          <div className="text-5xl mb-4">🎉</div>
-          <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>
-            {modeAll ? 'Niciun card în acest deck' : 'Nicio carte de recapitulat!'}
-          </h2>
-          <p className="text-sm mb-6" style={{ color: theme.text3 }}>
-            {modeAll
-              ? 'Deck-ul este gol sau nu are întrebări.'
-              : 'Toate cardurile sunt la zi. Revino mai târziu pentru a continua studiul.'}
-          </p>
-          <Link
-            to="/flashcards"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
-          >
-            <ArrowLeft size={14} />Înapoi la Flashcarduri
-          </Link>
-        </motion.div>
-      </div>
-    );
-  }
+    window.addEventListener('keydown', handleKeys);
+    return () => window.removeEventListener('keydown', handleKeys);
+  }, [flipped, handleRating, sessionDone]);
 
   if (sessionDone) {
+    const hardCount = ratings.filter(r => r === 'hard').length;
+    const goodCount = ratings.filter(r => r === 'good').length;
+    const easyCount = ratings.filter(r => r === 'easy').length;
+
     return (
-      <div className="h-full overflow-y-auto">
-        <SessionSummary
-          ratings={ratings}
-          cards={cards}
-          durationSeconds={elapsed}
-          onRestart={handleRestart}
-          onBack={() => navigate('/flashcards')}
-        />
+      <div className="h-full flex items-center justify-center px-6">
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full text-center">
+          <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
+            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 16px 40px ${theme.accent}30` }}>
+            <Trophy size={36} className="text-white" />
+          </div>
+          <h2 className="text-3xl font-black tracking-tight mb-2" style={{ color: theme.text }}>Sesiune Încheiată</h2>
+          <p className="text-sm font-medium opacity-60 mb-10" style={{ color: theme.text }}>
+            Ai parcurs {cards.length} flashcarduri în {Math.floor(elapsed / 60)}m {elapsed % 60}s.
+          </p>
+
+          <div className="grid grid-cols-3 gap-3 mb-10">
+            <div className="p-4 rounded-2xl" style={{ background: `${theme.danger}10`, border: `1px solid ${theme.danger}20` }}>
+              <div className="text-xl font-black mb-1" style={{ color: theme.danger }}>{hardCount}</div>
+              <div className="text-[10px] font-black uppercase opacity-50" style={{ color: theme.text }}>Dificile</div>
+            </div>
+            <div className="p-4 rounded-2xl" style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20` }}>
+              <div className="text-xl font-black mb-1" style={{ color: theme.accent }}>{goodCount}</div>
+              <div className="text-[10px] font-black uppercase opacity-50" style={{ color: theme.text }}>Bune</div>
+            </div>
+            <div className="p-4 rounded-2xl" style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}20` }}>
+              <div className="text-xl font-black mb-1" style={{ color: theme.success }}>{easyCount}</div>
+              <div className="text-[10px] font-black uppercase opacity-50" style={{ color: theme.text }}>Ușoare</div>
+            </div>
+          </div>
+
+          <button onClick={() => navigate('/flashcards')}
+            className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-xs text-white shadow-2xl transition-all hover:scale-102 active:scale-98"
+            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 12px 30px ${theme.accent}40` }}>
+            Înapoi la Flashcards
+          </button>
+        </motion.div>
       </div>
     );
   }
 
-  return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-xl mx-auto px-4 py-6">
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-5">
-          <Link to="/flashcards" className="flex items-center gap-1.5 text-sm hover:opacity-70 transition-opacity" style={{ color: theme.text3 }}>
-            <ChevronLeft size={15} />
-            Flashcarduri
-          </Link>
-
-          <div className="flex items-center gap-3">
-            {id !== 'all' && currentCard && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm">{currentCard.quiz.emoji}</span>
-                <span className="text-xs font-medium truncate max-w-[120px]" style={{ color: theme.text3 }}>
-                  {currentCard.quiz.title}
-                </span>
-              </div>
-            )}
-            <div className="flex items-center gap-1 text-xs" style={{ color: theme.text3 }}>
-              <Clock size={12} />
-              {formatDuration(elapsed)}
-            </div>
-          </div>
-        </motion.div>
-
-        <div className="mb-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold" style={{ color: theme.text3 }}>
-              {currentIdx + 1} / {cards.length}
-            </span>
-            <div className="flex items-center gap-2 text-xs">
-              <span style={{ color: theme.success }}>✓ {ratings.filter((r) => r !== 'hard').length}</span>
-              <span style={{ color: theme.danger }}>✕ {ratings.filter((r) => r === 'hard').length}</span>
-            </div>
-          </div>
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
-            <motion.div
-              className="h-full rounded-full"
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-              style={{ background: `linear-gradient(90deg, ${cardColors.from.replace(/[^,]+\)/, '1)')}, ${cardColors.to.replace(/[^,]+\)/, '1)')})` }}
-            />
-          </div>
+  if (cards.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center px-6">
+        <div className="text-center">
+          <Sparkles size={48} className="mx-auto mb-4 opacity-20" style={{ color: theme.text }} />
+          <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Niciun card de studiat</h2>
+          <p className="text-sm opacity-60 mb-6" style={{ color: theme.text }}>Toate cardurile tale sunt la zi sau nu există întrebări.</p>
+          <button onClick={() => navigate('/flashcards')} className="text-accent font-bold">Înapoi</button>
         </div>
+      </div>
+    );
+  }
 
+  const current = cards[currentIdx];
+  const progress = ((currentIdx) / cards.length) * 100;
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Progress */}
+      <div className="px-6 pt-6">
+        <div className="max-w-2xl mx-auto flex items-center justify-between mb-2">
+          <button onClick={() => navigate('/flashcards')} className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest opacity-50 hover:opacity-100 transition-opacity" style={{ color: theme.text }}>
+            <ChevronLeft size={14} /> Ieșire
+          </button>
+          <span className="text-xs font-black tabular-nums" style={{ color: theme.text3 }}>
+            {currentIdx + 1} / {cards.length}
+          </span>
+        </div>
+        <div className="max-w-2xl mx-auto h-1.5 rounded-full bg-white/5 overflow-hidden">
+          <motion.div className="h-full bg-accent" 
+            style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+            animate={{ width: `${progress}%` }} />
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center p-6 relative" style={{ perspective: '1200px' }}>
         <AnimatePresence mode="wait">
           <motion.div
             key={cardKey}
-            initial={{ opacity: 0, x: 32, scale: 0.97 }}
+            initial={{ opacity: 0, x: 20, scale: 0.95 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -32, scale: 0.97 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="mb-5"
+            exit={{ opacity: 0, x: -20, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            onClick={() => !flipped && setFlipped(true)}
+            className={`w-full max-w-2xl aspect-[4/3] sm:aspect-[16/10] relative cursor-pointer preserve-3d transition-transform duration-700 ${flipped ? 'rotate-y-180' : ''}`}
           >
-            {currentCard && (
-              <FlipCard
-                card={currentCard}
-                flipped={flipped}
-                onFlip={() => setFlipped((prev) => !prev)}
-                colors={colors}
-              />
-            )}
+            {/* Front */}
+            <div className="absolute inset-0 backface-hidden rounded-[40px] p-8 sm:p-12 glass-panel flex flex-col items-center justify-center text-center shadow-2xl border border-white/10"
+              style={{ background: theme.surface }}>
+              <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10">
+                <Brain size={14} style={{ color: theme.accent }} />
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: theme.text }}>{current.quiz.title}</span>
+              </div>
+              <h2 className="text-xl sm:text-3xl font-bold leading-tight" style={{ color: theme.text }}>
+                {current.question.text}
+              </h2>
+              {current.question.imageUrl && (
+                <div className="mt-6 rounded-2xl overflow-hidden max-h-40 shadow-lg border border-white/5">
+                  <QuizImage src={current.question.imageUrl} />
+                </div>
+              )}
+              <div className="absolute bottom-10 text-[10px] font-black uppercase tracking-[0.2em] opacity-30" style={{ color: theme.text }}>
+                Apasă pentru a vedea răspunsul
+              </div>
+            </div>
+
+            {/* Back */}
+            <div className="absolute inset-0 backface-hidden rotate-y-180 rounded-[40px] p-8 sm:p-12 glass-panel flex flex-col items-center justify-center text-center shadow-2xl border border-white/10"
+              style={{ background: theme.isDark ? 'rgba(30,30,35,0.95)' : 'rgba(255,255,255,0.95)' }}>
+              <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10">
+                <Check size={14} style={{ color: theme.success }} />
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: theme.text }}>Răspuns Corect</span>
+              </div>
+              
+              <div className="w-full max-h-[60%] overflow-y-auto custom-scrollbar px-4">
+                {current.question.options.filter(o => o.isCorrect).map((o, i) => (
+                  <div key={i} className="text-xl sm:text-2xl font-black mb-2" style={{ color: theme.text }}>
+                    {o.text}
+                  </div>
+                ))}
+                
+                {current.question.explanation && (
+                  <div className="mt-6 p-4 rounded-2xl text-left bg-white/5 border border-white/5">
+                    <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: theme.text3 }}>Explicație</p>
+                    <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{current.question.explanation}</p>
+                  </div>
+                )}
+
+                {aiExplanation && (
+                  <div className="mt-4 p-4 rounded-2xl text-left" style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20` }}>
+                    <p className="text-xs font-bold uppercase tracking-wider opacity-60 mb-2" style={{ color: theme.accent }}>Context AI</p>
+                    <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{aiExplanation}</p>
+                  </div>
+                )}
+              </div>
+
+              {!aiExplanation && !aiLoading && (
+                <button onClick={(e) => { e.stopPropagation(); handleExplain(); }}
+                  className="mt-6 flex items-center gap-2 text-xs font-bold uppercase tracking-widest hover:opacity-100 hover:text-accent transition-all"
+                  style={{ color: theme.text3 }}>
+                  <Bot size={14} /> Explică cu AI
+                </button>
+              )}
+              {aiLoading && (
+                <div className="mt-6 flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-60" style={{ color: theme.accent }}>
+                  <Loader2 size={14} className="animate-spin" /> Se analizează...
+                </div>
+              )}
+            </div>
           </motion.div>
         </AnimatePresence>
 
-        <AnimatePresence mode="wait">
-          {!flipped ? (
+        <AnimatePresence>
+          {flipped && (
             <motion.div
-              key="reveal"
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.18 }}
-              className="space-y-3"
+              exit={{ opacity: 0, y: 10 }}
+              className="mt-8 w-full max-w-2xl"
             >
-              <button
-                onClick={() => setFlipped(true)}
-                className="w-full py-4 rounded-[22px] font-semibold text-white text-sm transition-opacity hover:opacity-90"
-                style={{ background: colors.gradient, boxShadow: `0 12px 30px ${colors.glow}` }}
-              >
-                Arată răspunsul · Space
-              </button>
-              <button
-                onClick={handleSkip}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-[22px] text-sm font-medium transition-all"
-                style={{ color: theme.text2, background: theme.surface, border: `1px solid ${theme.border}` }}
-              >
-                <SkipForward size={14} />
-                Sari cardul
-              </button>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="rate"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.18 }}
-            >
-              <p className="text-center text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: theme.text3 }}>
-                Cât de bine ai știut?
-              </p>
-              <div className="grid grid-cols-3 gap-3">
-                <button
-                  onClick={() => handleRating('hard')}
-                  className="flex flex-col items-center gap-1.5 py-4 rounded-[22px] text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  style={{
-                    background: `${theme.danger}14`,
+              <p className="text-center text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: theme.text3 }}>Cum a fost întrebarea?</p>
+              <div className="grid grid-cols-3 gap-4">
+                <button onClick={() => handleRating('hard')}
+                  className="flex flex-col items-center gap-2 p-4 rounded-3xl transition-all hover:scale-105 active:scale-95 group"
+                  style={{ 
+                    background: `${theme.danger}10`, 
                     border: `1.5px solid ${theme.danger}35`,
                     color: theme.danger,
                     boxShadow: `0 12px 24px ${theme.danger}10`,
                   }}
                 >
-                  <span className="text-xl">😰</span>
+                  <span className="text-xl">😫</span>
                   <span>Greu</span>
                   <span className="text-[10px] opacity-60 font-normal">1</span>
                 </button>
 
-                <button
-                  onClick={() => handleRating('ok')}
-                  className="flex flex-col items-center gap-1.5 py-4 rounded-[22px] text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  style={{
-                    background: `${theme.accent}14`,
+                <button onClick={() => handleRating('good')}
+                  className="flex flex-col items-center gap-2 p-4 rounded-3xl transition-all hover:scale-105 active:scale-95 group"
+                  style={{ 
+                    background: `${theme.accent}10`, 
                     border: `1.5px solid ${theme.accent}35`,
                     color: theme.accent,
                     boxShadow: `0 12px 24px ${theme.accent}10`,
                   }}
                 >
-                  <span className="text-xl">🤔</span>
-                  <span>Ok</span>
+                  <span className="text-xl">😐</span>
+                  <span>Bine</span>
                   <span className="text-[10px] opacity-60 font-normal">2</span>
                 </button>
 
-                <button
-                  onClick={() => handleRating('easy')}
-                  className="flex flex-col items-center gap-1.5 py-4 rounded-[22px] text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  style={{
-                    background: `${theme.success}14`,
+                <button onClick={() => handleRating('easy')}
+                  className="flex flex-col items-center gap-2 p-4 rounded-3xl transition-all hover:scale-105 active:scale-95 group"
+                  style={{ 
+                    background: `${theme.success}10`, 
                     border: `1.5px solid ${theme.success}35`,
                     color: theme.success,
                     boxShadow: `0 12px 24px ${theme.success}10`,
@@ -659,19 +355,19 @@ export default function FlashcardSession() {
                 </button>
               </div>
 
-              <p className="text-center text-xs mt-3 opacity-40" style={{ color: theme.text3 }}>
+              <p className="text-center text-xs mt-3 font-medium" style={{ color: theme.text2 }}>
                 Taste: 1 · 2 · 3
               </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </motion.div>
+              )}
+              </AnimatePresence>
 
-        {!flipped && (
-          <p className="text-center text-xs mt-4 opacity-40" style={{ color: theme.text3 }}>
-            Space sau Enter pentru flip
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
+              {!flipped && (
+              <p className="text-center text-xs mt-4 font-medium" style={{ color: theme.text2 }}>
+              Space sau Enter pentru flip
+              </p>
+              )}
+              </div>
+              </div>
+              );
+              }

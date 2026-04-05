@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { Trophy, RotateCcw, Home, Check, X, Star, Download, Bot, Loader2, Scale } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import type { QuizSession, Question } from '../types';
+import type { QuizSession, Question, QuestionStat } from '../types';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useTheme } from '../theme/ThemeContext';
@@ -35,6 +35,18 @@ export default function QuizResults() {
   const quiz = quizzes.find((q) => q.id === id);
   const questions = orderedQuestions ?? quiz?.questions ?? [];
 
+  const pct = Math.round(((session?.score ?? 0) / (session?.total ?? 1)) * 100);
+
+  useEffect(() => {
+    if (pct >= 90 && session && quiz) {
+      confetti({ particleCount: 120, spread: 70, origin: { y: 0.35 }, colors: ['#FFD60A', '#FF9F0A', '#30D158', '#0A84FF'] });
+      if (pct >= 95) {
+        setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 60, colors: ['#FFD60A', '#FF375F'] }), 400);
+        setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 120, colors: ['#30D158', '#5E5CE6'] }), 700);
+      }
+    }
+  }, [pct, session, quiz]);
+
   if (!session || !quiz) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -46,33 +58,24 @@ export default function QuizResults() {
     );
   }
 
-  const pct = Math.round((session.score / session.total) * 100);
   const duration = session.finishedAt ? Math.round((session.finishedAt - session.startedAt) / 1000) : 0;
 
   const handleExplain = async (q: Question, userAnswerText: string, correctText: string) => {
     if (aiLoading[q.id] || aiExplanations[q.id]) return;
     setAiLoading((p) => ({ ...p, [q.id]: true }));
-    const total = Object.values(questionStats).reduce((s, qs: any) => s + qs.timesCorrect + qs.timesWrong, 0);
+    const total = Object.values(questionStats).reduce((s, qs: QuestionStat) => s + qs.timesCorrect + qs.timesWrong, 0);
     const userContext = total > 0 ? `Student medical: ${total} grile rezolvate, acuratețe ${getAccuracy()}%.` : undefined;
     try {
       const explanation = await explainWrongAnswer(q.text, userAnswerText, correctText, userContext);
       setAiExplanations((p) => ({ ...p, [q.id]: explanation }));
-    } catch (e: any) {
-      setAiExplanations((p) => ({ ...p, [q.id]: `Eroare: ${e.message}` }));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      setAiExplanations((p) => ({ ...p, [q.id]: `Eroare: ${message}` }));
     } finally {
       setAiLoading((p) => ({ ...p, [q.id]: false }));
     }
   };
 
-  useEffect(() => {
-    if (pct >= 90) {
-      confetti({ particleCount: 120, spread: 70, origin: { y: 0.35 }, colors: ['#FFD60A', '#FF9F0A', '#30D158', '#0A84FF'] });
-      if (pct >= 95) {
-        setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 60, colors: ['#FFD60A', '#FF375F'] }), 400);
-        setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 120, colors: ['#30D158', '#5E5CE6'] }), 700);
-      }
-    }
-  }, []);// eslint-disable-line react-hooks/exhaustive-deps
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
   const grade =

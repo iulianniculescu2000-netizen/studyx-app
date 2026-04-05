@@ -115,7 +115,18 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     if (!electron?.updaterCheck) return; // Not in Electron
     set({ status: 'checking', error: null });
     try {
-      const result = await electron.updaterCheck();
+      const result = await electron.updaterCheck() as {
+        localVersion: string;
+        hasUpdate: boolean;
+        version: string;
+        latestVersion?: string;
+        releaseDate: string;
+        changes: string[];
+        files: { path: string; url: string }[];
+        isSequential?: boolean;
+        stepsRemaining?: number;
+        contentUpdates?: ContentUpdate[];
+      };
       set({ localVersion: result.localVersion });
       if (result.hasUpdate) {
         set({
@@ -142,8 +153,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         });
         setTimeout(() => set((s) => s.status === 'up-to-date' ? { status: 'idle' } : s), 4000);
       }
-    } catch (err: any) {
-      set({ status: 'error', error: err.message ?? 'Eroare necunoscută' });
+    } catch (err: unknown) {
+      set({ status: 'error', error: err instanceof Error ? err.message : 'Eroare necunoscută' });
     }
   },
 
@@ -164,8 +175,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     try {
       await electron.updaterDownload(manifest);
       set({ status: 'ready', downloadPercent: 100 });
-    } catch (err: any) {
-      set({ status: 'error', error: err.message ?? 'Descărcarea a eșuat' });
+    } catch (err: unknown) {
+      set({ status: 'error', error: err instanceof Error ? err.message : 'Descărcarea a eșuat' });
     } finally {
       unsubscribe?.();
     }

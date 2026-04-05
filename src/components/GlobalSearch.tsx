@@ -5,6 +5,7 @@ import { Search, X, BookOpen, FileQuestion, ArrowRight, Command } from 'lucide-r
 import { useQuizStore } from '../store/quizStore';
 import { useTheme } from '../theme/ThemeContext';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
+import { type Theme } from '../theme/themes';
 
 interface SearchResult {
   type: 'quiz' | 'question';
@@ -32,6 +33,8 @@ export default function GlobalSearch() {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
+        setQuery('');
+        setActiveIdx(0);
         setOpen(true);
       }
       if (e.key === 'Escape') setOpen(false);
@@ -44,8 +47,6 @@ export default function GlobalSearch() {
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50);
-      setQuery('');
-      setActiveIdx(0);
     }
   }, [open]);
 
@@ -103,7 +104,11 @@ export default function GlobalSearch() {
     return () => window.removeEventListener('keydown', handler);
   }, [open, results, activeIdx, handleSelect]);
 
-  useEffect(() => { setActiveIdx(0); }, [query]);
+  // Handle activeIdx reset inside the input change instead of useEffect
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    setActiveIdx(0);
+  };
 
   return (
     <AnimatePresence>
@@ -141,7 +146,7 @@ export default function GlobalSearch() {
                   type="text"
                   placeholder="Caută grile, întrebări..."
                   value={query}
-                  onChange={e => setQuery(e.target.value)}
+                  onChange={e => handleQueryChange(e.target.value)}
                   className="flex-1 bg-transparent text-base font-medium"
                   style={{ color: theme.text, outline: 'none', border: 'none' }}
                 />
@@ -244,7 +249,7 @@ function ResultRow({ result, isActive, colors, theme, onSelect, onHover }: {
   result: SearchResult;
   isActive: boolean;
   colors: { badge: string };
-  theme: any;
+  theme: Theme;
   onSelect: () => void;
   onHover: () => void;
 }) {

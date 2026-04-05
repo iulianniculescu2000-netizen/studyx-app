@@ -7,24 +7,42 @@ const VECTORS_KEY = 'studyx-vectors-v1';
 // We keep a lightweight memory index for fast searches
 let vectorCache: ChunkRecord[] | null = null;
 
-export async function addChunksToVault(chunks: { text: string; id: string }[], sourceName: string) {
-  const current = await getVaultChunks();
-  
-  // Create records with embeddings
-  const newRecords: ChunkRecord[] = chunks.map(c => ({
-    id: c.id,
-    text: c.text,
-    source: sourceName,
-    embedding: embedText(c.text), // Note: In a real heavy app, this would be a Worker
-    topic: sourceName,
-    difficulty: 'medium',
-    createdAt: Date.now()
-  }));
+// Mutex to prevent race conditions during write operations
+let writeLock: Promise<void> = Promise.resolve();
 
-  const merged = [...current, ...newRecords];
-  vectorCache = merged;
-  await idbSet(VECTORS_KEY, merged);
-  return newRecords.length;
+async function withLock<T>(operation: () => Promise<T>): Promise<T> {
+  const previousLock = writeLock;
+  let resolveLock: (value: void) => void;
+  writeLock = new Promise<void>(resolve => { resolveLock = resolve; });
+  
+  try {
+    await previousLock;
+    return await operation();
+  } finally {
+    resolveLock!(undefined);
+  }
+}
+
+export async function addChunksToVault(chunks: { text: string; id: string }[], sourceName: string) {
+  return withLock(async () => {
+    const current = await getVaultChunks();
+    
+    // Create records with embeddings
+    const newRecords: ChunkRecord[] = chunks.map(c => ({
+      id: c.id,
+      text: c.text,
+      source: sourceName,
+      embedding: embedText(c.text),
+      topic: sourceName,
+      difficulty: 'medium',
+      createdAt: Date.now()
+    }));
+
+    const merged = [...current, ...newRecords];
+    vectorCache = merged;
+    await idbSet(VECTORS_KEY, merged);
+    return newRecords.length;
+  });
 }
 
 export async function getVaultChunks(): Promise<ChunkRecord[]> {
@@ -52,13 +70,17 @@ export async function searchVault(query: string, k = 5): Promise<ChunkRecord[]> 
 }
 
 export async function clearVault() {
-  vectorCache = [];
-  await idbRemove(VECTORS_KEY);
+  await withLock(async () => {
+    vectorCache = [];
+    await idbRemove(VECTORS_KEY);
+  });
 }
 
 export async function removeChunksBySource(sourceName: string) {
-  const current = await getVaultChunks();
-  const next = current.filter(c => c.source !== sourceName);
-  vectorCache = next;
-  await idbSet(VECTORS_KEY, next);
+  await withLock(async () => {
+    const current = await getVaultChunks();
+    const next = current.filter(c => c.source !== sourceName);
+    vectorCache = next;
+    await idbSet(VECTORS_KEY, next);
+  });
 }

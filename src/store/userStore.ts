@@ -53,9 +53,16 @@ export const useUserStore = create<UserStore>()(
       setUsername: (name) => {
         // Creates a new profile from the current temp themeId and activates it
         const themeId = get().themeId;
-        const id = get().addProfile(name, themeId);
-        const profile = get().profiles.find((p) => p.id === id)!;
-        set({ activeProfileId: id, username: profile.username, themeId: profile.themeId });
+        const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+        const gradient = AVATAR_GRADIENTS[get().profiles.length % AVATAR_GRADIENTS.length];
+        const profile: Profile = { id, username: name.trim(), themeId, gradient, createdAt: Date.now() };
+        
+        set((s) => ({ 
+          profiles: [...s.profiles, profile],
+          activeProfileId: id,
+          username: profile.username,
+          themeId: profile.themeId
+        }));
       },
 
       setTheme: (id) => {
@@ -86,7 +93,7 @@ export const useUserStore = create<UserStore>()(
     {
       name: 'studyx-user',
       version: 2,
-      migrate: (persisted) => persisted as any,
+      migrate: (persisted) => persisted as unknown,
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         // Migrate old single-user format to profiles array

@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Check, ChevronLeft, Sparkles, Layers, ImagePlus, X, Pencil, Tag, GripVertical, Eye, Bot, Loader2, FileText, Scale } from 'lucide-react';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useQuizStore } from '../store/quizStore';
@@ -10,6 +10,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useAIStore } from '../store/aiStore';
 import { generateQuestionsFromText } from '../lib/groq';
 import type { Question, Option, Difficulty, QuizColor } from '../types';
+import type { Theme } from '../theme/themes';
 
 const EMOJIS = ['📚', '🧠', '💡', '🔬', '🌍', '💻', '🔢', '🎯', '⚡', '🏆', '🎓', '🌱', '🧪', '🗺️', '📖', '🏛️', '🩺', '💊', '❤️', '🦠', '🔭', '🧬'];
 const COLORS: { id: QuizColor; bg: string }[] = [
@@ -53,7 +54,7 @@ function compressImage(dataUrl: string, maxPx = 800, quality = 0.75): Promise<st
 function generateId() { return crypto.randomUUID().replace(/-/g, '').slice(0, 12); }
 
 function SortableQuestionTab({ id, index, isActive, isValid, onClick, theme }: {
-  id: string; index: number; isActive: boolean; isValid: boolean; onClick: () => void; theme: any;
+  id: string; index: number; isActive: boolean; isValid: boolean; onClick: () => void; theme: Theme;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   return (
@@ -124,9 +125,9 @@ export default function QuizCreate() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const handleDragEnd = (event: any) => {
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (active.id !== over?.id) {
+    if (over && active.id !== over.id) {
       setQuestions(qs => {
         const oldIdx = qs.findIndex(q => q.id === active.id);
         const newIdx = qs.findIndex(q => q.id === over.id);
@@ -167,6 +168,8 @@ export default function QuizCreate() {
     setActiveQ(Math.max(0, idx - 1));
   };
 
+  const uploadTargetQId = useRef<string | null>(null);
+
   const handleImageUpload = async (qId: string) => {
     // Try Electron native dialog first
     if (window.electronAPI?.openImageFile) {
@@ -180,25 +183,31 @@ export default function QuizCreate() {
     // Fallback: browser file input
     const input = fileInputRef.current;
     if (!input) return;
-    // Reset so same file can be re-selected
+    
+    uploadTargetQId.current = qId;
     input.value = '';
     input.click();
-    const handler = async (e: Event) => {
-      input.removeEventListener('change', handler);
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const result = ev.target?.result as string;
-        if (result) {
-          const compressed = await compressImage(result);
-          updateQuestion(qId, { imageUrl: compressed });
-        }
-      };
-      reader.onerror = () => {};
-      reader.readAsDataURL(file);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const qId = uploadTargetQId.current;
+    if (!qId) return;
+    const file = e.target.files?.[0];
+    if (!file) {
+      uploadTargetQId.current = null;
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const result = ev.target?.result as string;
+      if (result) {
+        const compressed = await compressImage(result);
+        updateQuestion(qId, { imageUrl: compressed });
+      }
     };
-    input.addEventListener('change', handler);
+    reader.onerror = () => {};
+    reader.readAsDataURL(file);
+    uploadTargetQId.current = null;
   };
 
   const [shakeFields, setShakeFields] = useState<string[]>([]);
@@ -240,8 +249,8 @@ export default function QuizCreate() {
       });
       setActiveQ(questions.length === 1 && !questions[0].text.trim() ? 0 : questions.length);
       setQuestionsTab('manual');
-    } catch (e: any) {
-      setAiError(e.message ?? 'Eroare necunoscută');
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : 'Eroare necunoscută');
     } finally {
       setAiLoading(false);
     }
@@ -301,7 +310,7 @@ export default function QuizCreate() {
   return (
     <div className="h-full overflow-y-auto px-8 py-8">
       {/* Hidden file input for browser fallback */}
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" />
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
       <div className="max-w-2xl mx-auto">
 
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
@@ -322,7 +331,7 @@ export default function QuizCreate() {
           <div className="ml-auto flex gap-1">
             {[0, 1].map((i) => (
               <div key={i} className="w-8 h-1 rounded-full transition-all"
-                style={{ background: (step === 'info' && i === 0) || step === 'questions' && i <= 1 ? theme.accent : theme.surface2 }} />
+                style={{ background: (step === 'info' && i === 0) || (step === 'questions' && i <= 1) ? theme.accent : theme.surface2 }} />
             ))}
           </div>
         </motion.div>
@@ -370,7 +379,7 @@ export default function QuizCreate() {
                   <Label theme={theme}>Titlu *</Label>
                   <input type="text" placeholder="ex: Capitalele Europei" value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full bg-transparent text-lg font-medium placeholder:opacity-20 mt-1"
+                    className="w-full bg-transparent text-lg font-medium mt-1"
                     style={{ color: theme.text, outline: 'none', border: 'none' }} />
                 </Panel>
               </motion.div>
@@ -383,7 +392,7 @@ export default function QuizCreate() {
                   <Label theme={theme}>Descriere *</Label>
                   <textarea placeholder="Descrie pe scurt conținutul grilei..." value={description}
                     onChange={(e) => setDescription(e.target.value)} rows={3}
-                    className="w-full bg-transparent placeholder:opacity-20 resize-none text-sm mt-1"
+                    className="w-full bg-transparent resize-none text-sm mt-1"
                     style={{ color: theme.text, outline: 'none', border: 'none' }} />
                 </Panel>
               </motion.div>
@@ -675,7 +684,7 @@ export default function QuizCreate() {
                     </div>
                     <textarea placeholder="Scrie întrebarea ta..." value={currentQ.text}
                       onChange={(e) => updateQuestion(currentQ.id, { text: e.target.value })} rows={3}
-                      className="w-full bg-transparent placeholder:opacity-20 resize-none font-medium"
+                      className="w-full bg-transparent resize-none font-medium"
                       style={{ color: theme.text, outline: 'none', border: 'none' }} />
 
                     {/* Image */}
@@ -746,7 +755,7 @@ export default function QuizCreate() {
                         <input type="text" placeholder={`Opțiunea ${opt.id.toUpperCase()}...`}
                           value={opt.text}
                           onChange={(e) => updateOption(currentQ.id, opt.id, { text: e.target.value })}
-                          className="flex-1 bg-transparent placeholder:opacity-20 text-sm"
+                          className="flex-1 bg-transparent text-sm"
                           style={{ color: theme.text, outline: 'none', border: 'none' }} />
                         {currentQ.options.length > 2 && (
                           <button
@@ -781,7 +790,7 @@ export default function QuizCreate() {
                     <input type="text" placeholder="Explică de ce răspunsul este corect..."
                       value={currentQ.explanation || ''}
                       onChange={(e) => updateQuestion(currentQ.id, { explanation: e.target.value })}
-                      className="w-full bg-transparent placeholder:opacity-20 text-sm mt-1"
+                      className="w-full bg-transparent text-sm mt-1"
                       style={{ color: theme.text, outline: 'none', border: 'none' }} />
                   </Panel>
                 </motion.div>
@@ -857,7 +866,7 @@ export default function QuizCreate() {
   );
 }
 
-function Panel({ children, theme, style }: { children: React.ReactNode; theme: any; style?: React.CSSProperties }) {
+function Panel({ children, theme, style }: { children: React.ReactNode; theme: Theme; style?: React.CSSProperties }) {
   return (
     <div className="rounded-2xl p-5 transition-all input-focus-draw" style={{ background: theme.surface, border: `1px solid ${theme.border}`, ...style }}>
       {children}
@@ -865,6 +874,6 @@ function Panel({ children, theme, style }: { children: React.ReactNode; theme: a
   );
 }
 
-function Label({ children, theme }: { children: React.ReactNode; theme: any }) {
+function Label({ children, theme }: { children: React.ReactNode; theme: Theme }) {
   return <label className="text-sm font-medium" style={{ color: theme.text2 }}>{children}</label>;
 }

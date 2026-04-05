@@ -5,26 +5,18 @@ export async function parsePDF(file: File | string) {
 
   // Handle Electron environment
   if (window.electronAPI) {
-    // If it's a File object from drag-and-drop or input
-    if (file instanceof File && (file as any).path) {
-      const text = await window.electronAPI.readPdfPath((file as any).path);
-      if (text) return cleanText(text);
-    }
-    
-    // If we're just calling it without a specific file (opens dialog)
-    if (file.type === 'application/pdf' && window.electronAPI.openPdfFile) {
-      const text = await window.electronAPI.openPdfFile();
-      return cleanText(text ?? '');
+    const filePath = (file as { path?: string }).path;
+    if (file instanceof File && filePath) {
+      const text = await window.electronAPI.readPdfPath(filePath);
+      if (text && text.trim().length > 5) return cleanText(text);
+      
+      // Dacă textul extras e prea scurt, probabil e un PDF scanat (imagine)
+      throw new Error("Acest PDF pare să fie o imagine scanată sau este protejat. Încearcă să-l convertești în text sau folosește o versiune digitală.");
     }
   }
 
-  // Browser fallback or if Electron path failed
-  try {
-    const raw = await file.text();
-    return cleanText(raw);
-  } catch {
-    return '';
-  }
+  // Browser fallback (foarte limitat pentru PDF-uri reale)
+  return '';
 }
 
 function cleanText(input: string) {

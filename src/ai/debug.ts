@@ -11,7 +11,9 @@ export function isAIDebugEnabled() {
 export function setAIDebugEnabled(enabled: boolean) {
   try {
     localStorage.setItem(DEBUG_KEY, enabled ? '1' : '0');
-  } catch {}
+  } catch (err) {
+    console.error('[Debug] Failed to set AI debug state:', err);
+  }
 }
 
 export function logAIDebug(label: string, payload: unknown) {

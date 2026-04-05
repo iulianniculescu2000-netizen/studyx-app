@@ -1,48 +1,62 @@
-export function chunkText(text: string, sourceName: string, chunkSize = 1000, overlap = 100): { text: string; id: string }[] {
+/**
+ * Semantic-Aware Recursive Chunker
+ * Împarte textul în fragmente optimizate pentru AI, respectând limitele gramaticale.
+ */
+export function chunkText(text: string, sourceName: string, chunkSize = 1200, overlap = 200): { text: string; id: string }[] {
   const chunks: { text: string; id: string }[] = [];
-  let currentIndex = 0;
+  
+  // 1. Curățare și normalizare (păstrăm noile linii duble pentru paragrafe)
+  const normalizedText = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 
-  // Normalize whitespace
-  const cleanText = text.replace(/\s+/g, ' ').trim();
+  // 2. Separatori ierarhici (de la cel mai mare la cel mai mic)
+  const separators = ['\n\n', '\n', '. ', '? ', '! ', '; ', ', ', ' '];
 
-  while (currentIndex < cleanText.length) {
-    let end = currentIndex + chunkSize;
+  function recursiveSplit(content: string): string[] {
+    if (content.length <= chunkSize) return [content];
+
+    let separator = separators[separators.length - 1];
+    for (const s of separators) {
+      if (content.includes(s)) {
+        separator = s;
+        break;
+      }
+    }
+
+    const parts = content.split(separator);
+    const result: string[] = [];
+    let currentChunk = "";
+
+    for (const part of parts) {
+      if ((currentChunk + separator + part).length <= chunkSize) {
+        currentChunk += (currentChunk ? separator : "") + part;
+      } else {
+        if (currentChunk) result.push(currentChunk);
+        currentChunk = part;
+      }
+    }
+    if (currentChunk) result.push(currentChunk);
+    return result;
+  }
+
+  // 3. Procesare cu Overlap inteligent
+  const initialSplits = recursiveSplit(normalizedText);
+  let globalIndex = 0;
+
+  for (let i = 0; i < initialSplits.length; i++) {
+    let content = initialSplits[i];
     
-    if (end < cleanText.length) {
-      // Try to find a good breaking point: paragraph end, then sentence end, then word end
-      const searchWindow = cleanText.slice(Math.max(currentIndex, end - 200), end + 50);
-      
-      let breakPoint = -1;
-      const markers = ['\n\n', '. ', '? ', '! ', ' '];
-      
-      for (const marker of markers) {
-        const lastIdx = searchWindow.lastIndexOf(marker);
-        if (lastIdx !== -1) {
-          // Adjust breakpoint relative to the start of the window
-          breakPoint = Math.max(currentIndex, end - 200) + lastIdx + marker.length;
-          break;
-        }
-      }
-      
-      if (breakPoint !== -1) {
-        end = breakPoint;
-      }
-    } else {
-      end = cleanText.length;
+    // Adăugăm overlap din fragmentul anterior dacă există
+    if (i > 0 && overlap > 0) {
+      const prev = initialSplits[i - 1];
+      const overlapText = prev.slice(-overlap);
+      content = overlapText + " " + content;
     }
 
-    const chunkContent = cleanText.slice(currentIndex, end).trim();
-    if (chunkContent.length > 10) {
+    if (content.trim().length > 20) {
       chunks.push({
-        text: chunkContent,
-        id: `${sourceName}-${currentIndex}`
+        text: content.trim(),
+        id: `${sourceName}-${globalIndex++}`
       });
-    }
-
-    currentIndex = end - overlap;
-    // Safety check to avoid infinite loops if overlap >= chunkSize
-    if (currentIndex <= currentIndex + overlap - chunkSize) {
-      currentIndex = end;
     }
   }
 

@@ -1,9 +1,22 @@
-import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useMemo, useCallback, Component, type ErrorInfo } from 'react';
-// ...
+import { motion } from 'framer-motion';
+import { useState, useEffect, useMemo, useCallback, Component, useRef, type ErrorInfo } from 'react';
+import { Link } from 'react-router-dom';
+import { 
+  Plus, BookOpen, Flame, Target, Zap, 
+  Sparkles, RefreshCw, X
+} from 'lucide-react';
+import { useTheme } from '../theme/ThemeContext';
+import { useUserStore } from '../store/userStore';
+import { useQuizStore } from '../store/quizStore';
+import { useStatsStore } from '../store/statsStore';
+import { useAIStore } from '../store/aiStore';
+import { generateStudyRecommendation } from '../lib/groq';
+import { buildPerformanceSummary, buildUserContextString } from '../lib/aiContext';
+import ImportQuizButton from '../components/ImportQuizButton';
+import QuizCard from '../components/QuizCard';
 
 class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
-  constructor(props: any) {
+  constructor(props: { children: React.ReactNode }) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -16,85 +29,97 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-8 m-4 rounded-2xl" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
-          <h2 className="text-red-500 font-bold mb-2">Eroare Dashboard</h2>
-          <p className="text-xs opacity-80 mb-4">{this.state.error?.message}</p>
-          <button onClick={() => window.location.reload()} className="text-xs px-3 py-1.5 bg-red-500 text-white rounded-lg">Reset</button>
+        <div className="p-8 text-center">
+          <h2 className="text-xl font-bold mb-2">Ceva nu a mers bine în Dashboard.</h2>
+          <button onClick={() => window.location.reload()} className="text-accent underline">Reîncarcă pagina</button>
         </div>
       );
     }
     return this.props.children;
   }
 }
-import { Link } from 'react-router-dom';
-import { Flame, RefreshCw, Plus, BookOpen, Zap, Target, X, CheckCircle2, Circle, Sparkles } from 'lucide-react';
-import { useTheme } from '../theme/ThemeContext';
-import { useUserStore } from '../store/userStore';
-import { useQuizStore } from '../store/quizStore';
-import { useStatsStore } from '../store/statsStore';
-import { useAIStore } from '../store/aiStore';
-import { generateStudyRecommendation } from '../lib/groq';
-import { buildPerformanceSummary, buildUserContextString } from '../lib/aiContext';
-import QuizCard from '../components/QuizCard';
-import ImportQuizButton from '../components/ImportQuizButton';
 
-// ── AI Study Buddy ────────────────────────────────────────────────────────────
-const AI_REC_KEY = 'studyx-ai-rec';
+function MagneticButton({ children, className, style, to }: { children: React.ReactNode, className?: string, style?: React.CSSProperties, to?: string }) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const handleMouse = (e: React.MouseEvent) => {
+    const { clientX, clientY, currentTarget } = e;
+    const { left, top, width, height } = currentTarget.getBoundingClientRect();
+    const x = (clientX - (left + width / 2)) * 0.35;
+    const y = (clientY - (top + height / 2)) * 0.35;
+    setPosition({ x, y });
+  };
+  const reset = () => setPosition({ x: 0, y: 0 });
+
+  const content = (
+    <motion.div
+      onMouseMove={handleMouse}
+      onMouseLeave={reset}
+      animate={{ x: position.x, y: position.y }}
+      transition={{ type: "spring", stiffness: 150, damping: 15, mass: 0.1 }}
+      className={className}
+      style={style}
+    >
+      {children}
+    </motion.div>
+  );
+
+  return to ? <Link to={to} style={{ textDecoration: 'none' }}>{content}</Link> : content;
+}
+
+const AI_REC_KEY = 'studyx-ai-recommendation';
 
 function AIStudyBuddy() {
   const theme = useTheme();
-  const { hasKey } = useAIStore();
   const { quizzes } = useQuizStore();
   const { questionStats, streak, getDueQuestions, getAccuracy, getStatsByTag } = useStatsStore();
-
+  const { hasKey } = useAIStore();
+  
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
 
-  // Build performance summary (memoized)
   const summary = useMemo(
     () => buildPerformanceSummary(questionStats, streak, getDueQuestions, getAccuracy, getStatsByTag, quizzes),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [quizzes.length, streak.currentStreak, streak.lastStudyDate]
+    [quizzes, questionStats, streak, getDueQuestions, getAccuracy, getStatsByTag]
   );
   const userContext = buildUserContextString(summary);
 
   const generate = useCallback(async () => {
+    if (!hasKey()) return;
     setLoading(true);
     try {
       const rec = await generateStudyRecommendation(
         userContext,
         summary.dueCount,
-        summary.weakTopics.map(t => t.tag)
+        summary.weakTopics.map((t: { tag: string }) => t.tag)
       );
       const entry = { date: today, text: rec };
-      try { localStorage.setItem(AI_REC_KEY, JSON.stringify(entry)); } catch {}
+      localStorage.setItem(AI_REC_KEY, JSON.stringify(entry));
       setText(rec);
-    } catch {
+    } catch (err) {
+      console.error('[Dashboard] AI recommendation error:', err);
       setText(null);
     } finally {
       setLoading(false);
     }
-  }, [userContext, summary.dueCount, summary.weakTopics, today]);
+  }, [userContext, summary.dueCount, summary.weakTopics, today, hasKey]);
 
   useEffect(() => {
-    // Check cached recommendation
     try {
       const raw = localStorage.getItem(AI_REC_KEY);
       if (raw) {
         const entry = JSON.parse(raw);
         if (entry.date === today && entry.text) { setText(entry.text); return; }
       }
-    } catch {}
-    // Generate if AI key is configured
+    } catch (err) {
+      console.error('[Dashboard] Error reading recommendation cache:', err);
+    }
     if (hasKey()) generate();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasKey, generate, today]);
 
   if (dismissed) return null;
-  // Don't show if no AI key and no data
   if (!hasKey() && summary.totalAnswered === 0) return null;
 
   const displayText = text ?? (
@@ -109,356 +134,312 @@ function AIStudyBuddy() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      className="mb-6 p-4 rounded-2xl relative overflow-hidden"
+      className="mb-8 p-6 rounded-[32px] relative overflow-hidden glass-panel neon-border"
       style={{
-        background: `linear-gradient(135deg, ${theme.accent2}12, ${theme.accent}08)`,
-        border: `1px solid ${theme.accent2}25`,
+        background: theme.isDark 
+          ? 'rgba(138, 43, 226, 0.05)' 
+          : 'rgba(138, 43, 226, 0.02)',
       }}
     >
-      {/* Subtle orb */}
-      <div className="absolute top-0 right-0 w-32 h-32 rounded-full pointer-events-none"
-        style={{ background: `radial-gradient(circle at 70% 30%, ${theme.accent2}18, transparent 70%)` }} />
+      <motion.div 
+        animate={{ opacity: [0.1, 0.2, 0.1], scale: [1, 1.1, 1] }}
+        transition={{ duration: 8, repeat: Infinity }}
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: `radial-gradient(circle at 80% 20%, ${theme.accent2}30, transparent 60%)` }} 
+      />
 
-      <div className="relative flex items-start gap-3">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ background: `${theme.accent2}20` }}>
-          <Sparkles size={16} style={{ color: theme.accent2 }} />
+      <div className="relative z-10 flex items-start gap-5">
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg"
+          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 20px ${theme.accent}40` }}>
+          <Sparkles size={22} className="text-white" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold" style={{ color: theme.accent2 }}>AI Study Buddy</span>
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-sm font-bold tracking-tight" style={{ color: theme.accent2 }}>ASISTENT INTELIGENT STUDYX</span>
             {loading && (
-              <motion.div
-                animate={{ opacity: [1, 0.3, 1] }}
-                transition={{ duration: 1, repeat: Infinity }}
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: theme.accent2 }}
-              />
+              <div className="flex gap-1">
+                {[0, 1, 2].map(i => (
+                  <motion.div key={i}
+                    animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
+                    className="w-1 h-1 rounded-full"
+                    style={{ background: theme.accent2 }}
+                  />
+                ))}
+              </div>
             )}
           </div>
           {loading && !displayText ? (
-            <div className="space-y-1.5">
-              {[70, 90, 55].map((w, i) => (
-                <motion.div key={i}
-                  animate={{ opacity: [0.3, 0.7, 0.3] }}
-                  transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.2 }}
-                  className="h-2.5 rounded-full"
-                  style={{ width: `${w}%`, background: theme.surface2 }} />
-              ))}
+            <div className="space-y-3 mt-4">
+              <div className="h-3 w-3/4 rounded-full bg-white/5 animate-pulse" />
+              <div className="h-3 w-1/2 rounded-full bg-white/5 animate-pulse" />
             </div>
           ) : (
-            <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{displayText}</p>
+            <p className="text-base font-medium leading-relaxed" style={{ color: theme.text }}>
+              {displayText}
+            </p>
           )}
           {!loading && text && (
-            <button
-              onClick={generate}
-              className="mt-2 text-xs hover:opacity-70 transition-opacity"
+            <motion.button whileHover={{ x: 5 }} onClick={generate}
+              className="mt-4 text-xs font-bold uppercase tracking-widest flex items-center gap-2 opacity-60 hover:opacity-100 transition-opacity"
               style={{ color: theme.accent2 }}>
-              Regenerează →
-            </button>
+              Regenerează recomandarea <RefreshCw size={12} />
+            </motion.button>
           )}
         </div>
-        <button onClick={() => setDismissed(true)} style={{ color: theme.text3, flexShrink: 0 }}>
-          <X size={13} />
+        <button onClick={() => setDismissed(true)} className="p-2 hover:bg-white/5 rounded-xl transition-colors" style={{ color: theme.text3 }}>
+          <X size={16} />
         </button>
       </div>
     </motion.div>
   );
 }
 
-function useCountUp(end: number, duration = 700): number {
-  const [val, setVal] = useState(0);
+function useCountUp(target: number, duration = 600) {
+  const [value, setValue] = useState(0);
+  const [prevTarget, setPrevTarget] = useState(target);
+  const targetRef = useRef(target);
+
+  if (target !== prevTarget) {
+    setPrevTarget(target);
+    setValue(0);
+  }
+
   useEffect(() => {
-    if (end === 0) { setVal(0); return; }
-    let raf: number;
-    const startTime = performance.now();
-    const tick = (now: number) => {
-      const progress = Math.min((now - startTime) / duration, 1);
+    targetRef.current = target;
+    if (target === 0) return;
+
+    const startValue = 0;
+    const startTime = Date.now();
+    
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setVal(Math.floor(eased * end));
-      if (progress < 1) raf = requestAnimationFrame(tick);
-      else setVal(end);
+      setValue(Math.round(startValue + eased * (targetRef.current - startValue)));
+      if (progress < 1) requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
+    
+    const raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [end, duration]);
-  return val;
+  }, [target, duration]);
+  
+  return value;
 }
 
-function StatCard({ label, numeric, suffix, display, icon, color, delay }: {
+function StatCard({ label, numeric, suffix, display, color, delay, trend }: {
   label: string; numeric: number; suffix: string; display?: string;
-  icon: React.ReactNode; color: string; delay: number;
+  color: string; delay: number; 
+  trend?: 'up' | 'down' | 'neutral';
 }) {
   const theme = useTheme();
-  const count = useCountUp(numeric);
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ 
-        delay, 
-        layout: { type: "spring", stiffness: 300, damping: 30 },
-        opacity: { duration: 0.2 }
-      }}
-      whileHover={{ y: -3, boxShadow: `0 12px 32px ${color}22`, transition: { duration: 0.18 } }}
-      className="rounded-2xl p-4 relative overflow-hidden"
-      style={{
-        background: theme.surface,
-        border: `1px solid ${theme.border}`,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={{ y: -5, transition: { duration: 0.2 } }}
+      className="rounded-[28px] p-6 relative overflow-hidden glass-panel premium-shadow"
+      style={{ 
+        borderTop: `3px solid ${color}`,
+        background: theme.surface
       }}>
-      {/* Subtle color accent top-left */}
-      <div className="absolute top-0 left-0 w-20 h-20 rounded-full pointer-events-none"
-        style={{
-          background: `radial-gradient(circle at top left, ${color}18, transparent 70%)`,
-        }} />
-      <div className="relative">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-3"
-          style={{ background: `${color}18`, color }}>
-          {icon}
+      
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-4">
+          <div className="secondary-label font-black tracking-widest" style={{ color: theme.text3 }}>{label}</div>
+          {trend && trend !== 'neutral' && (
+            <div className={`flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full ${trend === 'up' ? 'text-green-600' : 'text-red-600'}`}
+              style={{ background: trend === 'up' ? 'rgba(48,209,88,0.15)' : 'rgba(255,69,58,0.15)' }}>
+              {trend === 'up' ? '▲' : '▼'} 2%
+            </div>
+          )}
         </div>
-        <motion.div
-          key={count}
-          initial={{ scale: 1.18, color: color }}
-          animate={{ scale: 1 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 18 }}
-          className="text-2xl font-black tracking-tighter mb-0.5"
-          style={{ color: theme.text }}>
-          {display ?? `${count}${suffix}`}
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          className="text-4xl font-black tracking-tighter tabular-nums" style={{ color: theme.text }}>
+          {display ?? `${numeric}${suffix}`}
         </motion.div>
-        <div className="text-[10px] font-bold uppercase tracking-wider opacity-60" style={{ color: theme.text }}>{label}</div>
       </div>
     </motion.div>
   );
 }
+
+function TodayProgressCard() {
+  const theme = useTheme();
+  const { getDueQuestions } = useStatsStore();
+  const dueCount = getDueQuestions().length;
+  
+  // Mock progress for today's session based on due items
+  const totalDueToday = Math.max(dueCount, 10); 
+  const completedToday = Math.max(0, totalDueToday - dueCount);
+  const progressPercent = Math.round((completedToday / totalDueToday) * 100);
+  
+  const r = 36;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - progressPercent / 100);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="mb-10 p-6 rounded-[32px] glass-panel relative overflow-hidden flex items-center gap-8"
+      style={{ border: `1px solid ${theme.accent}20` }}
+    >
+      <div className="relative w-24 h-24 flex-shrink-0">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r={r} fill="none" stroke={theme.surface2} strokeWidth="8" />
+          <motion.circle 
+            cx="50" cy="50" r={r} fill="none" stroke={theme.accent} strokeWidth="8"
+            strokeDasharray={circ}
+            initial={{ strokeDashoffset: circ }}
+            animate={{ strokeDashoffset: offset }}
+            transition={{ duration: 1.5, ease: "easeOut" }}
+            strokeLinecap="round"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center flex-col">
+          <span className="text-xl font-black" style={{ color: theme.text }}>{progressPercent}%</span>
+        </div>
+      </div>
+      
+      <div className="flex-1">
+        <h3 className="text-xl font-black mb-1" style={{ color: theme.text }}>Sesiunea de azi</h3>
+        <p className="text-sm font-medium opacity-60 mb-4" style={{ color: theme.text }}>
+          {dueCount > 0 ? `Mai ai ${dueCount} întrebări de recapitulat pentru a-ți atinge obiectivul.` : 'Felicitări! Ai terminat toate recapitulările pentru azi.'}
+        </p>
+        <Link to="/daily-review" 
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+          style={{ background: theme.accent, boxShadow: `0 8px 20px ${theme.accent}40` }}>
+          Începe Sesiunea <Zap size={13} fill="white" />
+        </Link>
+      </div>
+      
+      <div className="absolute -right-8 -bottom-8 w-40 h-40 opacity-10 pointer-events-none"
+        style={{ background: `radial-gradient(circle, ${theme.accent}, transparent 70%)`, filter: 'blur(40px)' }} />
+    </motion.div>
+  );
+}
+
 export default function Dashboard() {
   const theme = useTheme();
   const { username } = useUserStore();
-  const { quizzes, sessions, _hasHydrated } = useQuizStore();
-  const { streak, getDueQuestions, getAccuracy, totalStudyTime } = useStatsStore();
+  const { quizzes, _hasHydrated } = useQuizStore();
+  const { streak, getAccuracy, totalStudyTime } = useStatsStore();
+  const [hour, setHour] = useState(new Date().getHours());
+
+  const accuracy = getAccuracy();
+  const studyHours = Math.floor(totalStudyTime / 3600);
+  const studyMinutes = Math.floor(totalStudyTime / 60);
+
+  const animatedQuizzes = useCountUp(quizzes.length);
+  const animatedStreak = useCountUp(streak.currentStreak);
+  const animatedAccuracy = useCountUp(accuracy);
+  const animatedStudyHours = useCountUp(studyHours);
+  const animatedStudyMinutes = useCountUp(studyMinutes);
+
+  useEffect(() => {
+    const t = setInterval(() => setHour(new Date().getHours()), 60000);
+    return () => clearInterval(t);
+  }, []);
 
   const recentQuizzes = useMemo(() => [...quizzes]
-    .sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt);
-    })
+    .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
     .slice(0, 4), [quizzes]);
-
-  const [checklistDismissed, setChecklistDismissed] = useState(() =>
-    localStorage.getItem('studyx-checklist-dismissed') === 'true'
-  );
 
   if (!_hasHydrated) {
     return (
-      <div className="h-full flex items-center justify-center p-8">
-        <div style={{ color: theme.text3 }}>Se încarcă datele...</div>
+      <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-10">
+        <div className="max-w-[1000px] mx-auto">
+          <div className="h-10 w-48 bg-white/5 rounded-xl mb-10 animate-pulse" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-12">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-32 rounded-[32px] bg-white/5 animate-pulse" />
+            ))}
+          </div>
+          <div className="h-40 bg-white/5 rounded-[32px] mb-12 animate-pulse" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-48 rounded-[32px] bg-white/5 animate-pulse" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
-  const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Bună dimineața' : hour < 18 ? 'Bună ziua' : 'Bună seara';
-  const dueCount = getDueQuestions().length;
-  const accuracy = getAccuracy();
-  const studyHours = Math.floor(totalStudyTime / 3600);
-  const checklistItems = [
-    { id: 'quiz', label: 'Creează prima grilă', done: quizzes.filter(q => !q.id.startsWith('sample-') && !q.id.startsWith('img-')).length > 0, link: '/create' },
-    { id: 'play', label: 'Rezolvă o grilă', done: sessions.length > 0, link: '/quizzes' },
-    { id: 'review', label: 'Încearcă recapitularea', done: dueCount === 0 && sessions.length > 0, link: '/review' },
-    { id: 'stats', label: 'Vizitează statisticile', done: false, link: '/stats' },
-    { id: 'theme', label: 'Personalizează tema', done: false, link: '/settings' },
+
+  const stats = [
+    { label: 'Grile', numeric: quizzes.length, display: String(animatedQuizzes), suffix: '', icon: <BookOpen size={20} />, color: theme.accent, trend: 'neutral' as const },
+    { label: 'Streak', numeric: streak.currentStreak, display: `${animatedStreak}🔥`, suffix: '🔥', icon: <Flame size={20} className={streak.currentStreak >= 3 ? 'animate-streak-fire' : ''} />, color: theme.warning, bounce: true, trend: 'up' as const },
+    { label: 'Acuratețe', numeric: accuracy, display: accuracy > 0 ? `${animatedAccuracy}%` : '—', suffix: '%', icon: <Target size={20} />, color: theme.success, trend: accuracy >= 75 ? 'up' as const : 'down' as const },
+    { label: 'Ore studiu', numeric: studyHours, display: studyHours > 0 ? `${animatedStudyHours}h` : `${animatedStudyMinutes}m`, suffix: 'h', icon: <Zap size={20} />, color: theme.accent2, trend: 'up' as const },
   ];
-  const checklistDone = checklistItems.filter(i => i.done).length;
-  const showChecklist = !checklistDismissed && checklistDone < checklistItems.length;
-const stats = [
-  { label: 'Grile', numeric: quizzes.length, suffix: '', icon: <BookOpen size={18} />, color: theme.accent },
-  { label: 'Streak', numeric: streak.currentStreak, suffix: '🔥', icon: <Flame size={18} />, color: theme.warning },
-  { label: 'Acuratețe', numeric: accuracy, suffix: '%', display: accuracy > 0 ? undefined : '—', icon: <Target size={18} />, color: theme.success },
-  { label: 'Ore studiu', numeric: studyHours, suffix: 'h', display: studyHours > 0 ? undefined : `${Math.floor(totalStudyTime / 60)}m`, icon: <Zap size={18} />, color: theme.accent2 },
-];
 
-return (
-  <ErrorBoundary>
-    <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
-...
-      <div className="max-w-4xl mx-auto">
-
-        {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }} className="mb-8">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight mb-1" style={{ color: theme.text }}>
-                {greeting}, <span style={{
-                  background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}>{username}</span> 👋
-              </h1>
-              <p style={{ color: theme.text2 }}>
-                {new Date().toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </p>
-            </div>
-            <div className="hidden md:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl flex-shrink-0"
-              style={{ background: theme.surface, color: theme.text3, border: `1px solid ${theme.border}` }}>
-              <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono"
-                style={{ background: theme.surface2, border: `1px solid ${theme.border2}` }}>?</kbd>
-              <span>scurtături</span>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Onboarding checklist */}
-        <AnimatePresence>
-          {showChecklist && (
-            <motion.div
-              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-              animate={{ opacity: 1, height: 'auto', marginBottom: 24 }}
-              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-              className="overflow-hidden">
-              <div className="rounded-2xl p-4" style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: theme.text }}>Primii pași în StudyX</p>
-                    <p className="text-xs" style={{ color: theme.text3 }}>{checklistDone}/{checklistItems.length} finalizate</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* Progress pill */}
-                    <div className="w-24 h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
-                      <motion.div className="h-full rounded-full"
-                        animate={{ width: `${(checklistDone / checklistItems.length) * 100}%` }}
-                        transition={{ duration: 0.6, ease: 'easeOut' }}
-                        style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }} />
-                    </div>
-                    <button onClick={() => { setChecklistDismissed(true); localStorage.setItem('studyx-checklist-dismissed', 'true'); }}
-                      style={{ color: theme.text3 }}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {checklistItems.map((item) => (
-                    <Link key={item.id} to={item.link} style={{ textDecoration: 'none' }}>
-                      <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-                        className="flex items-center gap-2 p-2.5 rounded-xl transition-all"
-                        style={{
-                          background: item.done ? `${theme.success}10` : theme.surface2,
-                          border: `1px solid ${item.done ? theme.success + '30' : 'transparent'}`,
-                          opacity: item.done ? 0.8 : 1,
-                        }}>
-                        {item.done
-                          ? <CheckCircle2 size={14} style={{ color: theme.success, flexShrink: 0 }} />
-                          : <Circle size={14} style={{ color: theme.text3, flexShrink: 0 }} />}
-                        <span className="text-xs font-medium" style={{ color: item.done ? theme.success : theme.text2 }}>
-                          {item.label}
-                        </span>
-                      </motion.div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Due review banner */}
-        {dueCount > 0 && (
-          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.1, type: "spring", stiffness: 300, damping: 25 }}
-            className="mb-8 p-5 rounded-[24px] flex flex-col sm:flex-row sm:items-center justify-between gap-5"
-            style={{
-              background: `linear-gradient(135deg, ${theme.warning}22, ${theme.accent}12)`,
-              border: `1px solid ${theme.warning}40`,
-              boxShadow: `0 12px 32px ${theme.warning}10`,
-            }}>
-            <div className="flex items-center gap-4">
-              <motion.div
-                animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
-                transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0"
-                style={{ background: `${theme.warning}25`, border: `1px solid ${theme.warning}40` }}>
-                ⚡
-              </motion.div>
-              <div>
-                <p className="font-bold text-lg leading-tight" style={{ color: theme.text }}>
-                  {dueCount} {dueCount === 1 ? 'întrebare' : 'întrebări'} restante
-                </p>
-                <p className="text-xs font-medium uppercase tracking-wider opacity-60 mt-1" style={{ color: theme.text }}>
-                  Algoritmul SM-2 recomandă recapitularea
-                </p>
-              </div>
-            </div>
-            <Link to="/daily-review"
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-white text-sm transition-all hover:scale-[1.03] active:scale-[0.98]"
-              style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, boxShadow: `0 8px 20px ${theme.warning}40` }}>
-              <RefreshCw size={14} className="animate-spin-slow" />
-              Recapitulează acum
-            </Link>
+  return (
+    <ErrorBoundary>
+      <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-10">
+        <div className="max-w-[1000px] mx-auto">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-10">
+            <h1 className="text-4xl font-black tracking-tighter mb-2" style={{ color: theme.text }}>
+              {greeting}, <span style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}>{username}</span> 👋
+            </h1>
+            <p className="text-sm font-medium opacity-60" style={{ color: theme.text }}>{new Date().toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
           </motion.div>
-        )}
 
-        {/* Stats grid */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }} className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-          {stats.map((s, i) => (
-            <StatCard key={s.label} label={s.label} numeric={s.numeric} suffix={s.suffix}
-              display={s.display} icon={s.icon} color={s.color} delay={0.2 + i * 0.06} />
-          ))}
-        </motion.div>
+          <AIStudyBuddy />
 
-        {/* AI Study Buddy */}
-        <AIStudyBuddy />
-
-        {/* Quick actions */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}
-          className="flex gap-3 mb-8 flex-wrap">
-          <Link to="/create" data-tutorial="btn-new-quiz"
-            className="flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-white text-sm"
-            style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}>
-            <Plus size={16} />Grilă nouă
-          </Link>
-          <div data-tutorial="btn-import"><ImportQuizButton /></div>
-          <Link to="/quizzes"
-            className="flex items-center gap-2 px-5 py-3 rounded-2xl font-medium text-sm"
-            style={{ background: theme.surface2, border: `1px solid ${theme.border2}`, color: theme.text2 }}>
-            <BookOpen size={16} />Toate grilele
-          </Link>
-        </motion.div>
-
-        {/* Recent quizzes */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold" style={{ color: theme.text }}>Grile recente</h2>
-            <Link to="/quizzes" className="text-sm hover:underline" style={{ color: theme.accent }}>
-              Vezi toate →
-            </Link>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-12">
+            {stats.map((s, i) => <StatCard key={s.label} {...s} delay={0.1 + i * 0.05} />)}
           </div>
-          {recentQuizzes.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {recentQuizzes.map((quiz, i) => (
-                <QuizCard key={quiz.id} quiz={quiz} index={i} />
-              ))}
+
+          {quizzes.length > 0 && <TodayProgressCard />}
+
+          <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="flex gap-4 mb-12 flex-wrap items-center">
+            <MagneticButton to="/create" className="flex items-center gap-2.5 px-8 py-4 rounded-[24px] font-black uppercase tracking-wider text-[11px] text-white shadow-2xl transition-all" style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 12px 30px ${theme.accent}40` }}>
+              <Plus size={18} strokeWidth={3} /> Creează Grilă
+            </MagneticButton>
+            <div data-tutorial="btn-import"><ImportQuizButton /></div>
+            <MagneticButton to="/quizzes" className="flex items-center gap-2.5 px-8 py-4 rounded-[24px] font-bold text-xs uppercase tracking-wider glass-panel hover:bg-white/5 transition-all" style={{ color: theme.text, border: `1px solid ${theme.border}` }}>
+              <BookOpen size={16} /> Explorează
+            </MagneticButton>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: theme.text }}><Sparkles size={18} /> Grile recente</h2>
+              <Link to="/quizzes" className="text-xs font-bold uppercase tracking-widest hover:underline" style={{ color: theme.accent }}>Vezi tot</Link>
             </div>
-          ) : (
-            <div className="text-center py-12 rounded-2xl"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-              <motion.div
-                animate={{ y: [0, -8, 0] }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                className="text-4xl mb-3">📭</motion.div>
-              <p style={{ color: theme.text3 }}>Nicio grilă încă.</p>
-              <Link to="/create" className="text-sm hover:underline mt-1 inline-block" style={{ color: theme.accent }}>
-                Creează prima grilă →
-              </Link>
-            </div>
-          )}
-        </motion.div>
+            {recentQuizzes.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {recentQuizzes.map((q, i) => <QuizCard key={q.id} quiz={q} index={i} />)}
+              </div>
+            ) : (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center py-16 rounded-[40px] glass-panel border border-dashed border-white/10"
+              >
+                <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <BookOpen size={40} className="opacity-20" style={{ color: theme.text }} />
+                </div>
+                <h3 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Începe călătoria ta medicală</h3>
+                <p className="text-sm font-medium max-w-xs mx-auto mb-8" style={{ color: theme.text3 }}>
+                  Nu ai nicio grilă adăugată încă. Importă un fișier sau creează una manual pentru a începe studiul.
+                </p>
+                <MagneticButton to="/create" className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl font-black uppercase tracking-widest text-xs text-white shadow-xl" style={{ background: theme.accent }}>
+                  Creează Prima Grilă
+                </MagneticButton>
+              </motion.div>
+            )}
+          </motion.div>
+        </div>
       </div>
-    </div>
     </ErrorBoundary>
   );
 }

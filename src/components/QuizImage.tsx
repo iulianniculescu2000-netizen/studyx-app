@@ -41,11 +41,17 @@ function ImageSkeleton({ maxHeight }: { maxHeight: number }) {
   );
 }
 
-/** Full-screen lightbox */
+/** Full-screen lightbox with Smart Magnifier */
 function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
-  // Close on Escape
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
+  const [zoom, setZoom] = useState(false);
+  const [pos, setPosition] = useState({ x: 0, y: 0 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!zoom) return;
+    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - left) / width) * 100;
+    const y = ((e.clientY - top) / height) * 100;
+    setPosition({ x, y });
   };
 
   return (
@@ -54,53 +60,39 @@ function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: ()
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
       onClick={onClose}
-      onKeyDown={handleKey}
-      tabIndex={-1}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 19999,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(12px)',
-        padding: 24, cursor: 'zoom-out',
-      }}
+      className="fixed inset-0 z-[19999] flex items-center justify-center bg-black/90 backdrop-blur-xl p-6 cursor-zoom-out"
     >
-      {/* Close button */}
       <motion.button
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
+        whileHover={{ scale: 1.1, rotate: 90 }}
+        whileTap={{ scale: 0.9 }}
         onClick={onClose}
-        style={{
-          position: 'absolute', top: 20, right: 20,
-          width: 40, height: 40, borderRadius: '50%',
-          background: 'rgba(255,255,255,0.12)', border: 'none',
-          color: '#fff', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          backdropFilter: 'blur(4px)',
-        }}
+        className="absolute top-6 right-6 w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white backdrop-blur-md border border-white/10 z-[20000]"
       >
-        <X size={18} />
+        <X size={24} />
       </motion.button>
 
-      {/* Image */}
-      <motion.img
-        key="lightbox-img"
-        initial={{ scale: 0.88, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.88, opacity: 0 }}
-        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        src={src}
-        alt={alt}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: '90vw',
-          maxHeight: '85vh',
-          objectFit: 'contain',
-          borderRadius: 16,
-          boxShadow: '0 40px 120px rgba(0,0,0,0.7)',
-          cursor: 'default',
-        }}
-      />
+      <div className="relative max-w-[95vw] max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl">
+        <motion.img
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          src={src?.trim().replace(/\s/g, '')}
+          alt={alt}
+          onMouseMove={handleMouseMove}
+          onClick={(e) => { e.stopPropagation(); setZoom(!zoom); }}
+          className={`transition-all duration-300 ${zoom ? 'scale-[2.5] cursor-zoom-out' : 'cursor-zoom-in'}`}
+          style={{
+            maxHeight: '85vh',
+            objectFit: 'contain',
+            transformOrigin: `${pos.x}% ${pos.y}%`,
+          }}
+        />
+        {!zoom && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-black/50 text-white text-[10px] font-black uppercase tracking-[0.2em] backdrop-blur-md pointer-events-none">
+            Click pentru Lupa Medicală
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -143,7 +135,7 @@ export default function QuizImage({
         {/* Image */}
         {!error && (
           <img
-            src={src}
+            src={src?.trim().replace(/\s/g, '')}
             alt={alt}
             style={{
               display: loaded ? 'block' : 'none',

@@ -5,14 +5,16 @@ export async function parseImageOCR(file: File | string): Promise<string> {
 
   // Handle Electron environment
   if (window.electronAPI) {
-    if (file instanceof File && (file as any).path) {
-      const text = await window.electronAPI.readOCRPath((file as any).path);
+    const filePath = (file as { path?: string }).path;
+    if (file instanceof File && filePath) {
+      const text = await window.electronAPI.readOCRPath(filePath);
       if (text) return cleanText(text);
     }
     
     // If just calling it manually (opens dialog)
-    if (typeof file === 'object' && file.type?.startsWith('image/') && (window.electronAPI as any).openOCRImage) {
-      const text = await (window.electronAPI as any).openOCRImage();
+    const api = window.electronAPI as { openOCRImage?: () => Promise<string | null> };
+    if (typeof file === 'object' && file.type?.startsWith('image/') && api.openOCRImage) {
+      const text = await api.openOCRImage();
       return cleanText(text ?? '');
     }
   }
@@ -21,7 +23,7 @@ export async function parseImageOCR(file: File | string): Promise<string> {
   try {
     const { createWorker } = await import('tesseract.js');
     const worker = await createWorker('ron');
-    let source: any = file;
+    const source = file as string | File;
     const ret = await worker.recognize(source);
     await worker.terminate();
     return cleanText(ret.data.text);

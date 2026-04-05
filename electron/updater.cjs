@@ -387,9 +387,14 @@ function registerUpdaterIPC(mainWindow) {
     const installDist  = path.join(getAppRoot(), 'dist');
 
     // ── Step 1: Bootstrap overlay with full dist/ copy (first update only) ──
-    if (!fs.existsSync(overlayDist) && fs.existsSync(installDist)) {
+    const sentinelPath = path.join(overlayRoot, '.bootstrap-ok');
+    if ((!fs.existsSync(overlayDist) || !fs.existsSync(sentinelPath)) && fs.existsSync(installDist)) {
       sendToRenderer('updater:progress', { percent: 2, file: 'Pregătire overlay...', received: 0, total: 0 });
-      try { copyDirSync(installDist, overlayDist); } catch (e) {
+      try { 
+        if (fs.existsSync(overlayRoot)) fs.rmSync(overlayRoot, { recursive: true, force: true });
+        copyDirSync(installDist, overlayDist); 
+        fs.writeFileSync(sentinelPath, 'OK', 'utf-8');
+      } catch (e) {
         throw new Error(`Nu s-a putut crea overlay-ul local: ${e.message}`);
       }
     }
@@ -397,7 +402,9 @@ function registerUpdaterIPC(mainWindow) {
     // ── Step 2: Download changed files into overlay ───────────────────────
     let done = 0;
     for (const file of files) {
-      const destPath = path.join(overlayRoot, 'files', file.path);
+      // Security: Prevent path traversal via manifest
+      const safePath = path.normalize(file.path).replace(/^(\.\.[\/\\])+/, '');
+      const destPath = path.join(overlayRoot, 'files', safePath);
       try {
         await downloadFile(file.url, destPath, (pct, received, total) => {
           const overall = Math.round(((done + (pct > 0 ? pct / 100 : 0.5)) / files.length) * 90) + 5;

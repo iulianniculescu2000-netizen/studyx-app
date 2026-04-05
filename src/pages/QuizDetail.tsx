@@ -10,8 +10,9 @@ import { useStatsStore } from '../store/statsStore';
 import { groqStream } from '../lib/groq';
 import type { QuizImportData } from '../types';
 import { HERO_COLOR_MAP } from '../theme/colorMaps';
+import { type Theme } from '../theme/themes';
 
-const diffColor = { easy: '#30D158', medium: '#FF9F0A', hard: '#FF453A' };
+const diffColor = (t: Theme) => ({ easy: t.success, medium: '#FF9F0A', hard: '#FF453A' });
 const diffLabel = { easy: 'Ușor', medium: 'Mediu', hard: 'Dificil' };
 
 /**
@@ -91,11 +92,12 @@ Comportament:
           return updated;
         });
       }, 0.7, controller.signal);
-    } catch (e: any) {
-      if (e.name === 'AbortError') return; // user navigated away — no error shown
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === 'AbortError') return; // user navigated away — no error shown
+      const errorMessage = e instanceof Error ? e.message : 'Eroare necunoscută.';
       setChatMessages((m) => {
         const updated = [...m];
-        updated[updated.length - 1] = { role: 'assistant', content: `Eroare: ${e.message}` };
+        updated[updated.length - 1] = { role: 'assistant', content: `Eroare: ${errorMessage}` };
         return updated;
       });
     } finally {
@@ -170,7 +172,9 @@ Comportament:
           if (y + imgH > 277) { doc.addPage(); y = margin; }
           doc.addImage(q.imageUrl, imgFormat, margin, y, imgW, imgH);
           y += imgH + 3;
-        } catch {}
+        } catch (err) {
+          console.error('[QuizDetail] PDF image error:', err);
+        }
       }
 
       q.options.forEach((opt, oi) => {
@@ -416,7 +420,11 @@ Comportament:
             </div>
             {quiz.questions.length > 5 && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-2xl flex-1 max-w-[220px] transition-all focus-within:ring-2"
-                style={{ background: theme.surface2, border: `1px solid ${theme.border2}`, ringColor: `${theme.accent}33` } as any}>
+                style={{ 
+                  background: theme.surface2, 
+                  border: `1px solid ${theme.border2}`, 
+                  ['--ring-color' as string]: `${theme.accent}33` 
+                } as React.CSSProperties}>
                 <Search size={14} style={{ color: theme.text3 }} />
                 <input
                   type="text" placeholder="Caută în întrebări..." value={qSearch}
@@ -452,8 +460,8 @@ Comportament:
                       )}
                       {q.difficulty && (
                         <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg border shadow-sm"
-                          style={{ background: `${diffColor[q.difficulty]}15`, color: diffColor[q.difficulty], borderColor: `${diffColor[q.difficulty]}30` }}>
-                          {diffLabel[q.difficulty]}
+                          style={{ background: `${diffColor(theme)[q.difficulty]}15`, color: diffColor(theme)[q.difficulty], borderColor: `${diffColor(theme)[q.difficulty]}30` }}>
+                          {diffLabel[q.difficulty as keyof typeof diffLabel]}
                         </span>
                       )}
                     </div>

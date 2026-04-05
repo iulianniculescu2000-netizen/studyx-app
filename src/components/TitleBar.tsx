@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
@@ -11,6 +12,7 @@ declare global {
       minimize: () => void;
       maximize: () => void;
       close: () => void;
+      destroy: () => void;
       isMaximized: () => Promise<boolean>;
       onMaximized: (cb: (v: boolean) => void) => () => void;
       // App lifecycle
@@ -18,8 +20,8 @@ declare global {
       autoBackup: (data: string) => Promise<{ success: boolean; path?: string; error?: string }>;
       isElectron: boolean;
       // Updater
-      updaterCheck: () => Promise<any>;
-      updaterDownload: (manifest: any) => Promise<boolean>;
+      updaterCheck: () => Promise<unknown>;
+      updaterDownload: (manifest: unknown) => Promise<boolean>;
       updaterRestart: () => void;
       updaterGetVersion: () => Promise<string>;
       onUpdateProgress: (cb: (data: { percent: number; file: string }) => void) => () => void;
@@ -39,10 +41,15 @@ declare global {
       setHardwareAccel: (enabled: boolean) => Promise<void>;
       getSettings: () => Promise<{ hardwareAccel?: boolean }>;
       hardReset: () => Promise<void>;
+      // Profile storage
+      storageSave: (profileId: string, namespace: string, data: unknown) => Promise<boolean>;
+      storageLoad: (profileId: string, namespace: string) => Promise<unknown>;
+      onAppClose: (cb: () => void) => () => void;
     };
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const isElectron = typeof window !== 'undefined' && !!window.electronAPI?.isElectron;
 
 // Human-readable page titles per route
@@ -71,22 +78,26 @@ export default function TitleBar() {
   const theme = useTheme();
   const location = useLocation();
 
+  useEffect(() => {
+    if (!window.electronAPI?.onMaximized) return;
+    const unsub = window.electronAPI.onMaximized(() => {});
+    window.electronAPI.isMaximized().catch(() => {});
+    return () => unsub();
+  }, []);
+
   if (!isElectron) return null;
 
   const pageTitle = getPageTitle(location.pathname);
 
   return (
     <div
-      className="flex items-center select-none flex-shrink-0"
+      className="flex items-center select-none flex-shrink-0 glass-panel"
       style={{
         height: 40,
         position: 'relative',
-        background: theme.navBg,
-        backdropFilter: 'blur(30px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(30px) saturate(150%)',
         borderBottom: `1px solid ${theme.border}`,
         transition: 'background 0.3s ease',
-      } as any}
+      } as React.CSSProperties}
     >
       {/* 
        * Bulletproof Drag Zone:
@@ -101,7 +112,7 @@ export default function TitleBar() {
           right: 138, // Leave space for window controls (46 * 3)
           WebkitAppRegion: 'drag',
           zIndex: 0,
-        } as any}
+        } as React.CSSProperties & { WebkitAppRegion: string }}
       />
 
       <div
@@ -109,7 +120,7 @@ export default function TitleBar() {
         style={{ position: 'relative', zIndex: 1 }}
       >
         {/* Left: Page Title — width matches Sidebar collapse/expand states indirectly */}
-        <div className="flex items-center pl-4 overflow-hidden" style={{ minWidth: 140, WebkitAppRegion: 'no-drag' } as any}>
+        <div className="flex items-center pl-4 overflow-hidden" style={{ minWidth: 140, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}>
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
               key={pageTitle}
@@ -126,12 +137,12 @@ export default function TitleBar() {
         </div>
 
         {/* Center: Search — higher z-index to ensure clickability */}
-        <div className="flex-1 flex items-center justify-center px-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <div className="flex-1 flex items-center justify-center px-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}>
           <GlobalSearchTrigger />
         </div>
 
         {/* Right: Window Controls area — must be absolutely NO-DRAG */}
-        <div style={{ minWidth: 138, flexShrink: 0, WebkitAppRegion: 'no-drag' } as any} />
+        <div style={{ minWidth: 138, flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }} />
       </div>
     </div>
   );

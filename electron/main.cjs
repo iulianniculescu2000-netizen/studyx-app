@@ -2,6 +2,7 @@ console.log('[StudyX] Main process starting...');
 const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, nativeImage, Menu, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const fsp = require('fs').promises;
 const { registerUpdaterIPC } = require('./updater.cjs');
 
 const isDev = !app.isPackaged;
@@ -17,75 +18,54 @@ if (!app.isPackaged) {
 
 let mainWindow = null;
 let tray = null;
+let isQuitting = false;
 
 // ── Helper Functions ────────────────────────────────────────────────────────
 
 const extractPdfText = async (filePath) => {
-  const regexFallback = (buffer) => {
-    const raw = buffer.toString('latin1');
-    const textChunks = [];
-    const arrayRe = /\[((?:\([^)]*\)|-?\d+(?:\.\d+)?|\s+)+)\]\s*TJ/g;
-    let m;
-    while ((m = arrayRe.exec(raw)) !== null) {
-      const content = m[1];
-      const innerParenRe = /\(([^)]*)\)/g;
-      while ((innerParenRe.exec(content)) !== null) {
-        let t = RegExp.$1.replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
-                         .replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\\\/g, '\\');
+  // Optimized: Use a promise to keep UI responsive
+  return new Promise(async (resolve) => {
+    const regexFallback = (buffer) => {
+      const raw = buffer.toString('latin1');
+      const textChunks = [];
+      const arrayRe = /\[((?:\([^)]*\)|-?\d+(?:\.\d+)?|\s+)+)\]\s*TJ/g;
+      let m;
+      while ((m = arrayRe.exec(raw)) !== null) {
+        const content = m[1];
+        const innerParenRe = /\(([^)]*)\)/g;
+        while ((innerParenRe.exec(content)) !== null) {
+          let t = RegExp.$1.replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
+                           .replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\\\/g, '\\');
+          if (t.trim().length > 0) textChunks.push(t);
+        }
+      }
+      const parenRe = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*(?:Tj|'|")/g;
+      while ((m = parenRe.exec(raw)) !== null) {
+        let t = m[1]
+          .replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
+          .replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\\\/g, '\\')
+          .replace(/\\(.)/g, '$1');
         if (t.trim().length > 0) textChunks.push(t);
       }
-    }
-    const parenRe = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*(?:Tj|'|")/g;
-    while ((m = parenRe.exec(raw)) !== null) {
-      let t = m[1]
-        .replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
-        .replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\\\/g, '\\')
-        .replace(/\\(.)/g, '$1');
-      if (t.trim().length > 0) textChunks.push(t);
-    }
-    const hexRe = /<([0-9A-Fa-f]{2,})>/g;
-    while ((m = hexRe.exec(raw)) !== null) {
-      try {
-        const hex = m[1];
-        let decoded = '';
-        for (let i = 0; i < hex.length; i += 2) {
-          const charCode = parseInt(hex.substr(i, 2), 16);
-          if (charCode >= 32) decoded += String.fromCharCode(charCode);
-        }
-        if (decoded.trim().length > 1) textChunks.push(decoded);
-      } catch (e) {}
-    }
-    return textChunks.join(' ').replace(/\s+/g, ' ').trim();
-  };
-
-  try {
-    const pdfParse = require('pdf-parse');
-    const buffer = fs.readFileSync(filePath);
-    const options = {
-      pagerender: (pageData) => {
-        return pageData.getTextContent().then(textContent => {
-          let lastY, text = '';
-          for (let item of textContent.items) {
-            if (lastY === item.transform[5] || !lastY) text += item.str;
-            else text += '\n' + item.str;
-            lastY = item.transform[5];
-          }
-          return text;
-        });
-      }
+      return textChunks.join(' ').replace(/\s+/g, ' ').trim();
     };
-    const data = await pdfParse(buffer, options);
-    const pdfText = data.text.replace(/\s+/g, ' ').trim();
-    const fallbackText = regexFallback(buffer);
-    const result = pdfText.length > fallbackText.length ? pdfText : fallbackText;
-    return result.length > 50 ? result : null;
-  } catch (err) {
+
     try {
-      const buffer = fs.readFileSync(filePath);
-      const fallback = regexFallback(buffer);
-      return fallback.length > 50 ? fallback : null;
-    } catch { return null; }
-  }
+      const pdfParse = require('pdf-parse');
+      const buffer = await fsp.readFile(filePath);
+      pdfParse(buffer).then(data => {
+        const pdfText = data.text.replace(/\s+/g, ' ').trim();
+        const fallbackText = regexFallback(buffer);
+        const result = pdfText.length > fallbackText.length ? pdfText : fallbackText;
+        resolve(result.length > 10 ? result : null);
+      }).catch(() => {
+        const fallback = regexFallback(buffer);
+        resolve(fallback.length > 10 ? fallback : null);
+      });
+    } catch (err) {
+      resolve(null);
+    }
+  });
 };
 
 const extractDocxText = async (filePath) => {
@@ -121,7 +101,18 @@ function registerIpcHandlers() {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
     else mainWindow?.maximize();
   });
-  ipcMain.on('win:close', () => mainWindow?.close());
+  
+  // Custom close button click
+  ipcMain.on('win:close', () => {
+    mainWindow?.close();
+  });
+
+  // Final exit after data is saved
+  ipcMain.on('win:destroy', () => {
+    isQuitting = true;
+    mainWindow?.close();
+  });
+
   ipcMain.handle('win:isMaximized', () => mainWindow?.isMaximized() ?? false);
 
   // File import IPCs
@@ -131,10 +122,11 @@ function registerIpcHandlers() {
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
     });
     if (result.canceled) return null;
-    return result.filePaths.map((p) => ({
+    const contents = await Promise.all(result.filePaths.map(async (p) => ({
       name: path.basename(p),
-      content: fs.readFileSync(p, 'utf-8'),
-    }));
+      content: await fsp.readFile(p, 'utf-8'),
+    })));
+    return contents;
   });
 
   ipcMain.handle('dialog:saveFile', async (_, { defaultPath, content }) => {
@@ -143,7 +135,7 @@ function registerIpcHandlers() {
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (result.canceled || !result.filePath) return false;
-    fs.writeFileSync(result.filePath, content, 'utf-8');
+    await fsp.writeFile(result.filePath, content, 'utf-8');
     return true;
   });
 
@@ -156,7 +148,13 @@ function registerIpcHandlers() {
     return extractPdfText(result.filePaths[0]);
   });
 
-  ipcMain.handle('pdf:readPath', async (_, filePath) => extractPdfText(filePath));
+  ipcMain.handle('pdf:readPath', async (_, filePath) => {
+    if (!filePath || !filePath.toLowerCase().endsWith('.pdf')) return null;
+    try {
+      await fsp.access(filePath);
+      return extractPdfText(filePath);
+    } catch { return null; }
+  });
 
   ipcMain.handle('dialog:openDocx', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -167,7 +165,13 @@ function registerIpcHandlers() {
     return extractDocxText(result.filePaths[0]);
   });
 
-  ipcMain.handle('docx:readPath', async (_, filePath) => extractDocxText(filePath));
+  ipcMain.handle('docx:readPath', async (_, filePath) => {
+    if (!filePath || !filePath.toLowerCase().endsWith('.docx')) return null;
+    try {
+      await fsp.access(filePath);
+      return extractDocxText(filePath);
+    } catch { return null; }
+  });
 
   ipcMain.handle('dialog:openOCRImage', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -178,7 +182,15 @@ function registerIpcHandlers() {
     return extractOCRText(result.filePaths[0]);
   });
 
-  ipcMain.handle('image:readOCR', async (_, filePath) => extractOCRText(filePath));
+  ipcMain.handle('image:readOCR', async (_, filePath) => {
+    const validExts = ['.jpg', '.jpeg', '.png', '.webp', '.bmp'];
+    const ext = path.extname(filePath).toLowerCase();
+    if (!filePath || !validExts.includes(ext)) return null;
+    try {
+      await fsp.access(filePath);
+      return extractOCRText(filePath);
+    } catch { return null; }
+  });
 
   ipcMain.handle('dialog:openText', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -189,7 +201,7 @@ function registerIpcHandlers() {
       ],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    return fs.readFileSync(result.filePaths[0], 'utf-8');
+    return fsp.readFile(result.filePaths[0], 'utf-8');
   });
 
   // Base64 image import
@@ -203,7 +215,8 @@ function registerIpcHandlers() {
     const ext = path.extname(filePath).toLowerCase().slice(1);
     const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
     const mime = mimeMap[ext] || 'image/jpeg';
-    return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+    const buffer = await fsp.readFile(filePath);
+    return `data:${mime};base64,${buffer.toString('base64')}`;
   });
 
   // Settings & System
@@ -212,31 +225,38 @@ function registerIpcHandlers() {
     return true;
   });
 
-  ipcMain.handle('app:setHardwareAccel', (_, enabled) => {
+  ipcMain.handle('app:setHardwareAccel', async (_, enabled) => {
     const settingsPath = path.join(app.getPath('userData'), 'settings.json');
     let settings = {};
-    try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')); } catch {}
+    try { 
+      const data = await fsp.readFile(settingsPath, 'utf-8');
+      settings = JSON.parse(data); 
+    } catch {}
     settings.hardwareAccel = enabled;
-    fs.writeFileSync(settingsPath, JSON.stringify(settings), 'utf-8');
+    await fsp.writeFile(settingsPath, JSON.stringify(settings), 'utf-8');
     return true;
   });
 
-  ipcMain.handle('app:getSettings', () => {
+  ipcMain.handle('app:getSettings', async () => {
     const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-    try { return JSON.parse(fs.readFileSync(settingsPath, 'utf-8')); } catch { return {}; }
+    try { 
+      const data = await fsp.readFile(settingsPath, 'utf-8');
+      return JSON.parse(data); 
+    } catch { return {}; }
   });
 
   ipcMain.handle('app:hardReset', async () => {
     try {
       await session.defaultSession.clearStorageData();
       const ud = app.getPath('userData');
-      for (const entry of fs.readdirSync(ud)) {
+      const entries = await fsp.readdir(ud);
+      for (const entry of entries) {
         const full = path.join(ud, entry);
-        if (entry === 'settings.json') continue; // Optional: keep settings or wipe them too
+        if (entry === 'settings.json') continue;
         try {
-          const stat = fs.statSync(full);
-          if (stat.isDirectory()) fs.rmSync(full, { recursive: true, force: true });
-          else fs.unlinkSync(full);
+          const stat = await fsp.stat(full);
+          if (stat.isDirectory()) await fsp.rm(full, { recursive: true, force: true });
+          else await fsp.unlink(full);
         } catch {}
       }
     } catch (e) { console.warn('[StudyX] Hard reset error:', e); }
@@ -251,21 +271,61 @@ function registerIpcHandlers() {
       filters: [{ name: 'CSV', extensions: ['csv'] }],
     });
     if (result.canceled || !result.filePath) return false;
-    fs.writeFileSync(result.filePath, content, 'utf-8');
+    await fsp.writeFile(result.filePath, content, 'utf-8');
     return true;
   });
 
   ipcMain.handle('app:autoBackup', async (_, { data }) => {
     try {
       const backupDir = path.join(app.getPath('documents'), 'StudyX-Backups');
-      fs.mkdirSync(backupDir, { recursive: true });
-      const existing = fs.readdirSync(backupDir).filter(f => f.startsWith('studyx-backup-')).sort();
-      while (existing.length >= 10) fs.unlinkSync(path.join(backupDir, existing.shift()));
+      await fsp.mkdir(backupDir, { recursive: true });
+      const files = await fsp.readdir(backupDir);
+      const existing = files.filter(f => f.startsWith('studyx-backup-')).sort();
+      while (existing.length >= 10) {
+        const toDelete = existing.shift();
+        if (toDelete) await fsp.unlink(path.join(backupDir, toDelete));
+      }
       const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const filePath = path.join(backupDir, `studyx-backup-${dateStr}.json`);
-      fs.writeFileSync(filePath, data, 'utf-8');
+      await fsp.writeFile(filePath, data, 'utf-8');
       return { success: true, path: filePath };
     } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  // Persistent Disk Storage for Profiles (Fixes 5MB LocalStorage limit)
+  ipcMain.handle('storage:save', async (_, { profileId, namespace, data }) => {
+    try {
+      const safeId = profileId.replace(/[^a-z0-9_-]/gi, '_');
+      const safeNs = namespace.replace(/[^a-z0-9_-]/gi, '_');
+      const serialized = JSON.stringify(data);
+      // Increased limit to 500MB for large image-heavy quiz sets
+      if (serialized.length > 500 * 1024 * 1024) throw new Error('Data too large (>500MB)');
+      const storageDir = path.join(app.getPath('userData'), 'profiles', safeId);
+      await fsp.mkdir(storageDir, { recursive: true });
+      const filePath = path.join(storageDir, `${safeNs}.json`);
+      await fsp.writeFile(filePath, serialized, 'utf-8');
+      return true;
+    } catch (err) {
+      console.error('[Storage] Save error:', err);
+      return false;
+    }
+  });
+
+  ipcMain.handle('storage:load', async (_, { profileId, namespace }) => {
+    try {
+      const safeId = profileId.replace(/[^a-z0-9_-]/gi, '_');
+      const safeNs = namespace.replace(/[^a-z0-9_-]/gi, '_');
+      const filePath = path.join(app.getPath('userData'), 'profiles', safeId, `${safeNs}.json`);
+      try {
+        const data = await fsp.readFile(filePath, 'utf-8');
+        return JSON.parse(data);
+      } catch {
+        return null;
+      }
+    } catch (err) {
+      console.error('[Storage] Load error:', err);
+      return null;
+    }
   });
 
   ipcMain.once('app:ready', () => mainWindow?.show());
@@ -274,7 +334,9 @@ function registerIpcHandlers() {
 // ── Main Functions ───────────────────────────────────────────────────────────
 
 function createWindow() {
-  const iconPath = path.join(__dirname, '../public/icon.png');
+  const icoPath = path.join(__dirname, '../public/icon.ico');
+  const pngPath = path.join(__dirname, '../public/icon.png');
+  const iconPath = fs.existsSync(icoPath) ? icoPath : (fs.existsSync(pngPath) ? pngPath : undefined);
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -289,7 +351,7 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
     },
-    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    icon: iconPath,
     show: false,
   });
 
@@ -299,7 +361,6 @@ function createWindow() {
     mainWindow.webContents.on('console-message', (_, level, message, line, sourceId) => {
       if (level >= 2) console.error(`[Renderer] ${message} (${sourceId}:${line})`);
     });
-    // Fallback: show window after 3s even if app:ready never fires
     setTimeout(() => { if (mainWindow && !mainWindow.isVisible()) mainWindow.show(); }, 3000);
   } else {
     const overlayHtml = path.join(app.getPath('userData'), 'app-overlay', 'files', 'dist', 'index.html');
@@ -309,19 +370,27 @@ function createWindow() {
 
   mainWindow.on('maximize', () => mainWindow?.webContents.send('win:maximized', true));
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('win:maximized', false));
-  mainWindow.on('close', () => { app.quit(); });
+  
+  // Handle window close: allow renderer to save state first
+  mainWindow.on('close', (e) => {
+    if (mainWindow && !isQuitting) {
+      e.preventDefault();
+      mainWindow.webContents.send('app:request-close');
+    }
+  });
 
-  // Re-register updater IPC for the new window
   registerUpdaterIPC(mainWindow);
 }
 
 function scheduleDailyReminder() {
   if (!Notification.isSupported()) return;
-  const checkAndNotify = () => {
+  const checkAndNotify = async () => {
     const today = new Date().toISOString().split('T')[0];
     const stored = path.join(app.getPath('userData'), 'last-notified.txt');
     let lastNotified = '';
-    try { lastNotified = fs.readFileSync(stored, 'utf-8').trim(); } catch {}
+    try { 
+      lastNotified = (await fsp.readFile(stored, 'utf-8')).trim(); 
+    } catch {}
     if (lastNotified === today) return;
 
     if (mainWindow) {
@@ -341,13 +410,13 @@ function scheduleDailyReminder() {
             return '';
           } catch { return ''; }
         })()
-      `).then(lastStudy => {
+      `).then(async (lastStudy) => {
         if (lastStudy !== today) {
           new Notification({
             title: '📚 StudyX — Ai studiat azi?',
             body: 'Nu uita să-ți faci sesiunea de grile de azi! Menține streak-ul! 🔥',
           }).show();
-          fs.writeFileSync(stored, today);
+          try { await fsp.writeFile(stored, today); } catch {}
         }
       }).catch(() => {});
     }
@@ -358,41 +427,34 @@ function scheduleDailyReminder() {
 
 // ── App Lifecycle ────────────────────────────────────────────────────────────
 
-// Apply hardware acceleration
-try {
-  const settingsPath = path.join(app.getPath('userData'), 'settings.json');
-  if (JSON.parse(fs.readFileSync(settingsPath, 'utf-8')).hardwareAccel === false) {
-    app.disableHardwareAcceleration();
-  }
-} catch {}
+const gotTheLock = app.requestSingleInstanceLock();
 
-// Single instance lock
-if (!app.requestSingleInstanceLock()) {
-  console.log('[StudyX] Another instance is already running, quitting...');
+if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
   });
 
   app.whenReady().then(async () => {
-    // First-run cleanup
     const ud = app.getPath('userData');
     const sentinelPath = path.join(ud, '.first-run');
-    if (!fs.existsSync(sentinelPath)) {
+    try {
+      await fsp.access(sentinelPath);
+    } catch {
+      // First run or file missing
       try { await session.defaultSession.clearStorageData(); } catch {}
-      if (!fs.existsSync(ud)) fs.mkdirSync(ud, { recursive: true });
-      fs.writeFileSync(sentinelPath, new Date().toISOString());
+      try { await fsp.mkdir(ud, { recursive: true }); } catch {}
+      await fsp.writeFile(sentinelPath, new Date().toISOString());
     }
-
-    console.log('[StudyX] App is ready, registering handlers and creating window...');
     registerIpcHandlers();
     createWindow();
     scheduleDailyReminder();
-
-    // Tray
     try {
-      const trayIcon = nativeImage.createFromPath(path.join(__dirname, '../public/icon.png')).resize({ width: 16, height: 16 });
+      const trayIcon = nativeImage.createFromPath(path.join(__dirname, '../public/icon.ico')).resize({ width: 16, height: 16 });
       tray = new Tray(trayIcon);
       tray.setContextMenu(Menu.buildFromTemplate([
         { label: 'Deschide StudyX', click: () => mainWindow?.show() },
@@ -404,8 +466,5 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-app.on('window-all-closed', () => { 
-  console.log('[StudyX] All windows closed, quitting app...');
-  if (process.platform !== 'darwin') app.quit(); 
-});
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

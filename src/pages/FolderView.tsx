@@ -51,7 +51,10 @@ export default function FolderView() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="text-center py-20 rounded-2xl"
             style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-            <div className="text-5xl mb-4">{folder?.emoji ?? '📋'}</div>
+            <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center"
+              style={{ background: `${accentColor}15` }}>
+              <span style={{ fontSize: 28 }}>{folder?.emoji ?? '📋'}</span>
+            </div>
             <p className="font-medium mb-1" style={{ color: theme.text }}>Folderul este gol</p>
             <p className="text-sm mb-4" style={{ color: theme.text3 }}>
               Adaugă grile sau importă un fișier JSON

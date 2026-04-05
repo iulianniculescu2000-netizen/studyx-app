@@ -4,7 +4,7 @@ import { BookOpen, Plus, Home, Palette, X, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
-import { THEME_LIST } from '../theme/themes';
+import { THEME_LIST, type Theme, type ThemeId } from '../theme/themes';
 
 export default function Navbar() {
   const location = useLocation();
@@ -22,10 +22,10 @@ export default function Navbar() {
         initial={{ y: -80, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-        className="fixed top-0 left-0 right-0 z-50"
+        className="fixed top-0 left-0 right-0 z-50 glass-panel premium-shadow"
       >
         <div className="px-6 py-3 flex items-center justify-between"
-          style={{ background: theme.navBg, backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)', borderBottom: `1px solid ${theme.border}` }}>
+          style={{ background: theme.navBg, borderBottom: `1px solid ${theme.border}` }}>
 
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 group">
@@ -97,7 +97,7 @@ export default function Navbar() {
                 {THEME_LIST.map((t) => (
                   <motion.button key={t.id}
                     whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                    onClick={() => { setTheme(t.id as any); setShowThemePicker(false); }}
+                    onClick={() => { setTheme(t.id as ThemeId); setShowThemePicker(false); }}
                     className="p-2 rounded-xl text-center transition-all"
                     style={{
                       background: themeId === t.id ? `${theme.accent}20` : theme.surface,
@@ -156,7 +156,7 @@ export default function Navbar() {
 }
 
 function NavLink({ to, label, icon, active, theme }: {
-  to: string; label: string; icon: React.ReactNode; active: boolean; theme: any;
+  to: string; label: string; icon: React.ReactNode; active: boolean; theme: Theme;
 }) {
   return (
     <Link to={to}

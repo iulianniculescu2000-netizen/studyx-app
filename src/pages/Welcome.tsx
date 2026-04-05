@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { ArrowRight, Sparkles, Check, ChevronLeft } from 'lucide-react';
 import { useUserStore } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
-import { THEME_LIST } from '../theme/themes';
+import { THEME_LIST, type ThemeId } from '../theme/themes';
+import Logo from '../components/Logo';
 
 interface Props {
   onBack?: () => void;
@@ -79,12 +80,9 @@ export default function Welcome({ onBack }: Props) {
                   initial={{ scale: 0, rotate: -10 }}
                   animate={{ scale: 1, rotate: 0 }}
                   transition={{ type: 'spring', stiffness: 240, damping: 18, delay: 0.1 }}
-                  className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center text-2xl"
-                  style={{
-                    background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
-                    boxShadow: `0 16px 40px ${theme.accent}40`,
-                  }}>
-                  📚
+                  className="mx-auto mb-5 flex items-center justify-center"
+                >
+                  <Logo size={80} />
                 </motion.div>
                 <motion.h1
                   initial={{ opacity: 0, y: 12 }}
@@ -275,7 +273,7 @@ export default function Welcome({ onBack }: Props) {
                       initial={{ opacity: 0, scale: 0.88 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: 0.4 + i * 0.05, duration: 0.3 }}
-                      onClick={() => setTheme(t.id as any)}
+                      onClick={() => setTheme(t.id as ThemeId)}
                       whileHover={{ scale: 1.025, y: -1 }}
                       whileTap={{ scale: 0.97 }}
                       className="p-3.5 rounded-2xl text-left transition-all relative overflow-hidden"

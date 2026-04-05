@@ -254,8 +254,8 @@ export default function UpdateModal() {
       }
 
       markContentInstalled(pack.id);
-    } catch (err: any) {
-      setContentError(err.message ?? 'Eroare la instalare');
+    } catch (err: unknown) {
+      setContentError(err instanceof Error ? err.message : 'Eroare la instalare');
     } finally {
       setContentInstalling(null);
     }

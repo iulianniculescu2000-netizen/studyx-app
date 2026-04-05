@@ -2,7 +2,7 @@
   "name": "studyx",
   "productName": "StudyX",
   "private": true,
-  "version": "1.0.8",
+  "version": "1.0.0",
   "type": "module",
   "description": "Aplicatie de grile pentru studenti la medicina",
   "author": "StudyX",
@@ -12,6 +12,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "dist": "vite build && electron-builder --win --x64",
+    "dist:packager": "npm run build && electron-packager . StudyX --platform=win32 --arch=x64 --out=release --overwrite --icon=public/icon.png",
     "generate-icon": "node scripts/generate-premium-assets.cjs",
     "prepare-update": "npm run build && node scripts/prepare-update.cjs",
     "electron:dev": "cross-env.cmd NODE_ENV=development concurrently.cmd \"vite.cmd\" \"wait-on.cmd http://localhost:5173 && electron.cmd .\"",
@@ -19,56 +21,22 @@
     "electron:build:dir": "npm run generate-icon && npm run build && electron-builder.cmd --dir"
   },
   "build": {
-    "electronVersion": "41.0.3",
-    "appId": "com.studyx.medical",
+    "appId": "com.studyx.app",
     "productName": "StudyX",
-    "copyright": "Copyright © 2025 StudyX",
-    "asar": true,
-    "compression": "maximum",
+    "win": {
+      "target": "portable",
+      "icon": "public/icon.png",
+      "forceCodeSigning": false
+    },
     "directories": {
-      "output": "release",
-      "buildResources": "build"
+      "output": "release"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "public/icon.png",
-      "package.json",
-      "!**/*.map",
-      "!**/*.ts",
-      "node_modules/pdf-parse/**/*",
-      "!node_modules/pdf-parse/test/**/*"
-    ],
-    "win": {
-      "icon": "public/icon.png",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "forceCodeSigning": false,
-      "signAndEditExecutable": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": true,
-      "allowElevation": true,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "StudyX",
-      "menuCategory": "StudyX",
-      "deleteAppDataOnUninstall": true,
-      "include": "build/installer.nsh",
-      "license": "LICENSE.txt",
-      "runAfterFinish": true,
-      "installerSidebar": "build/sidebar.bmp",
-      "installerHeader": "build/header.bmp"
-    }
+      "node_modules/**/*",
+      "package.json"
+    ]
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

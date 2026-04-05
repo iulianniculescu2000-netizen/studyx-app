@@ -24,5 +24,7 @@ export function updateCoverage(topic: string, increment = 0.1) {
   }
   try {
     localStorage.setItem(COVERAGE_KEY, JSON.stringify(all));
-  } catch {}
+  } catch (err) {
+    console.error('[Coverage] Failed to save coverage:', err);
+  }
 }

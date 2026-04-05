@@ -18,6 +18,7 @@ import ConfirmDialog from './ConfirmDialog';
 import AISettings from './AISettings';
 import Portal from './Portal';
 import UpdateModal from './UpdateModal';
+import Logo from './Logo';
 import type { QuizColor } from '../types';
 
 const FOLDER_COLORS: { id: QuizColor; bg: string }[] = [
@@ -76,7 +77,7 @@ function UpdateButton({
   localVersion: string;
   downloadPercent: number;
   onOpen: () => void;
-  theme: any;
+  theme: import('../theme/themes').Theme;
 }) {
   if (!window.electronAPI?.updaterCheck) return null;
 
@@ -293,42 +294,44 @@ function NavItem({
     <NavLink to={to} end={end} style={{ textDecoration: 'none', display: 'block' }}>
       {({ isActive }) => (
         <motion.div
-          whileHover={{ x: collapsed ? 0 : 2 }}
-          transition={{ duration: 0.15 }}
-          className="relative flex items-center rounded-xl transition-colors"
+          whileHover={{ x: collapsed ? 0 : 4, scale: 1.02 }}
+          whileTap={{ scale: 0.96 }}
+          transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          className="relative flex items-center transition-all"
           style={{
             gap: collapsed ? 0 : 10,
-            padding: collapsed ? '9px' : '8px 12px',
+            padding: collapsed ? '10px' : '6px 10px',
             justifyContent: collapsed ? 'center' as const : 'flex-start' as const,
-            background: isActive ? `${theme.accent}16` : 'transparent',
-            color: isActive ? theme.accent : theme.text2,
+            background: isActive ? theme.accent : 'transparent',
+            color: isActive ? '#ffffff' : theme.text2,
             fontSize: 14,
-            fontWeight: isActive ? 600 : 400,
+            fontWeight: isActive ? 700 : 500,
             cursor: 'pointer',
+            borderRadius: '10px',
           }}
           onMouseEnter={(e) => {
-            if (!isActive) (e.currentTarget as HTMLElement).style.background = `${theme.accent}09`;
+            if (!isActive) {
+              e.currentTarget.style.background = theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+            }
           }}
           onMouseLeave={(e) => {
-            if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent';
+            if (!isActive) {
+              e.currentTarget.style.background = 'transparent';
+            }
           }}
         >
-          {/* Active left accent bar with shimmer */}
+          {/* Active indicator bar */}
           {isActive && (
             <motion.div
-              layoutId="nav-active-bar"
-              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full overflow-hidden"
-              style={{ width: 3, height: 18, background: theme.accent }}
-              transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-            >
-              <motion.div
-                animate={{ y: ['-100%', '200%'] }}
-                transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut', repeatDelay: 0.8 }}
-                style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.55)', borderRadius: '50%' }}
-              />
-            </motion.div>
+              layoutId="nav-active-indicator"
+              className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 rounded-full"
+              style={{ background: theme.accent, boxShadow: `0 0 10px ${theme.accent}60` }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            />
           )}
-          <span style={{ flexShrink: 0 }}>{icon}</span>
+          <span style={{ flexShrink: 0, filter: isActive ? `drop-shadow(0 0 8px ${theme.accent}40)` : 'none' }}>
+            {icon}
+          </span>
           {!collapsed && (
             <>
               <span className="flex-1 truncate">{label}</span>
@@ -351,6 +354,12 @@ export default function Sidebar() {
   const [collapsed, toggleCollapsed] = useCollapsed();
   const { status: updateStatus, localVersion, downloadPercent,
     setShowUpdateModal } = useUpdateStore();
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const [showAISettings, setShowAISettings] = useState(false);
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
@@ -402,24 +411,19 @@ export default function Sidebar() {
   return (
     <motion.div
       animate={{ width: collapsed ? 64 : 260 }}
-      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-      className="flex flex-col flex-shrink-0 select-none overflow-hidden"
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      className="flex flex-col flex-shrink-0 select-none overflow-hidden glass-panel"
       style={{
         height: '100vh',
-        background: theme.isDark
-          ? 'rgba(10,10,12,0.85)'
-          : 'rgba(255,255,255,0.75)',
-        borderRight: `1px solid ${theme.border}`,
-        backdropFilter: 'blur(40px) saturate(160%)',
-        WebkitBackdropFilter: 'blur(40px) saturate(160%)',
+        borderRight: `0.5px solid ${theme.border}`,
         position: 'relative',
         zIndex: 50,
-      } as any}
+      } as React.CSSProperties}
     >
       {/* ── Drag region matches TitleBar ── */}
       <div
         style={{
-          height: 40,
+          height: 48,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
@@ -427,24 +431,15 @@ export default function Sidebar() {
           paddingLeft: collapsed ? 0 : 16,
           borderBottom: `1px solid ${theme.border}`,
           WebkitAppRegion: 'drag',
-        } as any}
+        } as React.CSSProperties & { WebkitAppRegion: string }}
       >
-        <div
-          className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
-          style={{
-            background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
-            boxShadow: `0 4px 12px ${theme.accent}40`,
-            WebkitAppRegion: 'no-drag',
-          } as any}
-        >
-          SX
-        </div>
+        <Logo size={24} className="flex-shrink-0" />
         {!collapsed && (
           <span
-            className="text-[11px] font-black ml-3 tracking-[0.1em] uppercase"
-            style={{ color: theme.text, WebkitAppRegion: 'no-drag', opacity: 0.8 } as any}
+            className="text-base font-black ml-3 tracking-tighter"
+            style={{ color: theme.text, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
           >
-            StudyX
+            Study<span style={{ color: theme.accent }}>X</span>
           </span>
         )}
       </div>
@@ -471,12 +466,12 @@ export default function Sidebar() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold truncate leading-tight" style={{ color: theme.text }}>{username}</p>
               {streak.currentStreak > 0 ? (
-                <p className="text-[10px] font-bold flex items-center gap-1 mt-0.5" style={{ color: theme.warning }}>
-                  <Flame size={10} fill={theme.warning} />
+                <p className={`flex items-center gap-1 mt-0.5 secondary-label ${streak.currentStreak >= 3 ? 'animate-streak-fire' : ''}`} style={{ color: theme.warning }}>
+                  <Flame size={10} fill={streak.currentStreak >= 3 ? theme.warning : 'none'} />
                   {streak.currentStreak} ZILE STREAK
                 </p>
               ) : (
-                <p className="text-[10px] font-medium opacity-50 mt-0.5" style={{ color: theme.text }}>{medicalRank}</p>
+                <p className="mt-0.5 secondary-label" style={{ opacity: 0.8 }}>{medicalRank}</p>
               )}
             </div>
             <button
@@ -492,6 +487,7 @@ export default function Sidebar() {
 
       {/* ── Nav ── */}
       <div data-tutorial="sidebar" className="flex-1 overflow-y-auto px-2 pb-2 pt-2 space-y-0.5 overflow-x-hidden">
+
         {collapsed ? (
           <>
             <Tip label="Dashboard">
@@ -567,10 +563,17 @@ export default function Sidebar() {
               label="Toate grilele"
               collapsed={false}
               badge={
-                <span className="text-xs px-1.5 py-0.5 rounded-full"
-                  style={{ background: theme.surface2, color: theme.text3 }}>
-                  {quizzes.filter(q => !q.archived).length}
-                </span>
+                <div className="flex gap-1.5 items-center">
+                  {(() => {
+                    return quizzes.filter(q => now - q.createdAt < 86400000 * 2).length > 0 && (
+                      <span className="w-2 h-2 rounded-full" style={{ background: theme.accent, boxShadow: `0 0 8px ${theme.accent}` }} title="Grile noi" />
+                    );
+                  })()}
+                  <span className="text-xs px-1.5 py-0.5 rounded-full"
+                    style={{ background: theme.surface2, color: theme.text3 }}>
+                    {quizzes.filter(q => !q.archived).length}
+                  </span>
+                </div>
               }
             />
             <div data-tutorial="nav-review">
@@ -620,7 +623,7 @@ export default function Sidebar() {
             {/* Folders section */}
             <div data-tutorial="sidebar-folders" className="pt-4 pb-1">
               <div className="flex items-center justify-between px-1 mb-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: theme.text3 }}>
+                <span className="secondary-label">
                   Foldere
                 </span>
                 <button

@@ -80,9 +80,9 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
 
         setStatus('ok');
         setMsg('Backup restaurat! Repornește aplicația dacă ceva pare greșit.');
-      } catch (err: any) {
+      } catch (err: unknown) {
         setStatus('error');
-        setMsg(err.message ?? 'Fișier invalid');
+        setMsg(err instanceof Error ? err.message : 'Fișier invalid');
       }
       setTimeout(() => setStatus('idle'), 4000);
     };

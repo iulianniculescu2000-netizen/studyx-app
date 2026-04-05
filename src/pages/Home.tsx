@@ -56,7 +56,7 @@ export default function Home() {
               WebkitTextFillColor: 'transparent',
             }}>rapid.</span>
             <br />
-            <span style={{ color: theme.text3, opacity: 0.4 }}>Grile inteligente.</span>
+            <span style={{ color: theme.text3 }}>Grile inteligente.</span>
           </motion.h1>
 
           <motion.div
@@ -99,7 +99,7 @@ export default function Home() {
                 style={{ background: `radial-gradient(circle at center, ${stat.color}08, transparent 70%)` }} />
               <div className="flex justify-center mb-3 transition-transform group-hover:scale-110" style={{ color: stat.color }}>{stat.icon}</div>
               <div className="text-3xl font-black mb-1 tracking-tighter" style={{ color: theme.text }}>{stat.value}</div>
-              <div className="text-[10px] font-black uppercase tracking-[0.15em] opacity-40" style={{ color: theme.text }}>{stat.label}</div>
+              <div className="text-[10px] font-black uppercase tracking-[0.15em]" style={{ color: theme.text3 }}>{stat.label}</div>
             </motion.div>
           ))}
         </motion.div>

@@ -96,11 +96,11 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
     // Use Electron native dialog if available
     if (window.electronAPI?.isElectron) {
       setStatus('loading');
-      const files = await (window.electronAPI as any).openJsonFiles();
+      const files = await window.electronAPI.openJsonFiles();
       if (!files) { setStatus('idle'); return; }
       try {
         let total = 0;
-        (files as { name: string; content: string }[]).forEach(f => { total += processContent(f.content); });
+        files.forEach(f => { total += processContent(f.content); });
         showSuccess(total);
       } catch { showError('JSON invalid sau format necunoscut.'); }
     } else {

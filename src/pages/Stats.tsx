@@ -1,11 +1,38 @@
 import { motion } from 'framer-motion';
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
 import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: {
+    name: string;
+    value: number;
+    color: string;
+  }[];
+  label?: string;
+  theme: import('../theme/themes').Theme;
+}
+
+const CustomTooltip = ({ active, payload, label, theme }: CustomTooltipProps) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl p-3 text-sm shadow-xl"
+      style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+      <p className="font-semibold mb-1" style={{ color: theme.text }}>{label}</p>
+      {payload.map((p) => (
+        <p key={p.name} style={{ color: p.color }}>
+          {p.name}: <strong>{p.value}{p.name === 'acuratete' ? '%' : ''}</strong>
+        </p>
+      ))}
+    </div>
+  );
+};
 
 export default function Stats() {
   const theme = useTheme();
@@ -57,7 +84,7 @@ export default function Stats() {
     }))
     .filter(d => d.sesiuni > 0)
     .sort((a, b) => b.acuratete - a.acuratete),
-  [quizzes, sessions]);
+  [quizzes, sessions, getAccuracy]);
 
 
   const bestScore = sessions.length > 0
@@ -73,7 +100,7 @@ export default function Stats() {
       const acc = catQuizzes.reduce((sum, q) => sum + getAccuracy(q.id), 0) / catQuizzes.length;
       return { subject: cat.slice(0, 8), acuratete: Math.round(acc), fullMark: 100 };
     }).filter(Boolean) as { subject: string; acuratete: number; fullMark: number }[];
-  }, [quizzes, sessions]);
+  }, [quizzes, getAccuracy]);
 
   // Exam predictor: weighted score based on recent sessions + streak + weak questions
   const examPrediction = useMemo(() => {
@@ -92,45 +119,49 @@ export default function Stats() {
         ? 'up' : 'down'
       : 'stable';
     return { predicted, trend, weakQCount, recentAcc: Math.round(recentAcc * 100) };
-  }, [sessions, streak, questionStats]);
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="rounded-xl p-3 text-sm shadow-xl"
-        style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-        <p className="font-semibold mb-1" style={{ color: theme.text }}>{label}</p>
-        {payload.map((p: any) => (
-          <p key={p.name} style={{ color: p.color }}>
-            {p.name}: <strong>{p.value}{p.name === 'acuratete' ? '%' : ''}</strong>
-          </p>
-        ))}
-      </div>
-    );
-  };
+  }, [sessions, streak, questionStats, getWeakQuestions]);
 
   return (
-    <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
+    <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-10">
       <div className="max-w-4xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} 
-          transition={{ duration: 0.5 }} className="mb-8">
-          <h1 className="text-3xl font-black tracking-tight mb-1" style={{ color: theme.text }}>
+          className="mb-10">
+          <h1 className="text-4xl font-black tracking-tighter mb-2" style={{ color: theme.text }}>
             Analiză <span style={{
               background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
+              display: 'inline-block'
             }}>Performanță</span>
           </h1>
           <p className="text-sm font-medium opacity-60" style={{ color: theme.text }}>Vizualizează progresul și evoluția ta în timp</p>
         </motion.div>
 
         {sessions.length === 0 ? (
-          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
-            className="text-center py-24 rounded-3xl"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-            <div className="text-6xl mb-6">📊</div>
-            <p className="text-lg font-bold mb-1" style={{ color: theme.text }}>Nicio sesiune înregistrată</p>
-            <p className="text-sm font-medium opacity-60" style={{ color: theme.text }}>Rezolvă câteva grile pentru a-ți genera profilul de performanță.</p>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="rounded-[28px] p-16 text-center"
+            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+          >
+            <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
+              style={{ background: `${theme.accent}12` }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7">
+                <path d="M3 3v18h18"/>
+                <path d="M7 16l4-4 4 4 4-8"/>
+              </svg>
+            </div>
+            <h3 className="text-lg font-black mb-2" style={{ color: theme.text }}>
+              Nicio sesiune înregistrată
+            </h3>
+            <p className="text-sm max-w-xs mx-auto mb-6" style={{ color: theme.text3 }}>
+              Rezolvă câteva grile pentru a-ți genera profilul de performanță.
+            </p>
+            <Link to="/quizzes"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white"
+              style={{ background: theme.accent }}>
+              Începe acum
+            </Link>
           </motion.div>
         ) : (
           <>
@@ -258,7 +289,7 @@ export default function Stats() {
                 <BarChart data={last14Days} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
                   <XAxis dataKey="day" tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip theme={theme} />} />
                   <Bar dataKey="sesiuni" fill={theme.accent} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -275,7 +306,7 @@ export default function Stats() {
                     <CartesianGrid strokeDasharray="3 3" stroke={theme.border} />
                     <XAxis dataKey="day" tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip theme={theme} />} />
                     <Line type="monotone" dataKey="acuratete" stroke={theme.success} strokeWidth={2} dot={{ fill: theme.success, r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>

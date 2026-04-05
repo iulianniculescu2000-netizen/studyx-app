@@ -225,6 +225,7 @@ export default function Flashcard() {
   const cards = useMemo(() => {
     const qs = quiz?.questions ?? [];
     return isShuffled ? shuffleArr(qs) : qs;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quiz, isShuffled, seed]);
 
   const [idx, setIdx] = useState(0);

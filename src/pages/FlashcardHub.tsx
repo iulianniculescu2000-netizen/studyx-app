@@ -83,8 +83,8 @@ export default function FlashcardHub() {
         createdAt: Date.now(),
       });
       navigate(`/flashcards/session/${id}?mode=all`);
-    } catch (e: any) {
-      setAiError(e.message ?? 'Eroare la generare');
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : 'Eroare la generare');
     } finally {
       setAiLoading(false);
     }
@@ -163,8 +163,8 @@ export default function FlashcardHub() {
         createdAt: Date.now(),
       });
       navigate(`/flashcards/session/${deckId}?mode=all`);
-    } catch (e: any) {
-      setCsvError(e.message ?? 'Eroare la importul CSV');
+    } catch (err: unknown) {
+      setCsvError(err instanceof Error ? err.message : 'Eroare la importul CSV');
     } finally {
       setCsvImporting(false);
     }
@@ -206,7 +206,7 @@ export default function FlashcardHub() {
           if (!file) return;
           const text = file.name.toLowerCase().endsWith('.pdf') ? await parsePDF(file) : await file.text();
           if (text.trim().length < 100) {
-            setAiError('PDF-ul nu conține text suficient.');
+            setAiError('PDF-ul pare a fi o imagine scanată fără text digital. Încearcă un alt PDF sau folosește secțiunea "Biblioteca AI" pentru a procesa documentul cu OCR înainte.');
             return;
           }
           await generateDeckFromPdf(text);
@@ -283,54 +283,58 @@ export default function FlashcardHub() {
             <div className="absolute top-0 right-0 w-40 h-40 rounded-full blur-[60px] pointer-events-none"
               style={{ background: `${theme.accent2}25` }} />
 
-            <div className="relative flex flex-col md:flex-row md:items-center gap-5">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-xl"
-                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
-                <Bot size={28} className="text-white" />
+            <div className="relative flex flex-col md:flex-row md:items-center gap-6">
+              <div className="w-16 h-16 rounded-3xl flex items-center justify-center flex-shrink-0 shadow-2xl transition-transform hover:rotate-6"
+                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 12px 24px ${theme.accent}40` }}>
+                <Bot size={32} className="text-white" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-black uppercase tracking-[0.15em]" style={{ color: theme.accent2 }}>AI Flashcard Generator</span>
-                  <Sparkles size={12} style={{ color: theme.accent2 }} />
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70" style={{ color: theme.accent2 }}>AI Flashcard Generator</span>
+                  <div className="w-1 h-1 rounded-full opacity-30" style={{ background: theme.accent2 }} />
+                  <Sparkles size={12} className="animate-pulse" style={{ color: theme.accent2 }} />
                 </div>
-                <p className="text-lg font-bold leading-tight" style={{ color: theme.text }}>Transformă cursul în carduri instant</p>
-                <p className="text-sm font-medium opacity-60 mt-1" style={{ color: theme.text }}>Importă un curs PDF și AI-ul va extrage conceptele cheie pentru tine.</p>
+                <p className="text-xl font-black tracking-tight leading-tight" style={{ color: theme.text }}>Transformă cursul în carduri instant</p>
+                <p className="text-sm font-medium opacity-50 mt-1.5 leading-relaxed" style={{ color: theme.text }}>Încarcă un PDF și AI-ul va extrage inteligent conceptele cheie pentru tine.</p>
               </div>
               
-              <div className="flex flex-col gap-3 flex-shrink-0">
-                <div className="flex gap-1.5 p-1 rounded-xl" style={{ background: theme.surface2 }}>
+              <div className="flex flex-col gap-3.5 flex-shrink-0 min-w-[200px]">
+                <div className="flex p-1 rounded-[14px] glass-panel border border-white/5" style={{ background: theme.surface2 }}>
                   {[5, 10, 20, 30].map(n => (
                     <button key={n} onClick={() => setAiCount(n)}
-                      className="flex-1 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all"
+                      className="flex-1 py-2 rounded-lg text-[10px] font-black transition-all relative overflow-hidden"
                       style={{
                         background: aiCount === n ? theme.accent : 'transparent',
                         color: aiCount === n ? '#fff' : theme.text3,
-                        boxShadow: aiCount === n ? `0 4px 12px ${theme.accent}40` : 'none',
-                      }}>{n}</button>
+                      }}>
+                      {aiCount === n && <motion.div layoutId="active-ai-n" className="absolute inset-0 z-0 bg-accent shadow-lg" style={{ background: theme.accent }} />}
+                      <span className="relative z-10">{n}</span>
+                    </button>
                   ))}
                 </div>
                 <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.97 }}
+                  whileHover={{ scale: 1.02, y: -2 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={handlePdfImport}
                   disabled={aiLoading}
-                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-white shadow-lg"
+                  className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-[18px] font-black text-xs uppercase tracking-widest text-white shadow-2xl transition-all"
                   style={{
                     background: aiLoading ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
-                    boxShadow: aiLoading ? 'none' : `0 8px 20px ${theme.accent}40`,
+                    boxShadow: aiLoading ? 'none' : `0 12px 30px ${theme.accent}40`,
                   }}>
                   {aiLoading
-                    ? <><Loader2 size={16} className="animate-spin" />Se procesează...</>
-                    : <><FileText size={16} />Selectează PDF</>}
+                    ? <><Loader2 size={16} className="animate-spin" /> Se analizează...</>
+                    : <><FileText size={16} /> Selectează PDF</>}
                 </motion.button>
               </div>
             </div>
             <AnimatePresence>
               {aiError && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                  className="mt-4 flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-bold"
-                  style={{ background: `${theme.danger}15`, border: `1px solid ${theme.danger}30`, color: theme.danger }}>
-                  <AlertCircle size={14} />{aiError}
+                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="mt-5 flex items-start gap-3 p-4 rounded-2xl border backdrop-blur-sm"
+                  style={{ background: `${theme.danger}08`, borderColor: `${theme.danger}20`, color: theme.danger }}>
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <div className="text-[11px] font-bold leading-relaxed">{aiError}</div>
                 </motion.div>
               )}
             </AnimatePresence>

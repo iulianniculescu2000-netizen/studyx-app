@@ -68,7 +68,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
       const isImage = /\.(jpe?g|png|webp|bmp)$/i.test(name);
       
       let text = '';
-      let type: any = 'txt';
+      let type: 'txt' | 'pdf' | 'docx' | 'image' = 'txt';
 
       setProcessProcessingStep('Citim fișierul...');
       if (isPdf) {
@@ -91,8 +91,8 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
 
       setProcessProcessingStep('Fragmentăm și indexăm...');
       await addKnowledgeSource(file.name, text, type);
-    } catch (err: any) {
-      setLibraryError(err.message || 'Eroare la import.');
+    } catch (err: unknown) {
+      setLibraryError(err instanceof Error ? err.message : 'Eroare la import.');
     } finally {
       setIsProcessing(false);
       setProcessProcessingStep('');
@@ -141,7 +141,8 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                 maxHeight: '85vh',
                 background: theme.modalBg,
                 border: `1px solid ${theme.border}`,
-              }}
+                WebkitAppRegion: 'no-drag',
+              } as React.CSSProperties}
             >
               <input
                 ref={fileRef}
@@ -277,7 +278,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                           <FileText size={16} style={{ color: theme.accent }} />
                           <div className="flex-1 min-w-0 text-left">
                             <p className="text-xs font-bold truncate" style={{ color: theme.text }}>{s.name}</p>
-                            <p className="text-[9px] opacity-50 uppercase font-black" style={{ color: theme.text }}>{s.content.length} caractere</p>
+                            <p className="text-[9px] opacity-50 uppercase font-black" style={{ color: theme.text }}>{s.charCount} caractere</p>
                           </div>
                           <button onClick={() => removeKnowledgeSource(s.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500"><Trash2 size={14} /></button>
                         </div>

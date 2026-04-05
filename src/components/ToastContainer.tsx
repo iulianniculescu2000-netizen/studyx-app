@@ -9,10 +9,10 @@ export default function ToastContainer() {
   const theme = useTheme();
 
   const icons = {
-    success: <CheckCircle2 size={18} color="#30D158" />,
-    error: <AlertCircle size={18} color="#FF453A" />,
+    success: <CheckCircle2 size={18} color={theme.success} />,
+    error: <AlertCircle size={18} color={theme.danger} />,
     info: <Info size={18} color={theme.accent} />,
-    warning: <AlertTriangle size={18} color="#FF9F0A" />,
+    warning: <AlertTriangle size={18} color={theme.warning} />,
   };
 
   return (
@@ -23,14 +23,24 @@ export default function ToastContainer() {
             <motion.div
               key={toast.id}
               layout
-              initial={{ opacity: 0, x: 20, scale: 0.9 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 20, scale: 0.9, transition: { duration: 0.2 } }}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl min-w-[280px] max-w-sm"
               style={{ 
-                background: theme.modalBg, 
-                border: `1px solid ${theme.border}`,
-                backdropFilter: 'blur(20px)'
+                background: theme.isDark ? 'rgba(28,28,30,0.92)' : 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: `0.5px solid ${theme.border}`,
+                borderRadius: '14px',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                minWidth: '280px',
+                maxWidth: '380px',
               }}
             >
               <div className="shrink-0">{icons[toast.type]}</div>

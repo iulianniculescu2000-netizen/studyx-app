@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronRight, RefreshCw, Trophy, Keyboard, Layers } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
@@ -53,7 +53,7 @@ export default function ReviewMode() {
   const [selected, setSelected] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [results, setResults] = useState<boolean[]>([]);
-  const [startedAt] = useState(Date.now());
+  const [startedAt] = useState(() => Date.now());
   const [showKeys, setShowKeys] = useState(false);
 
   const buildItems = (stats: QuestionStat[]): ReviewItem[] => {
@@ -79,9 +79,17 @@ export default function ReviewMode() {
 
   const current = items[currentIdx];
   const isMultiple = current?.question.multipleCorrect ?? false;
-  const correctIds = current?.question.options.filter(o => o.isCorrect).map(o => o.id) ?? [];
+  const correctIds = useMemo(() => current?.question.options.filter(o => o.isCorrect).map(o => o.id) ?? [], [current]);
 
-  const handleSelect = (optId: string) => {
+  const revealAnswer = useCallback((sel: string[]) => {
+    if (!current) return;
+    const isCorrect = sel.length === correctIds.length && correctIds.every((id: string) => sel.includes(id));
+    setRevealed(true);
+    setResults(prev => [...prev, isCorrect]);
+    recordAnswer(current.stat.quizId, current.stat.questionId, isCorrect);
+  }, [correctIds, current, recordAnswer]);
+
+  const handleSelect = useCallback((optId: string) => {
     if (revealed) return;
     if (isMultiple) {
       setSelected(prev => prev.includes(optId) ? prev.filter(i => i !== optId) : [...prev, optId]);
@@ -89,17 +97,9 @@ export default function ReviewMode() {
       setSelected([optId]);
       revealAnswer([optId]);
     }
-  };
+  }, [isMultiple, revealAnswer, revealed]);
 
-  const revealAnswer = useCallback((sel: string[]) => {
-    if (!current) return;
-    const isCorrect = sel.length === correctIds.length && correctIds.every(id => sel.includes(id));
-    setRevealed(true);
-    setResults(prev => [...prev, isCorrect]);
-    recordAnswer(current.stat.quizId, current.stat.questionId, isCorrect);
-  }, [correctIds, current, recordAnswer]);
-
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (currentIdx + 1 >= items.length) {
       recordStudySession(Math.floor((Date.now() - startedAt) / 1000));
       setMode('done');
@@ -108,7 +108,7 @@ export default function ReviewMode() {
       setSelected([]);
       setRevealed(false);
     }
-  };
+  }, [currentIdx, items.length, recordStudySession, startedAt]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -120,7 +120,7 @@ export default function ReviewMode() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [current, revealed, selected, isMultiple, handleNext, revealAnswer]);
+  }, [current, revealed, selected, isMultiple, handleNext, revealAnswer, handleSelect]);
 
   if (mode === 'pick') {
     const dueCount = getDueQuestions().length;
@@ -130,123 +130,124 @@ export default function ReviewMode() {
       <div className="h-full flex items-center justify-center px-4">
         <div className="max-w-md w-full">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}>
-            <h1 className="text-4xl font-black mb-2 text-center tracking-tight" style={{ color: theme.text }}>
+            className="mb-10 text-center">
+            <h1 className="text-4xl font-black tracking-tighter mb-2" style={{ color: theme.text }}>
               Recapitulare <span style={{
                 background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
+                display: 'inline-block'
               }}>Inteligentă</span>
             </h1>
-            <p className="text-center mb-10 font-medium opacity-60" style={{ color: theme.text }}>
+            <p className="text-sm font-medium opacity-60" style={{ color: theme.text }}>
               Alege modul de optimizare a memoriei
             </p>
-
-            <div className="space-y-4">
-              <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
-                onClick={startDue}
-                disabled={dueCount === 0}
-                className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
-                style={{ 
-                  background: theme.surface, 
-                  border: `1px solid ${dueCount > 0 ? theme.warning + '40' : theme.border}`,
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-                }}>
-                <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
-                  style={{ background: `${theme.warning}15` }} />
-                
-                <div className="flex items-center gap-4 mb-3 relative">
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
-                    style={{ background: `${theme.warning}20`, border: `1px solid ${theme.warning}40` }}>
-                    ⚡
-                  </div>
-                  <div>
-                    <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Repetare Spațiată</span>
-                    <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.warning }}>Algoritm SM-2</span>
-                  </div>
-                  <span className="ml-auto px-3 py-1 rounded-full text-xs font-black shadow-lg"
-                    style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, color: '#fff' }}>
-                    {dueCount}
-                  </span>
-                </div>
-                <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
-                  Întrebări selectate automat pentru a preveni uitarea. Maximul de eficiență în studiu.
-                </p>
-              </motion.button>
-
-              <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
-                onClick={startWeak}
-                disabled={weakCount === 0}
-                className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
-                style={{ 
-                  background: theme.surface, 
-                  border: `1px solid ${weakCount > 0 ? theme.danger + '40' : theme.border}`,
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-                }}>
-                <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
-                  style={{ background: `${theme.danger}15` }} />
-
-                <div className="flex items-center gap-4 mb-3 relative">
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
-                    style={{ background: `${theme.danger}20`, border: `1px solid ${theme.danger}40` }}>
-                    🎯
-                  </div>
-                  <div>
-                    <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Puncte Slabe</span>
-                    <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.danger }}>Analiză Erori</span>
-                  </div>
-                  <span className="ml-auto px-3 py-1 rounded-full text-xs font-black shadow-lg"
-                    style={{ background: theme.danger, color: '#fff' }}>
-                    {weakCount}
-                  </span>
-                </div>
-                <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
-                  Concentrează-te pe subiectele unde ai întâmpinat dificultăți. Transformă minusurile în plusuri.
-                </p>
-              </motion.button>
-
-              <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
-                onClick={createQuizFromMistakes}
-                disabled={weakCount === 0}
-                className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
-                style={{ 
-                  background: theme.surface, 
-                  border: `1px solid ${theme.accent}40`,
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-                }}>
-                <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
-                  style={{ background: `${theme.accent}15` }} />
-
-                <div className="flex items-center gap-4 mb-3 relative">
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
-                    style={{ background: `${theme.accent}20`, border: `1px solid ${theme.accent}40` }}>
-                    🔥
-                  </div>
-                  <div>
-                    <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Quiz din Greșeli</span>
-                    <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.accent }}>Generator Automat</span>
-                  </div>
-                </div>
-                <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
-                  Generează o grilă nouă din istoricul tău de erori pentru o sesiune de antrenament rapid.
-                </p>
-              </motion.button>
-            </div>
-
-            {dueCount === 0 && weakCount === 0 && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className="text-center mt-10 p-6 rounded-3xl"
-                style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}25` }}>
-                <p className="text-xl font-bold mb-1" style={{ color: theme.success }}>✨ Ești la zi!</p>
-                <p className="text-sm font-medium opacity-70" style={{ color: theme.text }}>
-                  Nu ai întrebări restante. Memoria ta este în formă maximă!
-                </p>
-                <Link to="/quizzes" className="text-sm font-bold hover:underline mt-3 inline-block" style={{ color: theme.accent }}>
-                  Explorează grile noi →
-                </Link>
-              </motion.div>
-            )}
           </motion.div>
+
+          <div className="space-y-4">
+            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+              onClick={startDue}
+              disabled={dueCount === 0}
+              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              style={{ 
+                background: theme.surface, 
+                border: `1px solid ${dueCount > 0 ? theme.warning + '40' : theme.border}`,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+              }}>
+              <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
+                style={{ background: `${theme.warning}15` }} />
+              
+              <div className="flex items-center gap-4 mb-3 relative">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
+                  style={{ background: `${theme.warning}20`, border: `1px solid ${theme.warning}40` }}>
+                  ⚡
+                </div>
+                <div>
+                  <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Repetare Spațiată</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.warning }}>Algoritm SM-2</span>
+                </div>
+                <span className="ml-auto px-3 py-1 rounded-full text-xs font-black shadow-lg"
+                  style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, color: '#fff' }}>
+                  {dueCount}
+                </span>
+              </div>
+              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+                Întrebări selectate automat pentru a preveni uitarea. Maximul de eficiență în studiu.
+              </p>
+            </motion.button>
+
+            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+              onClick={startWeak}
+              disabled={weakCount === 0}
+              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              style={{ 
+                background: theme.surface, 
+                border: `1px solid ${weakCount > 0 ? theme.danger + '40' : theme.border}`,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+              }}>
+              <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
+                style={{ background: `${theme.danger}15` }} />
+
+              <div className="flex items-center gap-4 mb-3 relative">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
+                  style={{ background: `${theme.danger}20`, border: `1px solid ${theme.danger}40` }}>
+                  🎯
+                </div>
+                <div>
+                  <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Puncte Slabe</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.danger }}>Analiză Erori</span>
+                </div>
+                <span className="ml-auto px-3 py-1 rounded-full text-xs font-black shadow-lg"
+                  style={{ background: theme.danger, color: '#fff' }}>
+                  {weakCount}
+                </span>
+              </div>
+              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+                Concentrează-te pe subiectele unde ai întâmpinat dificultăți. Transformă minusurile în plusuri.
+              </p>
+            </motion.button>
+
+            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+              onClick={createQuizFromMistakes}
+              disabled={weakCount === 0}
+              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              style={{ 
+                background: theme.surface, 
+                border: `1px solid ${theme.accent}40`,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+              }}>
+              <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
+                style={{ background: `${theme.accent}15` }} />
+
+              <div className="flex items-center gap-4 mb-3 relative">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
+                  style={{ background: `${theme.accent}20`, border: `1px solid ${theme.accent}40` }}>
+                  🔥
+                </div>
+                <div>
+                  <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Quiz din Greșeli</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.accent }}>Generator Automat</span>
+                </div>
+              </div>
+              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+                Generează o grilă nouă din istoricul tău de erori pentru o sesiune de antrenament rapid.
+              </p>
+            </motion.button>
+          </div>
+
+          {dueCount === 0 && weakCount === 0 && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="text-center mt-10 p-6 rounded-3xl"
+              style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}25` }}>
+              <p className="text-xl font-bold mb-1" style={{ color: theme.success }}>✨ Ești la zi!</p>
+              <p className="text-sm font-medium opacity-70" style={{ color: theme.text }}>
+                Nu ai întrebări restante. Memoria ta este în formă maximă!
+              </p>
+              <Link to="/quizzes" className="text-sm font-bold hover:underline mt-3 inline-block" style={{ color: theme.accent }}>
+                Explorează grile noi →
+              </Link>
+            </motion.div>
+          )}
         </div>
       </div>
     );

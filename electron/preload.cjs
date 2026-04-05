@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => ipcRenderer.send('win:minimize'),
   maximize: () => ipcRenderer.send('win:maximize'),
   close: () => ipcRenderer.send('win:close'),
+  destroy: () => ipcRenderer.send('win:destroy'),
   isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
   onMaximized: (cb) => {
     const handler = (_, v) => cb(v);
@@ -45,5 +46,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appReady: () => ipcRenderer.send('app:ready'),
   // Auto-backup: write all app data to Documents/StudyX-Backups
   autoBackup: (data) => ipcRenderer.invoke('app:autoBackup', { data }),
+  storageSave: (profileId, namespace, data) => ipcRenderer.invoke('storage:save', { profileId, namespace, data }),
+  storageLoad: (profileId, namespace) => ipcRenderer.invoke('storage:load', { profileId, namespace }),
+  onAppClose: (cb) => {
+    ipcRenderer.on('app:request-close', () => cb());
+    return () => ipcRenderer.removeAllListeners('app:request-close');
+  },
   isElectron: true,
 });

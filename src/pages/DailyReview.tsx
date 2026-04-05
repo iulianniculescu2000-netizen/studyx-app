@@ -6,9 +6,9 @@
  * Records answers back into statsStore so the SM-2 algorithm advances.
  */
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Brain, ChevronRight, Check, X, RotateCcw, Home, Sparkles, Trophy, CalendarCheck } from 'lucide-react';
+import { Brain, ChevronRight, Check, X, RotateCcw, Home, Sparkles, Trophy } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
@@ -46,16 +46,16 @@ export default function DailyReview() {
   const [selected, setSelected] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [results, setResults] = useState<boolean[]>([]);
-  const [startedAt] = useState(Date.now());
+  const [startedAt] = useState(() => Date.now());
 
   const current = items[currentIdx];
   const isMultiple = current?.question.multipleCorrect ?? false;
-  const correctIds = current?.question.options.filter(o => o.isCorrect).map(o => o.id) ?? [];
+  const correctIds = useMemo(() => current?.question.options.filter(o => o.isCorrect).map(o => o.id) ?? [], [current]);
   const progress = items.length > 0 ? ((currentIdx + (revealed ? 1 : 0)) / items.length) * 100 : 0;
 
   const revealAnswer = useCallback((sel: string[]) => {
     if (!current) return;
-    const isCorrect = sel.length === correctIds.length && correctIds.every(id => sel.includes(id));
+    const isCorrect = sel.length === correctIds.length && correctIds.every((id: string) => sel.includes(id));
     setRevealed(true);
     setResults(prev => [...prev, isCorrect]);
     recordAnswer(current.quizId, current.question.id, isCorrect);
@@ -88,29 +88,60 @@ export default function DailyReview() {
   // ── Empty state ─────────────────────────────────────────────────────────────
   if (items.length === 0) {
     return (
-      <div className="h-full overflow-y-auto px-6 py-10 flex items-center justify-center">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="flex flex-col items-center justify-center h-full text-center px-8"
+      >
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center max-w-sm"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 20, delay: 0.1 }}
+          className="w-24 h-24 rounded-3xl flex items-center justify-center mb-8 mx-auto"
+          style={{ background: `${theme.success}15` }}
         >
-          <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
-            style={{ background: `${theme.success}18`, border: `1px solid ${theme.success}30` }}>
-            <CalendarCheck size={36} style={{ color: theme.success }} />
-          </div>
-          <h2 className="text-2xl font-bold mb-2" style={{ color: theme.text }}>
-            Ești la zi! 🎉
-          </h2>
-          <p className="text-sm mb-8" style={{ color: theme.text3 }}>
-            Nicio întrebare de recapitulat acum. SM-2 îți va programa automat întrebările în funcție de performanță.
-          </p>
-          <Link to="/"
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-semibold text-white"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
-            <Home size={15} />Acasă
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={theme.success} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 12l2 2 4-4"/>
+            <rect x="3" y="4" width="18" height="18" rx="3"/>
+            <path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+        </motion.div>
+
+        <motion.h2
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="text-2xl font-black mb-3 tracking-tight"
+          style={{ color: theme.text }}
+        >
+          Ești la zi! 🎉
+        </motion.h2>
+
+        <motion.p
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28 }}
+          className="text-sm mb-8 max-w-xs leading-relaxed"
+          style={{ color: theme.text3 }}
+        >
+          Ai recapitulat tot ce era programat pentru azi. Revino mâine pentru sesiunea următoare.
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+        >
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-white"
+            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+          >
+            Înapoi la Dashboard
           </Link>
         </motion.div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -129,8 +160,15 @@ export default function DailyReview() {
             <Brain size={36} className="text-white" />
           </div>
 
-          <h1 className="text-3xl font-bold mb-2" style={{ color: theme.text }}>Sesiune zilnică</h1>
-          <p className="text-sm mb-8" style={{ color: theme.text3 }}>
+          <h1 className="text-4xl font-black tracking-tighter mb-2" style={{ color: theme.text }}>
+            Sesiune <span style={{ 
+              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, 
+              WebkitBackgroundClip: 'text', 
+              WebkitTextFillColor: 'transparent',
+              display: 'inline-block'
+            }}>Zilnică</span>
+          </h1>
+          <p className="text-sm font-medium opacity-60 mb-10" style={{ color: theme.text }}>
             Repetare spațiată SM-2 · {items.length} {items.length === 1 ? 'întrebare' : 'întrebări'} de recapitulat azi
           </p>
 
@@ -340,10 +378,10 @@ export default function DailyReview() {
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  className="mb-4 p-4 rounded-2xl overflow-hidden"
-                  style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}>
-                  <p className="text-sm" style={{ color: theme.text2 }}>
-                    <span className="font-semibold" style={{ color: theme.accent }}>💡 </span>
+                  className="mb-4 p-5 rounded-3xl overflow-hidden"
+                  style={{ background: `${theme.accent}0C`, border: `1.5px solid ${theme.accent}25` }}>
+                  <p className="text-sm" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
+                    <span className="font-black uppercase tracking-widest text-[10px] block mb-2" style={{ color: theme.accent }}>💡 Explicație</span>
                     {current.question.explanation}
                   </p>
                 </motion.div>

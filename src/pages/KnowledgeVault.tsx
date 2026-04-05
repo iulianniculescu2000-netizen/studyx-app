@@ -3,11 +3,12 @@ import { useState, useRef } from 'react';
 import { 
   Library, Trash2, Search, 
   Bot, Brain, Database, Plus,
-  FileType, Loader2, Image, FileText
+  FileType, Loader2, Image, FileText, MessageSquare
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
-import { useAIStore } from '../store/aiStore';
+import { useAIStore, type AIKnowledgeSourceType } from '../store/aiStore';
 import { useToastStore } from '../store/toastStore';
+import { useUIStore } from '../store/uiStore';
 import { parsePDF } from '../ai/pdfParser';
 import { parseDocx } from '../ai/docxParser';
 import { parseImageOCR } from '../ai/ocrParser';
@@ -16,6 +17,7 @@ export default function KnowledgeVault() {
   const theme = useTheme();
   const { knowledgeSources, addKnowledgeSource, removeKnowledgeSource } = useAIStore();
   const { addToast } = useToastStore();
+  const setChatOpen = useUIStore(s => s.setChatOpen);
   
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,7 +27,7 @@ export default function KnowledgeVault() {
 
   const filtered = knowledgeSources.filter(s => 
     s.name.toLowerCase().includes(search.toLowerCase()) || 
-    s.content.toLowerCase().includes(search.toLowerCase())
+    s.preview.toLowerCase().includes(search.toLowerCase())
   ).sort((a, b) => b.addedAt - a.addedAt);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,12 +44,17 @@ export default function KnowledgeVault() {
         const isImage = /\.(jpe?g|png|webp|bmp)$/i.test(name);
         
         let text = '';
-        let type: any = 'txt';
+        let type: AIKnowledgeSourceType = 'txt';
 
         setProcessStep(`Citim ${file.name}...`);
         if (isPdf) {
-          text = await parsePDF(file);
-          type = 'pdf';
+          try {
+            text = await parsePDF(file);
+            type = 'pdf';
+          } catch (pdfErr: unknown) {
+            addToast(pdfErr instanceof Error ? pdfErr.message : 'Eroare PDF', 'error');
+            continue;
+          }
         } else if (isDocx) {
           text = await parseDocx(file);
           type = 'docx';
@@ -59,7 +66,7 @@ export default function KnowledgeVault() {
           text = await file.text();
         }
 
-        if (text.trim().length < 20) {
+        if (text.trim().length < 5) {
           addToast(`Conținut insuficient în ${file.name}`, 'warning');
           continue;
         }
@@ -68,8 +75,8 @@ export default function KnowledgeVault() {
         await addKnowledgeSource(file.name, text, type);
         addToast(`"${file.name}" adăugat cu succes.`, 'success');
       }
-    } catch (err: any) {
-      addToast(err.message || 'Eroare la procesarea fișierelor.', 'error');
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : 'Eroare la procesarea fișierelor.', 'error');
     } finally {
       setLoading(false);
       setProcessStep('');
@@ -77,8 +84,8 @@ export default function KnowledgeVault() {
     }
   };
 
-  const totalWords = knowledgeSources.reduce((acc, s) => acc + s.content.split(/\s+/).length, 0);
-  const totalChars = knowledgeSources.reduce((acc, s) => acc + s.content.length, 0);
+  const totalWords = knowledgeSources.reduce((acc, s) => acc + s.wordCount, 0);
+  const totalChars = knowledgeSources.reduce((acc, s) => acc + s.charCount, 0);
 
   return (
     <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-10">
@@ -102,6 +109,21 @@ export default function KnowledgeVault() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {/* Permanent Chat Button in Header */}
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setChatOpen(true)}
+                className="flex items-center gap-2 px-5 py-3 rounded-2xl font-bold transition-all border"
+                style={{ 
+                  background: theme.surface2, 
+                  borderColor: theme.border, 
+                  color: theme.text2 
+                }}
+              >
+                <MessageSquare size={18} /> Chat AI
+              </motion.button>
+
               <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -137,7 +159,7 @@ export default function KnowledgeVault() {
             <motion.div key={s.label}
               initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 + i * 0.05 }}
-              className="rounded-[24px] p-5 relative overflow-hidden"
+              className="rounded-[24px] p-5 relative overflow-hidden glass-panel premium-shadow"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center"
@@ -167,18 +189,23 @@ export default function KnowledgeVault() {
                 background: theme.surface, 
                 border: `1px solid ${theme.border}`, 
                 color: theme.text,
-                outline: 'none',
-                ringColor: `${theme.accent}33`
-              } as any}
+                outline: 'none'
+              } as React.CSSProperties}
             />
           </div>
 
           <AnimatePresence mode="popLayout">
             {filtered.length === 0 ? (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20">
-                <div className="text-5xl mb-4">📚</div>
-                <p className="font-bold opacity-40" style={{ color: theme.text }}>
+                <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center"
+                  style={{ background: `${theme.accent}15` }}>
+                  <Library size={28} style={{ color: theme.accent }} />
+                </div>
+                <p className="font-bold text-base mb-1" style={{ color: theme.text }}>
                   {search ? 'Niciun document găsit.' : 'Biblioteca ta este goală.'}
+                </p>
+                <p className="text-sm opacity-50" style={{ color: theme.text }}>
+                  {search ? 'Încearcă alt termen de căutare.' : 'Adaugă PDF-uri, DOCX sau imagini pentru a începe.'}
                 </p>
               </motion.div>
             ) : (
@@ -191,7 +218,7 @@ export default function KnowledgeVault() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ delay: i * 0.02 }}
-                    className="group flex items-center gap-4 p-4 rounded-[22px] transition-all hover:translate-x-1"
+                    className="group flex items-center gap-4 p-4 rounded-[22px] transition-all hover:translate-x-1 glass-panel premium-shadow"
                     style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
                   >
                     <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-inner"
@@ -208,12 +235,12 @@ export default function KnowledgeVault() {
                           style={{ background: theme.surface2, color: theme.text3 }}>{s.type}</span>
                       </div>
                       <p className="text-[11px] font-medium opacity-50 truncate" style={{ color: theme.text }}>
-                        {s.content.slice(0, 120)}...
+                        {s.preview}
                       </p>
-                      <div className="flex items-center gap-3 mt-2 text-[10px] font-bold opacity-40 uppercase tracking-tighter" style={{ color: theme.text }}>
-                        <span>{s.content.split(/\s+/).length} cuvinte</span>
+                      <div className="flex items-center gap-3 mt-2 text-[10px] font-bold uppercase tracking-tighter" style={{ color: theme.text3 }}>
+                        <span>{s.wordCount} cuvinte</span>
                         <span>•</span>
-                        <span>{s.content.length.toLocaleString()} caractere</span>
+                        <span>{s.charCount.toLocaleString()} caractere</span>
                         <span>•</span>
                         <span>{new Date(s.addedAt).toLocaleDateString()}</span>
                       </div>
@@ -231,7 +258,7 @@ export default function KnowledgeVault() {
         </div>
 
         {knowledgeSources.length > 0 && (
-          <div className="mt-12 p-8 rounded-[32px] text-center relative overflow-hidden"
+          <div className="mt-12 p-8 rounded-[32px] text-center relative overflow-hidden glass-panel premium-shadow"
             style={{ background: `linear-gradient(135deg, ${theme.accent}10, ${theme.accent2}10)`, border: `1px solid ${theme.accent}20` }}>
             <div className="relative z-10">
               <Bot size={40} className="mx-auto mb-4" style={{ color: theme.accent }} />
@@ -240,7 +267,7 @@ export default function KnowledgeVault() {
                 Folosește biblioteca pentru a-ți personaliza experiența de studiu.
               </p>
               <button 
-                onClick={() => window.dispatchEvent(new CustomEvent('studyx:chat', { detail: { open: true } }))}
+                onClick={() => setChatOpen(true)}
                 className="px-8 py-3 rounded-2xl font-black text-sm text-white shadow-lg transition-all hover:scale-105 active:scale-95"
                 style={{ background: theme.accent }}>
                 Deschide Chat AI

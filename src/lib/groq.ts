@@ -19,7 +19,7 @@ export interface GeneratedQuestion {
 
 const TASK_TEMPERATURE: Record<AIRequestTask, number> = {
   questions: 0.3,
-  explanation: 0.6,
+  explanation: 0.3,
   mnemonic: 0.8,
   hint: 0.4,
   chat: 0.5,
@@ -193,6 +193,26 @@ export function recommendImage(questionText: string): string | null {
   return best?.image ?? null;
 }
 
+// ── Request Queue & Rate Limiting ──────────────────────────────────────────
+// Ensures we don't hit Groq's rate limits by controlling concurrency and spacing.
+const CONCURRENCY_LIMIT = 2; // Maximum concurrent requests
+let activeRequests = 0;
+
+async function enqueueRequest<T>(operation: () => Promise<T>): Promise<T> {
+  while (activeRequests >= CONCURRENCY_LIMIT) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  
+  activeRequests++;
+  try {
+    // Add a small staggered delay to prevent bursts
+    await new Promise(resolve => setTimeout(resolve, activeRequests * 100));
+    return await operation();
+  } finally {
+    activeRequests--;
+  }
+}
+
 // ── Core API ──────────────────────────────────────────────────────────────────
 export async function groqRequest({
   task,
@@ -205,68 +225,76 @@ export async function groqRequest({
   temperature?: number;
   maxTokens?: number;
 }): Promise<string> {
-  const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
-  const key = sanitizeKey(apiKey);
-  if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
-  const kb = getKnowledgeContext('6000');
-  const finalMessages: GroqMessage[] = kb
-    ? [
-        {
-          role: 'system',
-          content:
-            'Context suplimentar din biblioteca locală a utilizatorului. ' +
-            'Folosește-l doar când este relevant medical și nu inventa informații absente.\n\n' +
-            kb,
-        },
-        ...messages,
-      ]
-    : messages;
+  return enqueueRequest(async () => {
+    const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
+    const key = sanitizeKey(apiKey);
+    if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
+    const kb = getKnowledgeContext('6000');
+    const finalMessages: GroqMessage[] = kb
+      ? [
+          {
+            role: 'system',
+            content:
+              'Context suplimentar din biblioteca locală a utilizatorului. ' +
+              'Folosește-l doar când este relevant medical și nu inventa informații absente.\n\n' +
+              kb,
+          },
+          ...messages,
+        ]
+      : messages;
 
-  const finalTemperature = temperature ?? TASK_TEMPERATURE[task] ?? 0.5;
-  const finalMaxTokens = maxTokens ?? TASK_MAX_TOKENS[task] ?? 1200;
+    const finalTemperature = temperature ?? TASK_TEMPERATURE[task] ?? 0.5;
+    const finalMaxTokens = maxTokens ?? TASK_MAX_TOKENS[task] ?? 1200;
 
-  logAIDebug('groq:request', {
-    task,
-    model,
-    temperature: finalTemperature,
-    maxTokens: finalMaxTokens,
-    messages: finalMessages,
-  });
+    logAIDebug('groq:request', {
+      task,
+      model,
+      temperature: finalTemperature,
+      maxTokens: finalMaxTokens,
+      messages: finalMessages,
+    });
 
-  let lastError = 'Eroare necunoscuta';
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify({
-          model,
-          messages: finalMessages,
-          temperature: finalTemperature,
-          max_tokens: finalMaxTokens,
-        }),
-        signal: AbortSignal.timeout(5_000),
-      });
+    let lastError = 'Eroare necunoscuta';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          body: JSON.stringify({
+            model,
+            messages: finalMessages,
+            temperature: finalTemperature,
+            max_tokens: finalMaxTokens,
+          }),
+          signal: AbortSignal.timeout(10_000), // Increased to 10s for reliability
+        });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as any)?.error?.message ?? res.statusText);
-      }
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+          const msg = err?.error?.message ?? res.statusText;
+          if (res.status === 429) { // Rate limit hit
+            logAIDebug('groq:ratelimit', { task, retryAfter: res.headers.get('retry-after') });
+            await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+            continue;
+          }
+          throw new Error(msg);
+        }
 
-      const data = await res.json();
-      const output = (data.choices?.[0]?.message?.content ?? '').trim();
-      logAIDebug('groq:response', { task, output });
-      return output;
-    } catch (error: any) {
-      lastError = error?.message ?? String(error);
-      logAIDebug('groq:error', { task, attempt, error: lastError });
-      if (attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        const data = await res.json();
+        const output = (data.choices?.[0]?.message?.content ?? '').trim();
+        logAIDebug('groq:response', { task, output });
+        return output;
+      } catch (error: unknown) {
+        lastError = error instanceof Error ? error.message : String(error);
+        logAIDebug('groq:error', { task, attempt, error: lastError });
+        if (attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        }
       }
     }
-  }
 
-  throw new Error(`Eroare Groq API: ${lastError}`);
+    throw new Error(`Eroare Groq API: ${lastError}`);
+  });
 }
 
 export async function groqChat(messages: GroqMessage[], temperature = 0.7): Promise<string> {
@@ -310,8 +338,8 @@ export async function groqStream(
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`Eroare Groq API: ${(err as any)?.error?.message ?? res.statusText}`);
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(`Eroare Groq API: ${err?.error?.message ?? res.statusText}`);
   }
   if (!res.body) throw new Error('Răspuns fără corp — încearcă din nou.');
 
@@ -332,7 +360,9 @@ export async function groqStream(
             const json = JSON.parse(trimmed);
             const delta = json.choices?.[0]?.delta?.content ?? '';
             if (delta) { full += delta; onChunk(delta); }
-          } catch {}
+          } catch (err) {
+            console.error(err);
+          }
         }
       }
       break;
@@ -347,7 +377,9 @@ export async function groqStream(
         const json = JSON.parse(trimmed);
         const delta = json.choices?.[0]?.delta?.content ?? '';
         if (delta) { full += delta; onChunk(delta); }
-      } catch {}
+      } catch (err) {
+        console.error(err);
+      }
     }
   }
   return full;
@@ -422,8 +454,8 @@ Format (${needed} obiecte):
         raw = await groqChat(msgs, 0.2);
         if (raw.includes('[') && raw.includes(']')) break;
         lastError = 'Nu conține array JSON';
-      } catch (e: any) {
-        lastError = e.message;
+      } catch (e: unknown) {
+        lastError = e instanceof Error ? e.message : String(e);
         if (attempt === 2 && allQuestions.length === 0)
           throw new Error(`Eroare API după 3 încercări: ${lastError}`);
       }
@@ -536,14 +568,17 @@ export async function notesToFlashcards(
   if (!notesText || notesText.trim().length < 20)
     throw new Error('Notițele sunt prea scurte pentru conversie în flashcarduri.');
 
-  const userPrompt = `Transformă notițele medicale de mai jos în flashcarduri (perechi întrebare-răspuns). Max 15 perechi.
-- "front": întrebare scurtă sau termen
-- "back": răspuns concis
-Răspunde DOAR cu JSON pur.
+  const cleanText = notesText.slice(0, 12000); // Increased limit for better coverage
+  const userPrompt = `Transformă textul medical de mai jos în flashcarduri ultra-eficiente pentru examen. Max 15 perechi.
+REGULI:
+- "front": întrebare provocatoare sau termen cheie
+- "back": răspuns critic, scurt și clar
+- Axează-te pe mecanisme patologice, tratamente de elecție și semne clinice patognomonice.
+Răspunde strict cu array JSON.
 
-NOTIȚE:
+TEXT SURSĂ:
 ---
-${notesText.slice(0, 4000)}
+${cleanText}
 ---
 
 Format: [{"front":"?","back":"..."}]`;
@@ -551,20 +586,20 @@ Format: [{"front":"?","back":"..."}]`;
   let raw = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     raw = await groqChat([
-      { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nTransformi notițe medicale în flashcarduri concise.' },
+      { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEști expert în transformarea cursurilor medicale dense în flashcarduri de tip Active Recall.' },
       { role: 'user', content: userPrompt },
-    ], 0.3);
+    ], 0.4);
     if (raw.includes('[') && raw.includes(']')) break;
   }
 
   const jsonStr = extractJsonArray(raw);
-  if (!jsonStr) throw new Error('Nu s-au putut genera flashcardurile — încearcă din nou.');
+  if (!jsonStr) throw new Error('Nu s-au putut genera flashcardurile. Textul ar putea fi prea complex sau ilizibil.');
 
   try {
     const parsed = JSON.parse(jsonStr) as { front: string; back: string }[];
     return parsed.filter(f => f.front && f.back);
   } catch {
-    throw new Error('JSON invalid — încearcă din nou.');
+    throw new Error('Validarea AI a eșuat — te rugăm să încerci din nou.');
   }
 }
 
@@ -642,11 +677,14 @@ export async function generateMnemonic(
   return groqChat([
     {
       role: 'system',
-      content: 'Ești expert în mnemonice medicale pentru studenți români. Creezi ajutoare de memorare scurte, amuzante și corecte clinic. Max 2 fraze.',
+      content: `Ești expert în mnemonice medicale (ex: "CRAB" pentru mielom multiplu). 
+Scop: Creează un ajutor de memorare (acronim, poveste scurtă, rimă sau asociere vizuală amuzantă) care să lege conceptul din întrebare de răspunsul corect.
+Limba: Română.
+Stil: Creativ, ușor de reținut, chiar și puțin absurd pentru a favoriza memorarea. Max 2-3 fraze.`,
     },
     {
       role: 'user',
-      content: `Mnemonic pentru a reține că "${correctAnswer}" este răspunsul corect la: "${questionText}"`,
+      content: `Am nevoie de o mnemonică pentru a reține că răspunsul corect este "${correctAnswer}" pentru întrebarea: "${questionText}"`,
     },
-  ], 0.7);
+  ], 0.85);
 }

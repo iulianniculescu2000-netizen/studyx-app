@@ -7,6 +7,7 @@ import { validateJson } from './validator';
 import { searchVault } from './vectorStore';
 import type {
   AIAnalysisResult,
+  AIContextPayload,
   AINextQuestionState,
   AIQuestionRequest,
   AIQuestionResult,
@@ -15,7 +16,8 @@ import type {
   HintResult,
   QuestionGenerationResponse,
   UserProfileData,
-  ChunkRecord
+  ChunkRecord,
+  RetrievedChunk
 } from './types';
 import { groqRequest } from '../lib/groq';
 
@@ -43,16 +45,18 @@ export class QuestionGenerator {
     const vaultResults = await searchVault(request.context || 'General medical knowledge', 10);
     const contextSummary = vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n');
     
-    const context = {
+    const context: AIContextPayload = {
       summary: contextSummary,
       chunks: vaultResults,
-      query: request.context
+      query: request.context || 'General medical knowledge',
+      weakTopics,
+      level: difficulty
     };
 
     const parsed = await runAIPipeline<QuestionGenerationResponse>({
       retrieve: () => context.summary,
       generate: async () => {
-        const prompt = buildQuestionPrompt(profile, weakTopics, difficulty, context as any);
+        const prompt = buildQuestionPrompt(profile, weakTopics, difficulty, context);
         return groqRequest({
           task: 'questions',
           messages: [
@@ -77,7 +81,7 @@ export class QuestionGenerator {
 
     return {
       questions: parsed.questions.map(normalizeQuestion),
-      sources: context.chunks.map((chunk: ChunkRecord) => `${chunk.source} - ${chunk.topic}`),
+      sources: (context.chunks as (ChunkRecord | RetrievedChunk)[] | undefined)?.map((chunk) => `${chunk.source} - ${chunk.topic}`) ?? [],
       mode: request.mode ?? 'standard',
     };
   }
@@ -127,10 +131,11 @@ export async function analyzeAnswer(
     ? vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n')
     : '';
 
-  const context = {
+  const context: AIContextPayload = {
     summary: contextSummary,
     chunks: vaultResults,
-    query
+    query,
+    level: payload.question.difficulty
   };
 
   const analysis = await runAIPipeline<AIAnalysisResult>({
@@ -139,7 +144,7 @@ export async function analyzeAnswer(
       groqRequest({
         task: 'explanation',
         messages: [
-          { role: 'system', content: buildExplanationPrompt(payload.userAnswer, payload.correctAnswer, payload.question, context as any) },
+          { role: 'system', content: buildExplanationPrompt(payload.userAnswer, payload.correctAnswer, payload.question, context) },
           { role: 'user', content: 'Analizează răspunsul și returnează JSON-ul solicitat, exclusiv în limba română.' },
         ],
       }),
@@ -170,12 +175,17 @@ export function getNextQuestion(state: AINextQuestionState) {
   return LearningStrategist.getNextQuestion(state);
 }
 
-export async function generateHint(question: Question, _profileId: string) {
+export async function generateHint(question: Question) {
   const query = question.text;
   const vaultResults = await searchVault(query, 4);
   const contextSummary = vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n');
   
-  const context = { summary: contextSummary, query };
+  const context: AIContextPayload = { 
+    summary: contextSummary, 
+    query,
+    chunks: vaultResults,
+    level: question.difficulty
+  };
 
   return runAIPipeline<HintResult>({
     retrieve: () => context.summary,
@@ -183,7 +193,7 @@ export async function generateHint(question: Question, _profileId: string) {
       groqRequest({
         task: 'hint',
         messages: [
-          { role: 'system', content: buildHintPrompt(question, context as any) },
+          { role: 'system', content: buildHintPrompt(question, context) },
           { role: 'user', content: 'Returnează indicii progresive în JSON, integral în română.' },
         ],
       }),
@@ -194,31 +204,42 @@ export async function generateHint(question: Question, _profileId: string) {
   });
 }
 
-export async function generateMnemonicForConcept(concept: string, _profileId: string) {
-  const vaultResults = await searchVault(concept, 3);
+export async function generateMnemonicForConcept(concept: string, correctAnswer: string) {
+  const query = `${concept} ${correctAnswer}`;
+  const vaultResults = await searchVault(query, 3);
   const contextSummary = vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n');
-  const context = { summary: contextSummary, query: concept };
+  const context: AIContextPayload = { 
+    summary: contextSummary, 
+    query,
+    chunks: vaultResults
+  };
 
   const raw = await groqRequest({
     task: 'mnemonic',
     messages: [
-      { role: 'system', content: buildMnemonicPrompt(concept, context as any) },
-      { role: 'user', content: 'Creează un mnemonic creativ în JSON, integral în română.' },
+      { role: 'system', content: buildMnemonicPrompt(concept, context) },
+      { role: 'user', content: `Creează un mnemonic creativ în JSON, integral în română, pentru a reține răspunsul "${correctAnswer}" la conceptul "${concept}".` },
     ],
   });
   const parsed = validateJson<{ mnemonic: string }>(raw);
   return parsed.value?.mnemonic ?? '';
 }
 
-export async function explainWrongOptions(question: Question, _profileId: string) {
+
+export async function explainWrongOptions(question: Question) {
   const vaultResults = await searchVault(question.text, 4);
   const contextSummary = vaultResults.map((c: ChunkRecord) => `[Sursă: ${c.source}]\n${c.text}`).join('\n\n');
-  const context = { summary: contextSummary, query: question.text };
+  const context: AIContextPayload = { 
+    summary: contextSummary, 
+    query: question.text,
+    chunks: vaultResults,
+    level: question.difficulty
+  };
 
   const raw = await groqRequest({
     task: 'explanation',
     messages: [
-      { role: 'system', content: buildWrongOptionsPrompt(question, context as any) },
+      { role: 'system', content: buildWrongOptionsPrompt(question, context) },
       { role: 'user', content: 'Analizează opțiunile și returnează JSON, integral în română.' },
     ],
   });
@@ -255,6 +276,45 @@ export class ExamSimulator {
 
 export function getAdaptiveDifficulty(input: AdaptiveDifficultyInput) {
   return AdaptiveDifficulty.getAdaptiveDifficulty(input);
+}
+
+function deepCleanText(text: string): string {
+  if (!text) return "";
+  // regex avoids control characters properly
+  // eslint-disable-next-line no-control-regex
+  const controlCharsRe = new RegExp('[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F-\\x9F]', 'g');
+  return text
+    .replace(controlCharsRe, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+logAIDebug('AIEngine:init', 'initializat');
+
+export async function generateChatResponse(
+  message: string, 
+  contextSummary: string, 
+  history: { role: 'user' | 'assistant'; content: string }[] = []
+): Promise<string> {
+  const systemPrompt = [
+    'Esti un asistent medical virtual StudyX, util si precis.',
+    'Foloseste contextul furnizat din biblioteca utilizatorului pentru a raspunde.',
+    'Daca informatia nu este in context, foloseste-ti cunostintele generale medicale, dar mentioneaza acest lucru.',
+    'Raspunde intotdeauna in limba romana, clar si structurat.',
+    contextSummary ? `Context relevant din biblioteca:\n${deepCleanText(contextSummary)}` : 'Nu exista context specific furnizat.'
+  ].join('\n\n');
+
+  // Limit history to last 10 messages to save tokens
+  const recentHistory = history.slice(-10);
+
+  return groqRequest({
+    task: 'chat',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...recentHistory,
+      { role: 'user', content: message },
+    ],
+  });
 }
 
 export function getUserProfile(profileId: string) {

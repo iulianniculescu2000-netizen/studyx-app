@@ -106,8 +106,9 @@ export default function Notes() {
                     };
                     addQuiz(newQuiz);
                     navigate(`/quiz/${newQuiz.id}`);
-                  } catch (e: any) {
-                    setAiError(e.message ?? 'Eroare necunoscută.');
+                  } catch (e: unknown) {
+                    const error = e instanceof Error ? e : new Error('Eroare necunoscută.');
+                    setAiError(error.message);
                   } finally {
                     setAiConverting(false);
                   }
@@ -166,18 +167,20 @@ export default function Notes() {
             transition={{ delay: 0.15 }}
             className="text-center py-20 rounded-3xl"
             style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-            <div className="text-5xl mb-4">📝</div>
+            <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center"
+              style={{ background: `${theme.warning}15` }}>
+              <StickyNote size={28} style={{ color: theme.warning }} />
+            </div>
             <h3 className="text-lg font-semibold mb-2" style={{ color: theme.text }}>
               Nicio notiță încă
             </h3>
-            <p className="text-sm mb-6" style={{ color: theme.text3 }}>
-              Adaugă notițe personale în timp ce rezolvi grile.<br />
-              Apar după ce răspunzi la o întrebare.
+            <p className="text-sm mb-6 max-w-xs mx-auto" style={{ color: theme.text3 }}>
+              Adaugă notițe personale în timp ce rezolvi grile. Apar după ce răspunzi la o întrebare.
             </p>
             <Link to="/quizzes"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white"
               style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
-              <BookOpen size={15} />Deschide o grilă
+              <BookOpen size={15} /> Deschide o grilă
             </Link>
           </motion.div>
         )}
