@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { chunkText } from '../ai/chunker';
 import { setAIDebugEnabled, isAIDebugEnabled } from '../ai/debug';
-import { addChunksToVault, clearVault, removeChunksBySource } from '../ai/vectorStore';
+import { addChunksToVault, clearVault, getVaultChunksBySource, removeChunksBySource } from '../ai/vectorStore';
 import { retrieveRelevantChunks } from '../ai/retriever';
 import { idbGet, idbSet } from '../lib/idb';
 
@@ -19,6 +19,9 @@ export interface AIKnowledgeSource {
   qualityScore: number;
   warnings?: string[];
   preview: string;
+  indexStatus?: 'indexing' | 'ready' | 'error';
+  indexProgress?: number;
+  indexError?: string;
 }
 
 interface AIStore {
@@ -36,6 +39,7 @@ interface AIStore {
     type: AIKnowledgeSourceType,
     options?: { onIndexProgress?: (progress: { processed: number; total: number; percent: number }) => void }
   ) => Promise<void>;
+  updateKnowledgeSource: (id: string, patch: Partial<AIKnowledgeSource>) => Promise<void>;
   removeKnowledgeSource: (id: string) => Promise<void>;
   clearKnowledgeSources: () => Promise<void>;
   getKnowledgeContext: (query: string, maxChars?: number) => Promise<string>;
@@ -115,7 +119,9 @@ export const useAIStore = create<AIStore>()((set, get) => ({
   addKnowledgeSource: async (name, content, type, options) => {
     const cleanName = (name || 'Sursa AI').trim().slice(0, 120);
     const normalized = normalizeKnowledgeContent(content);
-    if (normalized.length < 20) return;
+    if (normalized.length < 20) {
+      throw new Error('Continut insuficient pentru indexare.');
+    }
     const { qualityScore, warnings } = scoreKnowledgeQuality(normalized);
     const sourceId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
     const chunks = chunkText(normalized, cleanName, normalized.length > 180000 ? 1400 : 1200, normalized.length > 180000 ? 180 : 200);
@@ -131,15 +137,70 @@ export const useAIStore = create<AIStore>()((set, get) => ({
       qualityScore,
       warnings,
       preview: normalized.slice(0, 150),
+      indexStatus: 'indexing',
+      indexProgress: 0,
     };
 
-    await addChunksToVault(chunks, cleanName, sourceId, {
-      onProgress: options?.onIndexProgress,
-    });
+    const persistSources = async (sources: AIKnowledgeSource[]) => {
+      set({ knowledgeSources: sources });
+      await idbSet('ai-knowledge-sources', sources);
+    };
 
     const next = [...get().knowledgeSources, entry];
-    set({ knowledgeSources: next });
+    await persistSources(next);
 
+    void (async () => {
+      const sourceStillExists = () => get().knowledgeSources.some((source) => source.id === sourceId);
+
+      try {
+        await addChunksToVault(chunks, cleanName, sourceId, {
+          onProgress: (progress) => {
+            options?.onIndexProgress?.(progress);
+            if (!sourceStillExists()) return;
+            const current = get().knowledgeSources;
+            const updated: AIKnowledgeSource[] = current.map((source) => (
+              source.id === sourceId
+                ? { ...source, indexStatus: 'indexing' as const, indexProgress: progress.percent }
+                : source
+            ));
+            set({ knowledgeSources: updated });
+          },
+        });
+
+        if (!sourceStillExists()) {
+          await removeChunksBySource(sourceId);
+          return;
+        }
+
+        const current = get().knowledgeSources;
+        const updated: AIKnowledgeSource[] = current.map((source) => (
+          source.id === sourceId
+            ? { ...source, indexStatus: 'ready' as const, indexProgress: 100, indexError: undefined }
+            : source
+        ));
+        await persistSources(updated);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Indexarea a esuat.';
+        console.error('[AIStore] Background indexing failed:', error);
+        if (!sourceStillExists()) {
+          await removeChunksBySource(sourceId);
+          return;
+        }
+        const current = get().knowledgeSources;
+        const updated: AIKnowledgeSource[] = current.map((source) => (
+          source.id === sourceId
+            ? { ...source, indexStatus: 'error' as const, indexError: message, indexProgress: 0 }
+            : source
+        ));
+        await persistSources(updated);
+      }
+    })();
+  },
+  updateKnowledgeSource: async (id, patch) => {
+    const next = get().knowledgeSources.map((source) => (
+      source.id === id ? { ...source, ...patch } : source
+    ));
+    set({ knowledgeSources: next });
     await idbSet('ai-knowledge-sources', next);
   },
   removeKnowledgeSource: async (id) => {
@@ -217,11 +278,37 @@ export const useAIStore = create<AIStore>()((set, get) => ({
         };
       });
 
-      if (rawOld || migrated.some((s, i) => s !== (loaded[i] as unknown))) {
-        await idbSet('ai-knowledge-sources', migrated);
+      const recovered = await Promise.all(migrated.map(async (source) => {
+        if (source.indexStatus !== 'indexing') return source;
+
+        try {
+          const chunks = await getVaultChunksBySource(source.id);
+          if (chunks.length > 0) {
+            return {
+              ...source,
+              chunkCount: Math.max(source.chunkCount ?? 0, chunks.length),
+              indexStatus: 'ready' as const,
+              indexProgress: 100,
+              indexError: undefined,
+            };
+          }
+        } catch (error) {
+          console.warn('[AIStore] Failed to recover interrupted source:', source.id, error);
+        }
+
+        return {
+          ...source,
+          indexStatus: 'error' as const,
+          indexProgress: 0,
+          indexError: 'Indexarea anterioara a fost intrerupta. Reimporteaza documentul.',
+        };
+      }));
+
+      if (rawOld || recovered.some((s, i) => s !== (loaded[i] as unknown))) {
+        await idbSet('ai-knowledge-sources', recovered);
       }
 
-      set({ knowledgeSources: migrated, isHydrated: true });
+      set({ knowledgeSources: recovered, isHydrated: true });
     } catch {
       set({ knowledgeSources: [], isHydrated: true });
     }

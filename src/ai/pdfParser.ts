@@ -33,6 +33,15 @@ function scorePdfCandidate(text: string) {
   };
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  return await Promise.race<T>([
+    promise,
+    new Promise<T>((_, reject) => {
+      window.setTimeout(() => reject(new Error('PDF_READ_TIMEOUT')), timeoutMs);
+    }),
+  ]);
+}
+
 function validateExtractedText(text: string, kind: 'pdf' | 'docx' | 'image') {
   const cleaned = cleanText(text);
   const { letters, tokens, usefulRatio } = getTextStats(cleaned);
@@ -40,12 +49,14 @@ function validateExtractedText(text: string, kind: 'pdf' | 'docx' | 'image') {
   if (kind === 'pdf') {
     const hasUsefulBody = letters >= 45 && tokens.length >= 8;
     const hasStrongBody = letters >= 140 || (tokens.length >= 22 && usefulRatio >= 0.16);
+    const hasLongNoisyBody = cleaned.length >= 1200 && tokens.length >= 120;
 
     if (hasStrongBody) return cleaned;
     if (hasUsefulBody && usefulRatio >= 0.06) return cleaned;
+    if (hasLongNoisyBody) return cleaned;
 
     throw new Error(
-      'Textul extras din PDF este prea slab pentru a fi folosit sigur. Încearcă o versiune digitală, un export nou sau importul prin OCR în Biblioteca AI.',
+      'Textul extras din PDF este prea slab pentru a fi folosit sigur. Incearca o versiune digitala, un export nou sau importul prin OCR in Biblioteca AI.',
     );
   }
 
@@ -54,7 +65,7 @@ function validateExtractedText(text: string, kind: 'pdf' | 'docx' | 'image') {
   const minUsefulRatio = 0.45;
 
   if (cleaned.length < minChars || tokens.length < minTokens || usefulRatio < minUsefulRatio) {
-    throw new Error('Conținutul extras pare incomplet sau ilizibil.');
+    throw new Error('Continutul extras pare incomplet sau ilizibil.');
   }
 
   return cleaned;
@@ -71,24 +82,32 @@ export async function parsePDF(file: File | string) {
     const filePath = (file as { path?: string }).path;
 
     if (file instanceof File && filePath) {
-      const text = await window.electronAPI.readPdfPath(filePath);
-      if (text && text.trim().length > 5) {
-        candidates.push(text);
+      try {
+        const text = await withTimeout(window.electronAPI.readPdfPath(filePath), 6000);
+        if (text && text.trim().length > 5) {
+          candidates.push(text);
+        }
+      } catch (error) {
+        console.warn('[PDF] readPdfPath fallback triggered:', error);
       }
     }
 
     if (file instanceof File && typeof window.electronAPI.readPdfBuffer === 'function') {
-      const buffer = await file.arrayBuffer();
-      const text = await window.electronAPI.readPdfBuffer(new Uint8Array(buffer));
-      if (text && text.trim().length > 5) {
-        candidates.push(text);
+      try {
+        const buffer = await file.arrayBuffer();
+        const text = await withTimeout(window.electronAPI.readPdfBuffer(new Uint8Array(buffer)), 8000);
+        if (text && text.trim().length > 5) {
+          candidates.push(text);
+        }
+      } catch (error) {
+        console.warn('[PDF] readPdfBuffer fallback triggered:', error);
       }
     }
   }
 
   if (candidates.length === 0) {
     throw new Error(
-      'Nu am putut extrage text din acest PDF. Încearcă o versiune digitală sau importă documentul prin OCR în Biblioteca AI.',
+      'Nu am putut extrage text din acest PDF. Incearca o versiune digitala sau importa documentul prin OCR in Biblioteca AI.',
     );
   }
 
