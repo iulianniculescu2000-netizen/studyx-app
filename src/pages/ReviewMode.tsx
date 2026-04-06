@@ -28,8 +28,8 @@ export default function ReviewMode() {
   const activeProfileId = useUserStore((state) => state.activeProfileId);
 
   const createQuizFromMistakes = () => {
-    const weak = getWeakQuestions(20);
-    const items = weak.flatMap(stat => {
+    const weak = useStatsStore.getState().getWeakQuestions(20);
+    const items = weak.flatMap((stat) => {
       const quiz = quizzes.find(q => q.id === stat.quizId);
       const question = quiz?.questions.find(q => q.id === stat.questionId);
       if (!question) return [];
