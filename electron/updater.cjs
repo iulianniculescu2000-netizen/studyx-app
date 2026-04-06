@@ -31,6 +31,7 @@ const DOWNLOAD_TIMEOUT_MS = 90000;
 const MAX_RETRIES = 2;
 const GITHUB_RELEASE_TAG_API = 'https://api.github.com/repos/iulianniculescu2000-netizen/studyx-updates/releases/tags';
 const GITHUB_RELEASE_LATEST_API = 'https://api.github.com/repos/iulianniculescu2000-netizen/studyx-updates/releases/latest';
+const GITHUB_RELEASES_API = 'https://api.github.com/repos/iulianniculescu2000-netizen/studyx-updates/releases?per_page=50';
 
 let nativeUpdater = null;
 let nativeUpdaterBound = false;
@@ -173,7 +174,7 @@ async function fetchLatestGithubRelease() {
   }
 }
 
-function normalizeGithubRelease(release, localVersion) {
+function normalizeGithubRelease(release, localVersion, metadata = {}) {
   if (!release?.tag_name) return null;
   const version = String(release.tag_name).replace(/^v/, '');
   const installerAsset = Array.isArray(release.assets)
@@ -183,7 +184,7 @@ function normalizeGithubRelease(release, localVersion) {
   return {
     hasUpdate: isNewerVersion(localVersion, version),
     version,
-    latestVersion: version,
+    latestVersion: metadata.latestVersion ?? version,
     releaseDate: normalizeReleaseDate(release.published_at || release.created_at),
     changes: normalizeReleaseNotes(release.body || '', version),
     localVersion,
@@ -200,8 +201,47 @@ function normalizeGithubRelease(release, localVersion) {
         }
       : undefined,
     delivery: app.isPackaged && installerAsset ? 'installer' : 'overlay',
-    isSequential: false,
-    stepsRemaining: isNewerVersion(localVersion, version) ? 1 : 0,
+    isSequential: metadata.isSequential ?? false,
+    stepsRemaining: metadata.stepsRemaining ?? (isNewerVersion(localVersion, version) ? 1 : 0),
+  };
+}
+
+async function fetchGithubReleases() {
+  try {
+    const releases = await fetchJson(GITHUB_RELEASES_API);
+    return Array.isArray(releases) ? releases : [];
+  } catch (err) {
+    logUpdater('GitHub releases list failed:', err?.message || err);
+    return [];
+  }
+}
+
+function pickSequentialGithubRelease(localVersion, releases) {
+  const usable = releases
+    .filter((release) => release && !release.draft && !release.prerelease && release.tag_name)
+    .map((release) => normalizeGithubRelease(release, localVersion))
+    .filter((release) => release?.installer?.url)
+    .sort((left, right) => compareVersion(left.version, right.version));
+
+  if (usable.length === 0) return null;
+
+  const latest = usable[usable.length - 1];
+  const candidates = usable.filter((release) => compareVersion(localVersion, release.version) < 0);
+  if (candidates.length === 0) {
+    return {
+      ...buildNoUpdateResponse(localVersion, latest.version),
+      delivery: latest.delivery,
+      isSequential: true,
+      stepsRemaining: 0,
+    };
+  }
+
+  const next = candidates[0];
+  return {
+    ...next,
+    latestVersion: latest.version,
+    isSequential: true,
+    stepsRemaining: candidates.length,
   };
 }
 
@@ -766,6 +806,12 @@ function registerUpdaterIPC(mainWindow) {
         };
       } catch (versionErr) {
         logUpdater('Version metadata fallback failed:', versionErr?.message || versionErr);
+      }
+
+      const githubReleases = await fetchGithubReleases();
+      const sequentialGithubRelease = pickSequentialGithubRelease(localVersion, githubReleases);
+      if (sequentialGithubRelease) {
+        return sequentialGithubRelease;
       }
 
       const fallbackRelease = await fetchLatestGithubRelease() || await fetchGithubRelease(localVersion);

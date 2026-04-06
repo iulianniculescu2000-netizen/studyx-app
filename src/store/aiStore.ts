@@ -132,15 +132,15 @@ export const useAIStore = create<AIStore>()((set, get) => ({
       warnings,
       preview: normalized.slice(0, 150),
     };
-    
-    const next = [...get().knowledgeSources, entry];
-    set({ knowledgeSources: next });
-    
-    await idbSet('ai-knowledge-sources', next);
-    
+
     await addChunksToVault(chunks, cleanName, sourceId, {
       onProgress: options?.onIndexProgress,
     });
+
+    const next = [...get().knowledgeSources, entry];
+    set({ knowledgeSources: next });
+
+    await idbSet('ai-knowledge-sources', next);
   },
   removeKnowledgeSource: async (id) => {
     const target = get().knowledgeSources.find(s => s.id === id);

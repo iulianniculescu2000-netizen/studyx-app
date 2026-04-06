@@ -7,6 +7,7 @@ const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const CONFIG_PATH = path.join(ROOT, '.update-config.json');
+const ELECTRON_BUILDER_BIN = path.join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder');
 
 function readToken() {
   if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
@@ -38,7 +39,7 @@ function main() {
   console.log('\nPublishing StudyX release via electron-builder...\n');
   run('npm.cmd run generate-icon');
   run('npm.cmd run build');
-  run('electron-builder.cmd --publish always', {
+  run(`"${ELECTRON_BUILDER_BIN}" --publish always`, {
     GH_TOKEN: token,
     GITHUB_TOKEN: token,
   });

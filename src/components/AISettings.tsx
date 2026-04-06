@@ -41,6 +41,15 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
     if (open) setDraft(apiKey);
   }, [open, apiKey]);
 
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string) => {
+    return await Promise.race<T>([
+      promise,
+      new Promise<T>((_, reject) => {
+        window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  };
+
   const isValidKey = (k: string) => k.trim().startsWith('gsk_') && k.trim().length > 20;
 
   const handleSave = () => {
@@ -70,19 +79,19 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
       setProcessProcessingStep('Citim fișierul...');
       if (isPdf) {
         const { parsePDF } = await import('../ai/pdfParser');
-        text = await parsePDF(file);
+        text = await withTimeout(parsePDF(file), 20000, `Importul PDF pentru ${file.name} a expirat.`);
         type = 'pdf';
       } else if (isDocx) {
         const { parseDocx } = await import('../ai/docxParser');
-        text = await parseDocx(file);
+        text = await withTimeout(parseDocx(file), 15000, `Importul DOCX pentru ${file.name} a expirat.`);
         type = 'docx';
       } else if (isImage) {
         setProcessProcessingStep('Analizăm imaginea (OCR)...');
         const { parseImageOCR } = await import('../ai/ocrParser');
-        text = await parseImageOCR(file);
+        text = await withTimeout(parseImageOCR(file), 60000, `OCR-ul pentru ${file.name} a expirat.`);
         type = 'image';
       } else {
-        text = await file.text();
+        text = await withTimeout(file.text(), 10000, `Citirea fisierului ${file.name} a expirat.`);
       }
 
       if (text.trim().length < 20) {
@@ -90,7 +99,11 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
       }
 
       setProcessProcessingStep('Fragmentăm și indexăm...');
-      await addKnowledgeSource(file.name, text, type);
+      await withTimeout(
+        addKnowledgeSource(file.name, text, type),
+        20000,
+        `Indexarea pentru ${file.name} s-a blocat. Incearca din nou dupa restart.`,
+      );
     } catch (err: unknown) {
       setLibraryError(err instanceof Error ? err.message : 'Eroare la import.');
     } finally {

@@ -61,6 +61,15 @@ export default function KnowledgeVault() {
     [knowledgeSources],
   );
 
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string) => {
+    return await Promise.race<T>([
+      promise,
+      new Promise<T>((_, reject) => {
+        window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  };
+
   const yieldToPaint = async () => {
     await new Promise<void>((resolve) => {
       window.setTimeout(resolve, 0);
@@ -91,7 +100,11 @@ export default function KnowledgeVault() {
         if (isPdf) {
           try {
             const { parsePDF } = await import('../ai/pdfParser');
-            text = await parsePDF(file);
+            text = await withTimeout(
+              parsePDF(file),
+              20000,
+              `Importul PDF pentru ${file.name} a expirat. Incearca din nou sau reimporta documentul dupa restart.`,
+            );
             type = 'pdf';
           } catch (pdfErr: unknown) {
             addToast(pdfErr instanceof Error ? pdfErr.message : 'Eroare PDF', 'error');
@@ -99,16 +112,28 @@ export default function KnowledgeVault() {
           }
         } else if (isDocx) {
           const { parseDocx } = await import('../ai/docxParser');
-          text = await parseDocx(file);
+          text = await withTimeout(
+            parseDocx(file),
+            15000,
+            `Importul DOCX pentru ${file.name} a expirat.`,
+          );
           type = 'docx';
         } else if (isImage) {
           setProcessStep(`${filePrefix}Analizam imaginea (OCR)...`);
           await yieldToPaint();
           const { parseImageOCR } = await import('../ai/ocrParser');
-          text = await parseImageOCR(file);
+          text = await withTimeout(
+            parseImageOCR(file),
+            60000,
+            `OCR-ul pentru ${file.name} dureaza prea mult. Incearca o imagine mai mica sau mai clara.`,
+          );
           type = 'image';
         } else {
-          text = await file.text();
+          text = await withTimeout(
+            file.text(),
+            10000,
+            `Citirea fisierului ${file.name} a expirat.`,
+          );
         }
 
         if (text.trim().length < 5) {
@@ -118,11 +143,15 @@ export default function KnowledgeVault() {
 
         setProcessStep(`${filePrefix}Fragmentam si indexam ${file.name}...`);
         await yieldToPaint();
-        await addKnowledgeSource(file.name, text, type, {
-          onIndexProgress: ({ percent }) => {
-            setProcessStep(`${filePrefix}Indexam ${file.name}... ${percent}%`);
-          },
-        });
+        await withTimeout(
+          addKnowledgeSource(file.name, text, type, {
+            onIndexProgress: ({ percent }) => {
+              setProcessStep(`${filePrefix}Indexam ${file.name}... ${percent}%`);
+            },
+          }),
+          20000,
+          `Indexarea pentru ${file.name} s-a blocat. Am oprit importul ca sa nu ramana pe "Citim...".`,
+        );
         addToast(`"${file.name}" adaugat cu succes.`, 'success');
         await yieldToPaint();
       }

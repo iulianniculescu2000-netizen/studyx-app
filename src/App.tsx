@@ -225,6 +225,15 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const tutorialArmedProfileRef = useRef<string | null>(null);
 
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string) => {
+    return await Promise.race<T>([
+      promise,
+      new Promise<T>((_, reject) => {
+        window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  };
+
   const handleGlobalDrop = async (files: File[]) => {
     if (!activeProfileId) return;
     for (const file of files) {
@@ -243,25 +252,29 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
         let type: import('./store/aiStore').AIKnowledgeSourceType = 'txt';
         if (isPdf) {
           const { parsePDF } = await import('./ai/pdfParser');
-          text = await parsePDF(file);
+          text = await withTimeout(parsePDF(file), 20000, `Importul PDF pentru ${file.name} a expirat.`);
           type = 'pdf';
         }
         else if (isDocx) {
           const { parseDocx } = await import('./ai/docxParser');
-          text = await parseDocx(file);
+          text = await withTimeout(parseDocx(file), 15000, `Importul DOCX pentru ${file.name} a expirat.`);
           type = 'docx';
         }
         else if (isImage) {
           const { parseImageOCR } = await import('./ai/ocrParser');
-          text = await parseImageOCR(file);
+          text = await withTimeout(parseImageOCR(file), 60000, `OCR-ul pentru ${file.name} a expirat.`);
           type = 'image';
         }
-        else { text = await file.text(); }
+        else { text = await withTimeout(file.text(), 10000, `Citirea fisierului ${file.name} a expirat.`); }
         if (text.trim().length < 20) {
           addToast(`Conținut insuficient în ${file.name}`, 'warning');
           continue;
         }
-        await addKnowledgeSource(file.name, text, type);
+        await withTimeout(
+          addKnowledgeSource(file.name, text, type),
+          20000,
+          `Indexarea pentru ${file.name} s-a blocat. Incearca din nou dupa restart.`,
+        );
         addToast(`"${file.name}" adăugat cu succes în Biblioteca AI.`, 'success');
       } catch (err) {
         console.error(err);
