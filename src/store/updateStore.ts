@@ -66,6 +66,7 @@ interface UpdateState {
   localVersion: string;
   manifest: UpdateManifest | null;
   downloadPercent: number;
+  lastCheckedAt: number | null;
   error: string | null;
   downloadedInstallerPath: string | null;
   installedContentIds: string[];
@@ -105,6 +106,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   localVersion: '-',
   manifest: null,
   downloadPercent: 0,
+  lastCheckedAt: null,
   error: null,
   downloadedInstallerPath: null,
   installedContentIds: loadInstalledIds(),
@@ -121,7 +123,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
     try {
       const result = await electron.updaterCheck() as CheckResult;
-      set({ localVersion: result.localVersion });
+      set({ localVersion: result.localVersion, lastCheckedAt: Date.now() });
 
       if (result.hasUpdate) {
         set({
@@ -160,12 +162,12 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
             }
           : null,
       });
-
-      setTimeout(() => {
-        set((state) => (state.status === 'up-to-date' ? { status: 'idle' } : state));
-      }, 4000);
     } catch (err: unknown) {
-      set({ status: 'error', error: err instanceof Error ? err.message : 'Eroare necunoscuta' });
+      set({
+        status: 'error',
+        lastCheckedAt: Date.now(),
+        error: err instanceof Error ? err.message : 'Eroare necunoscuta',
+      });
     }
   },
 

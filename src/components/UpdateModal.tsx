@@ -199,7 +199,7 @@ export default function UpdateModal() {
   const theme = useTheme();
   const {
     showUpdateModal, setShowUpdateModal,
-    status, localVersion, manifest, downloadPercent, error,
+    status, localVersion, manifest, downloadPercent, lastCheckedAt, error,
     checkForUpdate, downloadUpdate, applyUpdate, dismiss,
     installedContentIds, contentInstalling, setContentInstalling, markContentInstalled,
   } = useUpdateStore();
@@ -213,6 +213,20 @@ export default function UpdateModal() {
   const nextVersion = manifest?.version ?? localVersion;
   const hasSystemUpdate = ['available', 'downloading', 'ready', 'error'].includes(status);
   const hasContent = contentUpdates.length > 0;
+  const canRefresh = status !== 'checking' && status !== 'downloading';
+  const deliveryLabel = manifest?.delivery === 'native'
+    ? 'Auto-update'
+    : manifest?.delivery === 'installer'
+      ? 'Installer'
+      : 'Overlay';
+  const checkedLabel = lastCheckedAt
+    ? new Intl.DateTimeFormat('ro-RO', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      }).format(lastCheckedAt)
+    : null;
 
   const close = () => {
     setShowUpdateModal(false);
@@ -332,20 +346,27 @@ export default function UpdateModal() {
                   <p style={{ margin: '2px 0 0', fontSize: 12, color: theme.text3 }}>
                     Vezi clar versiunea curenta, urmatorul pas si ultima versiune publicata.
                   </p>
+                  {checkedLabel && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: theme.text3 }}>
+                      Ultima verificare: {checkedLabel}
+                    </div>
+                  )}
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.1, rotate: 15 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={() => checkForUpdate()}
+                  disabled={!canRefresh}
                    title="Verifica actualizari"
                   style={{
                     width: 36,
                     height: 36,
                     borderRadius: 12,
                     border: 'none',
-                    cursor: 'pointer',
-                    background: theme.surface2,
-                    color: theme.text3,
+                    cursor: canRefresh ? 'pointer' : 'not-allowed',
+                    background: canRefresh ? theme.surface2 : `${theme.surface2}CC`,
+                    color: canRefresh ? theme.text3 : theme.text3,
+                    opacity: canRefresh ? 1 : 0.55,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -551,6 +572,20 @@ export default function UpdateModal() {
                                               <StatusDot color={theme.accent} />
                                               <span style={{ fontSize: 16, fontWeight: 800, color: theme.text }}>v{manifest.version}</span>
                                               <span style={{ fontSize: 12, color: theme.text3 }}>{manifest.releaseDate}</span>
+                                              <span
+                                                style={{
+                                                  fontSize: 10,
+                                                  fontWeight: 800,
+                                                  textTransform: 'uppercase',
+                                                  letterSpacing: '0.08em',
+                                                  padding: '3px 8px',
+                                                  borderRadius: 999,
+                                                  background: `${theme.accent}16`,
+                                                  color: theme.accent,
+                                                }}
+                                              >
+                                                {deliveryLabel}
+                                              </span>
                                            </div>
 
                                            {manifest.changes?.length > 0 && (
@@ -591,7 +626,7 @@ export default function UpdateModal() {
 
                                       {/* --- Downloading --- */}
                                       {status === 'downloading' && (
-                                        <div style={{
+                                       <div style={{
                                            background: theme.surface, borderRadius: 12, padding: 16,
                                            border: `1px solid ${theme.border}`
                                         }}>
@@ -704,7 +739,9 @@ export default function UpdateModal() {
 
                 {!hasContent && !hasSystemUpdate && status !== 'checking' && (
                   <div style={{ textAlign: 'center', padding: '14px 0 4px', fontSize: 13, color: theme.text3 }}>
-                    Nu exista continut optional disponibil momentan.
+                    {status === 'up-to-date'
+                      ? 'Aplicatia este deja la zi. Nu exista continut optional disponibil momentan.'
+                      : 'Nu exista continut optional disponibil momentan.'}
                   </div>
                 )}
               </div>

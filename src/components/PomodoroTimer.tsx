@@ -5,6 +5,8 @@ import { useTheme } from '../theme/ThemeContext';
 import { useStatsStore } from '../store/statsStore';
 import { useUIStore } from '../store/uiStore';
 
+const POMODORO_PREFS_KEY = 'studyx-pomodoro-prefs';
+
 /** Play a simple beep using Web Audio API */
 function playAlert(type: 'focus_end' | 'break_end') {
   try {
@@ -36,15 +38,38 @@ const PHASES: Record<Phase, { label: string; duration: number; color: string; em
   long: { label: 'Pauză lungă', duration: 15 * 60, color: '#0A84FF', emoji: '🌿' },
 };
 
+function loadPomodoroPrefs(): { phase: Phase; minimized: boolean } {
+  if (typeof window === 'undefined') return { phase: 'focus', minimized: false };
+  try {
+    const raw = localStorage.getItem(POMODORO_PREFS_KEY);
+    if (!raw) return { phase: 'focus', minimized: false };
+    const parsed = JSON.parse(raw) as { phase?: Phase; minimized?: boolean };
+    const phase = parsed.phase && parsed.phase in PHASES ? parsed.phase : 'focus';
+    return { phase, minimized: !!parsed.minimized };
+  } catch {
+    return { phase: 'focus', minimized: false };
+  }
+}
+
+function savePomodoroPrefs(state: { phase: Phase; minimized: boolean }) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(POMODORO_PREFS_KEY, JSON.stringify(state));
+  } catch {
+    // optional persistence only
+  }
+}
+
 export default function PomodoroTimer() {
   const theme = useTheme();
   const { recordStudySession } = useStatsStore();
   const { chatOpen } = useUIStore();
+  const prefs = useMemo(() => loadPomodoroPrefs(), []);
 
   const [open, setOpen] = useState(false);
-  const [minimized, setMinimized] = useState(false);
-  const [phase, setPhase] = useState<Phase>('focus');
-  const [timeLeft, setTimeLeft] = useState(PHASES.focus.duration);
+  const [minimized, setMinimized] = useState(prefs.minimized);
+  const [phase, setPhase] = useState<Phase>(prefs.phase);
+  const [timeLeft, setTimeLeft] = useState(PHASES[prefs.phase].duration);
   const [running, setRunning] = useState(false);
   const [sessions, setSessions] = useState(0);
   const [viewport, setViewport] = useState(() => ({
@@ -107,6 +132,10 @@ export default function PomodoroTimer() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    savePomodoroPrefs({ phase, minimized });
+  }, [phase, minimized]);
+
   const mm = String(Math.floor(timeLeft / 60)).padStart(2, '0');
   const ss = String(timeLeft % 60).padStart(2, '0');
   const panelWidth = Math.min(280, Math.max(248, viewport.width - 32));
@@ -159,16 +188,21 @@ export default function PomodoroTimer() {
           setMinimized(false);
           setOpen(true);
         }}
+        title="Deschide Pomodoro"
         className="fixed z-[9997] w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl press-feedback"
         style={{
           background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
           boxShadow: `0 8px 24px ${theme.accent}40`,
-        }}>
+        }}
+      >
         <Timer size={20} className="text-white" />
         {running && (
-          <motion.div animate={{ scale: [1, 1.3, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}
+          <motion.div
+            animate={{ scale: [1, 1.3, 1] }}
+            transition={{ repeat: Infinity, duration: 1.5 }}
             className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border-2"
-            style={{ borderColor: theme.isDark ? 'black' : 'white' }} />
+            style={{ borderColor: theme.isDark ? 'black' : 'white' }}
+          />
         )}
       </motion.button>
     );
@@ -177,9 +211,9 @@ export default function PomodoroTimer() {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.88, y: 20 }}
-      animate={{ 
-        opacity: 1, 
-        scale: 1, 
+      animate={{
+        opacity: 1,
+        scale: 1,
         y: 0,
         right: currentRight,
         bottom: currentBottom,
@@ -192,13 +226,14 @@ export default function PomodoroTimer() {
         background: theme.isDark ? 'rgba(18,18,22,0.9)' : 'rgba(255,255,255,0.88)',
         border: `1px solid ${theme.border}`,
         backdropFilter: 'blur(22px) saturate(145%)',
-      }}>
+      }}
+    >
       <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: `1px solid ${theme.border}` }}>
         <Timer size={15} style={{ color: phaseInfo.color }} />
         <span className="flex-1 text-sm font-semibold" style={{ color: theme.text }}>
           {phaseInfo.emoji} {phaseInfo.label}
         </span>
-        <button onClick={() => setMinimized(!minimized)} style={{ color: theme.text3 }}>
+        <button onClick={() => setMinimized(!minimized)} style={{ color: theme.text3 }} title={minimized ? 'Extinde' : 'Minimizează'}>
           {minimized ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
         <motion.button
@@ -209,6 +244,7 @@ export default function PomodoroTimer() {
             reset();
           }}
           style={{ color: theme.text3 }}
+          title="Închide Pomodoro"
         >
           <X size={14} />
         </motion.button>
@@ -221,8 +257,14 @@ export default function PomodoroTimer() {
               <div className="relative w-32 h-32">
                 <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
                   <circle cx="60" cy="60" r="52" fill="none" stroke={theme.surface2} strokeWidth="8" />
-                  <motion.circle cx="60" cy="60" r="52" fill="none"
-                    stroke={phaseInfo.color} strokeWidth="8" strokeLinecap="round"
+                  <motion.circle
+                    cx="60"
+                    cy="60"
+                    r="52"
+                    fill="none"
+                    stroke={phaseInfo.color}
+                    strokeWidth="8"
+                    strokeLinecap="round"
                     strokeDasharray={circumference}
                     animate={{ strokeDashoffset: circumference * (1 - pct) }}
                     transition={{ duration: 0.5, ease: 'linear' }}
@@ -236,26 +278,37 @@ export default function PomodoroTimer() {
               </div>
               <div className="flex gap-1.5 mt-3">
                 {(Object.keys(PHASES) as Phase[]).map((p) => (
-                  <button key={p} onClick={() => reset(p)}
+                  <button
+                    key={p}
+                    onClick={() => reset(p)}
+                    title={PHASES[p].label}
                     className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
                     style={{
                       background: phase === p ? `${PHASES[p].color}22` : theme.surface2,
                       color: phase === p ? PHASES[p].color : theme.text3,
                       border: `1px solid ${phase === p ? PHASES[p].color + '50' : 'transparent'}`,
-                    }}>
+                    }}
+                  >
                     {PHASES[p].emoji}
                   </button>
                 ))}
               </div>
               <div className="flex gap-2 mt-4">
-                <motion.button whileTap={{ scale: 0.9 }} onClick={() => reset()}
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => reset()}
+                  title="Resetează timerul"
                   className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{ background: theme.surface2, color: theme.text3 }}>
+                  style={{ background: theme.surface2, color: theme.text3 }}
+                >
                   <RotateCcw size={14} />
                 </motion.button>
-                <motion.button whileTap={{ scale: 0.9 }} onClick={() => setRunning(!running)}
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setRunning(!running)}
                   className="w-24 h-10 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 text-white"
-                  style={{ background: running ? phaseInfo.color + 'cc' : phaseInfo.color }}>
+                  style={{ background: running ? `${phaseInfo.color}cc` : phaseInfo.color }}
+                >
                   {running ? <><Pause size={14} />Pauză</> : <><Play size={14} />Start</>}
                 </motion.button>
               </div>

@@ -85,6 +85,15 @@ export default function TitleBar() {
   if (!isElectron) return null;
 
   const pageTitle = getPageTitle(location.pathname);
+  const compactSaveLabel = phase === 'saving'
+    ? 'Salvare'
+    : phase === 'saved'
+      ? 'Salvat'
+      : phase === 'recovering'
+        ? 'Recuperare'
+        : phase === 'error'
+          ? 'Eroare'
+          : message;
 
   return (
     <div
@@ -172,8 +181,9 @@ export default function TitleBar() {
                   maxWidth: ultraCompact ? 112 : compact ? 132 : 168,
                   boxShadow: `inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 18px ${theme.isDark ? 'rgba(0,0,0,0.16)' : 'rgba(26,33,56,0.08)'}`,
                 }}
+                title={message}
               >
-                <span className="truncate block">{ultraCompact ? message.replace(/^salv/i, 'ok') : message}</span>
+                <span className="truncate block">{ultraCompact ? compactSaveLabel : message}</span>
               </motion.div>
             )}
           </AnimatePresence>
