@@ -126,6 +126,14 @@ async function markCorruptFile(filePath) {
   }
 }
 
+function getAppIconPath() {
+  const icoPath = path.join(__dirname, '../public/icon.ico');
+  const pngPath = path.join(__dirname, '../public/icon.png');
+  if (fs.existsSync(icoPath)) return icoPath;
+  if (fs.existsSync(pngPath)) return pngPath;
+  return undefined;
+}
+
 function getWindowStatePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
 }
@@ -248,50 +256,82 @@ function ensureWindowFitsDisplay(win) {
 
 // ── Helper Functions ────────────────────────────────────────────────────────
 
-const extractPdfText = async (filePath) => {
-  // Optimized: Use a promise to keep UI responsive
-  return new Promise(async (resolve) => {
-    const regexFallback = (buffer) => {
-      const raw = buffer.toString('latin1');
-      const textChunks = [];
-      const arrayRe = /\[((?:\([^)]*\)|-?\d+(?:\.\d+)?|\s+)+)\]\s*TJ/g;
-      let m;
-      while ((m = arrayRe.exec(raw)) !== null) {
-        const content = m[1];
-        const innerParenRe = /\(([^)]*)\)/g;
-        while ((innerParenRe.exec(content)) !== null) {
-          let t = RegExp.$1.replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
-                           .replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\\\/g, '\\');
-          if (t.trim().length > 0) textChunks.push(t);
-        }
-      }
-      const parenRe = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*(?:Tj|'|")/g;
-      while ((m = parenRe.exec(raw)) !== null) {
-        let t = m[1]
-          .replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
-          .replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\\\/g, '\\')
-          .replace(/\\(.)/g, '$1');
-        if (t.trim().length > 0) textChunks.push(t);
-      }
-      return textChunks.join(' ').replace(/\s+/g, ' ').trim();
-    };
+function regexPdfFallback(buffer) {
+  const raw = buffer.toString('latin1');
+  const textChunks = [];
+  const arrayRe = /\[((?:\([^)]*\)|-?\d+(?:\.\d+)?|\s+)+)\]\s*TJ/g;
+  let match;
+
+  while ((match = arrayRe.exec(raw)) !== null) {
+    const content = match[1];
+    const innerParenRe = /\(([^)]*)\)/g;
+    let inner;
+    while ((inner = innerParenRe.exec(content)) !== null) {
+      const text = inner[1]
+        .replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)))
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '')
+        .replace(/\\\\/g, '\\');
+      if (text.trim().length > 0) textChunks.push(text);
+    }
+  }
+
+  const parenRe = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*(?:Tj|'|")/g;
+  while ((match = parenRe.exec(raw)) !== null) {
+    const text = match[1]
+      .replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)))
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '')
+      .replace(/\\\\/g, '\\')
+      .replace(/\\(.)/g, '$1');
+    if (text.trim().length > 0) textChunks.push(text);
+  }
+
+  return textChunks.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+async function extractPdfTextFromBuffer(buffer) {
+  const fallbackText = regexPdfFallback(buffer);
+  try {
+    const pdfParse = require('pdf-parse');
+    let parsedText = '';
 
     try {
-      const pdfParse = require('pdf-parse');
-      const buffer = await fsp.readFile(filePath);
-      pdfParse(buffer).then(data => {
-        const pdfText = data.text.replace(/\s+/g, ' ').trim();
-        const fallbackText = regexFallback(buffer);
-        const result = pdfText.length > fallbackText.length ? pdfText : fallbackText;
-        resolve(result.length > 10 ? result : null);
-      }).catch(() => {
-        const fallback = regexFallback(buffer);
-        resolve(fallback.length > 10 ? fallback : null);
-      });
-    } catch (err) {
-      resolve(null);
+      if (typeof pdfParse === 'function') {
+        const data = await pdfParse(buffer);
+        parsedText = String(data?.text || '').replace(/\s+/g, ' ').trim();
+      } else if (typeof pdfParse?.PDFParse === 'function') {
+        const parser = new pdfParse.PDFParse({ data: buffer });
+        try {
+          const data = await parser.getText({ pageJoiner: '\n' });
+          parsedText = String(data?.text || '').replace(/\s+/g, ' ').trim();
+        } finally {
+          try {
+            await parser.destroy();
+          } catch {}
+        }
+      } else if (typeof pdfParse?.default === 'function') {
+        const data = await pdfParse.default(buffer);
+        parsedText = String(data?.text || '').replace(/\s+/g, ' ').trim();
+      }
+    } catch {
+      parsedText = '';
     }
-  });
+
+    const result = parsedText.length >= fallbackText.length ? parsedText : fallbackText;
+    return result.length > 8 ? result : null;
+  } catch {
+    return fallbackText.length > 8 ? fallbackText : null;
+  }
+}
+
+const extractPdfText = async (filePath) => {
+  try {
+    const buffer = await fsp.readFile(filePath);
+    return extractPdfTextFromBuffer(buffer);
+  } catch {
+    return null;
+  }
 };
 
 const extractDocxText = async (filePath) => {
@@ -395,15 +435,7 @@ function registerIpcHandlers() {
               : null;
       if (!buffer || buffer.length === 0) return null;
 
-      try {
-        const pdfParse = require('pdf-parse');
-        const data = await pdfParse(buffer);
-        const extracted = String(data?.text || '').replace(/\s+/g, ' ').trim();
-        return extracted.length > 10 ? extracted : null;
-      } catch (err) {
-        console.error('[PDF] Buffer extraction failed:', err);
-        return null;
-      }
+      return await extractPdfTextFromBuffer(buffer);
     } catch (err) {
       console.error('[PDF] Invalid buffer payload:', err);
       return null;
@@ -592,9 +624,7 @@ function registerIpcHandlers() {
 // ── Main Functions ───────────────────────────────────────────────────────────
 
 function createWindow() {
-  const icoPath = path.join(__dirname, '../public/icon.ico');
-  const pngPath = path.join(__dirname, '../public/icon.png');
-  const iconPath = fs.existsSync(icoPath) ? icoPath : (fs.existsSync(pngPath) ? pngPath : undefined);
+  const iconPath = getAppIconPath();
   const adaptiveMetrics = getAdaptiveWindowMetrics();
   const savedBounds = readWindowState();
   const initialBounds = savedBounds ?? {
@@ -731,7 +761,7 @@ if (!gotTheLock) {
     createWindow();
     scheduleDailyReminder();
     try {
-      const trayIcon = nativeImage.createFromPath(path.join(__dirname, '../public/icon.ico')).resize({ width: 16, height: 16 });
+      const trayIcon = nativeImage.createFromPath(getAppIconPath() || '').resize({ width: 16, height: 16 });
       tray = new Tray(trayIcon);
       tray.setContextMenu(Menu.buildFromTemplate([
         { label: 'Deschide StudyX', click: () => mainWindow?.show() },

@@ -110,7 +110,7 @@ export default function TitleBar() {
       <div className="flex items-center w-full" style={{ position: 'relative', zIndex: 1 }}>
         <div
           className="flex items-center overflow-hidden"
-          style={{ minWidth: ultraCompact ? 96 : compact ? 128 : 176, paddingLeft: compact ? 14 : 18, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
+          style={{ minWidth: ultraCompact ? 110 : compact ? 144 : 188, paddingLeft: compact ? 16 : 20, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
         >
           <div className="flex min-w-0 flex-col">
             <span className="text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: theme.text3 }}>
@@ -133,7 +133,7 @@ export default function TitleBar() {
         </div>
 
         <div
-          className="flex-1 flex items-center justify-center px-3"
+          className="flex-1 flex items-center justify-center px-4"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
         >
           <div style={{ width: ultraCompact ? '100%' : 'auto', maxWidth: ultraCompact ? 220 : 320 }}>
@@ -142,8 +142,8 @@ export default function TitleBar() {
         </div>
 
         <div
-          className="flex items-center justify-end gap-2 pr-2"
-          style={{ minWidth: ultraCompact ? 128 : compact ? 180 : 228, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
+          className="flex items-center justify-end gap-2 pr-3"
+          style={{ minWidth: ultraCompact ? 136 : compact ? 192 : 236, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
         >
           <AnimatePresence mode="wait">
             {phase !== 'idle' && (
@@ -179,7 +179,7 @@ export default function TitleBar() {
           </AnimatePresence>
         </div>
 
-        <div style={{ minWidth: 150, flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }} />
+        <div style={{ minWidth: ultraCompact ? 132 : 150, flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }} />
       </div>
     </div>
   );

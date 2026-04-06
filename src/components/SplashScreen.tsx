@@ -79,7 +79,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
                 margin: 0,
               }}
             >
-              Medicina • Inteligenta • Performanta
+              Medicina / Inteligenta / Performanta
             </p>
           </motion.div>
 

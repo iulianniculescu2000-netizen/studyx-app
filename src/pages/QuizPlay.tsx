@@ -12,17 +12,9 @@ import { useTheme } from '../theme/ThemeContext';
 import QuizImage from '../components/QuizImage';
 import type { QuizSession, Question, Option } from '../types';
 import type { AIAnalysisResult, HintResult } from '../ai/types';
+import { formatQuizPlayTime, getCorrectOptionIds, isCorrectSelection, shuffleArray } from './quiz-play/helpers';
 
 const loadAIEngine = () => import('../ai/AIEngine');
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
 
 export default function QuizPlay() {
   const { id } = useParams<{ id: string }>();
@@ -48,12 +40,12 @@ export default function QuizPlay() {
   // Build shuffled question/option order once
   const orderedQuestions = useMemo<Question[]>(() => {
     if (!quiz) return [];
-    let qs = quiz.shuffleQuestions ? shuffle(quiz.questions) : [...quiz.questions];
+    let qs = quiz.shuffleQuestions ? shuffleArray(quiz.questions) : [...quiz.questions];
     if (wrongQuestionsOnly && wrongQuestionsOnly.length > 0) {
       qs = qs.filter(q => wrongQuestionsOnly.includes(q.id));
     }
     if (quiz.shuffleAnswers) {
-      return qs.map((q) => ({ ...q, options: shuffle(q.options) }));
+      return qs.map((q) => ({ ...q, options: shuffleArray(q.options) }));
     }
     return qs;
   }, [quiz, wrongQuestionsOnly]);
@@ -91,8 +83,6 @@ export default function QuizPlay() {
   const currentNote = useNotesStore((s) => (question ? (s.notes[question.id] ?? '') : ''));
 
   const { focusMode, toggleFocusMode } = useFocusModeStore();
-
-  const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   // Smart nudge logic: if user is stuck for >12s, pulse the hint button
   useEffect(() => {
@@ -160,28 +150,28 @@ export default function QuizPlay() {
   const finishQuiz = useCallback((finalAnswers: Record<string, string[]>) => {
     const score = questionQueue.filter((q) => {
       const userAnswers = finalAnswers[q.id] ?? [];
-      const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
-      return userAnswers.length === correctIds.length && correctIds.every((id) => userAnswers.includes(id));
+      const correctIds = getCorrectOptionIds(q.options);
+      return isCorrectSelection(userAnswers, correctIds);
     }).length;
     questionQueue.forEach((q) => {
       const userAnswers = finalAnswers[q.id] ?? [];
-      const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
-      const isCorrect = userAnswers.length === correctIds.length && correctIds.every((id) => userAnswers.includes(id));
+      const correctIds = getCorrectOptionIds(q.options);
+      const isCorrect = isCorrectSelection(userAnswers, correctIds);
       recordAnswer(quiz!.id, q.id, isCorrect);
     });
     const duration = Math.floor((Date.now() - startedAt) / 1000);
     recordStudySession(duration);
 
-    // ── Rezidențiat penalty scoring ──────────────────────────────────────────
+    // -- Reziden?iat penalty scoring ------------------------------------------
     // +1 per fully correct answer, -0.25 per wrong option selected.
-    // Only active when quiz.penaltyMode is true. Score net is clamped to ≥ 0.
+    // Only active when quiz.penaltyMode is true. Score net is clamped to = 0.
     let penalizedScore: number | undefined;
     if (quiz!.penaltyMode) {
       let netPoints = 0;
       questionQueue.forEach((q) => {
         const userAnswers = finalAnswers[q.id] ?? [];
         if (userAnswers.length === 0) return; // unanswered: no points, no penalty
-        const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id);
+        const correctIds = getCorrectOptionIds(q.options);
         const allCorrect =
           userAnswers.length === correctIds.length &&
           correctIds.every((id) => userAnswers.includes(id));
@@ -270,8 +260,8 @@ export default function QuizPlay() {
       else { setCurrentIdx((i) => i + 1); setSelectedNow([]); }
     } else {
       setRevealed(true);
-      const correctIdsForQuestion = question.options.filter((option) => option.isCorrect).map((option) => option.id);
-      const isCorrect = selectedNow.length === correctIdsForQuestion.length && correctIdsForQuestion.every((currentId) => selectedNow.includes(currentId));
+      const correctIdsForQuestion = getCorrectOptionIds(question.options);
+      const isCorrect = isCorrectSelection(selectedNow, correctIdsForQuestion);
       if (isCorrect) {
         setFeedbackAnim('correct');
         setTimeout(() => setFeedbackAnim(null), 400);
@@ -316,14 +306,14 @@ export default function QuizPlay() {
       const currentAnswers = answers[question.id] ?? selectedNow;
       const userAnswer = question.options.filter((option) => currentAnswers.includes(option.id)).map((option) => option.text).join(', ');
       const correctAnswer = question.options.filter((option) => option.isCorrect).map((option) => option.text).join(', ');
-      const correctIdsForQuestion = question.options.filter((option) => option.isCorrect).map((option) => option.id);
-      const isCorrect = currentAnswers.length === correctIdsForQuestion.length && correctIdsForQuestion.every((currentId) => currentAnswers.includes(currentId));
+      const correctIdsForQuestion = getCorrectOptionIds(question.options);
+      const isCorrect = isCorrectSelection(currentAnswers, correctIdsForQuestion);
       const { analysis } = await analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect });
       setAnalysisResult(analysis);
       setAnalysisQuestionId(question.id);
       setAiText(analysis.explanation);
     } catch {
-      setAiText('Nu s-a putut genera explicația. Verifică cheia API în Setări.');
+      setAiText('Nu s-a putut genera explicatia. Verifica cheia API in Setari.');
     } finally {
       setAiLoading(false);
     }
@@ -334,9 +324,9 @@ export default function QuizPlay() {
     const currentAnswers = answers[question.id] ?? selectedNow;
     if (currentAnswers.length === 0) return;
     const userAnswer = question.options.filter((option) => currentAnswers.includes(option.id)).map((option) => option.text).join(', ');
-    const correctIdsForQuestion = question.options.filter((option) => option.isCorrect).map((option) => option.id);
+    const correctIdsForQuestion = getCorrectOptionIds(question.options);
     const correctAnswer = question.options.filter((option) => option.isCorrect).map((option) => option.text).join(', ');
-    const isCorrect = currentAnswers.length === correctIdsForQuestion.length && correctIdsForQuestion.every((currentId) => currentAnswers.includes(currentId));
+    const isCorrect = isCorrectSelection(currentAnswers, correctIdsForQuestion);
     let cancelled = false;
 
     setAiLoading(true);
@@ -433,14 +423,14 @@ export default function QuizPlay() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost găsită.</p>
-          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi la grile</Link>
+          <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost gasita.</p>
+          <Link to="/quizzes" style={{ color: theme.accent }}>Inapoi la grile</Link>
         </div>
       </div>
     );
   }
 
-  const correctIds = question.options.filter((o) => o.isCorrect).map((o) => o.id);
+  const correctIds = getCorrectOptionIds(question.options);
 
   const getOptionStyle = (optId: string): React.CSSProperties => {
     const isSelected = selectedNow.includes(optId);
@@ -475,7 +465,7 @@ export default function QuizPlay() {
   };
 
   const difficultyColor = { easy: theme.success, medium: theme.warning, hard: theme.danger };
-  const difficultyLabel = { easy: 'Ușor', medium: 'Mediu', hard: 'Dificil' };
+  const difficultyLabel = { easy: 'Usor', medium: 'Mediu', hard: 'Dificil' };
 
   return (
     <div className="h-full overflow-y-auto relative">
@@ -532,7 +522,7 @@ export default function QuizPlay() {
             )}
             {!examMode && (
               <button onClick={() => setAutoAdvance(!autoAdvance)}
-                title={autoAdvance ? 'Dezactivează auto-avansare' : 'Activează auto-avansare (1.5s)'}
+                title={autoAdvance ? 'Dezactiveaza auto-avansare' : 'Activeaza auto-avansare (1.5s)'}
                 className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
                 style={{ color: autoAdvance ? theme.accent : theme.text3 }}>
                 <Zap size={13} fill={autoAdvance ? theme.accent : 'none'} />
@@ -542,7 +532,7 @@ export default function QuizPlay() {
               <button
                 onClick={handleSkipQuestion}
                 disabled={isLast || questionQueue.length <= 1}
-                title="Sari peste această întrebare și revino la final"
+                title="Sari peste aceasta intrebare si revino la final"
                 className="flex items-center gap-1 text-xs transition-all hover:opacity-80 disabled:opacity-40"
                 style={{ color: theme.warning }}
               >
@@ -556,13 +546,13 @@ export default function QuizPlay() {
               <Keyboard size={13} />
             </button>
             <button onClick={toggleFocusMode}
-              title={focusMode ? 'Ieși din Modul Focus' : 'Intră în Modul Focus'}
+              title={focusMode ? 'Iesi din Modul Focus' : 'Intra in Modul Focus'}
               className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
               style={{ color: focusMode ? theme.accent : theme.text3 }}>
               <Zap size={13} fill={focusMode ? theme.accent : 'none'} />
             </button>
             <div className="flex items-center gap-1.5 text-sm" style={{ color: theme.text3 }}>
-              <Clock size={13} />{formatTime(timeElapsed)}
+              <Clock size={13} />{formatQuizPlayTime(timeElapsed)}
             </div>
             <div className="flex items-center gap-1.5 text-sm" style={{ color: theme.text3 }}>
               <BookOpen size={13} />{currentIdx + 1}/{questionQueue.length}
@@ -586,7 +576,7 @@ export default function QuizPlay() {
               exit={{ opacity: 0, height: 0 }}
               className="mt-3 p-3 rounded-xl text-xs flex flex-wrap gap-3"
               style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text3 }}>
-              {['1-4 / A-D: selectează opțiune', 'Enter / Space: confirmare / următor'].map((hint) => (
+              {['1-4 / A-D: selecteaza optiune', 'Enter / Space: confirmare / urmator'].map((hint) => (
                 <span key={hint} className="font-mono">{hint}</span>
               ))}
             </motion.div>
@@ -616,7 +606,7 @@ export default function QuizPlay() {
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>
-                  Întrebarea {currentIdx + 1}
+                  Intrebarea {currentIdx + 1}
                 </span>
                 {isMultiple && (
                   <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
@@ -642,7 +632,7 @@ export default function QuizPlay() {
 
               {isMultiple && !revealed && (
                 <p className="text-sm mt-2" style={{ color: theme.text3 }}>
-                  Selectează toate răspunsurile corecte, apoi apasă "Confirmă"
+                  Selecteaza toate raspunsurile corecte, apoi apasa "Confirma"
                 </p>
               )}
             </div>
@@ -713,7 +703,7 @@ export default function QuizPlay() {
                         <div className="flex items-center gap-2">
                           <Sparkles size={14} style={{ color: theme.accent }} />
                           <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accent }}>
-                            Indiciu AI • Nivel {hintLevel}/3
+                            Indiciu AI - Nivel {hintLevel}/3
                           </span>
                         </div>
                         {hintLevel < 3 && (
@@ -770,9 +760,9 @@ export default function QuizPlay() {
                       color: getOptionTextColor(opt.id),
                     }}>
                     {revealed && correctIds.includes(opt.id) 
-                      ? '✓' 
+                      ? '\u2713' 
                       : (selectedNow.includes(opt.id) 
-                          ? (revealed ? '✗' : (isMultiple ? '✓' : String.fromCharCode(65 + i))) 
+                          ? (revealed ? '\u00D7' : (isMultiple ? '\u25CF' : String.fromCharCode(65 + i))) 
                           : String.fromCharCode(65 + i))}
                   </div>
                   <span className="text-sm font-medium" style={{ color: getOptionTextColor(opt.id) }}>
@@ -803,7 +793,7 @@ export default function QuizPlay() {
                   whileHover={calmMotion ? undefined : { scale: 1.01 }}
                   whileTap={calmMotion ? undefined : { scale: 0.98 }}
                 >
-                  Confirmă selecția ({selectedNow.length} {selectedNow.length === 1 ? 'ales' : 'alese'})
+                  Confirma selectia ({selectedNow.length} {selectedNow.length === 1 ? 'ales' : 'alese'})
                 </motion.button>
               )}
             </AnimatePresence>
@@ -819,7 +809,7 @@ export default function QuizPlay() {
                   style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}
                 >
                   <p className="text-sm" style={{ color: theme.text2 }}>
-                    <span className="font-semibold" style={{ color: theme.accent }}>💡 Explicație: </span>
+                    <span className="font-semibold" style={{ color: theme.accent }}>Explicatie: </span>
                     {question.explanation}
                   </p>
                   {autoAdvance && (
@@ -855,7 +845,7 @@ export default function QuizPlay() {
                       }}
                     >
                       <Sparkles size={12} />
-                      Explică AI
+                      Explica AI
                     </button>
                   ) : (
                     <motion.div
@@ -868,7 +858,7 @@ export default function QuizPlay() {
                       <div className="flex items-center gap-2 mb-3">
                         <Sparkles size={14} style={{ color: theme.accent2 }} />
                         <span className="text-xs font-black uppercase tracking-widest" style={{ color: theme.accent2 }}>
-                          Explicație AI
+                          Explicatie AI
                         </span>
                         {aiLoading && (
                           <motion.div
@@ -881,17 +871,17 @@ export default function QuizPlay() {
                       </div>
                       <p className="text-sm leading-generous whitespace-pre-wrap" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
                         {aiText}
-                        {aiLoading && <span className="animate-pulse">▊</span>}
+                        {aiLoading && <span className="animate-pulse">...</span>}
                       </p>
                       {analysisResult?.mistakeType && (
                         <div className="mt-4 pt-4 border-t border-dashed opacity-60" style={{ borderColor: `${theme.accent2}30` }}>
-                          <div className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: theme.accent2 }}>Analiză eroare</div>
+                          <div className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: theme.accent2 }}>Analiza eroare</div>
                           <div className="text-xs" style={{ color: theme.text3 }}>{analysisResult.mistakeType}</div>
                         </div>
                       )}
                       {analysisResult?.rule && (
                         <div className="mt-2 text-xs italic" style={{ color: theme.text3 }}>
-                          Regulă: {analysisResult.rule}
+                          Regula: {analysisResult.rule}
                         </div>
                       )}
                       {nextTopicHint && (
@@ -905,7 +895,7 @@ export default function QuizPlay() {
               )}
             </AnimatePresence>
 
-            {/* Mnemonic AI — only when answer was wrong */}
+            {/* Mnemonic AI - only when answer was wrong */}
             <AnimatePresence>
               {revealed && !examMode && hasKey() && (() => {
                 const userSel = answers[question.id] ?? selectedNow;
@@ -974,10 +964,10 @@ export default function QuizPlay() {
                   <div className="flex items-center gap-2 px-3 py-2"
                     style={{ background: theme.surface2, borderBottom: `1px solid ${theme.border}` }}>
                     <StickyNote size={12} style={{ color: theme.warning }} />
-                    <span className="text-xs font-medium" style={{ color: theme.text3 }}>Notița mea</span>
+                    <span className="text-xs font-medium" style={{ color: theme.text3 }}>Notita mea</span>
                   </div>
                   <textarea
-                    placeholder="Adaugă o notiță pentru această întrebare..."
+                    placeholder="Adauga o notita pentru aceasta intrebare..."
                     value={currentNote}
                     onChange={e => setNote(question.id, e.target.value)}
                     rows={2}
@@ -1000,7 +990,7 @@ export default function QuizPlay() {
                   whileHover={calmMotion ? undefined : { scale: 1.01 }}
                   whileTap={calmMotion ? undefined : { scale: 0.98 }}
                 >
-                  {isLast ? '🏁 Vezi rezultatele' : (<>Următor <ChevronRight size={16} /></>)}
+                  {isLast ? 'Vezi rezultatele' : (<>Urmator <ChevronRight size={16} /></>)}
                 </motion.button>
               )}
             </AnimatePresence>

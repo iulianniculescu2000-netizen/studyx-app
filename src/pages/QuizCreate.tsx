@@ -1,15 +1,15 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useRef, useMemo, memo, useDeferredValue } from 'react';
+import { useState, useRef, useMemo, useDeferredValue } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Check, ChevronLeft, Sparkles, Layers, ImagePlus, X, Pencil, Tag, GripVertical, Eye, Bot, Loader2, FileText, Scale } from 'lucide-react';
+import { Plus, Trash2, Check, ChevronLeft, Sparkles, Layers, ImagePlus, X, Pencil, Tag, Eye, Bot, Loader2, FileText, Scale } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { useQuizStore } from '../store/quizStore';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore } from '../store/aiStore';
 import type { Question, Option, Difficulty, QuizColor } from '../types';
-import type { Theme } from '../theme/themes';
+import { CATEGORIES, COLORS, DIFFICULTIES, EMOJIS, OPTION_IDS, compressImage, generateId, newQuestion } from './quiz-create/helpers';
+import { Label, Panel, SortableQuestionTab, Toggle } from './quiz-create/ui';
 
 let quizCreateAIPromise: Promise<typeof import('../lib/groq')> | null = null;
 
@@ -18,89 +18,6 @@ function loadQuizCreateAI() {
     quizCreateAIPromise = import('../lib/groq');
   }
   return quizCreateAIPromise;
-}
-
-const EMOJIS = ['📚', '🧠', '💡', '🔬', '🌍', '💻', '🔢', '🎯', '⚡', '🏆', '🎓', '🌱', '🧪', '🗺️', '📖', '🏛️', '🩺', '💊', '❤️', '🦠', '🔭', '🧬'];
-const COLORS: { id: QuizColor; bg: string }[] = [
-  { id: 'blue', bg: 'linear-gradient(135deg, #0A84FF, #5E5CE6)' },
-  { id: 'purple', bg: 'linear-gradient(135deg, #5E5CE6, #AF52DE)' },
-  { id: 'green', bg: 'linear-gradient(135deg, #30D158, #34C759)' },
-  { id: 'orange', bg: 'linear-gradient(135deg, #FF9F0A, #FF6B00)' },
-  { id: 'pink', bg: 'linear-gradient(135deg, #FF375F, #FF2D55)' },
-  { id: 'red', bg: 'linear-gradient(135deg, #FF453A, #FF3B30)' },
-  { id: 'teal', bg: 'linear-gradient(135deg, #5AC8FA, #32ADE6)' },
-];
-const CATEGORIES = ['Dermatologie', 'Anatomie', 'Fiziologie', 'Biochimie', 'Farmacologie', 'Patologie', 'Chirurgie', 'Medicină internă', 'Neurologie', 'Microbiologie', 'Histologie', 'Altele'];
-const DIFFICULTIES: { id: Difficulty; label: string; color: string }[] = [
-  { id: 'easy', label: 'Ușor', color: '#30D158' },
-  { id: 'medium', label: 'Mediu', color: '#FF9F0A' },
-  { id: 'hard', label: 'Dificil', color: '#FF453A' },
-];
-
-const OPTION_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
-
-function compressImage(dataUrl: string, maxPx = 800, quality = 0.75): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > maxPx || height > maxPx) {
-        if (width > height) { height = Math.round(height * maxPx / width); width = maxPx; }
-        else { width = Math.round(width * maxPx / height); height = maxPx; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
-
-function generateId() { return crypto.randomUUID().replace(/-/g, '').slice(0, 12); }
-
-function SortableQuestionTab({ id, index, isActive, isValid, onClick, theme }: {
-  id: string; index: number; isActive: boolean; isValid: boolean; onClick: () => void; theme: Theme;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  return (
-    <div ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
-      className="flex-shrink-0 relative group">
-      <button onClick={onClick}
-        className="w-9 h-9 rounded-xl text-sm font-medium transition-all"
-        style={{
-          background: isActive ? `${theme.accent}20` : isValid ? `${theme.success}15` : theme.surface,
-          border: `1px solid ${isActive ? theme.accent + '40' : 'transparent'}`,
-          color: isActive ? theme.accent : isValid ? theme.success : theme.text3,
-        }}>{index + 1}</button>
-      <div {...attributes} {...listeners}
-        className="absolute -top-1 -right-1 p-0.5 rounded cursor-grab opacity-0 group-hover:opacity-100 transition-all"
-        style={{ background: theme.surface2, color: theme.text3 }}>
-        <GripVertical size={8} />
-      </div>
-    </div>
-  );
-}
-
-const MemoSortableQuestionTab = memo(SortableQuestionTab);
-
-function newQuestion(): Question {
-  return {
-    id: generateId(),
-    text: '',
-    multipleCorrect: false,
-    difficulty: 'easy',
-    options: [
-      { id: 'a', text: '', isCorrect: false },
-      { id: 'b', text: '', isCorrect: false },
-      { id: 'c', text: '', isCorrect: false },
-      { id: 'd', text: '', isCorrect: false },
-    ],
-    explanation: '',
-  };
 }
 
 export default function QuizCreate() {
@@ -118,7 +35,7 @@ export default function QuizCreate() {
   const [step, setStep] = useState<'info' | 'questions'>('info');
   const [title, setTitle] = useState(existingQuiz?.title ?? '');
   const [description, setDescription] = useState(existingQuiz?.description ?? '');
-  const [emoji, setEmoji] = useState(existingQuiz?.emoji ?? '📚');
+  const [emoji, setEmoji] = useState(existingQuiz?.emoji ?? '📝');
   const [color, setColor] = useState<QuizColor>(existingQuiz?.color ?? 'blue');
   const [category, setCategory] = useState(existingQuiz?.category ?? 'Altele');
   const [shuffleQuestions, setShuffleQuestions] = useState(existingQuiz?.shuffleQuestions ?? false);
@@ -261,7 +178,7 @@ export default function QuizCreate() {
       setActiveQ(nextActiveIndex);
       setQuestionsTab('manual');
     } catch (err: unknown) {
-      setAiError(err instanceof Error ? err.message : 'Eroare necunoscută');
+      setAiError(err instanceof Error ? err.message : 'Eroare necunoscuta');
     } finally {
       setAiLoading(false);
     }
@@ -304,30 +221,14 @@ export default function QuizCreate() {
     }
   };
 
-  const Toggle = ({ value, onChange, label }: { value: boolean; onChange: () => void; label: string }) => (
-    <button onClick={onChange}
-      className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm transition-all"
-      style={{
-        background: value ? `${theme.accent}20` : theme.surface2,
-        border: `1px solid ${value ? theme.accent + '40' : theme.border}`,
-        color: value ? theme.accent : theme.text3,
-      }}>
-      <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center"
-        style={{ borderColor: value ? theme.accent : theme.border2, background: value ? theme.accent : 'transparent' }}>
-        {value && <Check size={9} className="text-white" />}
-      </div>
-      {label}
-    </button>
-  );
-
   return (
     <div className={`h-full overflow-y-auto ${compact ? 'px-4 sm:px-6 py-5 sm:py-6' : 'px-8 py-8'}`}>
       {/* Hidden file input for browser fallback */}
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-      <div className={`${compact ? 'max-w-[920px]' : 'max-w-2xl'} mx-auto`}>
+      <div className={`${compact ? 'max-w-[980px]' : 'max-w-[1080px]'} mx-auto`}>
 
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-          className={`flex items-center gap-3 ${compact ? 'mb-6' : 'mb-8'}`}>
+          className={`flex items-center gap-3 ${compact ? 'mb-6' : 'mb-8'} rounded-[28px] px-1`}>
           <button onClick={() => step === 'questions' ? setStep('info') : navigate(-1)}
             className="p-2 rounded-xl transition-all hover:opacity-80"
             style={{ background: theme.surface, color: theme.text2 }}>
@@ -335,10 +236,10 @@ export default function QuizCreate() {
           </button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight" style={{ color: theme.text }}>
-              {editId ? 'Editează grila' : 'Grilă nouă'}
+              {editId ? 'Editeaza grila' : 'Grila noua'}
             </h1>
             <p className="text-sm" style={{ color: theme.text3 }}>
-              {step === 'info' ? 'Pas 1: Informații generale' : `Pas 2: Întrebări (${questions.length})`}
+              {step === 'info' ? 'Pas 1: Informatii generale' : `Pas 2: Intrebari (${questions.length})`}
             </p>
           </div>
           <div className="ml-auto flex gap-1">
@@ -372,7 +273,7 @@ export default function QuizCreate() {
 
               {/* Color */}
               <Panel theme={theme}>
-                <Label theme={theme}>Culoare temă</Label>
+                  <Label theme={theme}>Culoare tema</Label>
                 <div className="flex gap-2 mt-2">
                   {COLORS.map((c) => (
                     <button key={c.id} onClick={() => setColor(c.id)}
@@ -403,7 +304,7 @@ export default function QuizCreate() {
                 transition={{ duration: 0.5 }}>
                 <Panel theme={theme} style={{ border: shakeFields.includes('desc') ? `1px solid ${theme.danger}` : undefined }}>
                   <Label theme={theme}>Descriere *</Label>
-                  <textarea placeholder="Descrie pe scurt conținutul grilei..." value={description}
+                  <textarea placeholder="Descrie pe scurt continutul grilei..." value={description}
                     onChange={(e) => setDescription(e.target.value)} rows={3}
                     className="w-full bg-transparent resize-none text-sm mt-1"
                     style={{ color: theme.text, outline: 'none', border: 'none' }} />
@@ -428,7 +329,7 @@ export default function QuizCreate() {
 
               {/* Tags */}
               <Panel theme={theme}>
-                <Label theme={theme}>Etichete (opțional)</Label>
+                <Label theme={theme}>Etichete (optional)</Label>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {tags.map(tag => (
                     <span key={tag} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
@@ -441,7 +342,7 @@ export default function QuizCreate() {
                     style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
                     <Tag size={10} style={{ color: theme.text3 }} />
                     <input
-                      type="text" placeholder="Adaugă etichetă..." value={tagInput}
+                      type="text" placeholder="Adauga eticheta..." value={tagInput}
                       onChange={e => setTagInput(e.target.value)}
                       onKeyDown={e => {
                         if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) {
@@ -460,15 +361,15 @@ export default function QuizCreate() {
 
               {/* Options */}
               <Panel theme={theme}>
-                <Label theme={theme}>Opțiuni quiz</Label>
+                <Label theme={theme}>Optiuni quiz</Label>
                 <div className="flex gap-2 mt-2 flex-wrap">
-                  <Toggle value={shuffleQuestions} onChange={() => setShuffleQuestions(!shuffleQuestions)}
-                    label="Amestecă întrebările" />
-                  <Toggle value={shuffleAnswers} onChange={() => setShuffleAnswers(!shuffleAnswers)}
-                    label="Amestecă răspunsurile" />
+                  <Toggle value={shuffleQuestions} onChange={() => setShuffleQuestions(!shuffleQuestions)} theme={theme}
+                    label="Amesteca intrebarile" />
+                  <Toggle value={shuffleAnswers} onChange={() => setShuffleAnswers(!shuffleAnswers)} theme={theme}
+                    label="Amesteca raspunsurile" />
                 </div>
                 <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${theme.border}` }}>
-                  <div className="text-xs mb-2" style={{ color: theme.text3 }}>Notare medicală</div>
+                  <div className="text-xs mb-2" style={{ color: theme.text3 }}>Notare medicala</div>
                   <button
                     onClick={() => setPenaltyMode(!penaltyMode)}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm transition-all"
@@ -478,17 +379,17 @@ export default function QuizCreate() {
                       color: penaltyMode ? '#ef4444' : theme.text3,
                     }}>
                     <Scale size={13} />
-                    Mod Rezidențiat
+                    Mod Rezidentiat
                     {penaltyMode && (
                       <span className="text-xs px-1.5 py-0.5 rounded-full font-bold"
                         style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
-                        −0.25/greșit
+                        -0.25/gresit
                       </span>
                     )}
                   </button>
                   {penaltyMode && (
                     <p className="text-xs mt-1.5" style={{ color: theme.text3 }}>
-                      Răspuns corect: +1 punct · Opțiune greșită selectată: −0.25 puncte · Scor net ≥ 0
+                      Raspuns corect: +1 punct. Optiune gresita selectata: -0.25 puncte. Scor net minim 0.
                     </p>
                   )}
                 </div>
@@ -509,7 +410,7 @@ export default function QuizCreate() {
                 whileTap={{ scale: 0.98 }}
                 className="w-full py-3.5 rounded-2xl font-semibold text-white"
                 style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, opacity: canProceed ? 1 : 0.6 }}>
-                Continuă → Adaugă întrebări
+                Continua si adauga intrebari
               </motion.button>
             </motion.div>
           ) : (
@@ -518,10 +419,10 @@ export default function QuizCreate() {
               exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
 
               {/* Tab switcher: Manual / AI */}
-              <div className="flex gap-1 mb-5 p-1 rounded-xl" style={{ background: theme.surface }}>
+              <div className="flex gap-1 mb-5 p-1.5 rounded-2xl glass-panel" style={{ background: theme.surface }}>
                 {[
                   { id: 'manual' as const, label: 'Manual', icon: <Pencil size={13} /> },
-                  { id: 'ai' as const, label: 'Generează cu AI', icon: <Bot size={13} /> },
+                  { id: 'ai' as const, label: 'Genereaza cu AI', icon: <Bot size={13} /> },
                 ].map((tab) => (
                   <button key={tab.id} onClick={() => setQuestionsTab(tab.id)}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-all"
@@ -550,28 +451,28 @@ export default function QuizCreate() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold" style={{ color: theme.text }}>Generator AI de grile</p>
-                        <p className="text-xs" style={{ color: theme.text3 }}>Lipește text medical → AI generează întrebări</p>
+                         <p className="text-xs" style={{ color: theme.text3 }}>Lipeste text medical, iar AI-ul genereaza intrebari structurate.</p>
                       </div>
                     </div>
 
                     {!hasKey() && (
                       <div className="flex items-center gap-2 p-3 rounded-xl text-sm"
                         style={{ background: `${theme.warning}12`, border: `1px solid ${theme.warning}30`, color: theme.warning }}>
-                        ⚠️ Configurează cheia Groq API în Sidebar → Setări AI
+                        Configureaza cheia Groq API in Sidebar, apoi deschide Setari AI
                       </div>
                     )}
 
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="text-xs font-medium" style={{ color: theme.text2 }}>
-                          Text sursă (lecție, curs, capitol)
+                          Text sursa (lectie, curs, capitol)
                         </label>
                         {window.electronAPI?.openPdfFile && (
                           <button
                             onClick={async () => {
                               const text = await window.electronAPI!.openPdfFile();
                               if (text) setAiText(text);
-                              else setAiError('Nu s-a putut extrage text din PDF. Încearcă să lipești textul manual.');
+                              else setAiError('Nu s-a putut extrage text din PDF. Incearca sa lipesti textul manual.');
                             }}
                             className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg"
                             style={{ background: theme.surface2, color: theme.accent, border: `1px solid ${theme.accent}30` }}>
@@ -582,7 +483,7 @@ export default function QuizCreate() {
                       <textarea
                         value={aiText}
                         onChange={(e) => setAiText(e.target.value)}
-                        placeholder="Lipește sau scrie textul din care vrei să generezi grile..."
+                        placeholder="Lipeste sau scrie textul din care vrei sa generezi grile..."
                         rows={7}
                         className="w-full text-sm px-3 py-2.5 rounded-xl resize-none"
                         style={{
@@ -595,7 +496,7 @@ export default function QuizCreate() {
                     </div>
 
                     <div>
-                      <label className="text-xs font-medium mb-2 block" style={{ color: theme.text2 }}>Număr de întrebări</label>
+                      <label className="text-xs font-medium mb-2 block" style={{ color: theme.text2 }}>Numar de intrebari</label>
                       <div className="flex gap-2">
                         {[3, 5, 8, 10, 15].map(n => (
                           <button key={n} onClick={() => setAiCount(n)}
@@ -622,7 +523,7 @@ export default function QuizCreate() {
                           : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
                         color: aiLoading || !hasKey() || !aiText.trim() ? theme.text3 : 'white',
                       }}>
-                      {aiLoading ? <><Loader2 size={14} className="animate-spin" />Generez...</> : <><Sparkles size={14} />Generează {aiCount} grile</>}
+                      {aiLoading ? <><Loader2 size={14} className="animate-spin" />Generez...</> : <><Sparkles size={14} />Genereaza {aiCount} grile</>}
                     </motion.button>
 
                     {aiError && (
@@ -634,12 +535,12 @@ export default function QuizCreate() {
                 )}
               </AnimatePresence>
 
-              {/* Question tabs — drag to reorder */}
+              {/* Question tabs - drag to reorder */}
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={questions.map(q => q.id)} strategy={horizontalListSortingStrategy}>
-                  <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+                  <div className="flex gap-2 mb-5 overflow-x-auto pb-2 pr-1">
                     {questions.map((q, i) => (
-                      <MemoSortableQuestionTab key={q.id} id={q.id} index={i}
+                      <SortableQuestionTab key={q.id} id={q.id} index={i}
                         isActive={activeQ === i} isValid={questionValidity[i] ?? false}
                         onClick={() => setActiveQ(i)} theme={theme} />
                     ))}
@@ -656,11 +557,11 @@ export default function QuizCreate() {
                 <motion.div key={currentQ.id}
                   initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}
-                  className="space-y-4">
+                  className="space-y-4 pb-2">
 
                   <Panel theme={theme}>
                     <div className="flex items-center justify-between mb-2">
-                      <Label theme={theme}>Întrebarea {activeQ + 1}</Label>
+                      <Label theme={theme}>Intrebarea {activeQ + 1}</Label>
                       <div className="flex items-center gap-2">
                         {/* Preview button */}
                         <button
@@ -695,7 +596,7 @@ export default function QuizCreate() {
                         )}
                       </div>
                     </div>
-                    <textarea placeholder="Scrie întrebarea ta..." value={currentQ.text}
+                    <textarea placeholder="Scrie intrebarea ta..." value={currentQ.text}
                       onChange={(e) => updateQuestion(currentQ.id, { text: e.target.value })} rows={3}
                       className="w-full bg-transparent resize-none font-medium"
                       style={{ color: theme.text, outline: 'none', border: 'none' }} />
@@ -719,7 +620,7 @@ export default function QuizCreate() {
                         className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all hover:opacity-80"
                         style={{ background: theme.surface2, color: theme.text3, border: `1px dashed ${theme.border2}` }}>
                         <ImagePlus size={14} />
-                        Adaugă imagine (opțional)
+                        Adauga imagine (optional)
                       </button>
                     )}
 
@@ -742,8 +643,8 @@ export default function QuizCreate() {
                     <p className="text-xs px-1" style={{ color: theme.text3 }}>
                       <Sparkles size={11} className="inline mr-1" />
                       {currentQ.multipleCorrect
-                        ? 'Apasă pe cerc pentru a marca răspunsurile corecte (multiple)'
-                        : 'Apasă pe cerc pentru a marca răspunsul corect'}
+                        ? 'Apasa pe cerc pentru a marca raspunsurile corecte (multiple)'
+                        : 'Apasa pe cerc pentru a marca raspunsul corect'}
                     </p>
                     {currentQ.options.map((opt, oi) => (
                       <motion.div key={opt.id}
@@ -765,7 +666,7 @@ export default function QuizCreate() {
                         <span className="text-xs font-bold" style={{ color: theme.text3, minWidth: 16 }}>
                           {opt.id.toUpperCase()}
                         </span>
-                        <input type="text" placeholder={`Opțiunea ${opt.id.toUpperCase()}...`}
+                        <input type="text" placeholder={`Optiunea ${opt.id.toUpperCase()}...`}
                           value={opt.text}
                           onChange={(e) => updateOption(currentQ.id, opt.id, { text: e.target.value })}
                           className="flex-1 bg-transparent text-sm"
@@ -792,15 +693,15 @@ export default function QuizCreate() {
                         }}
                         className="w-full py-2.5 rounded-2xl text-sm transition-all hover:opacity-80 flex items-center justify-center gap-1.5"
                         style={{ background: theme.surface2, border: `1px dashed ${theme.border2}`, color: theme.text3 }}>
-                        <Plus size={13} />Adaugă opțiune
+                        <Plus size={13} />Adauga optiune
                       </button>
                     )}
                   </div>
 
                   {/* Explanation */}
                   <Panel theme={theme}>
-                    <Label theme={theme}>Explicație (opțional)</Label>
-                    <input type="text" placeholder="Explică de ce răspunsul este corect..."
+                    <Label theme={theme}>Explicatie (optional)</Label>
+                    <input type="text" placeholder="Explica de ce raspunsul este corect..."
                       value={currentQ.explanation || ''}
                       onChange={(e) => updateQuestion(currentQ.id, { explanation: e.target.value })}
                       className="w-full bg-transparent text-sm mt-1"
@@ -813,12 +714,12 @@ export default function QuizCreate() {
                 <button onClick={addQuestion}
                   className="flex-1 py-3.5 rounded-2xl font-medium text-sm transition-all hover:opacity-80"
                   style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
-                  <Plus size={15} className="inline mr-1" />Întrebare nouă
+                  <Plus size={15} className="inline mr-1" />Intrebare noua
                 </button>
                 <button onClick={handleSave} disabled={!canSave}
                   className="flex-1 py-3.5 rounded-2xl font-semibold text-white transition-all hover:opacity-90 disabled:opacity-30 flex items-center justify-center gap-1.5"
                   style={{ background: `linear-gradient(135deg, ${theme.success} 0%, #34C759 100%)` }}>
-                  {editId ? <><Pencil size={15} />Salvează modificările</> : <><Check size={15} />Salvează grila</>}
+                  {editId ? <><Pencil size={15} />Salveaza modificarile</> : <><Check size={15} />Salveaza grila</>}
                 </button>
               </div>
             </motion.div>
@@ -836,14 +737,14 @@ export default function QuizCreate() {
               style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }} />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: -20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed top-[10%] left-1/2 z-50 w-full max-w-lg -translate-x-1/2 px-4">
+              className="fixed top-[8%] left-1/2 z-50 w-full max-w-xl -translate-x-1/2 px-4">
               <div className="rounded-3xl p-6 shadow-2xl"
                 style={{ background: theme.isDark ? 'rgba(22,22,26,0.98)' : 'rgba(255,255,255,0.98)', border: `1px solid ${theme.border}` }}>
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>Previzualizare</span>
                   <button onClick={() => setPreviewQ(null)} style={{ color: theme.text3 }}><X size={16} /></button>
                 </div>
-                <p className="text-lg font-semibold mb-4" style={{ color: theme.text }}>{previewQ.text || '(fără text)'}</p>
+                <p className="text-lg font-semibold mb-4 leading-relaxed" style={{ color: theme.text }}>{previewQ.text || '(fara text)'}</p>
                 <div className="space-y-2">
                   {previewQ.options.map((opt, i) => (
                     <div key={opt.id} className="flex items-center gap-3 p-3 rounded-xl"
@@ -856,7 +757,7 @@ export default function QuizCreate() {
                         {String.fromCharCode(65 + i)}
                       </span>
                       <span className="text-sm" style={{ color: opt.isCorrect ? theme.success : theme.text2 }}>
-                        {opt.text || '(fără text)'}
+                        {opt.text || '(fara text)'}
                       </span>
                       {opt.isCorrect && <Check size={14} className="ml-auto flex-shrink-0" style={{ color: theme.success }} />}
                     </div>
@@ -865,7 +766,7 @@ export default function QuizCreate() {
                 {previewQ.explanation && (
                   <div className="mt-4 p-3 rounded-xl" style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}20` }}>
                     <p className="text-xs" style={{ color: theme.text2 }}>
-                      <span className="font-semibold" style={{ color: theme.accent }}>💡 Explicație: </span>
+                      <span className="font-semibold" style={{ color: theme.accent }}>Explicatie: </span>
                       {previewQ.explanation}
                     </p>
                   </div>
@@ -877,16 +778,4 @@ export default function QuizCreate() {
       </AnimatePresence>
     </div>
   );
-}
-
-function Panel({ children, theme, style }: { children: React.ReactNode; theme: Theme; style?: React.CSSProperties }) {
-  return (
-    <div className="rounded-2xl p-5 transition-all input-focus-draw" style={{ background: theme.surface, border: `1px solid ${theme.border}`, ...style }}>
-      {children}
-    </div>
-  );
-}
-
-function Label({ children, theme }: { children: React.ReactNode; theme: Theme }) {
-  return <label className="text-sm font-medium" style={{ color: theme.text2 }}>{children}</label>;
 }

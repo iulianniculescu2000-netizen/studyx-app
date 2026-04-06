@@ -28,6 +28,14 @@ function shuffleArr<T>(array: T[]): T[] {
   return next;
 }
 
+function getAnswerTone(answer: string) {
+  const length = answer.trim().length;
+  if (length > 260) return 'text-base sm:text-lg font-semibold leading-relaxed';
+  if (length > 170) return 'text-lg sm:text-xl font-bold leading-relaxed';
+  if (length > 110) return 'text-xl sm:text-2xl font-bold leading-snug';
+  return 'text-2xl sm:text-3xl font-black leading-tight';
+}
+
 export default function FlashcardSession() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -204,6 +212,7 @@ export default function FlashcardSession() {
   }
 
   const current = cards[currentIdx];
+  const correctAnswers = current.question.options.filter((option) => option.isCorrect);
   const progress = ((currentIdx) / cards.length) * 100;
 
   return (
@@ -264,12 +273,22 @@ export default function FlashcardSession() {
                 <span className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: theme.text }}>Răspuns Corect</span>
               </div>
               
-              <div className="w-full max-h-[60%] overflow-y-auto custom-scrollbar px-4">
-                {current.question.options.filter(o => o.isCorrect).map((o, i) => (
-                  <div key={i} className="text-xl sm:text-2xl font-black mb-2" style={{ color: theme.text }}>
-                    {o.text}
-                  </div>
-                ))}
+              <div className="w-full max-h-[62%] overflow-y-auto custom-scrollbar px-1 sm:px-3">
+                <div className="mx-auto flex max-w-[38rem] flex-col gap-3">
+                  {correctAnswers.map((option, index) => (
+                    <div
+                      key={`${option.id}-${index}`}
+                      className="rounded-[28px] border border-white/10 bg-white/5 px-5 py-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:px-6 sm:py-5"
+                    >
+                      <p
+                        className={`${getAnswerTone(option.text)} whitespace-pre-wrap break-words`}
+                        style={{ color: theme.text }}
+                      >
+                        {option.text}
+                      </p>
+                    </div>
+                  ))}
+                </div>
                 
                 {current.question.explanation && (
                   <div className="mt-6 p-4 rounded-2xl text-left bg-white/5 border border-white/5">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Timer, X, Play, Pause, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
@@ -47,6 +47,10 @@ export default function PomodoroTimer() {
   const [timeLeft, setTimeLeft] = useState(PHASES.focus.duration);
   const [running, setRunning] = useState(false);
   const [sessions, setSessions] = useState(0);
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window === 'undefined' ? 1280 : window.innerWidth,
+    height: typeof window === 'undefined' ? 900 : window.innerHeight,
+  }));
   const sessionsRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -91,12 +95,58 @@ export default function PomodoroTimer() {
     return () => clearInterval(intervalRef.current!);
   }, [running, phase, recordStudySession]);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setViewport({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const mm = String(Math.floor(timeLeft / 60)).padStart(2, '0');
   const ss = String(timeLeft % 60).padStart(2, '0');
+  const panelWidth = Math.min(280, Math.max(248, viewport.width - 32));
+  const chatSheetWidth = Math.min(440, Math.max(320, viewport.width - 28));
+  const chatSheetHeight = Math.min(Math.round(viewport.height * 0.78), 760);
 
-  const dockOffset = chatOpen ? 24 : 92;
-  const currentRight = chatOpen ? 452 : 24;
-  const currentBottom = open ? 24 : dockOffset;
+  const dockMetrics = useMemo(() => {
+    const margin = 24;
+    const gap = 18;
+    const launcherHeight = 48;
+    const openHeight = minimized ? 74 : 328;
+    const hasSideDockSpace = viewport.width >= chatSheetWidth + panelWidth + margin * 3 + gap;
+
+    if (!chatOpen) {
+      return {
+        right: margin,
+        bottom: 92,
+      };
+    }
+
+    if (hasSideDockSpace) {
+      return {
+        right: chatSheetWidth + margin + gap,
+        bottom: 24,
+      };
+    }
+
+    const maxLauncherBottom = Math.max(margin, viewport.height - launcherHeight - margin);
+    const maxPanelBottom = Math.max(margin, viewport.height - openHeight - margin);
+
+    return {
+      right: margin,
+      bottom: minimized
+        ? Math.min(chatSheetHeight + gap + margin, maxLauncherBottom)
+        : Math.min(chatSheetHeight + gap + margin, maxPanelBottom),
+    };
+  }, [chatOpen, chatSheetHeight, chatSheetWidth, minimized, panelWidth, viewport.height, viewport.width]);
+
+  const currentRight = dockMetrics.right;
+  const currentBottom = dockMetrics.bottom;
 
   if (!open) {
     return (
@@ -105,7 +155,10 @@ export default function PomodoroTimer() {
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.93 }}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setMinimized(false);
+          setOpen(true);
+        }}
         className="fixed z-[9997] w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl press-feedback"
         style={{
           background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
@@ -135,7 +188,7 @@ export default function PomodoroTimer() {
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       className="fixed z-[9997] rounded-[28px] shadow-2xl overflow-hidden"
       style={{
-        width: 280,
+        width: panelWidth,
         background: theme.isDark ? 'rgba(18,18,22,0.9)' : 'rgba(255,255,255,0.88)',
         border: `1px solid ${theme.border}`,
         backdropFilter: 'blur(22px) saturate(145%)',
@@ -148,7 +201,15 @@ export default function PomodoroTimer() {
         <button onClick={() => setMinimized(!minimized)} style={{ color: theme.text3 }}>
           {minimized ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
-        <motion.button whileHover={{ rotate: 90 }} onClick={() => { setOpen(false); reset(); }} style={{ color: theme.text3 }}>
+        <motion.button
+          whileHover={{ rotate: 90 }}
+          onClick={() => {
+            setMinimized(false);
+            setOpen(false);
+            reset();
+          }}
+          style={{ color: theme.text3 }}
+        >
           <X size={14} />
         </motion.button>
       </div>

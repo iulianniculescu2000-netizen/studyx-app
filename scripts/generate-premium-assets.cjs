@@ -1,171 +1,296 @@
 #!/usr/bin/env node
-/**
- * scripts/generate-premium-assets.cjs
- * Generează identitatea vizuală StudyX v2 (Premium Squircle)
- */
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-// --- Utilitare pentru desenare premium ---
-function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function smoothstep(edge0, edge1, value) {
+  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
 
 function sdfSquircle(x, y, size, radius) {
-    const half = size / 2;
-    const qx = Math.abs(x) - half + radius;
-    const qy = Math.abs(y) - half + radius;
-    return Math.min(Math.max(qx, qy), 0.0) + Math.sqrt(Math.pow(Math.max(qx, 0), 2) + Math.pow(Math.max(qy, 0), 2)) - radius;
+  const half = size / 2;
+  const qx = Math.abs(x) - half + radius;
+  const qy = Math.abs(y) - half + radius;
+  return Math.min(Math.max(qx, qy), 0)
+    + Math.sqrt(Math.pow(Math.max(qx, 0), 2) + Math.pow(Math.max(qy, 0), 2))
+    - radius;
 }
 
-function sdfLine(px, py, ax, ay, bx, by, thickness) {
-    const pax = px - ax, pay = py - ay;
-    const bax = bx - ax, bay = by - ay;
-    const h = clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
-    const dx = pax - bax * h, dy = pay - bay * h;
-    return Math.sqrt(dx * dx + dy * dy) - thickness;
+function distanceToSegment(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const apx = px - ax;
+  const apy = py - ay;
+  const ab2 = abx * abx + aby * aby || 1;
+  const t = clamp((apx * abx + apy * aby) / ab2, 0, 1);
+  const dx = px - (ax + abx * t);
+  const dy = py - (ay + aby * t);
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
-// --- Generare Sidebar BMP (Wizard-ul de instalare) ---
-function writeBMP(width, height, pixelFunc, outPath) {
-    const rowSize = Math.floor((width * 3 + 3) / 4) * 4;
-    const dataSize = rowSize * height;
-    const buf = Buffer.alloc(54 + dataSize);
-    buf.write('BM', 0);
-    buf.writeUInt32LE(54 + dataSize, 2);
-    buf.writeUInt32LE(54, 10);
-    buf.writeUInt32LE(40, 14);
-    buf.writeInt32LE(width, 18);
-    buf.writeInt32LE(-height, 22);
-    buf.writeUInt16LE(1, 26);
-    buf.writeUInt16LE(24, 28);
-    buf.writeUInt32LE(dataSize, 34);
+function pointInPolygon(x, y, points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const xi = points[i][0];
+    const yi = points[i][1];
+    const xj = points[j][0];
+    const yj = points[j][1];
+    const intersects = ((yi > y) !== (yj > y))
+      && (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-6) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
 
-    let offset = 54;
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const [r, g, b] = pixelFunc(x, y, width, height);
-            buf[offset++] = b; buf[offset++] = g; buf[offset++] = r;
-        }
-        while ((offset - 54) % rowSize !== 0) buf[offset++] = 0;
+function writeBmp(width, height, pixelFunc, outPath) {
+  const rowSize = Math.floor((width * 3 + 3) / 4) * 4;
+  const dataSize = rowSize * height;
+  const buffer = Buffer.alloc(54 + dataSize);
+  buffer.write('BM', 0);
+  buffer.writeUInt32LE(54 + dataSize, 2);
+  buffer.writeUInt32LE(54, 10);
+  buffer.writeUInt32LE(40, 14);
+  buffer.writeInt32LE(width, 18);
+  buffer.writeInt32LE(-height, 22);
+  buffer.writeUInt16LE(1, 26);
+  buffer.writeUInt16LE(24, 28);
+  buffer.writeUInt32LE(dataSize, 34);
+
+  let offset = 54;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const [r, g, b] = pixelFunc(x, y, width, height);
+      buffer[offset++] = b;
+      buffer[offset++] = g;
+      buffer[offset++] = r;
     }
-    fs.writeFileSync(outPath, buf);
+    while ((offset - 54) % rowSize !== 0) buffer[offset++] = 0;
+  }
+
+  fs.writeFileSync(outPath, buffer);
 }
 
-// --- Generare Sidebar ---
-writeBMP(164, 314, (x, y, w, h) => {
-    const nx = x / w, ny = y / h;
-    let r = Math.round(15 + 10 * (1 - ny));
-    let g = Math.round(12 + 8 * (1 - ny));
-    let b = Math.round(30 + 15 * (1 - ny));
-    
-    // Abstract patterns
-    if ((x + y) % 40 < 2) { r += 5; g += 5; b += 10; }
-    
-    // Glowing accent at bottom
-    const dist = Math.sqrt(Math.pow(x - w/2, 2) + Math.pow(y - h, 2));
-    const glow = Math.max(0, (120 - dist) / 120);
-    r = Math.min(255, r + glow * 50);
-    g = Math.min(255, g + glow * 30);
-    b = Math.min(255, b + glow * 120);
-    
-    return [r, g, b];
-}, path.join(__dirname, '..', 'build', 'sidebar.bmp'));
-
-// --- Generare Header ---
-writeBMP(150, 57, (x, y, w, h) => {
+function writeSidebarAssets(rootDir) {
+  writeBmp(164, 314, (x, y, w, h) => {
     const nx = x / w;
-    let r = Math.round(20 + nx * 15);
-    let g = Math.round(18 + nx * 10);
-    let b = Math.round(40 + nx * 20);
+    const ny = y / h;
+    const depth = 1 - ny;
+    let r = Math.round(14 + depth * 9);
+    let g = Math.round(13 + depth * 7);
+    let b = Math.round(20 + depth * 14);
+
+    const glow = Math.max(0, 1 - Math.hypot(x - w / 2, y - h) / 140);
+    r = Math.min(255, r + glow * 42);
+    g = Math.min(255, g + glow * 28);
+    b = Math.min(255, b + glow * 118);
+
+    const streak = Math.max(0, 1 - Math.abs(nx - 0.18) / 0.018) * Math.max(0, 1 - Math.abs(ny - 0.24) / 0.18);
+    r = Math.min(255, r + streak * 16);
+    g = Math.min(255, g + streak * 18);
+    b = Math.min(255, b + streak * 34);
+
     return [r, g, b];
-}, path.join(__dirname, '..', 'build', 'header.bmp'));
+  }, path.join(rootDir, 'build', 'sidebar.bmp'));
 
-// --- Generare Iconita Premium PNG (512x512) ---
-const SIZE = 512;
-const scanlines = Buffer.alloc(SIZE * (SIZE * 4 + 1), 0);
-let off = 0;
-
-for (let y = 0; y < SIZE; y++) {
-    scanlines[off++] = 0;
-    for (let x = 0; x < SIZE; x++) {
-        const cx = x - SIZE / 2, cy = y - SIZE / 2;
-        
-        // Squircle Base
-        const dSquircle = sdfSquircle(cx, cy, 460, 120);
-        if (dSquircle > 0) { off += 4; continue; }
-
-        // Gradient Background (Deep Obsidian)
-        const t = (cx / SIZE + cy / SIZE + 1) / 2;
-        let r = Math.round(22 * (1 - t) + 12 * t);
-        let g = Math.round(18 * (1 - t) + 10 * t);
-        let b = Math.round(45 * (1 - t) + 25 * t);
-
-        // Inner Shadow
-        if (dSquircle > -15) {
-            const shadow = (dSquircle + 15) / 15;
-            r *= (1 - shadow * 0.4); g *= (1 - shadow * 0.4); b *= (1 - shadow * 0.4);
-        }
-
-        // The "Premium X" Symbol
-        const dX1 = sdfLine(cx, cy, -100, -100, 100, 100, 22);
-        const dX2 = sdfLine(cx, cy, -100, 100, 100, -100, 22);
-        const dX = Math.min(dX1, dX2);
-
-        if (dX < 0) {
-            // Symbol color: Pure white with a hint of tech-blue
-            r = 245; g = 248; b = 255;
-            // Add a very subtle gradient on the symbol itself
-            const symT = (cy + 100) / 200;
-            r -= symT * 10; g -= symT * 5;
-        } else if (dX < 50) {
-            // Neon Bloom / Glow
-            const bloom = Math.pow(1 - dX / 50, 2);
-            r = Math.min(255, r + bloom * 120);
-            g = Math.min(255, g + bloom * 80);
-            b = Math.min(255, b + bloom * 255);
-        }
-
-        // Glass Reflection (Top)
-        if (cy < -120 && dSquircle < -5) {
-            const reflection = Math.max(0, 1 - Math.abs(cy + 180) / 80) * 35;
-            r = Math.min(255, r + reflection);
-            g = Math.min(255, g + reflection);
-            b = Math.min(255, b + reflection);
-        }
-
-        scanlines[off++] = r; scanlines[off++] = g; scanlines[off++] = b; scanlines[off++] = 255;
-    }
+  writeBmp(150, 57, (x, _y, w) => {
+    const t = x / w;
+    return [
+      Math.round(18 + t * 16),
+      Math.round(18 + t * 12),
+      Math.round(28 + t * 28),
+    ];
+  }, path.join(rootDir, 'build', 'header.bmp'));
 }
 
-// Assemble PNG
-function crc32(buf) {
-    let crc = 0xFFFFFFFF;
-    const table = new Uint32Array(256);
-    for (let i = 0; i < 256; i++) {
-        let c = i;
-        for (let k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
-        table[i] = c;
-    }
-    for (const b of buf) crc = table[(crc ^ b) & 0xFF] ^ (crc >>> 8);
-    return (crc ^ 0xFFFFFFFF) >>> 0;
+function blend(base, over, alpha) {
+  return [
+    Math.round(base[0] * (1 - alpha) + over[0] * alpha),
+    Math.round(base[1] * (1 - alpha) + over[1] * alpha),
+    Math.round(base[2] * (1 - alpha) + over[2] * alpha),
+    255,
+  ];
 }
+
+function drawIconScanlines(size) {
+  const leftCover = [[40, 56], [46, 50], [94, 54], [94, 150], [46, 154], [40, 148]];
+  const rightCover = [[106, 54], [154, 50], [160, 56], [160, 148], [154, 154], [106, 150]];
+  const innerLines = [
+    [52, 82, 84, 82],
+    [52, 93, 84, 93],
+    [52, 104, 72, 104],
+  ];
+  const pulseSegments = [
+    [112, 108, 122, 108],
+    [122, 108, 125, 95],
+    [125, 95, 128, 76],
+    [128, 76, 131, 134],
+    [131, 134, 135, 108],
+    [135, 108, 152, 108],
+  ];
+
+  const scanlines = Buffer.alloc(size * (size * 4 + 1), 0);
+  let offset = 0;
+
+  for (let y = 0; y < size; y++) {
+    scanlines[offset++] = 0;
+    for (let x = 0; x < size; x++) {
+      const sx = (x + 0.5) * (200 / size);
+      const sy = (y + 0.5) * (200 / size);
+      const cx = sx - 100;
+      const cy = sy - 100;
+      const shell = sdfSquircle(cx, cy, 164, 44);
+
+      if (shell > 0.9) {
+        offset += 4;
+        continue;
+      }
+
+      const gradientT = clamp((sx + sy * 0.82) / 364, 0, 1);
+      let color = [
+        Math.round(lerp(18, 11, gradientT)),
+        Math.round(lerp(18, 14, gradientT)),
+        Math.round(lerp(22, 18, gradientT)),
+        255,
+      ];
+
+      const topGlow = Math.max(0, 1 - Math.hypot(sx - 100, sy - 30) / 82);
+      const bottomGlow = Math.max(0, 1 - Math.hypot(sx - 100, sy - 174) / 92);
+      color = blend(color, [0, 113, 227], topGlow * 0.18);
+      color = blend(color, [0, 113, 227], bottomGlow * 0.08);
+
+      const rimShadow = smoothstep(-9, 4, shell);
+      color = blend(color, [8, 8, 12], rimShadow * 0.28);
+
+      if (sy < 56 && shell < -6) {
+        const reflection = Math.max(0, 1 - Math.abs(sy - 28) / 24) * 0.18;
+        color = blend(color, [255, 255, 255], reflection);
+      }
+
+      if (pointInPolygon(sx, sy, leftCover) || pointInPolygon(sx, sy, rightCover)) {
+        color = [248, 250, 253, 255];
+      }
+
+      if (distanceToSegment(sx, sy, 100, 50, 100, 154) <= 1.15) {
+        color = blend(color, [0, 113, 227], 0.55);
+      }
+
+      if (Math.hypot(sx - 100, sy - 47) <= 4.8 || Math.hypot(sx - 100, sy - 157) <= 4.8) {
+        color = [0, 113, 227, 255];
+      }
+
+      for (const [x1, y1, x2, y2] of innerLines) {
+        if (distanceToSegment(sx, sy, x1, y1, x2, y2) <= 1.55) {
+          color = blend(color, [0, 0, 0], 0.1);
+        }
+      }
+
+      if (Math.abs(sy - 64.25) <= 1.45 && sx >= 67 && sx <= 79) {
+        color = blend(color, [0, 113, 227], 0.52);
+      }
+      if (Math.abs(sx - 73.25) <= 1.45 && sy >= 58 && sy <= 70) {
+        color = blend(color, [0, 113, 227], 0.52);
+      }
+
+      for (const [x1, y1, x2, y2] of pulseSegments) {
+        if (distanceToSegment(sx, sy, x1, y1, x2, y2) <= 1.55) {
+          color = [0, 113, 227, 255];
+        }
+      }
+
+      scanlines[offset++] = color[0];
+      scanlines[offset++] = color[1];
+      scanlines[offset++] = color[2];
+      scanlines[offset++] = 255;
+    }
+  }
+
+  return scanlines;
+}
+
+function crc32(buffer) {
+  let crc = 0xFFFFFFFF;
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[i] = c;
+  }
+  for (const byte of buffer) {
+    crc = table[(crc ^ byte) & 0xFF] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
 function pngChunk(type, data) {
-    const t = Buffer.from(type, 'ascii'), d = data || Buffer.alloc(0);
-    const ln = Buffer.alloc(4); ln.writeUInt32BE(d.length);
-    const cr = Buffer.alloc(4); cr.writeUInt32BE(crc32(Buffer.concat([t, d])));
-    return Buffer.concat([ln, t, d, cr]);
+  const typeBuffer = Buffer.from(type, 'ascii');
+  const payload = data || Buffer.alloc(0);
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(payload.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBuffer, payload])));
+  return Buffer.concat([len, typeBuffer, payload, crc]);
 }
 
-const ihdr = Buffer.alloc(13);
-ihdr.writeUInt32BE(SIZE, 0); ihdr.writeUInt32BE(SIZE, 4);
-ihdr[8] = 8; ihdr[9] = 6;
-const idat = zlib.deflateSync(scanlines, { level: 9 });
-const png = Buffer.concat([
+function makePng(size) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const idat = zlib.deflateSync(drawIconScanlines(size), { level: 9 });
+  return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
-    pngChunk('IHDR', ihdr), pngChunk('IDAT', idat), pngChunk('IEND')
-]);
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', idat),
+    pngChunk('IEND'),
+  ]);
+}
 
-fs.writeFileSync(path.join(__dirname, '..', 'public', 'icon.png'), png);
-console.log("🚀 Pictograma Premium v2 (Squircle Neon) generată cu succes!");
+function makeIco(pngBuffer) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(1, 4);
+
+  const entry = Buffer.alloc(16);
+  entry[0] = 0;
+  entry[1] = 0;
+  entry[2] = 0;
+  entry[3] = 0;
+  entry.writeUInt16LE(1, 4);
+  entry.writeUInt16LE(32, 6);
+  entry.writeUInt32LE(pngBuffer.length, 8);
+  entry.writeUInt32LE(22, 12);
+
+  return Buffer.concat([header, entry, pngBuffer]);
+}
+
+function writeIconAssets(rootDir) {
+  const png512 = makePng(512);
+  const png256 = makePng(256);
+
+  fs.writeFileSync(path.join(rootDir, 'public', 'icon.png'), png512);
+  fs.writeFileSync(path.join(rootDir, 'public', 'icon.ico'), makeIco(png256));
+}
+
+function main() {
+  const rootDir = path.join(__dirname, '..');
+  writeSidebarAssets(rootDir);
+  writeIconAssets(rootDir);
+  console.log('StudyX premium assets generated successfully.');
+}
+
+main();

@@ -14,6 +14,69 @@ import type { Question, Difficulty } from '../types';
 
 function generateId() { return crypto.randomUUID().replace(/-/g, '').slice(0, 12); }
 const OPTION_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
+const FLASHCARD_ANSWER_SOFT_LIMIT = 210;
+
+function normalizeFlashcardCopy(value: string) {
+  return value
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function splitFlashcardAnswer(rawBack: string) {
+  const cleaned = normalizeFlashcardCopy(rawBack);
+  if (!cleaned) {
+    return {
+      answer: 'Răspuns indisponibil.',
+      explanation: '',
+    };
+  }
+
+  if (cleaned.length <= FLASHCARD_ANSWER_SOFT_LIMIT) {
+    return { answer: cleaned, explanation: '' };
+  }
+
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
+  let answer = '';
+  let explanation = '';
+
+  if (sentences.length > 1) {
+    for (const sentence of sentences) {
+      const candidate = `${answer} ${sentence}`.trim();
+      if (candidate.length > FLASHCARD_ANSWER_SOFT_LIMIT) break;
+      answer = candidate;
+      if (answer.length >= 120) break;
+    }
+
+    if (answer) {
+      explanation = cleaned.slice(answer.length).trim().replace(/^[,;:\-\s]+/, '');
+    }
+  }
+
+  if (!answer) {
+    const softCut = cleaned.lastIndexOf(' ', FLASHCARD_ANSWER_SOFT_LIMIT);
+    const splitIndex = softCut > 96 ? softCut : FLASHCARD_ANSWER_SOFT_LIMIT;
+    answer = `${cleaned.slice(0, splitIndex).trim()}...`;
+    explanation = cleaned.slice(splitIndex).trim().replace(/^[,;:\-\s]+/, '');
+  }
+
+  return { answer, explanation };
+}
+
+function buildFlashcardQuestion(front: string, back: string): Question {
+  const normalizedFront = normalizeFlashcardCopy(front);
+  const { answer, explanation } = splitFlashcardAnswer(back);
+
+  return {
+    id: generateId(),
+    text: normalizedFront,
+    multipleCorrect: false,
+    difficulty: 'medium' as Difficulty,
+    explanation,
+    options: [{ id: OPTION_IDS[0] ?? generateId(), text: answer, isCorrect: true }],
+  };
+}
 
 function MasteryRing({ pct, color }: { pct: number; color: string }) {
   const r = 20;
@@ -60,14 +123,9 @@ export default function FlashcardHub() {
     setAiError('');
     try {
       const generated = await notesToFlashcards(text);
-      const questions: Question[] = generated.slice(0, aiCount).map((g) => ({
-        id: generateId(),
-        text: g.front,
-        multipleCorrect: false,
-        difficulty: 'medium' as Difficulty,
-        explanation: '',
-        options: [{ id: OPTION_IDS[0] ?? generateId(), text: g.back, isCorrect: true }],
-      }));
+      const questions: Question[] = generated
+        .slice(0, aiCount)
+        .map((g) => buildFlashcardQuestion(g.front, g.back));
       if (questions.length === 0) throw new Error('AI nu a putut transforma PDF-ul în flashcarduri utile.');
       const id = generateId();
       addQuiz({
@@ -223,7 +281,7 @@ export default function FlashcardHub() {
           const text = file.name.toLowerCase().endsWith('.pdf')
             ? await (await import('../ai/pdfParser')).parsePDF(file)
             : await file.text();
-          if (text.trim().length < 100) {
+          if (text.trim().length < 60) {
             setAiError('PDF-ul pare a fi o imagine scanată fără text digital. Încearcă un alt PDF sau folosește secțiunea "Biblioteca AI" pentru a procesa documentul cu OCR înainte.');
             return;
           }

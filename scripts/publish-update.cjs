@@ -11,11 +11,12 @@ const { execSync } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 const CONFIG_FILE = path.join(ROOT, '.update-config.json');
 const PKG_FILE = path.join(ROOT, 'package.json');
+const LOCAL_UPDATES_ROOT = path.join(ROOT, 'studyx-updates');
 const UPDATES_OWNER = 'iulianniculescu2000-netizen';
 const UPDATES_REPO = 'studyx-updates';
 const UPDATES_BRANCH = 'main';
 const RAW_BASE_URL = `https://raw.githubusercontent.com/${UPDATES_OWNER}/${UPDATES_REPO}/${UPDATES_BRANCH}`;
-const MEDIA_BASE_URL = `https://media.githubusercontent.com/media/${UPDATES_OWNER}/${UPDATES_REPO}/${UPDATES_BRANCH}`;
+const RELEASE_BASE_URL = `https://github.com/${UPDATES_OWNER}/${UPDATES_REPO}/releases/download`;
 
 function readJson(filePath, fallback) {
   try {
@@ -27,6 +28,15 @@ function readJson(filePath, fallback) {
 
 function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+}
+
+function ensureDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function copyFileEnsured(sourcePath, targetPath) {
+  ensureDir(path.dirname(targetPath));
+  fs.copyFileSync(sourcePath, targetPath);
 }
 
 function readPkg() {
@@ -238,13 +248,47 @@ function buildManifest(version, changeMessage, distFiles, installer) {
       ? {
           installer: {
             fileName: path.basename(installer.relPath),
-            url: `${MEDIA_BASE_URL}/files/installers/${version}/${path.basename(installer.relPath)}`,
+            url: `${RELEASE_BASE_URL}/v${version}/${path.basename(installer.relPath)}`,
             sha256: sha256(installer.absPath),
             size: installer.size,
           },
         }
       : {}),
   };
+}
+
+function syncLocalUpdatesRepo(version, manifest, distFiles, installer, history) {
+  if (!fs.existsSync(LOCAL_UPDATES_ROOT)) return;
+
+  const filesRoot = path.join(LOCAL_UPDATES_ROOT, 'files');
+  const distRoot = path.join(filesRoot, 'dist');
+  const installersRoot = path.join(filesRoot, 'installers');
+
+  fs.rmSync(distRoot, { recursive: true, force: true });
+  ensureDir(distRoot);
+
+  for (const file of distFiles) {
+    const targetPath = path.join(filesRoot, file.relPath);
+    copyFileEnsured(file.absPath, targetPath);
+  }
+
+  if (installer) {
+    const installerDir = path.join(installersRoot, version);
+    ensureDir(installerDir);
+    copyFileEnsured(installer.absPath, path.join(installerDir, path.basename(installer.relPath)));
+
+    const latestYml = path.join(ROOT, 'release', 'latest.yml');
+    if (fs.existsSync(latestYml)) {
+      copyFileEnsured(latestYml, path.join(LOCAL_UPDATES_ROOT, 'releases', `v${version}`, 'latest.yml'));
+    }
+  }
+
+  writeJson(path.join(LOCAL_UPDATES_ROOT, 'manifests', `${version}.json`), manifest);
+  writeJson(path.join(LOCAL_UPDATES_ROOT, 'version.json'), {
+    version,
+    manifestUrl: `${RAW_BASE_URL}/manifests/${version}.json`,
+  });
+  writeJson(path.join(LOCAL_UPDATES_ROOT, 'version-history.json'), history);
 }
 
 async function runPublish(bumpType, changeMessage) {
@@ -293,6 +337,8 @@ async function runPublish(bumpType, changeMessage) {
     ].sort((left, right) => compareVersion(left.version, right.version)),
   };
 
+  syncLocalUpdatesRepo(newVersion, manifest, distFiles, installer, nextHistory);
+
   const tree = [];
   for (const file of distFiles) {
     const blob = await createBlob(token, fs.readFileSync(file.absPath));
@@ -312,7 +358,10 @@ async function runPublish(bumpType, changeMessage) {
   const manifestBlob = await createBlob(token, Buffer.from(JSON.stringify(manifest, null, 2)));
   tree.push({ path: `manifests/${newVersion}.json`, mode: '100644', type: 'blob', sha: manifestBlob.sha });
 
-  const versionBlob = await createBlob(token, Buffer.from(JSON.stringify({ version: newVersion }, null, 2)));
+  const versionBlob = await createBlob(token, Buffer.from(JSON.stringify({
+    version: newVersion,
+    manifestUrl: `${RAW_BASE_URL}/manifests/${newVersion}.json`,
+  }, null, 2)));
   tree.push({ path: 'version.json', mode: '100644', type: 'blob', sha: versionBlob.sha });
 
   const historyBlob = await createBlob(token, Buffer.from(JSON.stringify(nextHistory, null, 2)));

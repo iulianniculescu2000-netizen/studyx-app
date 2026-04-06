@@ -2,7 +2,7 @@
   "name": "studyx",
   "productName": "StudyX",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "description": "Aplicatie de grile pentru studenti la medicina",
   "author": "StudyX",
@@ -24,7 +24,14 @@
   "build": {
     "appId": "com.studyx.app",
     "productName": "StudyX",
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node",
+      "node_modules/@napi-rs/**/*",
+      "node_modules/pdf-parse/**/*",
+      "node_modules/pdfjs-dist/**/*",
+      "node_modules/tesseract.js/**/*"
+    ],
     "compression": "maximum",
     "win": {
       "target": [
@@ -35,7 +42,7 @@
           ]
         }
       ],
-      "icon": "public/icon.png",
+      "icon": "public/icon.ico",
       "forceCodeSigning": false,
       "signAndEditExecutable": false
     },
@@ -62,6 +69,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "public/icon.ico",
       "public/icon.png",
       "public/icon.svg",
       "package.json",

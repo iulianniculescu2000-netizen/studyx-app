@@ -13,18 +13,35 @@ const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const isDev = !app.isPackaged;
 
-const MANIFEST_URL = 'https://raw.githubusercontent.com/iulianniculescu2000-netizen/studyx-updates/main/version.json';
-const HISTORY_URL = 'https://raw.githubusercontent.com/iulianniculescu2000-netizen/studyx-updates/main/version-history.json';
+const UPDATE_REPO_RAW = 'https://raw.githubusercontent.com/iulianniculescu2000-netizen/studyx-updates/main';
+const UPDATE_REPO_CDN = 'https://cdn.jsdelivr.net/gh/iulianniculescu2000-netizen/studyx-updates@main';
+const VERSION_URLS = [
+  `${UPDATE_REPO_RAW}/version.json`,
+  `${UPDATE_REPO_CDN}/version.json`,
+];
+const HISTORY_URLS = [
+  `${UPDATE_REPO_RAW}/version-history.json`,
+  `${UPDATE_REPO_CDN}/version-history.json`,
+];
 const USER_AGENT = 'StudyX-Updater/3.0 (Electron; Windows)';
 const CONNECT_TIMEOUT_MS = 20000;
 const DOWNLOAD_TIMEOUT_MS = 90000;
 const MAX_RETRIES = 2;
+const GITHUB_RELEASE_TAG_API = 'https://api.github.com/repos/iulianniculescu2000-netizen/studyx-updates/releases/tags';
+const GITHUB_RELEASE_LATEST_API = 'https://api.github.com/repos/iulianniculescu2000-netizen/studyx-updates/releases/latest';
 
 let nativeUpdater = null;
 let nativeUpdaterBound = false;
 let nativeUpdateInfo = null;
 let nativeUpdateDownloaded = false;
+
+function logUpdater(...args) {
+  try {
+    console.log('[Updater]', ...args);
+  } catch {}
+}
 
 function resolveRedirectUrl(baseUrl, location) {
   try {
@@ -105,7 +122,87 @@ function fetchText(url, attempt = 0) {
 async function fetchJson(url) {
   const raw = await fetchText(url);
   const sanitized = String(raw).replace(/^\uFEFF/, '').trim();
+  const firstChar = sanitized[0];
+  if (firstChar !== '{' && firstChar !== '[') {
+    const preview = sanitized.slice(0, 120).replace(/\s+/g, ' ');
+    throw new Error(`Raspuns invalid de la server (${preview || 'gol'})`);
+  }
   return JSON.parse(sanitized);
+}
+
+function getFallbackUrls(url) {
+  if (!url) return [];
+  const urls = [url];
+  if (url.startsWith('https://raw.githubusercontent.com/')) {
+    urls.push(url.replace(UPDATE_REPO_RAW, UPDATE_REPO_CDN));
+  }
+  return [...new Set(urls)];
+}
+
+async function fetchJsonFromAny(urls) {
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      logUpdater('Trying metadata URL:', url);
+      return await fetchJson(url);
+    } catch (err) {
+      logUpdater('Metadata URL failed:', url, err?.message || err);
+      lastError = err;
+    }
+  }
+  throw lastError ?? new Error('Nu s-a putut descarca metadata de update.');
+}
+
+async function fetchGithubRelease(version) {
+  if (!version) return null;
+  const tag = String(version).startsWith('v') ? String(version) : `v${version}`;
+  try {
+    return await fetchJson(`${GITHUB_RELEASE_TAG_API}/${tag}`);
+  } catch (err) {
+    logUpdater('GitHub release metadata failed:', tag, err?.message || err);
+    return null;
+  }
+}
+
+async function fetchLatestGithubRelease() {
+  try {
+    return await fetchJson(GITHUB_RELEASE_LATEST_API);
+  } catch (err) {
+    logUpdater('GitHub latest release metadata failed:', err?.message || err);
+    return null;
+  }
+}
+
+function normalizeGithubRelease(release, localVersion) {
+  if (!release?.tag_name) return null;
+  const version = String(release.tag_name).replace(/^v/, '');
+  const installerAsset = Array.isArray(release.assets)
+    ? release.assets.find((asset) => /\.exe$/i.test(asset?.name || '') && !/blockmap/i.test(asset?.name || ''))
+    : null;
+
+  return {
+    hasUpdate: isNewerVersion(localVersion, version),
+    version,
+    latestVersion: version,
+    releaseDate: normalizeReleaseDate(release.published_at || release.created_at),
+    changes: normalizeReleaseNotes(release.body || '', version),
+    localVersion,
+    files: [],
+    contentUpdates: [],
+    installer: installerAsset
+      ? {
+          url: installerAsset.browser_download_url,
+          fileName: installerAsset.name,
+          sha256: typeof installerAsset.digest === 'string' && installerAsset.digest.startsWith('sha256:')
+            ? installerAsset.digest.slice('sha256:'.length)
+            : undefined,
+          size: installerAsset.size,
+        }
+      : undefined,
+    delivery: app.isPackaged && installerAsset ? 'installer' : 'overlay',
+    isSequential: false,
+    stepsRemaining: isNewerVersion(localVersion, version) ? 1 : 0,
+  };
 }
 
 function downloadFile(url, destPath, onProgress, attempt = 0) {
@@ -218,7 +315,12 @@ function downloadFile(url, destPath, onProgress, attempt = 0) {
 }
 
 function getAppRoot() {
-  return app.isPackaged ? path.join(process.resourcesPath, 'app') : path.join(__dirname, '..');
+  if (app.isPackaged) {
+    try {
+      return app.getAppPath();
+    } catch {}
+  }
+  return path.join(__dirname, '..');
 }
 
 function getOverlayRoot() {
@@ -356,6 +458,22 @@ function normalizeManifest(rawManifest) {
     contentUpdates: Array.isArray(manifest.contentUpdates) ? manifest.contentUpdates : [],
     installer,
     delivery,
+  };
+}
+
+function buildNoUpdateResponse(localVersion, latestVersion = localVersion) {
+  return {
+    hasUpdate: false,
+    version: localVersion,
+    latestVersion,
+    releaseDate: '',
+    changes: [],
+    localVersion,
+    files: [],
+    contentUpdates: [],
+    delivery: 'overlay',
+    isSequential: false,
+    stepsRemaining: 0,
   };
 }
 
@@ -568,7 +686,7 @@ function registerUpdaterIPC(mainWindow) {
         console.warn('[Updater] Native check failed, falling back to legacy updater:', nativeErr);
       }
 
-      const history = await fetchJson(HISTORY_URL);
+      const history = await fetchJsonFromAny(HISTORY_URLS);
       const entries = Array.isArray(history?.versions) ? history.versions : [];
       const versions = entries
         .filter((entry) => entry && typeof entry.version === 'string' && typeof entry.manifestUrl === 'string')
@@ -576,8 +694,8 @@ function registerUpdaterIPC(mainWindow) {
 
       if (versions.length > 0) {
         const latest = versions[versions.length - 1];
-        const next = versions.find((entry) => compareVersion(localVersion, entry.version) < 0);
-        if (!next) {
+        const candidates = versions.filter((entry) => compareVersion(localVersion, entry.version) < 0);
+        if (candidates.length === 0) {
           return {
             hasUpdate: false,
             version: localVersion,
@@ -593,11 +711,49 @@ function registerUpdaterIPC(mainWindow) {
           };
         }
 
-        const manifest = normalizeManifest(await fetchJson(next.manifestUrl));
+        let resolved = null;
+        for (const candidate of candidates) {
+          try {
+            const manifest = normalizeManifest(await fetchJsonFromAny(getFallbackUrls(candidate.manifestUrl)));
+            resolved = { candidate, manifest };
+            break;
+          } catch (manifestErr) {
+            logUpdater('Skipping invalid manifest from history:', candidate.manifestUrl, manifestErr?.message || manifestErr);
+          }
+        }
+
+        if (resolved) {
+          return {
+            hasUpdate: true,
+            version: resolved.manifest.version ?? resolved.candidate.version,
+            latestVersion: latest.version,
+            releaseDate: resolved.manifest.releaseDate,
+            changes: resolved.manifest.changes,
+            localVersion,
+            files: resolved.manifest.files,
+            contentUpdates: resolved.manifest.contentUpdates,
+            installer: resolved.manifest.installer,
+            delivery: resolved.manifest.delivery,
+            isSequential: true,
+            stepsRemaining: candidates.length,
+          };
+        }
+      }
+
+      try {
+        const versionMeta = await fetchJsonFromAny(VERSION_URLS);
+        const latestVersion = String(versionMeta?.version || '').trim();
+        if (!latestVersion) throw new Error('Metadata invalida - lipseste versiunea publica');
+        const manifestUrl = typeof versionMeta?.manifestUrl === 'string'
+          ? versionMeta.manifestUrl
+          : `${UPDATE_REPO_RAW}/manifests/${latestVersion}.json`;
+        const manifest = normalizeManifest(await fetchJsonFromAny(getFallbackUrls(manifestUrl)));
+        if (!manifest.version) throw new Error('Manifest invalid - lipseste campul version');
+        const hasUpdate = isNewerVersion(localVersion, manifest.version);
         return {
-          hasUpdate: true,
-          version: manifest.version ?? next.version,
-          latestVersion: latest.version,
+          hasUpdate,
+          version: manifest.version,
+          latestVersion: manifest.latestVersion ?? latestVersion,
           releaseDate: manifest.releaseDate,
           changes: manifest.changes,
           localVersion,
@@ -605,30 +761,23 @@ function registerUpdaterIPC(mainWindow) {
           contentUpdates: manifest.contentUpdates,
           installer: manifest.installer,
           delivery: manifest.delivery,
-          isSequential: true,
-          stepsRemaining: versions.filter((entry) => compareVersion(localVersion, entry.version) < 0).length,
+          isSequential: false,
+          stepsRemaining: hasUpdate ? 1 : 0,
         };
+      } catch (versionErr) {
+        logUpdater('Version metadata fallback failed:', versionErr?.message || versionErr);
       }
 
-      const manifest = normalizeManifest(await fetchJson(MANIFEST_URL));
-      if (!manifest.version) throw new Error('Manifest invalid - lipseste campul version');
-      const hasUpdate = isNewerVersion(localVersion, manifest.version);
-      return {
-        hasUpdate,
-        version: manifest.version,
-        latestVersion: manifest.latestVersion,
-        releaseDate: manifest.releaseDate,
-        changes: manifest.changes,
-        localVersion,
-        files: manifest.files,
-        contentUpdates: manifest.contentUpdates,
-        installer: manifest.installer,
-        delivery: manifest.delivery,
-        isSequential: false,
-        stepsRemaining: hasUpdate ? 1 : 0,
-      };
+      const fallbackRelease = await fetchLatestGithubRelease() || await fetchGithubRelease(localVersion);
+      if (fallbackRelease) {
+        const normalized = normalizeGithubRelease(fallbackRelease, localVersion);
+        if (normalized) return normalized;
+      }
+
+      throw new Error('Nu exista metadata valida pentru actualizare.');
     } catch (err) {
-      throw new Error(`Nu s-a putut contacta serverul de actualizari: ${err.message}`);
+      logUpdater('Check failed, returning graceful fallback:', err?.message || err);
+      return buildNoUpdateResponse(localVersion);
     }
   });
 

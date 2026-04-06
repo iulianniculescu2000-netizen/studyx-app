@@ -337,7 +337,7 @@ export default function UpdateModal() {
                   whileHover={{ scale: 1.1, rotate: 15 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={() => checkForUpdate()}
-                  title="Verifică actualizări"
+                   title="Verifica actualizari"
                   style={{
                     width: 36,
                     height: 36,
@@ -421,7 +421,7 @@ export default function UpdateModal() {
                             cursor: 'pointer', fontSize: 13, fontWeight: 600,
                           }}
                         >
-                          Încearcă din nou
+                          Incearca din nou
                         </button>
                       </motion.div>
                     )}
@@ -444,10 +444,10 @@ export default function UpdateModal() {
                         </div>
                         <div>
                           <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>
-                            Aplicația este la zi
+                            Aplicatia este la zi
                           </div>
                           <div style={{ fontSize: 12, color: theme.text3, marginTop: 2 }}>
-                            Versiunea {localVersion} este cea mai recentă.
+                            Versiunea {localVersion} este cea mai recenta.
                           </div>
                         </div>
                       </motion.div>
@@ -466,8 +466,8 @@ export default function UpdateModal() {
                       >
                         {[
                           { id: 'checking', label: 'Verificare', icon: RefreshCw },
-                          { id: 'available', label: 'Noutăți versiune', icon: Sparkles },
-                          { id: 'downloading', label: 'Descărcare', icon: Download },
+                          { id: 'available', label: 'Noua versiune', icon: Sparkles },
+                          { id: 'downloading', label: 'Descarcare', icon: Download },
                           { id: 'ready', label: 'Finalizare', icon: RotateCcw }
                         ].map((step, idx, arr) => {
                           const currentIdx = status === 'checking' ? 0 : status === 'available' ? 1 : status === 'downloading' ? 2 : 3;
@@ -537,7 +537,7 @@ export default function UpdateModal() {
                                       {/* --- Checking --- */}
                                       {status === 'checking' && (
                                         <div style={{ fontSize: 13, color: theme.text2 }}>
-                                          Ne conectăm la server pentru a căuta cea mai nouă versiune...
+                                          Ne conectam la server pentru a cauta cea mai noua versiune...
                                         </div>
                                       )}
 
@@ -569,7 +569,7 @@ export default function UpdateModal() {
                                                fontSize: 12, color: theme.warning, background: `${theme.warning}12`,
                                                border: `1px solid ${theme.warning}30`, borderRadius: 8, padding: '8px 10px', marginBottom: 16
                                              }}>
-                                               Upgrade secvențial ({manifest.stepsRemaining} pași rămași până la ultima versiune).
+                                                Upgrade secvential ({manifest.stepsRemaining} pasi ramasi pana la ultima versiune).
                                              </div>
                                            )}
 
@@ -584,7 +584,7 @@ export default function UpdateModal() {
                                                boxShadow: `0 4px 12px ${theme.accent}40`,
                                              }}
                                            >
-                                             <Download size={15} /> Începe descărcarea
+                                              <Download size={15} /> Incepe descarcarea
                                            </motion.button>
                                         </div>
                                       )}
@@ -596,7 +596,7 @@ export default function UpdateModal() {
                                            border: `1px solid ${theme.border}`
                                         }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, alignItems: 'center' }}>
-                                            <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Se descarcă pachetul...</span>
+                                            <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Se descarca pachetul...</span>
                                             <span style={{ fontSize: 13, fontWeight: 800, color: theme.accent, fontFamily: 'monospace' }}>{downloadPercent}%</span>
                                           </div>
                                           <div style={{ height: 6, borderRadius: 3, background: theme.surface2, overflow: 'hidden' }}>
@@ -616,7 +616,7 @@ export default function UpdateModal() {
                                            border: `1px solid ${theme.success}30`
                                         }}>
                                           <p style={{ margin: '0 0 16px', fontSize: 13, color: theme.text2 }}>
-                                            Pachetul a fost descărcat cu succes. Repornește aplicația pentru a aplica modificările.
+                                            Pachetul a fost descarcat cu succes. Reporneste aplicatia pentru a aplica modificarile.
                                           </p>
                                           <motion.button
                                             onClick={applyUpdate}
@@ -629,7 +629,7 @@ export default function UpdateModal() {
                                               boxShadow: `0 4px 12px ${theme.success}40`,
                                             }}
                                           >
-                                            <RotateCcw size={15} /> Repornește StudyX
+                                            <RotateCcw size={15} /> Reporneste StudyX
                                           </motion.button>
                                         </div>
                                       )}

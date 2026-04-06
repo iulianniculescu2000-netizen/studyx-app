@@ -11,7 +11,7 @@ const REPO = 'iulianniculescu2000-netizen/studyx-updates';
 const BRANCH = 'main';
 const TODAY = new Date().toISOString().split('T')[0];
 const RAW_BASE_URL = `https://raw.githubusercontent.com/${REPO}/${BRANCH}`;
-const MEDIA_BASE_URL = `https://media.githubusercontent.com/media/${REPO}/${BRANCH}`;
+const RELEASE_BASE_URL = `https://github.com/${REPO}/releases/download`;
 
 function walkFiles(baseDir, relDir = '') {
   const currentDir = path.join(baseDir, relDir);
@@ -77,7 +77,7 @@ const manifest = {
     ? {
         installer: {
           fileName: path.basename(installer.file),
-          url: `${MEDIA_BASE_URL}/files/installers/${PKG.version}/${path.basename(installer.file)}`,
+          url: `${RELEASE_BASE_URL}/v${PKG.version}/${path.basename(installer.file)}`,
           sha256: sha256(installer.abs),
           size: installer.size,
         },

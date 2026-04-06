@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,18 +15,19 @@ import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useUpdateStore } from '../store/updateStore';
 import ConfirmDialog from './ConfirmDialog';
-import AISettings from './AISettings';
 import Portal from './Portal';
-import UpdateModal from './UpdateModal';
 import Logo from './Logo';
 import type { QuizColor } from '../types';
+
+const AISettings = lazy(() => import('./AISettings'));
+const UpdateModal = lazy(() => import('./UpdateModal'));
 
 const FOLDER_COLORS: { id: QuizColor; bg: string }[] = [
   { id: 'blue', bg: '#0A84FF' }, { id: 'purple', bg: '#5E5CE6' },
   { id: 'green', bg: '#30D158' }, { id: 'orange', bg: '#FF9F0A' },
   { id: 'pink', bg: '#FF375F' }, { id: 'red', bg: '#FF453A' }, { id: 'teal', bg: '#5AC8FA' },
 ];
-const FOLDER_EMOJIS = ['📁', '📚', '🧠', '💡', '🔬', '🌍', '💻', '❤️', '🦴', '💊', '⚗️', '🧪', '📋', '🎯', '⚡', '🏥'];
+const FOLDER_EMOJIS = ['\u{1F4C1}', '\u{1F4DA}', '\u{1F9E0}', '\u{1F4A1}', '\u{1F52C}', '\u{1F30D}', '\u{1F4BB}', '\u2764\uFE0F', '\u{1F9B4}', '\u{1F48A}', '\u2695\uFE0F', '\u{1F9EA}', '\u{1F4CB}', '\u{1F3AF}', '\u26A1', '\u{1F3E5}'];
 
 function useCollapsed() {
   const [collapsed, setCollapsed] = useState(() =>
@@ -68,7 +69,7 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-/** Update button — opens the premium UpdateModal */
+/** Update button - opens the premium UpdateModal */
 function UpdateButton({
   collapsed, status, localVersion, downloadPercent, onOpen, theme,
 }: {
@@ -111,10 +112,10 @@ function UpdateButton({
     color = theme.text3;
   }
 
-  const label = isChecking ? 'Se verifică...'
-    : status === 'up-to-date' ? 'La zi ✓'
-    : status === 'available' ? 'Actualizare disponibilă'
-    : isDownloading ? `Descărcare ${downloadPercent}%`
+  const label = isChecking ? 'Se verifica...'
+    : status === 'up-to-date' ? 'La zi'
+    : status === 'available' ? 'Actualizare disponibila'
+    : isDownloading ? `Descarcare ${downloadPercent}%`
     : status === 'ready' ? 'Gata de instalat'
     : status === 'error' ? 'Eroare actualizare'
     : `v${localVersion}`;
@@ -155,11 +156,11 @@ function UpdateButton({
   );
 }
 
-// ── Folder Creation Modal ──────────────────────────────────────────────────────
+// Folder creation modal
 function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name: string, emoji: string, color: QuizColor) => void }) {
   const theme = useTheme();
   const [name, setName] = useState('');
-  const [emoji, setEmoji] = useState('📁');
+  const [emoji, setEmoji] = useState('\u{1F4C1}');
   const [color, setColor] = useState<QuizColor>('blue');
 
   const handleCreate = () => {
@@ -205,7 +206,7 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px 28px 18px', borderBottom: `1px solid ${theme.border}` }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: theme.text }}>Folder nou</h3>
-            <p style={{ margin: '3px 0 0', fontSize: 12, color: theme.text3 }}>Organizează-ți grilele în foldere</p>
+            <p style={{ margin: '3px 0 0', fontSize: 12, color: theme.text3 }}>Organizeaza-ti grilele in foldere</p>
           </div>
           <motion.button 
             whileHover={{ scale: 1.1, rotate: 90 }}
@@ -220,7 +221,7 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
         <div className="flex-1 overflow-y-auto p-7 pt-5 custom-scrollbar" style={{ minHeight: 0 }}>
           {/* Emoji picker */}
           <div style={{ marginBottom: 22 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Pictogramă</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Pictograma</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {FOLDER_EMOJIS.map((e) => (
                 <button key={e} onClick={() => setEmoji(e)}
@@ -276,14 +277,14 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
               cursor: canCreate ? 'pointer' : 'not-allowed', opacity: canCreate ? 1 : 0.5,
               background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff',
               boxShadow: `0 12px 30px ${theme.accent}40`,
-            }}>Creează Folder</motion.button>
+            }}>Creeaza folder</motion.button>
         </div>
       </motion.div>
     </motion.div>
   );
 }
 
-/** Active nav indicator — colored left bar */
+/** Active nav indicator - colored left bar */
 function NavItem({
   to, icon, label, badge, end, collapsed,
 }: {
@@ -374,7 +375,7 @@ export default function Sidebar() {
   const avatarLetter = username?.charAt(0).toUpperCase() ?? '?';
 
   const totalAnswered = Object.values(questionStats).reduce((a, s) => a + s.timesCorrect + s.timesWrong, 0);
-  const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT MEDICINĂ';
+  const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT MEDICINA';
   const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived).length, [quizzes]);
   const newQuizCount = useMemo(() => quizzes.filter(q => now - q.createdAt < 86400000 * 2).length, [quizzes, now]);
   const uncategorizedCount = useMemo(() => quizzes.filter(q => !q.folderId).length, [quizzes]);
@@ -435,7 +436,7 @@ export default function Sidebar() {
         background: collapsed ? theme.navBg : `linear-gradient(180deg, ${theme.navBg}, color-mix(in srgb, ${theme.surface} 88%, transparent))`,
       } as React.CSSProperties}
     >
-      {/* ── Drag region matches TitleBar ── */}
+      {/* Drag region matches TitleBar */}
       <div
         style={{
           height: compact ? 42 : 48,
@@ -459,7 +460,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* ── User header (more compact) ── */}
+      {/* User header */}
       <div className={`${compact ? 'p-3' : 'p-4'} flex-shrink-0`} style={{ borderBottom: `1px solid ${theme.border}` }}>
         {collapsed ? (
           <Tip label={username ?? ''}>
@@ -500,7 +501,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* ── Nav ── */}
+      {/* Navigation */}
       <div data-tutorial="sidebar" className={`flex-1 overflow-y-auto ${compact ? 'px-1.5 pb-1.5 pt-1.5' : 'px-2 pb-2 pt-2'} space-y-0.5 overflow-x-hidden`}>
 
         {collapsed ? (
@@ -529,7 +530,7 @@ export default function Sidebar() {
                 />
               </div>
             </Tip>
-            <Tip label={`Sesiune zilnică${dueCount > 0 ? ` · ${dueCount} de recapitulat` : ''}`}>
+            <Tip label={`Sesiune zilnica${dueCount > 0 ? ` - ${dueCount} de recapitulat` : ""}`}>
               <NavItem
                 to="/daily-review"
                 icon={
@@ -541,7 +542,7 @@ export default function Sidebar() {
                     )}
                   </div>
                 }
-                label="Sesiune zilnică"
+                label="Sesiune zilnica"
                 collapsed
               />
             </Tip>
@@ -550,9 +551,9 @@ export default function Sidebar() {
                 <NavItem to="/stats" icon={<BarChart3 size={17} />} label="Statistici" collapsed />
               </div>
             </Tip>
-            <Tip label="Notițe">
+            <Tip label="Notite">
               <div data-tutorial="nav-notes">
-                <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notițe" collapsed />
+                <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notite" collapsed />
               </div>
             </Tip>
             <Tip label="Knowledge Vault (AI)">
@@ -563,9 +564,9 @@ export default function Sidebar() {
                 <NavItem to="/flashcards" icon={<CreditCard size={17} />} label="Flashcarduri" collapsed />
               </div>
             </Tip>
-            <Tip label="Setări">
+            <Tip label="Setari">
               <div>
-                <NavItem to="/settings" icon={<Settings size={17} />} label="Setări" collapsed />
+                <NavItem to="/settings" icon={<Settings size={17} />} label="Setari" collapsed />
               </div>
             </Tip>
           </>
@@ -606,7 +607,8 @@ export default function Sidebar() {
             <NavItem
               to="/daily-review"
               icon={<Brain size={16} />}
-              label="Sesiune zilnică"              collapsed={false}
+              label="Sesiune zilnica"
+              collapsed={false}
               badge={dueCount > 0 ? (
                 <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
                   style={{ background: `${theme.accent}28`, color: theme.accent }}>
@@ -614,12 +616,11 @@ export default function Sidebar() {
                 </span>
               ) : undefined}
             />
-            <div data-tutorial="nav-stats">
-              <NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} />
-            </div>
+            <div data-tutorial="nav-stats"><NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} /></div>
             <div data-tutorial="nav-notes">
-              <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notițe" collapsed={false} />
+              <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notite" collapsed={false} />
             </div>
+
             <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} />
             <div data-tutorial="nav-flashcards">
               <NavItem
@@ -630,7 +631,7 @@ export default function Sidebar() {
               />
             </div>
             <div data-tutorial="nav-settings">
-              <NavItem to="/settings" icon={<Settings size={16} />} label="Setări" collapsed={false} />
+              <NavItem to="/settings" icon={<Settings size={16} />} label="Setari" collapsed={false} />
             </div>
 
             {/* Folders section */}
@@ -672,7 +673,7 @@ export default function Sidebar() {
                               style={{ width: 3, height: 16, background: theme.accent }}
                               transition={{ duration: 0.25 }} />
                           )}
-                          <span>📋</span>
+                          <span>{"\u{1F4CB}"}</span>
                           <span className="flex-1 truncate">Neclasificate</span>
                           <span className="text-xs px-1.5 py-0.5 rounded-full"
                             style={{ background: theme.surface2, color: theme.text3 }}>{count}</span>
@@ -733,7 +734,7 @@ export default function Sidebar() {
                               </span>
                             )}
                           </motion.div>
-                          {/* Edit/delete — shown on hover */}
+                          {/* Edit/delete shown on hover */}
                           <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5 rounded-lg px-1 py-0.5"
                             style={{ background: theme.isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.92)' }}>
                             <button
@@ -760,18 +761,22 @@ export default function Sidebar() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Ștergi folderul "${deleteTarget?.name}"?`}
-        description="Grilele din el vor rămâne neclasificate. Această acțiune nu poate fi anulată."
-        confirmLabel="Șterge folderul" cancelLabel="Anulează" variant="danger"
+        title={`Stergi folderul "${deleteTarget?.name}"?`}
+        description="Grilele din el vor ramane neclasificate. Aceasta actiune nu poate fi anulata."
+        confirmLabel="Sterge folderul" cancelLabel="Anuleaza" variant="danger"
         onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)}
       />
 
-      <AISettings open={showAISettings} onClose={() => setShowAISettings(false)} />
+      <Suspense fallback={null}>
+        <AISettings open={showAISettings} onClose={() => setShowAISettings(false)} />
+      </Suspense>
 
-      {/* ── Update modal (premium, portal-based) ── */}
-      <UpdateModal />
+      {/* Update modal */}
+      <Suspense fallback={null}>
+        <UpdateModal />
+      </Suspense>
 
-      {/* ── Centered folder creation modal ── */}
+      {/* Centered folder creation modal */}
       <Portal>
         <AnimatePresence>
           {showNewFolder && (
@@ -783,11 +788,11 @@ export default function Sidebar() {
         </AnimatePresence>
       </Portal>
 
-      {/* ── Bottom: version + collapse ── */}
+      {/* Bottom: version + collapse */}
       <div className="p-2 flex-shrink-0 space-y-1" style={{ borderTop: `1px solid ${theme.border}` }}>
         {/* Logout (collapsed only) */}
         {collapsed && (
-          <Tip label="Schimbă utilizatorul">
+          <Tip label="Schimba utilizatorul">
             <button onClick={logout}
               className="w-full flex items-center justify-center p-2.5 rounded-xl transition-all press-feedback"
               style={{ color: theme.text3 }}
@@ -798,7 +803,7 @@ export default function Sidebar() {
           </Tip>
         )}
 
-        {/* Update button — opens premium UpdateModal */}
+        {/* Update button */}
         <UpdateButton
           collapsed={collapsed}
           status={updateStatus}
@@ -822,7 +827,7 @@ export default function Sidebar() {
               style={{ display: 'flex' }}>
               <PanelLeftOpen size={15} />
             </motion.span>
-            {!collapsed && <span style={{ color: theme.text3 }}>Restrânge</span>}
+            {!collapsed && <span style={{ color: theme.text3 }}>Restrange</span>}
           </motion.button>
         </Tip>
       </div>
