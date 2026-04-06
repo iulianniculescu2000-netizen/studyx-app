@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { Play, Clock, ChevronLeft, Trophy, RotateCcw, Layers, Download, Pencil, Copy, Search, GraduationCap, Archive, ArchiveRestore, Timer, CreditCard, FileText, Bot, BookOpen } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeContext';
 import QuizImage from '../components/QuizImage';
 import { useAIStore } from '../store/aiStore';
 import { useStatsStore } from '../store/statsStore';
+import { useUIStore } from '../store/uiStore';
 import type { QuizImportData } from '../types';
 import { HERO_COLOR_MAP } from '../theme/colorMaps';
 import { type Theme } from '../theme/themes';
@@ -40,6 +41,9 @@ export default function QuizDetail() {
   const [qSearch, setQSearch] = useState('');
   const { hasKey } = useAIStore();
   const [showChat, setShowChat] = useState(false);
+  const setChatOpen = useUIStore((state) => state.setChatOpen);
+  const lockFloatingUI = useUIStore((state) => state.lockFloatingUI);
+  const unlockFloatingUI = useUIStore((state) => state.unlockFloatingUI);
 
 
   if (!quiz) {
@@ -190,6 +194,17 @@ export default function QuizDetail() {
   const wrongCount = Object.entries(questionStats)
     .filter(([k, s]) => k.startsWith(id + ':') && s.timesWrong > 0).length;
 
+  useEffect(() => {
+    if (!showChat) return;
+
+    setChatOpen(false);
+    lockFloatingUI('quiz-detail-chat');
+
+    return () => {
+      unlockFloatingUI('quiz-detail-chat');
+    };
+  }, [lockFloatingUI, setChatOpen, showChat, unlockFloatingUI]);
+
   return (
     <>
     <div className="h-full overflow-y-auto px-8 py-8">
@@ -269,12 +284,22 @@ export default function QuizDetail() {
           className="flex gap-3 mb-8 overflow-x-auto pb-2 scrollbar-none">
           <Link to={`/play/${quiz.id}`} state={{ mode: 'timed' }}
             className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-white/5 active:scale-[0.98]"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
+            style={{
+              background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
+              border: `1px solid ${theme.border}`,
+              color: theme.text2,
+              boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+            }}>
             <Timer size={16} />Cronometrat
           </Link>
           <Link to={`/flashcards/session/${quiz.id}?mode=all`}
             className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-white/5 active:scale-[0.98]"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
+            style={{
+              background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
+              border: `1px solid ${theme.border}`,
+              color: theme.text2,
+              boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+            }}>
             <CreditCard size={16} />Flashcarduri
           </Link>
           <button
@@ -287,7 +312,12 @@ export default function QuizDetail() {
             }}
             disabled={wrongCount === 0}
             className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-red-500/5 active:scale-[0.98] disabled:opacity-30"
-            style={{ background: theme.surface, border: `1px solid ${wrongCount > 0 ? theme.danger + '40' : theme.border}`, color: wrongCount > 0 ? theme.danger : theme.text3 }}>
+            style={{
+              background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
+              border: `1px solid ${wrongCount > 0 ? theme.danger + '40' : theme.border}`,
+              color: wrongCount > 0 ? theme.danger : theme.text3,
+              boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+            }}>
             <RotateCcw size={16} />GreÈ™eli ({wrongCount})
           </button>
         </motion.div>
@@ -295,7 +325,7 @@ export default function QuizDetail() {
         {/* AI Buddy Bar */}
         {hasKey() ? (
           <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}
-            onClick={() => { setShowChat(true); window.dispatchEvent(new CustomEvent('studyx:chat', { detail: { open: true } })); }}
+            onClick={() => { setShowChat(true); }}
             className="w-full flex items-center justify-between gap-4 p-4 rounded-2xl mb-8 group transition-all"
             style={{ background: `linear-gradient(135deg, ${theme.accent}12, ${theme.accent2}08)`, border: `1px solid ${theme.accent}30` }}>
             <div className="flex items-center gap-3">
@@ -327,7 +357,7 @@ export default function QuizDetail() {
         )}
 
         {/* Utility Actions (Grid) */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-8">
+        <div className="grid grid-cols-3 gap-2 mb-8 sm:grid-cols-6">
           {[
             { label: 'Edit', icon: Pencil, action: () => navigate(`/create?edit=${quiz.id}`), color: theme.accent },
             { label: 'Copy', icon: Copy, action: handleDuplicate, color: theme.text2 },
@@ -338,7 +368,11 @@ export default function QuizDetail() {
           ].map((btn) => (
             <button key={btn.label} onClick={btn.action}
               className="flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all hover:scale-[1.05] active:scale-[0.95]"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+              style={{
+                background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
+                border: `1px solid ${theme.border}`,
+                boxShadow: '0 12px 26px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+              }}>
               <btn.icon size={16} style={{ color: btn.color }} />
               <span className="text-[10px] font-black uppercase tracking-tighter opacity-60" style={{ color: theme.text }}>{btn.label}</span>
             </button>
@@ -417,7 +451,6 @@ export default function QuizDetail() {
         quiz={quiz}
         onClose={() => {
           setShowChat(false);
-          window.dispatchEvent(new CustomEvent('studyx:chat', { detail: { open: false } }));
         }}
       />
     </Suspense>

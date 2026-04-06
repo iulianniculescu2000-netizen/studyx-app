@@ -12,8 +12,10 @@ import { useUIStore } from '../store/uiStore';
 
 export default function KnowledgeVault() {
   const theme = useTheme();
-  const { knowledgeSources, addKnowledgeSource, removeKnowledgeSource } = useAIStore();
-  const { addToast } = useToastStore();
+  const knowledgeSources = useAIStore((state) => state.knowledgeSources);
+  const addKnowledgeSource = useAIStore((state) => state.addKnowledgeSource);
+  const removeKnowledgeSource = useAIStore((state) => state.removeKnowledgeSource);
+  const addToast = useToastStore((state) => state.addToast);
   const setChatOpen = useUIStore((state) => state.setChatOpen);
 
   const [search, setSearch] = useState('');
@@ -26,11 +28,14 @@ export default function KnowledgeVault() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = knowledgeSources
-    .filter((source) =>
-      source.name.toLowerCase().includes(search.toLowerCase())
-      || source.preview.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => b.addedAt - a.addedAt);
+  const filtered = useMemo(
+    () => knowledgeSources
+      .filter((source) =>
+        source.name.toLowerCase().includes(search.toLowerCase())
+        || source.preview.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => b.addedAt - a.addedAt),
+    [knowledgeSources, search],
+  );
 
   const sourceHealth = useMemo(() => {
     const lowQuality = knowledgeSources.filter((source) => (source.qualityScore ?? 60) < 65);
@@ -51,25 +56,38 @@ export default function KnowledgeVault() {
     [knowledgeSources, selectedSourceId],
   );
 
-  const totalWords = knowledgeSources.reduce((acc, source) => acc + source.wordCount, 0);
+  const totalWords = useMemo(
+    () => knowledgeSources.reduce((acc, source) => acc + source.wordCount, 0),
+    [knowledgeSources],
+  );
+
+  const yieldToPaint = async () => {
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
     setLoading(true);
+    setProcessStep(files.length > 1 ? `Pregatim ${files.length} fisiere...` : 'Pregatim documentul...');
+    await yieldToPaint();
 
     try {
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
         const name = file.name.toLowerCase();
         const isPdf = name.endsWith('.pdf');
         const isDocx = name.endsWith('.docx');
         const isImage = /\.(jpe?g|png|webp|bmp)$/i.test(name);
+        const filePrefix = files.length > 1 ? `[${index + 1}/${files.length}] ` : '';
 
         let text = '';
         let type: AIKnowledgeSourceType = 'txt';
 
-        setProcessStep(`Citim ${file.name}...`);
+        setProcessStep(`${filePrefix}Citim ${file.name}...`);
+        await yieldToPaint();
         if (isPdf) {
           try {
             const { parsePDF } = await import('../ai/pdfParser');
@@ -84,7 +102,8 @@ export default function KnowledgeVault() {
           text = await parseDocx(file);
           type = 'docx';
         } else if (isImage) {
-          setProcessStep(`Analizam imaginea (OCR)...`);
+          setProcessStep(`${filePrefix}Analizam imaginea (OCR)...`);
+          await yieldToPaint();
           const { parseImageOCR } = await import('../ai/ocrParser');
           text = await parseImageOCR(file);
           type = 'image';
@@ -97,9 +116,15 @@ export default function KnowledgeVault() {
           continue;
         }
 
-        setProcessStep('Fragmentam si indexam...');
-        await addKnowledgeSource(file.name, text, type);
+        setProcessStep(`${filePrefix}Fragmentam si indexam ${file.name}...`);
+        await yieldToPaint();
+        await addKnowledgeSource(file.name, text, type, {
+          onIndexProgress: ({ percent }) => {
+            setProcessStep(`${filePrefix}Indexam ${file.name}... ${percent}%`);
+          },
+        });
         addToast(`"${file.name}" adaugat cu succes.`, 'success');
+        await yieldToPaint();
       }
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : 'Eroare la procesarea fisierelor.', 'error');

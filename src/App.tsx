@@ -215,8 +215,8 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
   const clearPendingTutorialProfile = useUserStore((s) => s.clearPendingTutorialProfile);
   const username = useUserStore((s) => s.username);
   const { isCompleted, startTutorial, _hasHydrated } = useTutorialStore();
-  const { addKnowledgeSource } = useAIStore();
-  const { addToast } = useToastStore();
+  const addKnowledgeSource = useAIStore((state) => state.addKnowledgeSource);
+  const addToast = useToastStore((state) => state.addToast);
   const resetSaveStatus = useSaveStatusStore((s) => s.reset);
 
   const [isSwapping, setIsSwapping] = useState(false);

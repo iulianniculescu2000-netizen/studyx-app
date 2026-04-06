@@ -12,6 +12,11 @@ interface VectorSourceIndexEntry {
   updatedAt: number;
 }
 
+interface AddChunksOptions {
+  batchSize?: number;
+  onProgress?: (progress: { processed: number; total: number; percent: number }) => void;
+}
+
 let vectorCache: ChunkRecord[] | null = null;
 let indexCache: VectorSourceIndexEntry[] | null = null;
 let writeLock: Promise<void> = Promise.resolve();
@@ -45,23 +50,51 @@ async function saveVectorIndex(entries: VectorSourceIndexEntry[]) {
   await idbSet(VECTOR_INDEX_KEY, entries);
 }
 
+async function yieldToMainThread() {
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
 export async function addChunksToVault(
   chunks: { text: string; id: string }[],
   sourceName: string,
-  sourceId: string
+  sourceId: string,
+  options: AddChunksOptions = {},
 ) {
   return withLock(async () => {
     const key = getSourceStorageKey(sourceId);
-    const newRecords: ChunkRecord[] = chunks.map((chunk) => ({
-      id: chunk.id,
-      sourceId,
-      text: chunk.text,
-      source: sourceName,
-      embedding: embedText(chunk.text),
-      topic: sourceName,
-      difficulty: 'medium',
-      createdAt: Date.now(),
-    }));
+    const total = chunks.length;
+    const batchSize = Math.max(12, options.batchSize ?? 28);
+    const newRecords: ChunkRecord[] = [];
+
+    for (let index = 0; index < chunks.length; index += batchSize) {
+      const batch = chunks.slice(index, index + batchSize);
+
+      for (const chunk of batch) {
+        newRecords.push({
+          id: chunk.id,
+          sourceId,
+          text: chunk.text,
+          source: sourceName,
+          embedding: embedText(chunk.text),
+          topic: sourceName,
+          difficulty: 'medium',
+          createdAt: Date.now(),
+        });
+      }
+
+      const processed = Math.min(index + batch.length, total);
+      options.onProgress?.({
+        processed,
+        total,
+        percent: total === 0 ? 100 : Math.round((processed / total) * 100),
+      });
+
+      if (processed < total) {
+        await yieldToMainThread();
+      }
+    }
 
     await idbSet(key, newRecords);
 

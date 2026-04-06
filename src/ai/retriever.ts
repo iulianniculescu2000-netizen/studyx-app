@@ -5,6 +5,11 @@ import type { RetrievedChunk, UserProfileData } from './types';
 // ─── BM25 Parameters ──────────────────────────────────────────────────────────
 const BM25_K1 = 1.5;  // saturation term frequency
 const BM25_B = 0.75;  // length normalization
+const tokenCache = new Map<string, string[]>();
+
+function getChunkCacheKey(id: string, text: string) {
+  return `${id}:${text.length}`;
+}
 
 function tokenize(text: string): string[] {
   return text
@@ -14,6 +19,15 @@ function tokenize(text: string): string[] {
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .filter(t => t.length > 2);
+}
+
+function getCachedTokens(id: string, text: string) {
+  const cacheKey = getChunkCacheKey(id, text);
+  const cached = tokenCache.get(cacheKey);
+  if (cached) return cached;
+  const tokens = tokenize(text);
+  tokenCache.set(cacheKey, tokens);
+  return tokens;
 }
 
 function bm25Score(
@@ -41,10 +55,18 @@ function bm25Score(
 function buildIdfMap(queryTokens: string[], allDocs: string[][]): Map<string, number> {
   const N = allDocs.length;
   const map = new Map<string, number>();
+  const uniqueQueryTokens = [...new Set(queryTokens)];
   for (const qt of queryTokens) {
-    const df = allDocs.filter(doc => doc.includes(qt)).length;
+    if (map.has(qt)) continue;
+    let df = 0;
+    for (const doc of allDocs) {
+      if (doc.includes(qt)) df += 1;
+    }
     map.set(qt, Math.log((N - df + 0.5) / (df + 0.5) + 1));
   }
+  uniqueQueryTokens.forEach((token) => {
+    if (!map.has(token)) map.set(token, 0);
+  });
   return map;
 }
 
@@ -73,7 +95,7 @@ export async function retrieveRelevantChunks(
   );
 
   // ─── BM25 setup ───────────────────────────────────────────────────────────
-  const allDocTokens = allChunks.map(c => tokenize(c.text));
+  const allDocTokens = allChunks.map((chunk) => getCachedTokens(chunk.id, chunk.text));
   const avgDocLength = allDocTokens.reduce((s, d) => s + d.length, 0) / (allDocTokens.length || 1);
   const idfMap = buildIdfMap(queryTokens, allDocTokens);
 

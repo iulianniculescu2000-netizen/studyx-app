@@ -19,8 +19,12 @@ interface ReviewItem {
 export default function ReviewMode() {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { quizzes, addQuiz } = useQuizStore();
-  const { getDueQuestions, getWeakQuestions, recordAnswer, recordStudySession } = useStatsStore();
+  const quizzes = useQuizStore((state) => state.quizzes);
+  const addQuiz = useQuizStore((state) => state.addQuiz);
+  const dueCount = useStatsStore((state) => state.getDueQuestions().length);
+  const weakCount = useStatsStore((state) => state.getWeakQuestions(10).length);
+  const recordAnswer = useStatsStore((state) => state.recordAnswer);
+  const recordStudySession = useStatsStore((state) => state.recordStudySession);
   const activeProfileId = useUserStore((state) => state.activeProfileId);
 
   const createQuizFromMistakes = () => {
@@ -69,13 +73,13 @@ export default function ReviewMode() {
   };
 
   const startDue = () => {
-    const due = getDueQuestions();
+    const due = useStatsStore.getState().getDueQuestions();
     setItems(buildItems(due));
     setMode('review');
   };
 
   const startWeak = () => {
-    const weak = getWeakQuestions(10);
+    const weak = useStatsStore.getState().getWeakQuestions(10);
     setItems(buildItems(weak));
     setMode('review');
   };
@@ -142,15 +146,12 @@ export default function ReviewMode() {
   }, [current, revealed, selected, isMultiple, handleNext, revealAnswer, handleSelect]);
 
   if (mode === 'pick') {
-    const dueCount = getDueQuestions().length;
-    const weakCount = getWeakQuestions(10).length;
-
     return (
-      <div className="h-full flex items-center justify-center px-4">
-        <div className="max-w-md w-full">
+      <div className="min-h-full px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-6xl">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="mb-10 text-center">
-            <h1 className="text-4xl font-black tracking-tighter mb-2" style={{ color: theme.text }}>
+            className="mb-8 text-center sm:mb-10">
+            <h1 className="mb-3 text-4xl font-black tracking-tighter sm:text-5xl" style={{ color: theme.text }}>
               Recapitulare <span style={{
                 background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
                 WebkitBackgroundClip: 'text',
@@ -163,146 +164,146 @@ export default function ReviewMode() {
             </p>
           </motion.div>
 
-          <div className="space-y-4">
-            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+          <div className="grid gap-4 md:grid-cols-2 xl:gap-5">
+            <motion.button whileHover={{ scale: 1.01, y: -2 }} whileTap={{ scale: 0.985 }}
               onClick={startDue}
               disabled={dueCount === 0}
-              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              className="group relative flex min-h-[190px] w-full flex-col overflow-hidden rounded-[30px] p-6 text-left transition-all disabled:opacity-40"
               style={{ 
                 background: theme.surface, 
                 border: `1px solid ${dueCount > 0 ? theme.warning + '40' : theme.border}`,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                boxShadow: '0 14px 34px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.08)'
               }}>
               <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
                 style={{ background: `${theme.warning}15` }} />
               
-              <div className="flex items-center gap-4 mb-3 relative">
+              <div className="relative mb-4 flex items-start gap-4">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
                   style={{ background: `${theme.warning}20`, border: `1px solid ${theme.warning}40` }}>
                   ⚡
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Repetare Spațiată</span>
                   <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.warning }}>Algoritm SM-2</span>
                 </div>
-                <span className="ml-auto px-3 py-1 rounded-full text-xs font-black shadow-lg"
+                <span className="shrink-0 rounded-full px-3 py-1 text-xs font-black shadow-lg"
                   style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})`, color: '#fff' }}>
                   {dueCount}
                 </span>
               </div>
-              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+              <p className="relative mt-auto text-sm font-medium leading-relaxed" style={{ color: theme.text2 }}>
                 Întrebări selectate automat pentru a preveni uitarea. Maximul de eficiență în studiu.
               </p>
             </motion.button>
 
-            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+            <motion.button whileHover={{ scale: 1.01, y: -2 }} whileTap={{ scale: 0.985 }}
               onClick={startWeak}
               disabled={weakCount === 0}
-              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              className="group relative flex min-h-[190px] w-full flex-col overflow-hidden rounded-[30px] p-6 text-left transition-all disabled:opacity-40"
               style={{ 
                 background: theme.surface, 
                 border: `1px solid ${weakCount > 0 ? theme.danger + '40' : theme.border}`,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                boxShadow: '0 14px 34px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.08)'
               }}>
               <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
                 style={{ background: `${theme.danger}15` }} />
 
-              <div className="flex items-center gap-4 mb-3 relative">
+              <div className="relative mb-4 flex items-start gap-4">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
                   style={{ background: `${theme.danger}20`, border: `1px solid ${theme.danger}40` }}>
                   🎯
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Puncte Slabe</span>
                   <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.danger }}>Analiză Erori</span>
                 </div>
-                <span className="ml-auto px-3 py-1 rounded-full text-xs font-black shadow-lg"
+                <span className="shrink-0 rounded-full px-3 py-1 text-xs font-black shadow-lg"
                   style={{ background: theme.danger, color: '#fff' }}>
                   {weakCount}
                 </span>
               </div>
-              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+              <p className="relative mt-auto text-sm font-medium leading-relaxed" style={{ color: theme.text2 }}>
                 Concentrează-te pe subiectele unde ai întâmpinat dificultăți. Transformă minusurile în plusuri.
               </p>
             </motion.button>
 
-            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+            <motion.button whileHover={{ scale: 1.01, y: -2 }} whileTap={{ scale: 0.985 }}
               onClick={createQuizFromMistakes}
               disabled={weakCount === 0}
-              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              className="group relative flex min-h-[190px] w-full flex-col overflow-hidden rounded-[30px] p-6 text-left transition-all disabled:opacity-40"
               style={{ 
                 background: theme.surface, 
                 border: `1px solid ${theme.accent}40`,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                boxShadow: '0 14px 34px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.08)'
               }}>
               <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
                 style={{ background: `${theme.accent}15` }} />
 
-              <div className="flex items-center gap-4 mb-3 relative">
+              <div className="relative mb-4 flex items-start gap-4">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
                   style={{ background: `${theme.accent}20`, border: `1px solid ${theme.accent}40` }}>
                   🔥
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Quiz din Greșeli</span>
                   <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.accent }}>Generator Automat</span>
                 </div>
               </div>
-              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+              <p className="relative mt-auto text-sm font-medium leading-relaxed" style={{ color: theme.text2 }}>
                 Generează o grilă nouă din istoricul tău de erori pentru o sesiune de antrenament rapid.
               </p>
             </motion.button>
 
-            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+            <motion.button whileHover={{ scale: 1.01, y: -2 }} whileTap={{ scale: 0.985 }}
               onClick={startRecoverySession}
               disabled={!activeProfileId || weakCount === 0}
-              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              className="group relative flex min-h-[190px] w-full flex-col overflow-hidden rounded-[30px] p-6 text-left transition-all disabled:opacity-40"
               style={{
                 background: theme.surface,
                 border: `1px solid ${theme.success}40`,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                boxShadow: '0 14px 34px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.08)'
               }}>
               <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
                 style={{ background: `${theme.success}14` }} />
 
-              <div className="flex items-center gap-4 mb-3 relative">
+              <div className="relative mb-4 flex items-start gap-4">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
                   style={{ background: `${theme.success}20`, border: `1px solid ${theme.success}40` }}>
                   ♻️
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Weakness Recovery</span>
                   <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.success }}>Focused Recovery</span>
                 </div>
               </div>
-              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+              <p className="relative mt-auto text-sm font-medium leading-relaxed" style={{ color: theme.text2 }}>
                 O sesiune scurtă, ghidată de topicurile unde ai cea mai mare nevoie de consolidare.
               </p>
             </motion.button>
 
-            <motion.button whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
+            <motion.button whileHover={{ scale: 1.01, y: -2 }} whileTap={{ scale: 0.985 }}
               onClick={startAdaptiveExam}
               disabled={!activeProfileId || quizzes.length === 0}
-              className="w-full p-6 rounded-[28px] text-left transition-all disabled:opacity-40 group relative overflow-hidden"
+              className="group relative flex min-h-[190px] w-full flex-col overflow-hidden rounded-[30px] p-6 text-left transition-all disabled:opacity-40 md:col-span-2"
               style={{
                 background: theme.surface,
                 border: `1px solid ${theme.accent2}40`,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                boxShadow: '0 14px 34px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.08)'
               }}>
               <div className="absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none"
                 style={{ background: `${theme.accent2}16` }} />
 
-              <div className="flex items-center gap-4 mb-3 relative">
+              <div className="relative mb-4 flex items-start gap-4">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-inner"
                   style={{ background: `${theme.accent2}20`, border: `1px solid ${theme.accent2}40` }}>
                   🎓
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <span className="font-black text-lg block leading-tight" style={{ color: theme.text }}>Adaptive Exam Mode</span>
                   <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: theme.accent2 }}>Dynamic Simulation</span>
                 </div>
               </div>
-              <p className="text-sm font-medium leading-relaxed relative" style={{ color: theme.text2 }}>
+              <p className="relative mt-auto text-sm font-medium leading-relaxed" style={{ color: theme.text2 }}>
                 Simulare de examen cu dificultate calibrată după istoricul tău, pentru antrenament realist.
               </p>
             </motion.button>
@@ -310,7 +311,7 @@ export default function ReviewMode() {
 
           {dueCount === 0 && weakCount === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className="text-center mt-10 p-6 rounded-3xl"
+              className="mt-10 rounded-3xl p-6 text-center"
               style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}25` }}>
               <p className="text-xl font-bold mb-1" style={{ color: theme.success }}>✨ Ești la zi!</p>
               <p className="text-sm font-medium opacity-70" style={{ color: theme.text }}>
@@ -330,7 +331,7 @@ export default function ReviewMode() {
     const correct = results.filter(Boolean).length;
     const pct = Math.round((correct / results.length) * 100);
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="min-h-full flex items-center justify-center px-4 py-8">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
           className="text-center max-w-sm px-8">
           <div className="text-6xl mb-4">{pct >= 80 ? '🏆' : pct >= 50 ? '💪' : '📚'}</div>
@@ -372,7 +373,7 @@ export default function ReviewMode() {
   };
 
   return (
-    <div className="h-full flex flex-col px-8 py-6">
+    <div className="min-h-full flex flex-col px-4 py-6 sm:px-6 lg:px-8">
       {/* Progress */}
       <div className="max-w-2xl mx-auto w-full">
         <div className="flex items-center gap-4 mb-3">

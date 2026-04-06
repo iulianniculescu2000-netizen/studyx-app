@@ -37,7 +37,9 @@ function formatMessage(content: string) {
 
 export default function AIChatDrawer() {
   const theme = useTheme();
-  const { chatOpen: open, setChatOpen } = useUIStore();
+  const open = useUIStore((state) => state.chatOpen);
+  const setChatOpen = useUIStore((state) => state.setChatOpen);
+  const floatingUiSuppressed = useUIStore((state) => state.floatingUILocks.length > 0);
   const reducedMotion = useReducedMotion();
   const performanceLite = typeof document !== 'undefined'
     && document.documentElement.getAttribute('data-performance') === 'lite';
@@ -126,6 +128,10 @@ export default function AIChatDrawer() {
   };
 
   const closeChat = () => setChatOpen(false);
+
+  if (floatingUiSuppressed && !open) {
+    return null;
+  }
 
   return (
     <>

@@ -63,7 +63,8 @@ function savePomodoroPrefs(state: { phase: Phase; minimized: boolean }) {
 export default function PomodoroTimer() {
   const theme = useTheme();
   const { recordStudySession } = useStatsStore();
-  const { chatOpen } = useUIStore();
+  const chatOpen = useUIStore((state) => state.chatOpen);
+  const floatingUiSuppressed = useUIStore((state) => state.floatingUILocks.length > 0);
   const prefs = useMemo(() => loadPomodoroPrefs(), []);
 
   const [open, setOpen] = useState(false);
@@ -176,6 +177,10 @@ export default function PomodoroTimer() {
 
   const currentRight = dockMetrics.right;
   const currentBottom = dockMetrics.bottom;
+
+  if (floatingUiSuppressed) {
+    return null;
+  }
 
   if (!open) {
     return (

@@ -346,17 +346,35 @@ const extractDocxText = async (filePath) => {
   }
 };
 
-const extractOCRText = async (filePath) => {
-  try {
+let ocrWorkerPromise = null;
+let ocrQueue = Promise.resolve();
+
+async function getOCRWorker() {
+  if (!ocrWorkerPromise) {
     const { createWorker } = require('tesseract.js');
-    const worker = await createWorker('ron');
-    const ret = await worker.recognize(filePath);
-    await worker.terminate();
-    return ret.data.text.trim();
-  } catch (e) {
-    console.error('OCR Error:', e);
-    return null;
+    ocrWorkerPromise = createWorker('ron');
   }
+  return ocrWorkerPromise;
+}
+
+async function runOCRJob(filePath) {
+  const worker = await getOCRWorker();
+  const result = await worker.recognize(filePath);
+  return result?.data?.text?.trim() || null;
+}
+
+const extractOCRText = async (filePath) => {
+  const job = ocrQueue.then(async () => {
+    try {
+      return await runOCRJob(filePath);
+    } catch (e) {
+      console.error('OCR Error:', e);
+      return null;
+    }
+  });
+
+  ocrQueue = job.then(() => undefined, () => undefined);
+  return job;
 };
 
 // ── IPC Handlers Registration ──────────────────────────────────────────────
@@ -776,3 +794,12 @@ if (!gotTheLock) {
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+app.on('before-quit', async () => {
+  try {
+    if (ocrWorkerPromise) {
+      const worker = await ocrWorkerPromise;
+      await worker.terminate();
+      ocrWorkerPromise = null;
+    }
+  } catch {}
+});

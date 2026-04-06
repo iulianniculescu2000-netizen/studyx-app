@@ -30,7 +30,12 @@ interface AIStore {
   setApiKey: (key: string) => void;
   setModel: (model: AIModel) => void;
   setDebugMode: (enabled: boolean) => void;
-  addKnowledgeSource: (name: string, content: string, type: AIKnowledgeSourceType) => Promise<void>;
+  addKnowledgeSource: (
+    name: string,
+    content: string,
+    type: AIKnowledgeSourceType,
+    options?: { onIndexProgress?: (progress: { processed: number; total: number; percent: number }) => void }
+  ) => Promise<void>;
   removeKnowledgeSource: (id: string) => Promise<void>;
   clearKnowledgeSources: () => Promise<void>;
   getKnowledgeContext: (query: string, maxChars?: number) => Promise<string>;
@@ -107,7 +112,7 @@ export const useAIStore = create<AIStore>()((set, get) => ({
     setAIDebugEnabled(enabled);
     saveSettingsToLS(get().apiKey, get().model, enabled);
   },
-  addKnowledgeSource: async (name, content, type) => {
+  addKnowledgeSource: async (name, content, type, options) => {
     const cleanName = (name || 'Sursa AI').trim().slice(0, 120);
     const normalized = normalizeKnowledgeContent(content);
     if (normalized.length < 20) return;
@@ -133,7 +138,9 @@ export const useAIStore = create<AIStore>()((set, get) => ({
     
     await idbSet('ai-knowledge-sources', next);
     
-    await addChunksToVault(chunks, cleanName, sourceId);
+    await addChunksToVault(chunks, cleanName, sourceId, {
+      onProgress: options?.onIndexProgress,
+    });
   },
   removeKnowledgeSource: async (id) => {
     const target = get().knowledgeSources.find(s => s.id === id);
