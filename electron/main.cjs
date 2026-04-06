@@ -10,6 +10,7 @@ const sharedUserDataPath = path.join(app.getPath('appData'), 'StudyX');
 const legacyDevUserDataPath = path.join(app.getPath('appData'), 'StudyX-Dev');
 
 app.setPath('userData', sharedUserDataPath);
+app.setAppUserModelId('com.studyx.app');
 
 // ── GPU disk-cache suppression ───────────────────────────────────────────────
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');

@@ -259,31 +259,42 @@ function makePng(size) {
   ]);
 }
 
-function makeIco(pngBuffer) {
+function makeIco(pngBuffers) {
+  const buffers = Array.isArray(pngBuffers) ? pngBuffers : [pngBuffers];
   const header = Buffer.alloc(6);
   header.writeUInt16LE(0, 0);
   header.writeUInt16LE(1, 2);
-  header.writeUInt16LE(1, 4);
+  header.writeUInt16LE(buffers.length, 4);
 
-  const entry = Buffer.alloc(16);
-  entry[0] = 0;
-  entry[1] = 0;
-  entry[2] = 0;
-  entry[3] = 0;
-  entry.writeUInt16LE(1, 4);
-  entry.writeUInt16LE(32, 6);
-  entry.writeUInt32LE(pngBuffer.length, 8);
-  entry.writeUInt32LE(22, 12);
+  const entries = [];
+  let offset = 6 + buffers.length * 16;
 
-  return Buffer.concat([header, entry, pngBuffer]);
+  for (const { size, buffer } of buffers) {
+    const entry = Buffer.alloc(16);
+    entry[0] = size >= 256 ? 0 : size;
+    entry[1] = size >= 256 ? 0 : size;
+    entry[2] = 0;
+    entry[3] = 0;
+    entry.writeUInt16LE(1, 4);
+    entry.writeUInt16LE(32, 6);
+    entry.writeUInt32LE(buffer.length, 8);
+    entry.writeUInt32LE(offset, 12);
+    entries.push(entry);
+    offset += buffer.length;
+  }
+
+  return Buffer.concat([header, ...entries, ...buffers.map((item) => item.buffer)]);
 }
 
 function writeIconAssets(rootDir) {
   const png512 = makePng(512);
-  const png256 = makePng(256);
+  const icoSizes = [16, 24, 32, 48, 64, 128, 256].map((size) => ({
+    size,
+    buffer: makePng(size),
+  }));
 
   fs.writeFileSync(path.join(rootDir, 'public', 'icon.png'), png512);
-  fs.writeFileSync(path.join(rootDir, 'public', 'icon.ico'), makeIco(png256));
+  fs.writeFileSync(path.join(rootDir, 'public', 'icon.ico'), makeIco(icoSizes));
 }
 
 function main() {

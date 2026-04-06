@@ -58,6 +58,9 @@
       "menuCategory": "StudyX",
       "deleteAppDataOnUninstall": false,
       "include": "build/installer.nsh",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico",
       "installerSidebar": "build/sidebar.bmp",
       "uninstallerSidebar": "build/sidebar.bmp",
       "installerHeader": "build/header.bmp"
