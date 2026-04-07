@@ -33,15 +33,6 @@ function scorePdfCandidate(text: string) {
   };
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
-  return await Promise.race<T>([
-    promise,
-    new Promise<T>((_, reject) => {
-      window.setTimeout(() => reject(new Error('PDF_READ_TIMEOUT')), timeoutMs);
-    }),
-  ]);
-}
-
 function validateExtractedText(text: string, kind: 'pdf' | 'docx' | 'image') {
   const cleaned = cleanText(text);
   const { letters, tokens, usefulRatio } = getTextStats(cleaned);
@@ -76,44 +67,31 @@ export async function parsePDF(file: File | string) {
     return validateExtractedText(file, 'pdf');
   }
 
-  const candidates: string[] = [];
+  let extractedText = '';
 
   if (window.electronAPI) {
     const filePath = (file as { path?: string }).path;
 
     if (file instanceof File && filePath) {
-      try {
-        const text = await withTimeout(window.electronAPI.readPdfPath(filePath), 6000);
-        if (text && text.trim().length > 5) {
-          candidates.push(text);
-        }
-      } catch (error) {
-        console.warn('[PDF] readPdfPath fallback triggered:', error);
+      const text = await window.electronAPI.readPdfPath(filePath);
+      if (text && text.trim().length > 5) {
+        extractedText = text;
       }
-    }
-
-    if (file instanceof File && typeof window.electronAPI.readPdfBuffer === 'function') {
-      try {
-        const buffer = await file.arrayBuffer();
-        const text = await withTimeout(window.electronAPI.readPdfBuffer(new Uint8Array(buffer)), 8000);
-        if (text && text.trim().length > 5) {
-          candidates.push(text);
-        }
-      } catch (error) {
-        console.warn('[PDF] readPdfBuffer fallback triggered:', error);
+    } else if (file instanceof File && typeof window.electronAPI.readPdfBuffer === 'function') {
+      const buffer = await file.arrayBuffer();
+      const text = await window.electronAPI.readPdfBuffer(new Uint8Array(buffer));
+      if (text && text.trim().length > 5) {
+        extractedText = text;
       }
     }
   }
 
-  if (candidates.length === 0) {
+  if (!extractedText) {
     throw new Error(
       'Nu am putut extrage text din acest PDF. Incearca o versiune digitala sau importa documentul prin OCR in Biblioteca AI.',
     );
   }
 
-  const bestCandidate = candidates
-    .map(scorePdfCandidate)
-    .sort((left, right) => right.score - left.score)[0]?.cleaned ?? '';
-
+  const bestCandidate = scorePdfCandidate(extractedText).cleaned;
   return validateExtractedText(bestCandidate, 'pdf');
 }

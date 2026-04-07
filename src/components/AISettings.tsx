@@ -290,6 +290,22 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                           <div className="flex-1 min-w-0 text-left">
                             <p className="text-xs font-bold truncate" style={{ color: theme.text }}>{s.name}</p>
                             <p className="text-[9px] opacity-50 uppercase font-black" style={{ color: theme.text }}>{s.charCount} caractere</p>
+                            <p
+                              className="mt-1 text-[9px] font-black uppercase"
+                              style={{
+                                color: s.indexStatus === 'error'
+                                  ? theme.danger
+                                  : s.indexStatus === 'indexing'
+                                    ? theme.accent
+                                    : theme.success,
+                              }}
+                            >
+                              {s.indexStatus === 'error'
+                                ? 'Import cu eroare'
+                                : s.indexStatus === 'indexing'
+                                  ? `Indexare ${Math.round(s.indexProgress ?? 0)}%`
+                                  : 'Pregatit pentru AI'}
+                            </p>
                           </div>
                           <button onClick={() => removeKnowledgeSource(s.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500"><Trash2 size={14} /></button>
                         </div>

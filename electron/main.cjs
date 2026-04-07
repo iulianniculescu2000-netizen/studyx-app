@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, nativeIm
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
+const { fork } = require('child_process');
 const { registerUpdaterIPC } = require('./updater.cjs');
 
 const isDev = !app.isPackaged;
@@ -257,82 +258,96 @@ function ensureWindowFitsDisplay(win) {
 
 // ── Helper Functions ────────────────────────────────────────────────────────
 
-function regexPdfFallback(buffer) {
-  const raw = buffer.toString('latin1');
-  const textChunks = [];
-  const arrayRe = /\[((?:\([^)]*\)|-?\d+(?:\.\d+)?|\s+)+)\]\s*TJ/g;
-  let match;
+const PDF_JOB_TIMEOUT_MS = 12000;
+let pdfQueue = Promise.resolve();
 
-  while ((match = arrayRe.exec(raw)) !== null) {
-    const content = match[1];
-    const innerParenRe = /\(([^)]*)\)/g;
-    let inner;
-    while ((inner = innerParenRe.exec(content)) !== null) {
-      const text = inner[1]
-        .replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)))
-        .replace(/\\n/g, '\n')
-        .replace(/\\r/g, '')
-        .replace(/\\\\/g, '\\');
-      if (text.trim().length > 0) textChunks.push(text);
-    }
-  }
-
-  const parenRe = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*(?:Tj|'|")/g;
-  while ((match = parenRe.exec(raw)) !== null) {
-    const text = match[1]
-      .replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)))
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '')
-      .replace(/\\\\/g, '\\')
-      .replace(/\\(.)/g, '$1');
-    if (text.trim().length > 0) textChunks.push(text);
-  }
-
-  return textChunks.join(' ').replace(/\s+/g, ' ').trim();
+function queuePdfJob(task) {
+  const job = pdfQueue.then(task, task);
+  pdfQueue = job.then(() => undefined, () => undefined);
+  return job;
 }
 
-async function extractPdfTextFromBuffer(buffer) {
-  const fallbackText = regexPdfFallback(buffer);
-  try {
-    const pdfParse = require('pdf-parse');
-    let parsedText = '';
+function runPdfWorker(payload, timeoutMs = PDF_JOB_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    const workerPath = path.join(__dirname, 'pdf-worker.cjs');
+    const child = fork(workerPath, { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    let settled = false;
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.removeAllListeners('message');
+      child.removeAllListeners('error');
+      child.removeAllListeners('exit');
+      try {
+        if (child.connected) child.disconnect();
+      } catch {}
+      resolve(typeof result === 'string' && result.trim().length > 0 ? result : null);
+    };
+
+    const timeout = setTimeout(() => {
+      console.warn('[PDF] Worker timed out and will be terminated.');
+      try {
+        child.kill();
+      } catch {}
+      finish(null);
+    }, timeoutMs);
+
+    child.on('message', (message) => {
+      if (!message || typeof message !== 'object') return;
+      if (message.type === 'result') {
+        finish(message.text ?? null);
+        return;
+      }
+      if (message.type === 'log') {
+        console.warn(message.message);
+        return;
+      }
+      if (message.type === 'error') {
+        console.error('[PDF] Worker failed:', message.message);
+        finish(null);
+      }
+    });
+
+    child.on('error', (error) => {
+      console.error('[PDF] Worker process error:', error);
+      finish(null);
+    });
+
+    child.on('exit', (code, signal) => {
+      if (!settled && code !== 0) {
+        console.warn(`[PDF] Worker exited unexpectedly (code=${code}, signal=${signal}).`);
+      }
+      finish(null);
+    });
 
     try {
-      if (typeof pdfParse === 'function') {
-        const data = await pdfParse(buffer);
-        parsedText = String(data?.text || '').replace(/\s+/g, ' ').trim();
-      } else if (typeof pdfParse?.PDFParse === 'function') {
-        const parser = new pdfParse.PDFParse({ data: buffer });
-        try {
-          const data = await parser.getText({ pageJoiner: '\n' });
-          parsedText = String(data?.text || '').replace(/\s+/g, ' ').trim();
-        } finally {
-          try {
-            await parser.destroy();
-          } catch {}
-        }
-      } else if (typeof pdfParse?.default === 'function') {
-        const data = await pdfParse.default(buffer);
-        parsedText = String(data?.text || '').replace(/\s+/g, ' ').trim();
-      }
-    } catch {
-      parsedText = '';
+      child.send(payload);
+    } catch (error) {
+      console.error('[PDF] Failed to start worker job:', error);
+      try {
+        child.kill();
+      } catch {}
+      finish(null);
     }
-
-    const result = parsedText.length >= fallbackText.length ? parsedText : fallbackText;
-    return result.length > 8 ? result : null;
-  } catch {
-    return fallbackText.length > 8 ? fallbackText : null;
-  }
+  });
 }
 
 const extractPdfText = async (filePath) => {
-  try {
-    const buffer = await fsp.readFile(filePath);
-    return extractPdfTextFromBuffer(buffer);
-  } catch {
-    return null;
-  }
+  return queuePdfJob(async () => {
+    try {
+      await fsp.access(filePath);
+      return await runPdfWorker({ filePath });
+    } catch {
+      return null;
+    }
+  });
+};
+
+const extractPdfTextFromBuffer = async (buffer) => {
+  if (!buffer || buffer.length === 0) return null;
+  return queuePdfJob(() => runPdfWorker({ bufferBase64: buffer.toString('base64') }));
 };
 
 const extractDocxText = async (filePath) => {
