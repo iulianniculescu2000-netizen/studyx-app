@@ -34,13 +34,14 @@ const AnimatedBackground: React.FC = () => {
 
       {/* Very Soft Ambient Glow - Top Right */}
       <motion.div
+        className="animated-background-orb"
         animate={useStaticBackground ? { opacity: 0.08, scale: 1, x: 0, y: 0 } : {
           opacity: [0.06, 0.12, 0.06],
           scale: [1, 1.14, 1],
           x: [0, 36, 0],
           y: [0, 22, 0],
         }}
-        transition={useStaticBackground ? { duration: 0.2 } : { duration: 18, repeat: Infinity, ease: "easeInOut" }}
+        transition={useStaticBackground ? { duration: 0.2 } : { duration: 22, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: 'absolute',
           top: '-15%',
@@ -50,18 +51,20 @@ const AnimatedBackground: React.FC = () => {
           borderRadius: '50%',
           background: `radial-gradient(circle, ${theme.orb1}, transparent 70%)`,
           filter: useStaticBackground ? 'blur(88px)' : 'blur(120px)',
+          willChange: useStaticBackground ? 'auto' : 'transform, opacity',
         }}
       />
 
       {/* Very Soft Ambient Glow - Bottom Left */}
       <motion.div
+        className="animated-background-orb"
         animate={useStaticBackground ? { opacity: 0.06, scale: 1, x: 0, y: 0 } : {
           opacity: [0.04, 0.1, 0.04],
           scale: [1, 1.18, 1],
           x: [0, -28, 0],
           y: [0, -16, 0],
         }}
-        transition={useStaticBackground ? { duration: 0.2 } : { duration: 24, repeat: Infinity, ease: "easeInOut" }}
+        transition={useStaticBackground ? { duration: 0.2 } : { duration: 28, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: 'absolute',
           bottom: '-15%',
@@ -71,6 +74,7 @@ const AnimatedBackground: React.FC = () => {
           borderRadius: '50%',
           background: `radial-gradient(circle, ${theme.orb2}, transparent 70%)`,
           filter: useStaticBackground ? 'blur(96px)' : 'blur(132px)',
+          willChange: useStaticBackground ? 'auto' : 'transform, opacity',
         }}
       />
     </div>

@@ -30,13 +30,14 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
           }}
         >
           <motion.div
-            initial={{ scale: 0.96, opacity: 0 }}
+            initial={{ scale: 0.92, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: calm ? 0.14 : 0.24, ease: 'easeOut' }}
+            transition={{ duration: calm ? 0.12 : 0.2, ease: [0.16, 1, 0.3, 1] }}
             style={{
               boxShadow: calm ? '0 10px 24px rgba(0,113,227,0.08)' : '0 12px 28px rgba(0,113,227,0.10)',
               borderRadius: 30,
               padding: 12,
+              willChange: 'transform, opacity',
             }}
           >
             <Logo size={124} />
@@ -45,8 +46,8 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
           <motion.div
             initial={{ y: 10, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: calm ? 0 : 0.05, duration: calm ? 0.14 : 0.2 }}
-            style={{ marginTop: 18, textAlign: 'center' }}
+            transition={{ delay: calm ? 0 : 0.05, duration: calm ? 0.12 : 0.18, ease: [0.16, 1, 0.3, 1] }}
+            style={{ marginTop: 18, textAlign: 'center', willChange: 'transform, opacity' }}
           >
             <h1
               style={{
@@ -83,7 +84,10 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
             </p>
           </motion.div>
 
-          <div
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: calm ? 0.05 : 0.1, duration: 0.15 }}
             style={{
               position: 'absolute',
               bottom: '10%',
@@ -103,19 +107,20 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
             >
               <motion.div
                 animate={calm ? { x: '18%' } : { x: ['-42%', '42%'] }}
-                transition={calm ? { duration: 0.14 } : { duration: 0.56, ease: 'easeOut' }}
+                transition={calm ? { duration: 0.12 } : { duration: 0.5, ease: 'easeInOut', repeat: Infinity }}
                 style={{
                   width: '54%',
                   height: '100%',
                   background: 'linear-gradient(90deg, transparent, #0071E3, transparent)',
                   position: 'absolute',
+                  willChange: 'transform',
                 }}
               />
             </div>
             <p style={{ color: 'rgba(255,255,255,0.24)', fontSize: '0.68rem', marginTop: 8 }}>
               Se incarca experienta premium...
             </p>
-          </div>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>

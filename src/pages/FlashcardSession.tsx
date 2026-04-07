@@ -293,24 +293,26 @@ export default function FlashcardSession() {
               className="absolute inset-0 backface-hidden rotate-y-180 rounded-[40px] p-6 sm:p-8 glass-panel flex flex-col overflow-hidden text-center shadow-2xl border border-white/10"
               style={{ background: theme.isDark ? 'rgba(30,30,35,0.95)' : 'rgba(255,255,255,0.95)' }}
             >
-              <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10">
+              <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 z-10">
                 <Check size={14} style={{ color: theme.success }} />
                 <span className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: theme.text }}>
                   Raspuns corect
                 </span>
               </div>
 
-              <div className="mt-12 flex min-h-0 flex-1 flex-col">
-                <div className="custom-scrollbar w-full flex-1 overflow-y-auto px-1 sm:px-3">
-                  <div className="mx-auto flex max-w-[38rem] flex-col gap-3">
+              {/* Fixed layout: content area with constrained height + buttons area fixed at bottom */}
+              <div className="mt-10 flex flex-col h-full" style={{ maxHeight: 'calc(100% - 2rem)' }}>
+                {/* Scrollable content area - constrained height */}
+                <div className="custom-scrollbar flex-1 overflow-y-auto px-1 sm:px-2 pb-2" style={{ maxHeight: 'calc(100% - 80px)' }}>
+                  <div className="mx-auto flex max-w-[36rem] flex-col gap-2.5">
                     {correctAnswers.map((option, index) => (
                       <div
                         key={`${option.id}-${index}`}
-                        className="rounded-[28px] border border-white/10 bg-white/5 px-5 py-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:px-6 sm:py-5"
+                        className="rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:px-5 sm:py-4"
                       >
                         <p
                           className={`${getAnswerTone(option.text)} whitespace-pre-wrap break-words`}
-                          style={{ color: theme.text }}
+                          style={{ color: theme.text, maxHeight: '120px', overflow: 'hidden' }}
                         >
                           {option.text}
                         </p>
@@ -319,39 +321,42 @@ export default function FlashcardSession() {
                   </div>
 
                   {current.question.explanation && (
-                    <div className="mt-6 rounded-2xl border border-white/5 bg-white/5 p-4 text-left">
-                      <p className="mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: theme.text3 }}>Explicatie</p>
+                    <div className="mt-4 rounded-2xl border border-white/5 bg-white/5 p-3 text-left">
+                      <p className="mb-1.5 text-xs font-bold uppercase tracking-wider" style={{ color: theme.text3 }}>Explicatie</p>
                       <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{current.question.explanation}</p>
                     </div>
                   )}
 
                   {aiExplanation && (
-                    <div className="mt-4 rounded-2xl p-4 text-left" style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20` }}>
-                      <p className="mb-2 text-xs font-bold uppercase tracking-wider opacity-60" style={{ color: theme.accent }}>Context AI</p>
+                    <div className="mt-3 rounded-2xl p-3 text-left" style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20` }}>
+                      <p className="mb-1.5 text-xs font-bold uppercase tracking-wider opacity-60" style={{ color: theme.accent }}>Context AI</p>
                       <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{aiExplanation}</p>
                     </div>
                   )}
                 </div>
 
-                <div className="mt-4 flex min-h-[28px] items-center justify-center">
-                  {!aiExplanation && !aiLoading && (
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleExplain();
-                      }}
-                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest hover:opacity-100 hover:text-accent transition-all"
-                      style={{ color: theme.text3 }}
-                    >
-                      <Bot size={14} /> Explica cu AI
-                    </button>
-                  )}
+                {/* Fixed bottom action area */}
+                <div className="flex-shrink-0 mt-2">
+                  <div className="flex items-center justify-center min-h-[32px]">
+                    {!aiExplanation && !aiLoading && (
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleExplain();
+                        }}
+                        className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest hover:opacity-100 hover:text-accent transition-all"
+                        style={{ color: theme.text3 }}
+                      >
+                        <Bot size={14} /> Explica cu AI
+                      </button>
+                    )}
 
-                  {aiLoading && (
-                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-60" style={{ color: theme.accent }}>
-                      <Loader2 size={14} className="animate-spin" /> Se analizeaza...
-                    </div>
-                  )}
+                    {aiLoading && (
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-60" style={{ color: theme.accent }}>
+                        <Loader2 size={14} className="animate-spin" /> Se analizeaza...
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

@@ -28,13 +28,34 @@ function loadAIChatRuntime() {
 function formatMessage(content: string) {
   if (!content) return '';
   let text = content
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/&/g, '&')
+    .replace(/</g, '<')
+    .replace(/>/g, '>');
+  
+  // Format bold and italic
   text = text
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+  
+  // Handle bullet points with proper spacing
+  text = text.replace(/^•\s+(.+)$/gm, '<div style="margin: 4px 0 4px 12px;">• $1</div>');
+  
+  // Handle numbered lists
+  text = text.replace(/^(\d+\.\s+.+)$/gm, '<div style="margin: 4px 0 4px 12px;">$1</div>');
+  
+  // Handle section headers (A), B), etc.)
+  text = text.replace(/^([A-Z]\)\s+.+)$/gm, '<div style="margin: 8px 0 4px 0; font-weight: 600;">$1</div>');
+  
+  // Convert double newlines to paragraph breaks, single newlines to line breaks
+  text = text
+    .replace(/\n\n+/g, '</p><p style="margin: 8px 0;">')
     .replace(/\n/g, '<br/>');
+  
+  // Wrap in paragraph tags for better spacing
+  if (!text.startsWith('<div') && !text.startsWith('<p')) {
+    text = `<p style="margin: 4px 0; line-height: 1.6;">${text}</p>`;
+  }
+  
   return text;
 }
 

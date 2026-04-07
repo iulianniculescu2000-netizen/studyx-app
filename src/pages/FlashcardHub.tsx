@@ -247,10 +247,32 @@ export default function FlashcardHub() {
   const dueQuestions = getDueQuestions();
   const totalDue = dueQuestions.length;
 
-  // Build deck data per quiz
+  // Build deck data per quiz - only show quizzes that are flashcard-specific
+  // Flashcards are identified by having single-option questions (flashcard pattern)
+  // or by having tags that indicate they are flashcards
   const decks = useMemo(() => {
     return quizzes
       .filter(q => !q.archived && q.questions.length > 0)
+      .filter(q => {
+        // Check if this quiz is a flashcard deck:
+        // 1. Has 'flashcard' or 'ai' or 'anki' tags
+        // 2. OR most questions have only 1 option (single correct answer = flashcard style)
+        const hasFlashcardTags = (q.tags ?? []).some(t => 
+          t.toLowerCase().includes('flashcard') || 
+          t.toLowerCase().includes('ai') || 
+          t.toLowerCase().includes('anki') ||
+          t.toLowerCase().includes('deck')
+        );
+        
+        if (hasFlashcardTags) return true;
+        
+        // Check if majority of questions are flashcard-style (single option)
+        const flashcardQuestions = q.questions.filter(quest => 
+          quest.options.length === 1 && !quest.multipleCorrect
+        ).length;
+        
+        return flashcardQuestions > q.questions.length * 0.7;
+      })
       .map(quiz => {
         const total = quiz.questions.length;
         const stats = quiz.questions.map(q => questionStats[`${quiz.id}:${q.id}`]);
