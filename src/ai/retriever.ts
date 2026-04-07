@@ -73,11 +73,15 @@ function buildIdfMap(queryTokens: string[], allDocs: string[][]): Map<string, nu
 export async function retrieveRelevantChunks(
   query: string,
   userProfile: UserProfileData | null,
-  k = 10
+  k = 10,
+  filters?: { sourceIds?: string[] }
 ): Promise<RetrievedChunk[]> {
   if (!query) return [];
 
-  const allChunks = await getVaultChunks();
+  const sourceIds = filters?.sourceIds ?? [];
+  const allChunks = (await getVaultChunks()).filter((chunk) => (
+    sourceIds.length === 0 || (chunk.sourceId ? sourceIds.includes(chunk.sourceId) : false)
+  ));
   if (allChunks.length === 0) return [];
 
   // ─── Pregătire date ───────────────────────────────────────────────────────

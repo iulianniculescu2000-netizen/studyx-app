@@ -7,6 +7,7 @@ import { useUIStore } from '../store/uiStore';
 let aiChatRuntimePromise: Promise<{
   generateChatResponse: typeof import('../ai/AIEngine').generateChatResponse;
   retrieveRelevantChunks: typeof import('../ai/retriever').retrieveRelevantChunks;
+  getVaultChunksBySource: typeof import('../ai/vectorStore').getVaultChunksBySource;
 }> | null = null;
 
 function loadAIChatRuntime() {
@@ -14,9 +15,11 @@ function loadAIChatRuntime() {
     aiChatRuntimePromise = Promise.all([
       import('../ai/AIEngine'),
       import('../ai/retriever'),
-    ]).then(([engine, retriever]) => ({
+      import('../ai/vectorStore'),
+    ]).then(([engine, retriever, vectorStore]) => ({
       generateChatResponse: engine.generateChatResponse,
       retrieveRelevantChunks: retriever.retrieveRelevantChunks,
+      getVaultChunksBySource: vectorStore.getVaultChunksBySource,
     }));
   }
   return aiChatRuntimePromise;
@@ -51,14 +54,29 @@ export default function AIChatDrawer() {
   }>>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [scopedSource, setScopedSource] = useState<{ id: string; name: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ prompt?: string; open?: boolean }>).detail;
+      const detail = (event as CustomEvent<{
+        prompt?: string;
+        open?: boolean;
+        sourceId?: string;
+        sourceName?: string;
+        resetConversation?: boolean;
+      }>).detail;
       if (!detail?.prompt) return;
       if (detail.open) setChatOpen(true);
+      if (detail.resetConversation) {
+        setMessages([]);
+      }
+      if (detail.sourceId && detail.sourceName) {
+        setScopedSource({ id: detail.sourceId, name: detail.sourceName });
+      } else if (detail.resetConversation) {
+        setScopedSource(null);
+      }
       setInput(detail.prompt);
       requestAnimationFrame(() => textareaRef.current?.focus());
     };
@@ -77,6 +95,34 @@ export default function AIChatDrawer() {
     textarea.style.height = `${Math.min(textarea.scrollHeight, 128)}px`;
   }, [input]);
 
+  const buildScopedContext = async (text: string) => {
+    const { retrieveRelevantChunks, getVaultChunksBySource } = await loadAIChatRuntime();
+
+    if (!scopedSource) {
+      const chunks = await retrieveRelevantChunks(text, null, 5);
+      return chunks.slice(0, 5);
+    }
+
+    const scopedChunks = await retrieveRelevantChunks(text, null, 5, { sourceIds: [scopedSource.id] });
+    if (scopedChunks.length > 0) {
+      return scopedChunks.slice(0, 5);
+    }
+
+    const fallbackChunks = await getVaultChunksBySource(scopedSource.id);
+    return fallbackChunks.slice(0, 5).map((chunk) => ({
+      id: chunk.id,
+      text: chunk.text,
+      topic: chunk.topic,
+      source: chunk.source,
+      difficulty: chunk.difficulty,
+      score: 1,
+      keywordScore: 1,
+      semanticScore: 1,
+      recencyBoost: 0,
+      weaknessBoost: 0,
+    }));
+  };
+
   const sendMessage = async (overrideText?: string) => {
     const text = overrideText || input;
     if (!text.trim() || loading) return;
@@ -87,8 +133,8 @@ export default function AIChatDrawer() {
     setLoading(true);
 
     try {
-      const { retrieveRelevantChunks, generateChatResponse } = await loadAIChatRuntime();
-      const contextChunks = await retrieveRelevantChunks(text, null, 5);
+      const { generateChatResponse } = await loadAIChatRuntime();
+      const contextChunks = await buildScopedContext(text);
       const citations = contextChunks
         .reduce<Array<{ source: string; topic: string; score: number }>>((acc, chunk) => {
           if (acc.some((item) => item.source === chunk.source && item.topic === chunk.topic)) return acc;
@@ -99,7 +145,9 @@ export default function AIChatDrawer() {
       const contextSummary = contextChunks
         .map((c) => `[Sursa: ${c.source} | Topic: ${c.topic} | Relevanta: ${(c.score * 100).toFixed(0)}%]\n${c.text}`)
         .join('\n\n');
-      const response = await generateChatResponse(text, contextSummary, messages);
+      const historyForAI = messages.map(({ role, content }) => ({ role, content }));
+      const scopePrefix = scopedSource ? `Document tinta: ${scopedSource.name}\n` : '';
+      const response = await generateChatResponse(text, `${scopePrefix}${contextSummary}`, historyForAI);
 
       setMessages((prev) => [...prev, { role: 'assistant', content: '', citations }]);
       let current = '';
@@ -127,7 +175,10 @@ export default function AIChatDrawer() {
     }
   };
 
-  const closeChat = () => setChatOpen(false);
+  const closeChat = () => {
+    setChatOpen(false);
+    setScopedSource(null);
+  };
 
   if (floatingUiSuppressed && !open) {
     return null;
@@ -217,7 +268,7 @@ export default function AIChatDrawer() {
                     className="hidden items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] sm:flex"
                     style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}
                   >
-                    Biblioteca + AI
+                    {scopedSource ? scopedSource.name : 'Biblioteca + AI'}
                   </div>
 
                   <motion.button

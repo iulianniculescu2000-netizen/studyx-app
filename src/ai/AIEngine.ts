@@ -317,6 +317,7 @@ export async function generateChatResponse(
       ...recentHistory,
       { role: 'user', content: message },
     ],
+    skipLibraryContext: true,
   });
 }
 

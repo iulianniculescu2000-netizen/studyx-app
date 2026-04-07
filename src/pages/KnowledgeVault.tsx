@@ -210,12 +210,15 @@ export default function KnowledgeVault() {
     }
   };
 
-  const askAIAboutSource = (sourceName: string) => {
+  const askAIAboutSource = (source: AIKnowledgeSource) => {
     setChatOpen(true);
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
       detail: {
         open: true,
-        prompt: `Analizeaza documentul "${sourceName}" si rezuma-mi ideile-cheie, punctele sensibile si ce merita invatat prioritar din el.`,
+        sourceId: source.id,
+        sourceName: source.name,
+        resetConversation: true,
+        prompt: `Analizeaza documentul "${source.name}" si rezuma-mi ideile-cheie, punctele sensibile si ce merita invatat prioritar din el.`,
       },
     }));
   };
@@ -411,7 +414,7 @@ export default function KnowledgeVault() {
                           Reader
                         </button>
                         <button
-                          onClick={() => isReady && askAIAboutSource(source.name)}
+                          onClick={() => isReady && askAIAboutSource(source)}
                           disabled={!isReady}
                           className="rounded-2xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
                           style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent, opacity: isReady ? 1 : 0.45 }}
@@ -463,7 +466,7 @@ export default function KnowledgeVault() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => selectedSource.indexStatus === 'ready' && askAIAboutSource(selectedSource.name)}
+                    onClick={() => selectedSource.indexStatus === 'ready' && askAIAboutSource(selectedSource)}
                     disabled={selectedSource.indexStatus !== 'ready'}
                     className="rounded-2xl px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em]"
                     style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent, opacity: selectedSource.indexStatus === 'ready' ? 1 : 0.45 }}
