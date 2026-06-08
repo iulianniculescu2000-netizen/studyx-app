@@ -291,21 +291,28 @@ function syncLocalUpdatesRepo(version, manifest, distFiles, installer, history) 
   writeJson(path.join(LOCAL_UPDATES_ROOT, 'version-history.json'), history);
 }
 
-async function runPublish(bumpType, changeMessage) {
+async function runPublish(options) {
+  const { bumpType, changeMessage, useCurrentVersion, skipBuild, metadataOnly } = options;
   const token = await loadToken();
   const pkg = readPkg();
   const oldVersion = pkg.version;
-  const newVersion = bumpVersion(oldVersion, bumpType);
+  const newVersion = useCurrentVersion ? oldVersion : bumpVersion(oldVersion, bumpType);
 
-  pkg.version = newVersion;
-  savePkg(pkg);
-
-  try {
-    execSync('npm.cmd run build', { cwd: ROOT, stdio: 'inherit' });
-  } catch (err) {
-    pkg.version = oldVersion;
+  if (!useCurrentVersion) {
+    pkg.version = newVersion;
     savePkg(pkg);
-    throw err;
+  }
+
+  if (!skipBuild) {
+    try {
+      execSync('npm.cmd run build', { cwd: ROOT, stdio: 'inherit' });
+    } catch (err) {
+      if (!useCurrentVersion) {
+        pkg.version = oldVersion;
+        savePkg(pkg);
+      }
+      throw err;
+    }
   }
 
   let installer = findInstallerArtifact(newVersion);
@@ -318,7 +325,7 @@ async function runPublish(bumpType, changeMessage) {
     }
   }
 
-  const distFiles = collectDistFiles();
+  const distFiles = metadataOnly ? [] : collectDistFiles();
   const manifest = buildManifest(newVersion, changeMessage, distFiles, installer);
 
   const ref = await getRef(token);
@@ -333,6 +340,8 @@ async function runPublish(bumpType, changeMessage) {
       {
         version: newVersion,
         manifestUrl: `https://raw.githubusercontent.com/${UPDATES_OWNER}/${UPDATES_REPO}/${UPDATES_BRANCH}/manifests/${newVersion}.json`,
+        releaseDate: manifest.releaseDate,
+        description: changeMessage || `StudyX ${newVersion}`,
       },
     ].sort((left, right) => compareVersion(left.version, right.version)),
   };
@@ -340,19 +349,21 @@ async function runPublish(bumpType, changeMessage) {
   syncLocalUpdatesRepo(newVersion, manifest, distFiles, installer, nextHistory);
 
   const tree = [];
-  for (const file of distFiles) {
-    const blob = await createBlob(token, fs.readFileSync(file.absPath));
-    tree.push({ path: `files/${file.relPath}`, mode: '100644', type: 'blob', sha: blob.sha });
-  }
+  if (!metadataOnly) {
+    for (const file of distFiles) {
+      const blob = await createBlob(token, fs.readFileSync(file.absPath));
+      tree.push({ path: `files/${file.relPath}`, mode: '100644', type: 'blob', sha: blob.sha });
+    }
 
-  if (installer) {
-    const blob = await createBlob(token, fs.readFileSync(installer.absPath));
-    tree.push({
-      path: `files/installers/${newVersion}/${path.basename(installer.relPath)}`,
-      mode: '100644',
-      type: 'blob',
-      sha: blob.sha,
-    });
+    if (installer) {
+      const blob = await createBlob(token, fs.readFileSync(installer.absPath));
+      tree.push({
+        path: `files/installers/${newVersion}/${path.basename(installer.relPath)}`,
+        mode: '100644',
+        type: 'blob',
+        sha: blob.sha,
+      });
+    }
   }
 
   const manifestBlob = await createBlob(token, Buffer.from(JSON.stringify(manifest, null, 2)));
@@ -387,9 +398,13 @@ if (args.includes('--setup') || args.includes('setup')) {
     process.exit(1);
   });
 } else {
+  const useCurrentVersion = args.includes('--current') || args.includes('current');
+  const skipBuild = args.includes('--skip-build');
+  const metadataOnly = args.includes('--metadata-only');
   const bumpType = args.find((arg) => ['patch', 'minor', 'major'].includes(arg)) || 'patch';
-  const changeMessage = args.find((arg) => !['patch', 'minor', 'major'].includes(arg) && !arg.startsWith('--')) || 'StudyX update';
-  runPublish(bumpType, changeMessage).catch((err) => {
+  const ignoredArgs = new Set(['patch', 'minor', 'major', 'current']);
+  const changeMessage = args.find((arg) => !ignoredArgs.has(arg) && !arg.startsWith('--')) || 'StudyX update';
+  runPublish({ bumpType, changeMessage, useCurrentVersion, skipBuild, metadataOnly }).catch((err) => {
     console.error(err.message);
     process.exit(1);
   });

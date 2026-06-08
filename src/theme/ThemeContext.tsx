@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useState, useRef, type ReactNode, useLayoutEffect } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode, useLayoutEffect, useCallback } from 'react';
 import { THEMES, type Theme, type ThemeId } from './themes';
 import { useUserStore } from '../store/userStore';
+import { detectDeviceCapabilities, resolvePerformanceProfile } from '../lib/deviceTier';
+import { useRuntimeStore } from '../store/runtimeStore';
 
 const ThemeContext = createContext<Theme>(THEMES.obsidian);
 
@@ -16,28 +18,25 @@ function useOSDark() {
 }
 
 function usePerformanceProfile() {
-  const getProfile = () => {
-    if (typeof window === 'undefined') return 'full' as const;
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const smallViewport = window.innerWidth < 1280 || window.innerHeight < 820;
-    const lowCpu = (navigator.hardwareConcurrency ?? 8) <= 4;
-    const deviceMemory = 'deviceMemory' in navigator ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8 : 8;
-    const lowMemory = deviceMemory <= 4;
-    return reducedMotion || smallViewport || lowCpu || lowMemory ? 'lite' as const : 'full' as const;
-  };
-
+  const performanceMode = useRuntimeStore((state) => state.performanceMode);
+  const lowPowerMode = useRuntimeStore((state) => state.lowPowerMode);
+  const getProfile = useCallback(
+    () => resolvePerformanceProfile(detectDeviceCapabilities(), performanceMode, lowPowerMode),
+    [performanceMode, lowPowerMode],
+  );
   const [profile, setProfile] = useState<'full' | 'lite'>(getProfile);
 
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setProfile(getProfile());
-    mq.addEventListener('change', update);
+    update();
+    motionQuery.addEventListener('change', update);
     window.addEventListener('resize', update, { passive: true });
     return () => {
-      mq.removeEventListener('change', update);
+      motionQuery.removeEventListener('change', update);
       window.removeEventListener('resize', update);
     };
-  }, []);
+  }, [performanceMode, lowPowerMode, getProfile]);
 
   return profile;
 }
@@ -46,6 +45,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const themeId = useUserStore((s) => s.themeId);
   const osDark = useOSDark();
   const performanceProfile = usePerformanceProfile();
+  const lowPowerMode = useRuntimeStore((state) => state.lowPowerMode);
   const resolved: ThemeId = themeId === 'auto' ? (osDark ? 'obsidian' : 'pearl') : themeId;
   const theme = THEMES[resolved] ?? THEMES.obsidian;
   const prevThemeRef = useRef<ThemeId | null>(null);
@@ -91,6 +91,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
       root.setAttribute('data-theme', theme.isDark ? 'dark' : 'light');
       root.setAttribute('data-performance', performanceProfile);
+      root.setAttribute('data-power-save', lowPowerMode ? 'true' : 'false');
+      root.setAttribute('data-device-tier', detectDeviceCapabilities().tier);
       document.body.style.background = theme.bg;
       document.body.style.color = theme.text;
     };
@@ -110,7 +112,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
 
     prevThemeRef.current = resolved;
-  }, [theme, resolved, performanceProfile]);
+  }, [theme, resolved, performanceProfile, lowPowerMode]);
 
   return (
     <ThemeContext.Provider value={theme}>

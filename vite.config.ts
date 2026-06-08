@@ -33,13 +33,17 @@ export default defineConfig({
             if (id.includes('recharts/es6/polar') || id.includes('recharts/es6/component/Legend')) return 'charts-polar-vendor';
             if (id.includes('recharts')) return 'charts-vendor';
             if (id.includes('tesseract.js')) return 'ocr-vendor';
+            if (id.includes('pdfjs-dist')) return 'pdfjs-vendor';
             if (id.includes('pdf-parse')) return 'pdf-vendor';
             if (id.includes('mammoth')) return 'docx-vendor';
+            if (id.includes('jszip')) return 'archive-vendor';
+            if (id.includes('canvg')) return 'svg-export-vendor';
             if (id.includes('jspdf')) return 'jspdf-vendor';
             if (id.includes('html2canvas')) return 'html2canvas-vendor';
             if (id.includes('zustand')) return 'state-vendor';
             if (id.includes('canvas-confetti')) return 'effects-vendor';
-            if (id.includes('lucide-react') || id.includes('@dnd-kit')) return 'ui-vendor';
+            if (id.includes('lucide-react')) return 'icons-vendor';
+            if (id.includes('@dnd-kit')) return 'drag-drop-vendor';
             return 'vendor';
           }
         },

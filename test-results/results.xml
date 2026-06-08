@@ -1,0 +1,6 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0" time="24.765815000000003">
+<testsuite name="app.spec.ts" timestamp="2026-05-12T18:00:00.414Z" hostname="chromium" tests="1" failures="0" skipped="0" time="15.753" errors="0">
+<testcase name="StudyX Application › should drag a quiz into a subfolder" classname="app.spec.ts" time="15.753">
+</testcase>
+</testsuite>
+</testsuites>

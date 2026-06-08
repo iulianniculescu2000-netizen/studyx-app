@@ -2,13 +2,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { useToastStore } from '../store/toastStore';
 import { useTheme } from '../theme/ThemeContext';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import Portal from './Portal';
 
 export default function ToastContainer() {
   const { toasts, removeToast } = useToastStore();
   const theme = useTheme();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
+  const { calmMotion, performanceLite } = useAdaptiveMotion();
 
   const icons = {
     success: <CheckCircle2 size={18} color={theme.success} />,
@@ -25,10 +25,10 @@ export default function ToastContainer() {
             <motion.div
               key={toast.id}
               layout
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.95 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              initial={calmMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.95 }}
+              animate={calmMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+              exit={calmMotion ? { opacity: 0 } : { opacity: 0, y: -10, scale: 0.95 }}
+              transition={calmMotion ? { duration: 0.12 } : { duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl min-w-[280px] max-w-sm"
               style={{ 
                 background: theme.isDark ? 'rgba(28,28,30,0.92)' : 'rgba(255,255,255,0.92)',
@@ -51,7 +51,8 @@ export default function ToastContainer() {
               </p>
               <button 
                 onClick={() => removeToast(toast.id)}
-                className="shrink-0 p-1 rounded-lg hover:bg-white/5 transition-colors"
+                aria-label="Inchide notificarea"
+                className="shrink-0 rounded-lg p-1 transition-colors hover:bg-white/5"
                 style={{ color: theme.text3 }}
               >
                 <X size={14} />

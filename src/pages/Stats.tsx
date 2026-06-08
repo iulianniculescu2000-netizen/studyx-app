@@ -1,10 +1,14 @@
 import { motion } from 'framer-motion';
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain } from 'lucide-react';
+import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
+import { useAIStore } from '../store/aiStore';
+import { useUserStore } from '../store/userStore';
+import { loadUserProfile } from '../ai/UserProfile';
 
 const ActivityBarChart = lazy(() => import('../components/stats/ActivityBarChart'));
 const AccuracyTrendChart = lazy(() => import('../components/stats/AccuracyTrendChart'));
@@ -43,6 +47,7 @@ function ChartSkeleton({ height = 180 }: { height?: number }) {
 
 export default function Stats() {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const compact = typeof window !== 'undefined' && (window.innerHeight < 860 || window.innerWidth < 1280);
   const { quizzes, sessions } = useQuizStore();
   const { streak, totalStudyTime, questionStats, getWeakQuestions, getAccuracy } = useStatsStore();
@@ -51,6 +56,54 @@ export default function Stats() {
   const accuracy = getAccuracy();
   const weakQuestions = getWeakQuestions(5);
   const studyHours = (totalStudyTime / 3600).toFixed(1);
+
+  // "Ce nu știu?" AI report
+  const { hasKey } = useAIStore();
+  const activeProfileId = useUserStore(s => s.activeProfileId);
+  const [aiReport, setAiReport] = useState('');
+  const [aiReportLoading, setAiReportLoading] = useState(false);
+  const aiAbortRef = useRef<AbortController | null>(null);
+
+  const handleGenerateReport = async () => {
+    if (aiReportLoading) {
+      aiAbortRef.current?.abort();
+      return;
+    }
+    setAiReport('');
+    setAiReportLoading(true);
+    const ctrl = new AbortController();
+    aiAbortRef.current = ctrl;
+    try {
+      const { generateWeakSpotReport } = await import('../lib/groq');
+      // Compute weak categories merged by category name
+      const weakCategories = quizzes
+        .map(q => ({ name: q.category || 'Altele', accuracy: getAccuracy(q.id), quizCount: sessions.filter(s => s.quizId === q.id).length }))
+        .filter(c => c.quizCount > 0)
+        .reduce((acc: { name: string; accuracy: number; quizCount: number }[], cur) => {
+          const existing = acc.find(a => a.name === cur.name);
+          if (existing) { existing.accuracy = Math.round((existing.accuracy + cur.accuracy) / 2); existing.quizCount += cur.quizCount; }
+          else acc.push({ ...cur });
+          return acc;
+        }, [])
+        .sort((a, b) => a.accuracy - b.accuracy)
+        .slice(0, 6);
+      const totalAnswered = Object.values(questionStats).reduce((s, q) => s + q.timesCorrect + q.timesWrong, 0);
+      // Load AI profile from localStorage for recentMistakes
+      const aiProfile = activeProfileId ? loadUserProfile(activeProfileId) : null;
+      const recentMistakeTopics = (aiProfile?.recentMistakes ?? []).map(m => m.topic).filter(Boolean).slice(0, 6);
+      await generateWeakSpotReport(
+        { weakCategories, totalAccuracy: accuracy, streak: streak.currentStreak, totalAnswered, recentMistakeTopics },
+        (chunk) => setAiReport(prev => prev + chunk),
+        ctrl.signal,
+      );
+    } catch (err) {
+      if ((err as Error)?.name !== 'AbortError') {
+        setAiReport('Eroare la generarea raportului. Verifică cheia API în setări.');
+      }
+    } finally {
+      setAiReportLoading(false);
+    }
+  };
   const sessionsByDay = useMemo(() => {
     const grouped = new Map<string, typeof sessions>();
     for (const session of sessions) {
@@ -139,20 +192,23 @@ export default function Stats() {
     const weakPenalty = Math.min(weakQCount * 1.5, 20);
     const practiceBonus = Math.min(totalAnswered / 50, 10);
     const predicted = Math.round(Math.min(100, recentAcc * 100 + streakBonus - weakPenalty + practiceBonus));
-    const trend = recentSessions.length >= 3
+    const trend = recentSessions.length >= 6
       ? recentSessions.slice(0, 3).reduce((s, sess) => s + sess.score / sess.total, 0) / 3 >
-        recentSessions.slice(-3).reduce((s, sess) => s + sess.score / sess.total, 0) / 3
+        recentSessions.slice(3, 6).reduce((s, sess) => s + sess.score / sess.total, 0) / 3
         ? 'up' : 'down'
       : 'stable';
     return { predicted, trend, weakQCount, recentAcc: Math.round(recentAcc * 100) };
   }, [sessions, streak, questionStats, getWeakQuestions]);
 
   return (
-    <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-10">
-      <div className={`${compact ? 'max-w-[1000px]' : 'max-w-4xl'} mx-auto`}>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} 
-          className="mb-10">
-          <h1 className="text-4xl font-black tracking-tighter mb-2" style={{ color: theme.text }}>
+    <div className="premium-shell h-full overflow-y-auto px-4 py-6 sm:px-8 sm:py-10">
+      <div className={`${compact ? 'max-w-[1000px]' : 'max-w-4xl'} mx-auto shell-main-stage`}>
+        <motion.div initial={calmMotion ? { opacity: 0 } : { opacity: 0, y: 20 }} animate={calmMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+          className="editorial-hero mb-10 overflow-hidden rounded-[34px] px-6 py-7 sm:px-8">
+          <div className="secondary-label mb-3 font-black tracking-[0.22em]" style={{ color: theme.text3 }}>
+            ANALIZĂ PERFORMANȚĂ
+          </div>
+          <h1 className="page-title-compact mb-2" style={{ color: theme.text }}>
             Analiză <span style={{
               background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
               WebkitBackgroundClip: 'text',
@@ -160,14 +216,93 @@ export default function Stats() {
               display: 'inline-block'
             }}>Performanță</span>
           </h1>
-          <p className="text-sm font-medium opacity-60" style={{ color: theme.text }}>Vizualizează progresul și evoluția ta în timp</p>
+          <p className="page-subtitle opacity-70" style={{ color: theme.text }}>Vizualizează progresul și evoluția ta în timp, cu accent pe ritm, retenție și predictibilitate.</p>
+          <div className="mt-5 flex flex-wrap gap-2.5">
+            <span className="premium-chip rounded-full px-3 py-1 text-[11px] font-semibold" style={{ color: theme.text3 }}>
+              {sessions.length} sesiuni
+            </span>
+            <span className="premium-chip rounded-full px-3 py-1 text-[11px] font-semibold" style={{ color: theme.text3 }}>
+              {accuracy}% acuratețe globală
+            </span>
+            <span className="premium-chip rounded-full px-3 py-1 text-[11px] font-semibold" style={{ color: theme.text3 }}>
+              {studyHours}h studiu
+            </span>
+          </div>
         </motion.div>
+
+        {/* ── "Ce nu știu?" AI Report ── */}
+        {hasKey && (
+          <motion.div
+            initial={calmMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
+            animate={calmMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="luxe-card mb-8 p-5 sm:p-6"
+            style={{ border: `1px solid ${theme.border}` }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                  <Brain size={16} className="text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: theme.text }}>Ce nu știu?</p>
+                  <p className="text-xs" style={{ color: theme.text3 }}>Raport personalizat AI pe punctele tale slabe</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {aiReport && !aiReportLoading && (
+                  <button
+                    onClick={() => { setAiReport(''); handleGenerateReport(); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
+                    style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}
+                  >
+                    <RefreshCw size={11} />
+                    Regenerează
+                  </button>
+                )}
+                {!aiReport && (
+                  <button
+                    onClick={handleGenerateReport}
+                    disabled={aiReportLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60"
+                    style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                  >
+                    {aiReportLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    {aiReportLoading ? 'Analizez...' : 'Analizează'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {aiReport && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl px-4 py-3.5 text-sm leading-relaxed"
+                style={{ background: `${theme.accent}08`, border: `1px solid ${theme.accent}18`, color: theme.text2 }}
+              >
+                {aiReport}
+                {aiReportLoading && (
+                  <span className="inline-block w-0.5 h-4 ml-0.5 align-text-bottom animate-pulse rounded-sm"
+                    style={{ background: theme.accent }} />
+                )}
+              </motion.div>
+            )}
+
+            {!aiReport && !aiReportLoading && (
+              <p className="text-xs text-center py-2" style={{ color: theme.text3 }}>
+                AI-ul analizează greșelile, categoriile slabe și streakul tău pentru a-ți da o direcție clară.
+              </p>
+            )}
+          </motion.div>
+        )}
 
         {sessions.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="rounded-[28px] p-16 text-center"
+            className="premium-empty-state luxe-card rounded-[32px] p-16 text-center"
             style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
           >
             <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
@@ -177,15 +312,15 @@ export default function Stats() {
                 <path d="M7 16l4-4 4 4 4-8"/>
               </svg>
             </div>
-            <h3 className="text-lg font-black mb-2" style={{ color: theme.text }}>
+            <h3 className="section-title mb-2" style={{ color: theme.text }}>
               Nicio sesiune înregistrată
             </h3>
             <p className="text-sm max-w-xs mx-auto mb-6" style={{ color: theme.text3 }}>
               Rezolvă câteva grile pentru a-ți genera profilul de performanță.
             </p>
             <Link to="/quizzes"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white"
-              style={{ background: theme.accent }}>
+              className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold text-white shadow-xl"
+              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
               Începe acum
             </Link>
           </motion.div>
@@ -198,15 +333,15 @@ export default function Stats() {
                 { label: 'Sesiuni Totale', value: sessions.length, icon: <BookOpen size={18} />, color: theme.accent },
                 { label: 'Acuratețe Medie', value: `${accuracy}%`, icon: <Target size={18} />, color: theme.success },
                 { label: 'Scor Maxim', value: `${bestScore}%`, icon: <Trophy size={18} />, color: '#FFD60A' },
-                { label: 'Streak Curent', value: `${streak.currentStreak} zile`, icon: <Flame size={18} />, color: theme.warning },
-                { label: 'Record Streak', value: `${streak.longestStreak} zile`, icon: <TrendingUp size={18} />, color: theme.accent2 },
+                { label: 'Streak Curent', value: `${streak.currentStreak} ${streak.currentStreak === 1 ? 'zi' : 'zile'}`, icon: <Flame size={18} />, color: theme.warning },
+                { label: 'Record Streak', value: `${streak.longestStreak} ${streak.longestStreak === 1 ? 'zi' : 'zile'}`, icon: <TrendingUp size={18} />, color: theme.accent2 },
                 { label: 'Timp Studiu', value: `${studyHours}h`, icon: <Clock size={18} />, color: theme.text2 },
               ].map((stat, i) => (
                 <motion.div key={stat.label}
                   initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 + i * 0.05 }}
-                  whileHover={{ y: -2, boxShadow: `0 10px 26px ${stat.color}12` }}
-                  className="rounded-2xl p-4 relative overflow-hidden"
+                  whileHover={calmMotion ? undefined : { y: -2, boxShadow: `0 10px 26px ${stat.color}12` }}
+                  className="luxe-card premium-card-hover rounded-[28px] p-4 relative overflow-hidden"
                   style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
                   <div className="absolute top-0 left-0 w-16 h-16 rounded-full pointer-events-none"
                     style={{ background: `radial-gradient(circle at top left, ${stat.color}15, transparent 70%)` }} />
@@ -217,14 +352,14 @@ export default function Stats() {
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-wider opacity-60" style={{ color: theme.text }}>{stat.label}</span>
                   </div>
-                  <div className="text-2xl font-black tracking-tighter relative" style={{ color: theme.text }}>{stat.value}</div>
+                  <div className="metric-value relative" style={{ color: theme.text }}>{stat.value}</div>
                 </motion.div>
               ))}
             </motion.div>
 
             {/* Achievements */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-              className="rounded-[32px] p-6 mb-8"
+              className="luxe-card rounded-[32px] p-6 mb-8"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg"
@@ -232,8 +367,8 @@ export default function Stats() {
                   <Trophy size={20} />
                 </div>
                 <div>
-                  <h2 className="font-black text-lg leading-tight" style={{ color: theme.text }}>Realizări</h2>
-                  <p className="text-[10px] font-black uppercase tracking-wider opacity-50" style={{ color: theme.text }}>Trofee și Milestone-uri</p>
+                  <h2 className="section-title leading-tight" style={{ color: theme.text }}>Realizări</h2>
+                  <p className="text-[10px] font-black uppercase tracking-wider opacity-50" style={{ color: theme.text }}>Trofee și Realizări</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
@@ -247,7 +382,7 @@ export default function Stats() {
                 ].map((ach) => (
                   <motion.div
                     key={ach.id}
-                    whileHover={ach.earned ? { scale: 1.03, y: -2 } : {}}
+                    whileHover={!calmMotion && ach.earned ? { scale: 1.03, y: -2 } : undefined}
                     className="rounded-[24px] p-4 text-center relative overflow-hidden transition-all shadow-sm"
                     style={{
                       background: ach.earned ? `${theme.accent}10` : theme.surface2,
@@ -272,7 +407,7 @@ export default function Stats() {
 
             {/* Heatmap calendar */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}
-              className="rounded-2xl p-5 mb-5"
+              className="luxe-card rounded-[28px] p-5 mb-5"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
               <h2 className="font-semibold mb-4" style={{ color: theme.text }}>Activitate (90 zile)</h2>
               <div className="flex gap-1 overflow-x-auto pb-1">
@@ -308,7 +443,7 @@ export default function Stats() {
 
             {/* Activity chart */}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-              className="rounded-2xl p-5 mb-5"
+              className="luxe-card rounded-[28px] p-5 mb-5"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
               <h2 className="font-semibold mb-4" style={{ color: theme.text }}>Activitate (ultimele 14 zile)</h2>
               <Suspense fallback={<ChartSkeleton />}>
@@ -319,7 +454,7 @@ export default function Stats() {
             {/* Accuracy trend */}
             {last14Days.some(d => d.acuratete > 0) && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}
-                className="rounded-2xl p-5 mb-5"
+                className="luxe-card rounded-[28px] p-5 mb-5"
                 style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
                 <h2 className="font-semibold mb-4" style={{ color: theme.text }}>Tendință acuratețe (%)</h2>
                 <Suspense fallback={<ChartSkeleton height={160} />}>
@@ -331,7 +466,7 @@ export default function Stats() {
             {/* Per quiz accuracy */}
             {quizAccuracyData.length > 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
-                className="rounded-2xl p-5 mb-5"
+                className="luxe-card rounded-[28px] p-5 mb-5"
                 style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
                 <h2 className="font-semibold mb-4" style={{ color: theme.text }}>Acuratețe per grilă</h2>
                 <div className="space-y-3">
@@ -365,7 +500,7 @@ export default function Stats() {
             {/* Radar chart — category progress */}
             {radarData.length >= 3 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.42 }}
-                className="rounded-2xl p-5 mb-5"
+                className="luxe-card rounded-[28px] p-5 mb-5"
                 style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
                 <h2 className="font-semibold mb-4 flex items-center gap-2" style={{ color: theme.text }}>
                   <Brain size={16} style={{ color: theme.accent2 }} />
@@ -380,7 +515,7 @@ export default function Stats() {
             {/* Exam Predictor */}
             {examPrediction && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.44 }}
-                className="rounded-2xl p-5 mb-5 relative overflow-hidden"
+                className="editorial-hero luxe-card rounded-[30px] p-5 mb-5 relative overflow-hidden"
                 style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
                 {/* Decorative glow */}
                 <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full opacity-10"
@@ -399,7 +534,7 @@ export default function Stats() {
                         strokeDasharray={`${2 * Math.PI * 40}`}
                         initial={{ strokeDashoffset: 2 * Math.PI * 40 }}
                         animate={{ strokeDashoffset: 2 * Math.PI * 40 * (1 - examPrediction.predicted / 100) }}
-                        transition={{ duration: 1.2, ease: 'easeOut' }}
+                        transition={calmMotion ? { duration: 0.4, ease: 'linear' } : { duration: 1.2, ease: 'easeOut' }}
                       />
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -439,7 +574,7 @@ export default function Stats() {
             {/* Weak questions */}
             {weakQuestions.length > 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.45 }}
-                className="rounded-2xl p-5"
+                className="luxe-card rounded-[28px] p-5"
                 style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
                 <h2 className="font-semibold mb-4 flex items-center gap-2" style={{ color: theme.text }}>
                   <Target size={16} style={{ color: theme.danger }} />

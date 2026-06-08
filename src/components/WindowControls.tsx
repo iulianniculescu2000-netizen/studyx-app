@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Minus, X, Maximize2, Minimize2 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 
 interface BtnConfig {
   label: string;
@@ -27,8 +28,7 @@ function WinBtn({
 }: BtnConfig & { onClick: () => void }) {
   const [hover, setHover] = useState(false);
   const theme = useTheme();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
+  const { calmMotion } = useAdaptiveMotion();
 
   return (
     <motion.button
@@ -37,8 +37,8 @@ function WinBtn({
       aria-label={label}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      whileTap={performanceLite ? undefined : { scale: 0.94 }}
-      transition={{ type: 'spring', stiffness: 340, damping: 22 }}
+      whileTap={calmMotion ? undefined : { scale: 0.94 }}
+      transition={calmMotion ? { duration: 0.12 } : { type: 'spring', stiffness: 340, damping: 22 }}
       className="press-feedback"
       style={{
         width,
@@ -57,8 +57,8 @@ function WinBtn({
       }}
     >
       <motion.span
-        animate={isClose && hover ? { rotate: 90, scale: 1.08 } : { rotate: 0, scale: 1 }}
-        transition={{ duration: 0.18, ease: 'backOut' }}
+        animate={!calmMotion && isClose && hover ? { rotate: 90, scale: 1.08 } : { rotate: 0, scale: 1 }}
+        transition={calmMotion ? { duration: 0.1 } : { duration: 0.18, ease: 'backOut' }}
         style={{ display: 'flex', alignItems: 'center' }}
       >
         {icon}
@@ -71,8 +71,7 @@ export default function WindowControls() {
   const [isMax, setIsMax] = useState(false);
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
   const theme = useTheme();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
+  const { performanceLite } = useAdaptiveMotion();
 
   useEffect(() => {
     if (!api) return;

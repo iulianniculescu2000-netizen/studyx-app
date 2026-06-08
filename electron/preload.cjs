@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appReady: () => ipcRenderer.send('app:ready'),
   // Auto-backup: write all app data to Documents/StudyX-Backups
   autoBackup: (data) => ipcRenderer.invoke('app:autoBackup', { data }),
-  storageSave: (profileId, namespace, data) => ipcRenderer.invoke('storage:save', { profileId, namespace, data }),
+  storageSave: (profileId, namespace, serialized) => ipcRenderer.invoke('storage:save', { profileId, namespace, serialized }),
   storageLoad: (profileId, namespace) => ipcRenderer.invoke('storage:load', { profileId, namespace }),
   onAppClose: (cb) => {
     ipcRenderer.on('app:request-close', () => cb());

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react';
+import type { DragEvent } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -6,7 +7,7 @@ import {
   Plus, Pencil, Trash2, Check, X, RefreshCw, LogOut,
   PanelLeftOpen, StickyNote, CreditCard,
   Download, ArrowDownCircle, RotateCcw, AlertCircle,
-  Settings, Brain, Database,
+  Settings, Brain, Database, MessageSquare, Sparkles,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
@@ -14,6 +15,10 @@ import { useFolderStore } from '../store/folderStore';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useUpdateStore } from '../store/updateStore';
+import { useAIStore } from '../store/aiStore';
+import { useUIStore } from '../store/uiStore';
+import { useToastStore } from '../store/toastStore';
+import { useViewportProfile } from '../hooks/useViewportProfile';
 import ConfirmDialog from './ConfirmDialog';
 import Portal from './Portal';
 import Logo from './Logo';
@@ -28,6 +33,7 @@ const FOLDER_COLORS: { id: QuizColor; bg: string }[] = [
   { id: 'pink', bg: '#FF375F' }, { id: 'red', bg: '#FF453A' }, { id: 'teal', bg: '#5AC8FA' },
 ];
 const FOLDER_EMOJIS = ['\u{1F4C1}', '\u{1F4DA}', '\u{1F9E0}', '\u{1F4A1}', '\u{1F52C}', '\u{1F30D}', '\u{1F4BB}', '\u2764\uFE0F', '\u{1F9B4}', '\u{1F48A}', '\u2695\uFE0F', '\u{1F9EA}', '\u{1F4CB}', '\u{1F3AF}', '\u26A1', '\u{1F3E5}'];
+const QUIZ_DRAG_MIME = 'application/x-studyx-quiz-id';
 
 function useCollapsed() {
   const [collapsed, setCollapsed] = useState(() =>
@@ -112,10 +118,10 @@ function UpdateButton({
     color = theme.text3;
   }
 
-  const label = isChecking ? 'Se verifica...'
+  const label = isChecking ? 'Se verifică...'
     : status === 'up-to-date' ? 'La zi'
-    : status === 'available' ? 'Actualizare disponibila'
-    : isDownloading ? `Descarcare ${downloadPercent}%`
+    : status === 'available' ? 'Actualizare disponibilă'
+    : isDownloading ? `Descărcare ${downloadPercent}%`
     : status === 'ready' ? 'Gata de instalat'
     : status === 'error' ? 'Eroare actualizare'
     : `v${localVersion}`;
@@ -124,6 +130,7 @@ function UpdateButton({
     <Tip label={collapsed ? label : ''}>
       <motion.button
         onClick={onOpen}
+        aria-label={label}
         whileHover={{ backgroundColor: `${color}14` }}
         whileTap={{ scale: 0.94 }}
         className="press-feedback w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-colors relative"
@@ -156,16 +163,42 @@ function UpdateButton({
   );
 }
 
+function buildFolderPath(folders: Array<{ id: string; name: string; parentId?: string | null }>, folderId: string) {
+  const byId = new Map(folders.map((folder) => [folder.id, folder]));
+  const names: string[] = [];
+  let current = byId.get(folderId);
+  const guard = new Set<string>();
+
+  while (current && !guard.has(current.id)) {
+    guard.add(current.id);
+    names.unshift(current.name);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+
+  return names.join(' / ');
+}
+
 // Folder creation modal
-function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name: string, emoji: string, color: QuizColor) => void }) {
+function NewFolderModal({
+  folders,
+  initialParentId = null,
+  onClose,
+  onAdd,
+}: {
+  folders: Array<{ id: string; name: string; emoji: string; parentId?: string | null }>;
+  initialParentId?: string | null;
+  onClose: () => void;
+  onAdd: (name: string, emoji: string, color: QuizColor, parentId?: string | null) => void;
+}) {
   const theme = useTheme();
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('\u{1F4C1}');
   const [color, setColor] = useState<QuizColor>('blue');
+  const [parentId, setParentId] = useState<string>(initialParentId ?? '__root__');
 
   const handleCreate = () => {
     if (!name.trim()) return;
-    onAdd(name.trim(), emoji, color);
+    onAdd(name.trim(), emoji, color, parentId === '__root__' ? null : parentId);
     onClose();
   };
 
@@ -206,12 +239,13 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px 28px 18px', borderBottom: `1px solid ${theme.border}` }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: theme.text }}>Folder nou</h3>
-            <p style={{ margin: '3px 0 0', fontSize: 12, color: theme.text3 }}>Organizeaza-ti grilele in foldere</p>
+            <p style={{ margin: '3px 0 0', fontSize: 12, color: theme.text3 }}>Organizează-ți grilele în foldere</p>
           </div>
           <motion.button 
             whileHover={{ scale: 1.1, rotate: 90 }}
             whileTap={{ scale: 0.9 }}
             onClick={onClose}
+            aria-label="Inchide dialogul"
             className="press-feedback"
             style={{ color: theme.text3, background: theme.surface2, border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={16} />
@@ -225,6 +259,7 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {FOLDER_EMOJIS.map((e) => (
                 <button key={e} onClick={() => setEmoji(e)}
+                  aria-label={`Alege pictograma ${e}`}
                   style={{
                     width: 38, height: 38, borderRadius: 11, fontSize: 19,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -244,6 +279,7 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
             <div style={{ display: 'flex', gap: 12, paddingLeft: 4 }}>
               {FOLDER_COLORS.map((c) => (
                 <button key={c.id} onClick={() => setColor(c.id)}
+                  aria-label={`Alege culoarea ${c.id}`}
                   style={{
                     width: 28, height: 28, borderRadius: '50%',
                     background: c.bg, border: 'none', cursor: 'pointer',
@@ -268,6 +304,26 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
               }} />
           </div>
 
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>În interiorul</div>
+            <select
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              style={{
+                width: '100%', padding: '13px 16px', borderRadius: 16, background: theme.surface2,
+                border: `1px solid ${theme.border}`, color: theme.text, outline: 'none',
+                fontSize: 13, fontWeight: 700,
+              }}
+            >
+              <option value="__root__">Folder principal</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.emoji} {buildFolderPath(folders, folder.id)}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <motion.button onClick={handleCreate} disabled={!canCreate}
             whileHover={canCreate ? { scale: 1.02, y: -2 } : {}}
             whileTap={canCreate ? { scale: 0.98 } : {}}
@@ -277,7 +333,7 @@ function NewFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
               cursor: canCreate ? 'pointer' : 'not-allowed', opacity: canCreate ? 1 : 0.5,
               background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff',
               boxShadow: `0 12px 30px ${theme.accent}40`,
-            }}>Creeaza folder</motion.button>
+            }}>Creează folder</motion.button>
         </div>
       </motion.div>
     </motion.div>
@@ -353,9 +409,15 @@ export default function Sidebar() {
   const compact = typeof window !== 'undefined' && (window.innerHeight < 820 || window.innerWidth < 1240);
   const { username, logout } = useUserStore();
   const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
-  const { quizzes } = useQuizStore();
-  const { streak, getDueQuestions, questionStats } = useStatsStore();
-  const [collapsed, toggleCollapsed] = useCollapsed();
+  const { quizzes, moveToFolder } = useQuizStore();
+  const { streak, getDueQuestions, getWeakQuestions, questionStats } = useStatsStore();
+  const aiReady = useAIStore((state) => state.hasKey);
+  const knowledgeSourceCount = useAIStore((state) => state.knowledgeSources.length);
+  const setChatOpen = useUIStore((state) => state.setChatOpen);
+  const addToast = useToastStore((state) => state.addToast);
+  const [storedCollapsed, toggleCollapsed] = useCollapsed();
+  const { mobile } = useViewportProfile();
+  const collapsed = mobile || storedCollapsed;
   const { status: updateStatus, localVersion, downloadPercent,
     setShowUpdateModal } = useUpdateStore();
 
@@ -369,13 +431,16 @@ export default function Sidebar() {
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
   const dueCount = getDueQuestions().length;
+  const weakCount = getWeakQuestions(8).length;
   const avatarLetter = username?.charAt(0).toUpperCase() ?? '?';
 
   const totalAnswered = Object.values(questionStats).reduce((a, s) => a + s.timesCorrect + s.timesWrong, 0);
-  const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT MEDICINA';
+  const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT LA MEDICINĂ';
   const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived).length, [quizzes]);
   const newQuizCount = useMemo(() => quizzes.filter(q => now - q.createdAt < 86400000 * 2).length, [quizzes, now]);
   const uncategorizedCount = useMemo(() => quizzes.filter(q => !q.folderId).length, [quizzes]);
@@ -402,9 +467,10 @@ export default function Sidebar() {
     return () => window.removeEventListener('studyx:open-ai-settings', handler);
   }, []);
 
-  const handleCreateFolder = (name: string, emoji: string, color: QuizColor) => {
-    const id = addFolder(name, emoji, color);
+  const handleCreateFolder = (name: string, emoji: string, color: QuizColor, parentId?: string | null) => {
+    const id = addFolder(name, emoji, color, parentId);
     setShowNewFolder(false);
+    setNewFolderParentId(null);
     navigate(`/folder/${id}`);
   };
 
@@ -416,18 +482,106 @@ export default function Sidebar() {
 
   const confirmDelete = () => {
     if (!deleteTarget) return;
-    quizzes.filter(q => q.folderId === deleteTarget.id).forEach(q => {
+    const toDelete = new Set([deleteTarget.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      folders.forEach((folder) => {
+        if (folder.parentId && toDelete.has(folder.parentId) && !toDelete.has(folder.id)) {
+          toDelete.add(folder.id);
+          changed = true;
+        }
+      });
+    }
+    quizzes.filter(q => q.folderId && toDelete.has(q.folderId)).forEach(q => {
       useQuizStore.getState().moveToFolder(q.id, null);
     });
     deleteFolder(deleteTarget.id);
     setDeleteTarget(null);
   };
 
+  const getDraggedQuizId = (event: DragEvent<HTMLElement>) => (
+    event.dataTransfer.getData(QUIZ_DRAG_MIME) || event.dataTransfer.getData('text/plain')
+  );
+
+  const isQuizDrag = (event: DragEvent<HTMLElement>) => (
+    Array.from(event.dataTransfer.types).includes(QUIZ_DRAG_MIME)
+  );
+
+  const handleFolderDragOver = (event: DragEvent<HTMLElement>, targetFolderId: string | null) => {
+    if (!isQuizDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetId(targetFolderId ?? '__uncategorized__');
+  };
+
+  const handleFolderDragLeave = (event: DragEvent<HTMLElement>) => {
+    if (!isQuizDrag(event)) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setDropTargetId(null);
+  };
+
+  const handleFolderDrop = (event: DragEvent<HTMLElement>, targetFolderId: string | null) => {
+    if (!isQuizDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDropTargetId(null);
+
+    const quizId = getDraggedQuizId(event);
+    const quiz = quizzes.find((item) => item.id === quizId);
+    if (!quiz) return;
+
+    const nextFolderId = targetFolderId ?? null;
+    if ((quiz.folderId ?? null) === nextFolderId) {
+      addToast('Grila este deja in folderul ales.', 'info', 2200);
+      return;
+    }
+
+    moveToFolder(quiz.id, nextFolderId);
+    const folderName = nextFolderId
+      ? folders.find((folder) => folder.id === nextFolderId)?.name ?? 'folder'
+      : 'Neclasificate';
+    addToast(`Am mutat "${quiz.title}" in ${folderName}.`, 'success', 2600);
+  };
+
+  const openCoachChat = () => {
+    setChatOpen(true);
+    window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
+      detail: {
+        open: true,
+        mode: weakCount > 0 ? 'test' : 'summarize',
+        resetConversation: true,
+        prompt: weakCount > 0
+          ? 'Ajută-mă cu un plan clar pentru punctele mele slabe și începe cu un mini-test scurt pe tema cea mai vulnerabilă.'
+          : 'Fă-mi un plan clar și scurt pentru studiul de azi, în funcție de progresul meu și de ce merită repetat acum.',
+      },
+    }));
+  };
+
+  const visibleFolders = useMemo(() => {
+    const byParent = new Map<string, typeof folders>();
+    folders.forEach((folder) => {
+      const key = folder.parentId ?? '__root__';
+      byParent.set(key, [...(byParent.get(key) ?? []), folder]);
+    });
+
+    const walk = (parentId: string, depth: number): Array<{ folder: typeof folders[number]; depth: number }> => (
+      (byParent.get(parentId) ?? []).flatMap((folder) => [
+        { folder, depth },
+        ...walk(folder.id, depth + 1),
+      ])
+    );
+
+    return walk('__root__', 0);
+  }, [folders]);
+
   return (
     <motion.div
-      animate={{ width: collapsed ? 64 : compact ? 236 : 260 }}
+      animate={{ width: collapsed ? 64 : compact ? 242 : 260 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="flex flex-col flex-shrink-0 select-none overflow-hidden glass-panel"
+      className="studyx-sidebar flex flex-col flex-shrink-0 select-none overflow-hidden glass-panel"
       style={{
         height: '100dvh',
         borderRight: `0.5px solid ${theme.border}`,
@@ -484,7 +638,7 @@ export default function Sidebar() {
               {streak.currentStreak > 0 ? (
                 <p className={`flex items-center gap-1 mt-0.5 secondary-label ${streak.currentStreak >= 3 ? 'animate-streak-fire' : ''}`} style={{ color: theme.warning }}>
                   <Flame size={10} fill={streak.currentStreak >= 3 ? theme.warning : 'none'} />
-                  {streak.currentStreak} ZILE STREAK
+                  {streak.currentStreak} {streak.currentStreak === 1 ? 'ZI' : 'ZILE'} STREAK
                 </p>
               ) : (
                 <p className="mt-0.5 secondary-label" style={{ opacity: 0.8 }}>{medicalRank}</p>
@@ -492,6 +646,7 @@ export default function Sidebar() {
             </div>
             <button
               onClick={logout}
+              aria-label="Schimba utilizatorul"
               className="p-2 rounded-lg transition-all hover:bg-red-500/10"
               style={{ color: theme.text3 }}
             >
@@ -502,7 +657,80 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <div data-tutorial="sidebar" className={`flex-1 overflow-y-auto ${compact ? 'px-1.5 pb-1.5 pt-1.5' : 'px-2 pb-2 pt-2'} space-y-0.5 overflow-x-hidden`}>
+      <div
+        data-tutorial="sidebar"
+        role="navigation"
+        aria-label="Navigare principala"
+        className={`flex-1 overflow-y-auto ${compact ? 'px-1.5 pb-1.5 pt-1.5' : 'px-2 pb-2 pt-2'} space-y-0.5 overflow-x-hidden`}
+      >
+        {!collapsed && (
+          <div className="mb-3 px-1">
+            <div
+              className="editorial-hero luxe-card rounded-[26px] px-4 py-4"
+              style={{
+                background: theme.isDark
+                  ? 'linear-gradient(135deg, rgba(90,136,255,0.12), rgba(255,255,255,0.03))'
+                  : 'linear-gradient(135deg, rgba(255,255,255,0.92), rgba(245,249,253,0.82))',
+                border: `1px solid ${theme.border}`,
+              }}
+            >
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="secondary-label font-black tracking-[0.18em]" style={{ color: theme.text3 }}>
+                    STUDY PULSE
+                  </div>
+                  <div className="mt-1 text-sm font-bold leading-tight" style={{ color: theme.text }}>
+                    {dueCount > 0
+                      ? `${dueCount} itemi așteaptă recapitularea de azi`
+                      : weakCount > 0
+                        ? 'Poți transforma punctele slabe în progres rapid'
+                        : 'Ritmul arată bine. Păstrează consistența.'}
+                  </div>
+                </div>
+                <div
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[16px]"
+                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 14px 24px ${theme.accent}28` }}
+                >
+                  <Sparkles size={16} color="#fff" />
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="premium-chip rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+                  {streak.currentStreak} {streak.currentStreak === 1 ? 'zi' : 'zile'} streak
+                </span>
+                <span className="premium-chip rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+                  {weakCount} puncte slabe
+                </span>
+                <span className="premium-chip rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+                  {knowledgeSourceCount} surse AI
+                </span>
+              </div>
+
+              <div className={`mt-4 grid gap-2 ${compact ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <button
+                  onClick={openCoachChat}
+                  className="premium-card-hover press-feedback flex items-center justify-center gap-2 rounded-[18px] px-3 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
+                  style={{
+                    background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                    boxShadow: `0 14px 26px ${theme.accent}26`,
+                  }}
+                >
+                  <MessageSquare size={14} />
+                  {aiReady ? 'Coach AI' : 'Start AI'}
+                </button>
+                <button
+                  onClick={() => navigate('/vault')}
+                  className="premium-card-hover press-feedback flex items-center justify-center gap-2 rounded-[18px] px-3 py-3 text-[11px] font-black uppercase tracking-[0.14em]"
+                  style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text }}
+                >
+                  <Database size={14} />
+                  Vault
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {collapsed ? (
           <>
@@ -530,7 +758,7 @@ export default function Sidebar() {
                 />
               </div>
             </Tip>
-            <Tip label={`Sesiune zilnica${dueCount > 0 ? ` - ${dueCount} de recapitulat` : ""}`}>
+            <Tip label={`Sesiune zilnică${dueCount > 0 ? ` - ${dueCount} de recapitulat` : ""}`}>
               <NavItem
                 to="/daily-review"
                 icon={
@@ -542,7 +770,7 @@ export default function Sidebar() {
                     )}
                   </div>
                 }
-                label="Sesiune zilnica"
+                label="Sesiune zilnică"
                 collapsed
               />
             </Tip>
@@ -551,12 +779,12 @@ export default function Sidebar() {
                 <NavItem to="/stats" icon={<BarChart3 size={17} />} label="Statistici" collapsed />
               </div>
             </Tip>
-            <Tip label="Notite">
+            <Tip label="Notițe">
               <div data-tutorial="nav-notes">
-                <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notite" collapsed />
+                <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notițe" collapsed />
               </div>
             </Tip>
-            <Tip label="Knowledge Vault (AI)">
+            <Tip label="Biblioteca AI">
               <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} />
             </Tip>
             <Tip label="Flashcarduri">
@@ -564,9 +792,9 @@ export default function Sidebar() {
                 <NavItem to="/flashcards" icon={<CreditCard size={17} />} label="Flashcarduri" collapsed />
               </div>
             </Tip>
-            <Tip label="Setari">
+            <Tip label="Setări">
               <div>
-                <NavItem to="/settings" icon={<Settings size={17} />} label="Setari" collapsed />
+                <NavItem to="/settings" icon={<Settings size={17} />} label="Setări" collapsed />
               </div>
             </Tip>
           </>
@@ -607,7 +835,7 @@ export default function Sidebar() {
             <NavItem
               to="/daily-review"
               icon={<Brain size={16} />}
-              label="Sesiune zilnica"
+              label="Sesiune zilnică"
               collapsed={false}
               badge={dueCount > 0 ? (
                 <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
@@ -618,7 +846,7 @@ export default function Sidebar() {
             />
             <div data-tutorial="nav-stats"><NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} /></div>
             <div data-tutorial="nav-notes">
-              <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notite" collapsed={false} />
+              <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notițe" collapsed={false} />
             </div>
 
             <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} />
@@ -631,7 +859,7 @@ export default function Sidebar() {
               />
             </div>
             <div data-tutorial="nav-settings">
-              <NavItem to="/settings" icon={<Settings size={16} />} label="Setari" collapsed={false} />
+              <NavItem to="/settings" icon={<Settings size={16} />} label="Setări" collapsed={false} />
             </div>
 
             {/* Folders section */}
@@ -641,7 +869,11 @@ export default function Sidebar() {
                   Foldere
                 </span>
                 <button
-                  onClick={() => setShowNewFolder(true)}
+                  onClick={() => {
+                    setNewFolderParentId(null);
+                    setShowNewFolder(true);
+                  }}
+                  aria-label="Creeaza folder"
                   className="p-1 rounded-lg transition-all press-feedback"
                   style={{ color: theme.text3 }}
                   onMouseEnter={(e) => (e.currentTarget.style.color = theme.accent)}
@@ -655,14 +887,22 @@ export default function Sidebar() {
               <div className="space-y-0.5">
                 {(() => {
                   const count = uncategorizedCount;
+                  const isDropTarget = dropTargetId === '__uncategorized__';
                   return count > 0 ? (
                     <NavLink to="/folder/null" style={{ textDecoration: 'none', display: 'block' }}>
                       {({ isActive }) => (
                         <motion.div
+                          data-testid="folder-drop-target"
+                          data-folder-id="__uncategorized__"
+                          onDragOver={(event) => handleFolderDragOver(event, null)}
+                          onDragEnter={(event) => handleFolderDragOver(event, null)}
+                          onDragLeave={handleFolderDragLeave}
+                          onDrop={(event) => handleFolderDrop(event, null)}
                           className="relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors press-feedback"
                           style={{
-                            background: isActive ? `${theme.accent}16` : 'transparent',
+                            background: isDropTarget ? `${theme.accent}24` : isActive ? `${theme.accent}16` : 'transparent',
                             color: isActive ? theme.accent : theme.text2,
+                            boxShadow: isDropTarget ? `inset 0 0 0 1px ${theme.accent}55` : 'none',
                           }}
                           onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = `${theme.accent}09`; }}
                           onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -683,21 +923,37 @@ export default function Sidebar() {
                   ) : null;
                 })()}
 
-                {folders.map((folder) => {
+                {visibleFolders.map(({ folder, depth }) => {
                   const count = folderQuizCount.get(folder.id) ?? 0;
                   const colorHex = FOLDER_COLORS.find(c => c.id === folder.color)?.bg ?? '#0A84FF';
+                  const childCount = folders.filter((candidate) => candidate.parentId === folder.id).length;
+                  const isDropTarget = dropTargetId === folder.id;
 
                   if (editingFolder === folder.id) {
                     return (
-                      <div key={folder.id} className="flex items-center gap-1 px-2 py-1">
+                      <div key={folder.id} className="flex items-center gap-1 py-1" style={{ paddingLeft: 8 + depth * 14 }}>
                         <span>{folder.emoji}</span>
                         <input autoFocus type="text" value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') handleRenameFolder(folder.id); if (e.key === 'Escape') setEditingFolder(null); }}
                           className="flex-1 bg-transparent text-sm rounded px-1"
                           style={{ color: theme.text, outline: `1px solid ${theme.accent}`, border: 'none' }} />
-                        <button onClick={() => handleRenameFolder(folder.id)} className="p-1" style={{ color: theme.success }}><Check size={12} /></button>
-                        <button onClick={() => setEditingFolder(null)} className="p-1" style={{ color: theme.text3 }}><X size={12} /></button>
+                        <button
+                          onClick={() => handleRenameFolder(folder.id)}
+                          aria-label="Salveaza numele folderului"
+                          className="p-1"
+                          style={{ color: theme.success }}
+                        >
+                          <Check size={12} />
+                        </button>
+                        <button
+                          onClick={() => setEditingFolder(null)}
+                          aria-label="Anuleaza redenumirea folderului"
+                          className="p-1"
+                          style={{ color: theme.text3 }}
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
                     );
                   }
@@ -707,14 +963,22 @@ export default function Sidebar() {
                       {({ isActive }) => (
                         <div className="group relative">
                           <motion.div
+                            data-testid="folder-drop-target"
+                            data-folder-id={folder.id}
+                            onDragOver={(event) => handleFolderDragOver(event, folder.id)}
+                            onDragEnter={(event) => handleFolderDragOver(event, folder.id)}
+                            onDragLeave={handleFolderDragLeave}
+                            onDrop={(event) => handleFolderDrop(event, folder.id)}
                             initial={{ opacity: 0, scale: 0.85, x: -10 }}
                             animate={{ opacity: 1, scale: 1, x: 0 }}
                             transition={{ type: 'spring', stiffness: 380, damping: 22 }}
                             className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors press-feedback"
                             style={{
-                              background: isActive ? `${theme.accent}16` : 'transparent',
+                              background: isDropTarget ? `${colorHex}24` : isActive ? `${theme.accent}16` : 'transparent',
                               color: isActive ? theme.accent : theme.text2,
                               paddingRight: 36,
+                              paddingLeft: 12 + depth * 14,
+                              boxShadow: isDropTarget ? `inset 0 0 0 1px ${colorHex}66` : 'none',
                             }}
                             onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = `${theme.accent}09`; }}
                             onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -726,7 +990,16 @@ export default function Sidebar() {
                                 transition={{ duration: 0.25 }} />
                             )}
                             <span className="text-base leading-none flex-shrink-0">{folder.emoji}</span>
+                            {depth > 0 && (
+                              <span className="text-[10px] opacity-40" style={{ color: theme.text3 }}>└</span>
+                            )}
                             <span className="flex-1 truncate">{folder.name}</span>
+                            {childCount > 0 && !count && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+                                style={{ background: theme.surface2, color: theme.text3 }}>
+                                {childCount}
+                              </span>
+                            )}
                             {count > 0 && (
                               <span className="text-xs px-1.5 py-0.5 rounded-full"
                                 style={{ background: `${colorHex}22`, color: colorHex }}>
@@ -738,12 +1011,24 @@ export default function Sidebar() {
                           <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5 rounded-lg px-1 py-0.5"
                             style={{ background: theme.isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.92)' }}>
                             <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setNewFolderParentId(folder.id);
+                                setShowNewFolder(true);
+                              }}
+                              aria-label={`Creeaza subfolder in ${folder.name}`}
+                              className="p-1 rounded hover:opacity-80" style={{ color: theme.accent }}>
+                              <Plus size={11} />
+                            </button>
+                            <button
                               onClick={(e) => { e.preventDefault(); setEditingFolder(folder.id); setEditName(folder.name); }}
+                              aria-label={`Redenumeste folderul ${folder.name}`}
                               className="p-1 rounded hover:opacity-80" style={{ color: theme.text3 }}>
                               <Pencil size={11} />
                             </button>
                             <button
                               onClick={(e) => { e.preventDefault(); setDeleteTarget({ id: folder.id, name: folder.name }); }}
+                              aria-label={`Sterge folderul ${folder.name}`}
                               className="p-1 rounded hover:opacity-80" style={{ color: theme.danger }}>
                               <Trash2 size={11} />
                             </button>
@@ -761,9 +1046,9 @@ export default function Sidebar() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Stergi folderul "${deleteTarget?.name}"?`}
-        description="Grilele din el vor ramane neclasificate. Aceasta actiune nu poate fi anulata."
-        confirmLabel="Sterge folderul" cancelLabel="Anuleaza" variant="danger"
+        title={`Ștergi folderul "${deleteTarget?.name}"?`}
+        description="Grilele din el vor rămâne neclasificate. Această acțiune nu poate fi anulată."
+        confirmLabel="Șterge folderul" cancelLabel="Anulează" variant="danger"
         onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)}
       />
 
@@ -781,7 +1066,12 @@ export default function Sidebar() {
         <AnimatePresence>
           {showNewFolder && (
             <NewFolderModal
-              onClose={() => setShowNewFolder(false)}
+              folders={folders}
+              initialParentId={newFolderParentId}
+              onClose={() => {
+                setShowNewFolder(false);
+                setNewFolderParentId(null);
+              }}
               onAdd={handleCreateFolder}
             />
           )}
@@ -792,8 +1082,9 @@ export default function Sidebar() {
       <div className="p-2 flex-shrink-0 space-y-1" style={{ borderTop: `1px solid ${theme.border}` }}>
         {/* Logout (collapsed only) */}
         {collapsed && (
-          <Tip label="Schimba utilizatorul">
+          <Tip label="Schimbă utilizatorul">
             <button onClick={logout}
+              aria-label="Schimba utilizatorul"
               className="w-full flex items-center justify-center p-2.5 rounded-xl transition-all press-feedback"
               style={{ color: theme.text3 }}
               onMouseEnter={(e) => (e.currentTarget.style.color = theme.danger)}
@@ -817,6 +1108,7 @@ export default function Sidebar() {
         <Tip label={collapsed ? 'Extinde sidebar' : ''}>
           <motion.button
             onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Extinde sidebar' : 'Restrange sidebar'}
             whileHover={{ backgroundColor: `${theme.accent}12` }}
             whileTap={{ scale: 0.94 }}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm press-feedback"
@@ -827,7 +1119,7 @@ export default function Sidebar() {
               style={{ display: 'flex' }}>
               <PanelLeftOpen size={15} />
             </motion.span>
-            {!collapsed && <span style={{ color: theme.text3 }}>Restrange</span>}
+            {!collapsed && <span style={{ color: theme.text3 }}>Restrânge</span>}
           </motion.button>
         </Tip>
       </div>

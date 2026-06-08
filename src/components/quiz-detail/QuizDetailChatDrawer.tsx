@@ -44,19 +44,19 @@ export default function QuizDetailChatDrawer({ open, quiz, onClose }: Props) {
     setChatMessages((messages) => [...messages, userMsg]);
     setChatLoading(true);
 
-    const systemPrompt = `Esti un asistent de studiu medical. Ajuti un student sa inteleaga grila "${quiz.title}" (${quiz.category}).
+    const systemPrompt = `Ești un asistent de studiu medical. Ajuti un student să înțeleagă grila "${quiz.title}" (${quiz.category}).
 
-Intrebarile din grila:
+Întrebările din grilă:
 ${quiz.questions.slice(0, 15).map((question, index) => {
   const correct = question.options.filter((option) => option.isCorrect).map((option) => option.text).join(' / ');
-  return `${index + 1}. ${question.text}\n   Corect: ${correct}${question.explanation ? `\n   Explicatie: ${question.explanation}` : ''}`;
+  return `${index + 1}. ${question.text}\n   Corect: ${correct}${question.explanation ? `\n   Explicație: ${question.explanation}` : ''}`;
 }).join('\n\n')}
 
 Comportament:
-- Raspunde concis si clar in romana
-- Explica conceptele medicale cu exemple practice cand e util
-- Daca esti intrebat despre o intrebare specifica, explica conceptul medical din spatele ei
-- Nu vorbi despre structura tehnica a grilei`;
+- Răspunde concis și clar în română
+- Explică conceptele medicale cu exemple practice când e util
+- Dacă ești întrebat despre o întrebare specifică, explică conceptul medical din spatele ei
+- Nu vorbi despre structura tehnică a grilei`;
 
     const history = [...chatMessages, userMsg].map((message) => ({ role: message.role, content: message.content }));
     const messages = [{ role: 'system' as const, content: systemPrompt }, ...history];
@@ -79,7 +79,7 @@ Comportament:
       }, 0.7, controller.signal);
     } catch (error: unknown) {
       if (error instanceof Error && error.name === 'AbortError') return;
-      const errorMessage = error instanceof Error ? error.message : 'Eroare necunoscuta.';
+      const errorMessage = error instanceof Error ? error.message : 'Eroare necunoscută.';
       setChatMessages((messages) => {
         const updated = [...messages];
         updated[updated.length - 1] = { role: 'assistant', content: `Eroare: ${errorMessage}` };
@@ -135,10 +135,10 @@ Comportament:
               {chatMessages.length === 0 && (
                 <div className="text-center py-12">
                   <div className="text-4xl mb-3">AI</div>
-                  <p className="text-sm font-medium" style={{ color: theme.text }}>Intreaba-ma orice</p>
-                  <p className="text-xs mt-1" style={{ color: theme.text3 }}>despre aceasta grila de intrebari</p>
+                  <p className="text-sm font-medium" style={{ color: theme.text }}>Întreabă-mă orice</p>
+                  <p className="text-xs mt-1" style={{ color: theme.text3 }}>despre această grilă de întrebări</p>
                   <div className="mt-4 space-y-2">
-                    {['Explica conceptele cheie', 'Care sunt capcanele frecvente?', 'Cum memorez mai usor?'].map((suggestion) => (
+                    {['Explică conceptele cheie', 'Care sunt capcanele frecvente?', 'Cum memorez mai ușor?'].map((suggestion) => (
                       <button
                         key={suggestion}
                         onClick={() => void sendChat(suggestion)}
@@ -203,7 +203,7 @@ Comportament:
                       void sendChat();
                     }
                   }}
-                  placeholder="Pune o intrebare..."
+                  placeholder="Pune o întrebare..."
                   className="flex-1 text-sm px-3 py-2.5 rounded-xl"
                   style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text, outline: 'none' }}
                 />

@@ -8,7 +8,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Brain, ChevronRight, Check, X, RotateCcw, Home, Sparkles, Trophy } from 'lucide-react';
+import { Brain, ChevronRight, Check, X, RotateCcw, Home, Sparkles, Trophy, LogOut } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
@@ -41,13 +41,15 @@ export default function DailyReview() {
   const { questionStats, recordAnswer, recordStudySession } = useStatsStore();
 
   const [phase, setPhase] = useState<'ready' | 'session' | 'done'>('ready');
-  const [items] = useState<DueItem[]>(() => buildDueItems(questionStats, quizzes));
+  const dueItems = useMemo(() => buildDueItems(questionStats, quizzes), [questionStats, quizzes]);
+  const [sessionItems, setSessionItems] = useState<DueItem[]>(() => dueItems);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [results, setResults] = useState<boolean[]>([]);
   const [startedAt] = useState(() => Date.now());
 
+  const items = sessionItems.length > 0 ? sessionItems : dueItems;
   const current = items[currentIdx];
   const isMultiple = current?.question.multipleCorrect ?? false;
   const correctIds = useMemo(() => current?.question.options.filter(o => o.isCorrect).map(o => o.id) ?? [], [current]);
@@ -182,16 +184,22 @@ export default function DailyReview() {
             <div className="rounded-2xl p-4 text-left"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
               <p className="text-2xl font-bold" style={{ color: theme.accent2 }}>
-                {Math.ceil(items.length * 0.5)}m
+                {Math.ceil(items.length / 2)}
+                <span className="text-sm font-medium ml-0.5">
+                  {Math.ceil(items.length / 2) === 1 ? 'min' : 'min'}
+                </span>
               </p>
-              <p className="text-xs mt-0.5" style={{ color: theme.text3 }}>Timp estimat</p>
+              <p className="text-xs mt-0.5" style={{ color: theme.text3 }}>Timp estimat (~30s/întrebare)</p>
             </div>
           </div>
 
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setPhase('session')}
+            onClick={() => {
+              setSessionItems(items);
+              setPhase('session');
+            }}
             className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 mb-3"
             style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 24px ${theme.accent}25` }}>
             <Sparkles size={16} />Începe sesiunea
@@ -283,9 +291,23 @@ export default function DailyReview() {
               <Brain size={15} style={{ color: theme.accent }} />
               <span className="text-xs font-semibold" style={{ color: theme.accent }}>Sesiune zilnică</span>
             </div>
-            <span className="text-xs" style={{ color: theme.text3 }}>
-              {currentIdx + 1} / {items.length}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs" style={{ color: theme.text3 }}>
+                {currentIdx + 1} / {items.length}
+              </span>
+              <button
+                onClick={() => {
+                  recordStudySession(Math.floor((Date.now() - startedAt) / 1000));
+                  setPhase('done');
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-all hover:opacity-80"
+                style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}
+                title="Ieși din sesiune"
+              >
+                <LogOut size={11} />
+                Ieși
+              </button>
+            </div>
           </div>
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
             <motion.div

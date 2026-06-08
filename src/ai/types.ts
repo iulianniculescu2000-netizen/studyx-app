@@ -97,6 +97,7 @@ export interface AIQuestionRequest {
   weakTopics?: WeakTopic[];
   userProfile?: UserProfileData;
   mode?: 'standard' | 'exam' | 'tutor';
+  prefetchedContext?: AIContextPayload;
 }
 
 export interface AIQuestionResult {

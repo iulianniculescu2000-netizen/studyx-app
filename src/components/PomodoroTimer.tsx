@@ -1,48 +1,58 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Timer, X, Play, Pause, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronDown, ChevronUp, Pause, Play, RotateCcw, Timer, X } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useStatsStore } from '../store/statsStore';
 import { useUIStore } from '../store/uiStore';
 
 const POMODORO_PREFS_KEY = 'studyx-pomodoro-prefs';
 
-/** Play a simple beep using Web Audio API */
 function playAlert(type: 'focus_end' | 'break_end') {
   try {
-    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const AudioCtor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AudioCtor();
     const freqs = type === 'focus_end' ? [880, 1100, 880] : [660, 880, 660];
-    freqs.forEach((freq, i) => {
+
+    freqs.forEach((freq, index) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.frequency.value = freq;
       osc.type = 'sine';
-      gain.gain.setValueAtTime(0.15, ctx.currentTime + i * 0.25);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.25 + 0.2);
-      osc.start(ctx.currentTime + i * 0.25);
-      osc.stop(ctx.currentTime + i * 0.25 + 0.25);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime + index * 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + index * 0.25 + 0.2);
+      osc.start(ctx.currentTime + index * 0.25);
+      osc.stop(ctx.currentTime + index * 0.25 + 0.25);
     });
-    setTimeout(() => ctx.close(), 2000);
-  } catch (err) {
-    console.error(err);
+
+    setTimeout(() => {
+      void ctx.close();
+    }, 2000);
+  } catch (error) {
+    console.error(error);
   }
 }
 
 type Phase = 'focus' | 'short' | 'long';
 
 const PHASES: Record<Phase, { label: string; duration: number; color: string; emoji: string }> = {
-  focus: { label: 'Focus', duration: 25 * 60, color: '#FF453A', emoji: '🍅' },
-  short: { label: 'Pauză scurtă', duration: 5 * 60, color: '#30D158', emoji: '☕' },
-  long: { label: 'Pauză lungă', duration: 15 * 60, color: '#0A84FF', emoji: '🌿' },
+  focus: { label: 'Focus', duration: 25 * 60, color: '#FF453A', emoji: '\u{1F345}' },
+  short: { label: 'Pauză scurtă', duration: 5 * 60, color: '#30D158', emoji: '\u2615' },
+  long: { label: 'Pauză lungă', duration: 15 * 60, color: '#0A84FF', emoji: '\u{1F33F}' },
 };
 
 function loadPomodoroPrefs(): { phase: Phase; minimized: boolean } {
-  if (typeof window === 'undefined') return { phase: 'focus', minimized: false };
+  if (typeof window === 'undefined') {
+    return { phase: 'focus', minimized: false };
+  }
+
   try {
     const raw = localStorage.getItem(POMODORO_PREFS_KEY);
-    if (!raw) return { phase: 'focus', minimized: false };
+    if (!raw) {
+      return { phase: 'focus', minimized: false };
+    }
+
     const parsed = JSON.parse(raw) as { phase?: Phase; minimized?: boolean };
     const phase = parsed.phase && parsed.phase in PHASES ? parsed.phase : 'focus';
     return { phase, minimized: !!parsed.minimized };
@@ -52,11 +62,14 @@ function loadPomodoroPrefs(): { phase: Phase; minimized: boolean } {
 }
 
 function savePomodoroPrefs(state: { phase: Phase; minimized: boolean }) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') {
+    return;
+  }
+
   try {
     localStorage.setItem(POMODORO_PREFS_KEY, JSON.stringify(state));
   } catch {
-    // optional persistence only
+    // Persistence is optional here.
   }
 }
 
@@ -84,30 +97,37 @@ export default function PomodoroTimer() {
   const pct = timeLeft / phaseInfo.duration;
   const circumference = 2 * Math.PI * 52;
 
-  const reset = useCallback((newPhase?: Phase) => {
-    const p = newPhase ?? phase;
-    setPhase(p);
-    setTimeLeft(PHASES[p].duration);
+  const reset = useCallback((nextPhase?: Phase) => {
+    const targetPhase = nextPhase ?? phase;
+    setPhase(targetPhase);
+    setTimeLeft(PHASES[targetPhase].duration);
     setRunning(false);
-    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
   }, [phase]);
 
   useEffect(() => {
     if (!running) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
       return;
     }
+
     intervalRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
+      setTimeLeft((current) => {
+        if (current <= 1) {
           clearInterval(intervalRef.current!);
           setRunning(false);
           playAlert(phase === 'focus' ? 'focus_end' : 'break_end');
+
           if (phase === 'focus') {
             recordStudySession(PHASES.focus.duration);
             sessionsRef.current += 1;
             setSessions(sessionsRef.current);
           }
+
           const next: Phase = phase === 'focus'
             ? sessionsRef.current % 4 === 0 ? 'long' : 'short'
             : 'focus';
@@ -115,9 +135,11 @@ export default function PomodoroTimer() {
           setTimeLeft(PHASES[next].duration);
           return 0;
         }
-        return t - 1;
+
+        return current - 1;
       });
     }, 1000);
+
     return () => clearInterval(intervalRef.current!);
   }, [running, phase, recordStudySession]);
 
@@ -153,14 +175,14 @@ export default function PomodoroTimer() {
     if (!chatOpen) {
       return {
         right: margin,
-        bottom: 92,
+        bottom: margin,
       };
     }
 
     if (hasSideDockSpace) {
       return {
         right: chatSheetWidth + margin + gap,
-        bottom: 24,
+        bottom: margin,
       };
     }
 
@@ -194,7 +216,8 @@ export default function PomodoroTimer() {
           setOpen(true);
         }}
         title="Deschide Pomodoro"
-        className="fixed z-[9997] w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl press-feedback"
+        aria-label="Deschide Pomodoro"
+        className="fixed z-[9997] flex h-12 w-12 items-center justify-center rounded-2xl shadow-xl press-feedback"
         style={{
           background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
           boxShadow: `0 8px 24px ${theme.accent}40`,
@@ -205,7 +228,7 @@ export default function PomodoroTimer() {
           <motion.div
             animate={{ scale: [1, 1.3, 1] }}
             transition={{ repeat: Infinity, duration: 1.5 }}
-            className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border-2"
+            className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 bg-red-500"
             style={{ borderColor: theme.isDark ? 'black' : 'white' }}
           />
         )}
@@ -215,17 +238,11 @@ export default function PomodoroTimer() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.88, y: 20 }}
-      animate={{
-        opacity: 1,
-        scale: 1,
-        y: 0,
-        right: currentRight,
-        bottom: currentBottom,
-      }}
-      exit={{ opacity: 0, scale: 0.88, y: 20 }}
+      initial={{ opacity: 0, scale: 0.94, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0, right: currentRight, bottom: currentBottom }}
+      exit={{ opacity: 0, scale: 0.94, y: 8 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="fixed z-[9997] rounded-[28px] shadow-2xl overflow-hidden"
+      className="fixed z-[9997] overflow-hidden rounded-[28px] shadow-2xl"
       style={{
         width: panelWidth,
         background: theme.isDark ? 'rgba(18,18,22,0.9)' : 'rgba(255,255,255,0.88)',
@@ -238,7 +255,12 @@ export default function PomodoroTimer() {
         <span className="flex-1 text-sm font-semibold" style={{ color: theme.text }}>
           {phaseInfo.emoji} {phaseInfo.label}
         </span>
-        <button onClick={() => setMinimized(!minimized)} style={{ color: theme.text3 }} title={minimized ? 'Extinde' : 'Minimizează'}>
+        <button
+          onClick={() => setMinimized(!minimized)}
+          aria-label={minimized ? 'Extinde Pomodoro' : 'Minimizeaza Pomodoro'}
+          style={{ color: theme.text3 }}
+          title={minimized ? 'Extinde' : 'Minimizează'}
+        >
           {minimized ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
         <motion.button
@@ -248,6 +270,7 @@ export default function PomodoroTimer() {
             setOpen(false);
             reset();
           }}
+          aria-label="Inchide Pomodoro"
           style={{ color: theme.text3 }}
           title="Închide Pomodoro"
         >
@@ -259,8 +282,8 @@ export default function PomodoroTimer() {
         {!minimized && (
           <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
             <div className="flex flex-col items-center py-5">
-              <div className="relative w-32 h-32">
-                <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+              <div className="relative h-32 w-32">
+                <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120">
                   <circle cx="60" cy="60" r="52" fill="none" stroke={theme.surface2} strokeWidth="8" />
                   <motion.circle
                     cx="60"
@@ -277,33 +300,43 @@ export default function PomodoroTimer() {
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-3xl font-bold tabular-nums" style={{ color: theme.text }}>{mm}:{ss}</span>
-                  {sessions > 0 && <span className="text-[10px]" style={{ color: theme.text3 }}>🍅 {sessions} sesiuni</span>}
+                  <span className="tabular-nums text-3xl font-bold" style={{ color: theme.text }}>
+                    {mm}:{ss}
+                  </span>
+                  {sessions > 0 && (
+                    <span className="text-[10px]" style={{ color: theme.text3 }}>
+                      {PHASES.focus.emoji} {sessions} sesiuni
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="flex gap-1.5 mt-3">
-                {(Object.keys(PHASES) as Phase[]).map((p) => (
+
+              <div className="mt-3 flex gap-1.5">
+                {(Object.keys(PHASES) as Phase[]).map((entry) => (
                   <button
-                    key={p}
-                    onClick={() => reset(p)}
-                    title={PHASES[p].label}
-                    className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
+                    key={entry}
+                    onClick={() => reset(entry)}
+                    aria-label={`Seteaza Pomodoro pe ${PHASES[entry].label}`}
+                    title={PHASES[entry].label}
+                    className="rounded-full px-2.5 py-1 text-xs font-medium transition-all"
                     style={{
-                      background: phase === p ? `${PHASES[p].color}22` : theme.surface2,
-                      color: phase === p ? PHASES[p].color : theme.text3,
-                      border: `1px solid ${phase === p ? PHASES[p].color + '50' : 'transparent'}`,
+                      background: phase === entry ? `${PHASES[entry].color}22` : theme.surface2,
+                      color: phase === entry ? PHASES[entry].color : theme.text3,
+                      border: `1px solid ${phase === entry ? `${PHASES[entry].color}50` : 'transparent'}`,
                     }}
                   >
-                    {PHASES[p].emoji}
+                    {PHASES[entry].emoji}
                   </button>
                 ))}
               </div>
-              <div className="flex gap-2 mt-4">
+
+              <div className="mt-4 flex gap-2">
                 <motion.button
                   whileTap={{ scale: 0.9 }}
                   onClick={() => reset()}
+                  aria-label="Reseteaza timerul"
                   title="Resetează timerul"
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl"
                   style={{ background: theme.surface2, color: theme.text3 }}
                 >
                   <RotateCcw size={14} />
@@ -311,7 +344,8 @@ export default function PomodoroTimer() {
                 <motion.button
                   whileTap={{ scale: 0.9 }}
                   onClick={() => setRunning(!running)}
-                  className="w-24 h-10 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 text-white"
+                  aria-label={running ? 'Pune pauza Pomodoro' : 'Porneste Pomodoro'}
+                  className="flex h-10 w-24 items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white"
                   style={{ background: running ? `${phaseInfo.color}cc` : phaseInfo.color }}
                 >
                   {running ? <><Pause size={14} />Pauză</> : <><Play size={14} />Start</>}

@@ -91,11 +91,13 @@ export async function retrieveRelevantChunks(
   const weakTopics = new Set(
     (userProfile?.recentMistakes ?? []).map(m => m.topic.toLowerCase())
   );
-  const mistakeBank = new Set(
-    (userProfile?.mistakeBank ?? []).map(m => m.questionId)
+  // mistakeBank și recentMistakes conțin topicuri (string-uri), nu chunk IDs.
+  // Comparăm chunk.topic cu topicurile greșite pentru boost-uri.
+  const mistakeBankTopics = new Set(
+    (userProfile?.mistakeBank ?? []).map(m => m.topic?.toLowerCase()).filter(Boolean)
   );
-  const recentMistakes = new Set(
-    (userProfile?.recentMistakes ?? []).map(m => m.questionId)
+  const recentMistakeTopics = new Set(
+    (userProfile?.recentMistakes ?? []).map(m => m.topic.toLowerCase())
   );
 
   // ─── BM25 setup ───────────────────────────────────────────────────────────
@@ -115,11 +117,11 @@ export async function retrieveRelevantChunks(
     // Boost pentru topicuri slabe (utilizatorul a greșit acolo)
     const weaknessBoost = weakTopics.has(chunk.topic.toLowerCase()) ? 0.30 : 0;
 
-    // Boost pentru greșeli recente (repetare spaced)
-    const recencyBoost = recentMistakes.has(chunk.id) ? 0.20 : 0;
+    // Boost pentru greșeli recente (repetare spaced) — comparăm topic, nu chunk.id
+    const recencyBoost = recentMistakeTopics.has(chunk.topic.toLowerCase()) ? 0.20 : 0;
 
-    // Boost pentru banca de greșeli (greșit de mai multe ori)
-    const mistakeBankBoost = mistakeBank.has(chunk.id) ? 0.15 : 0;
+    // Boost pentru banca de greșeli (greșit de mai multe ori) — comparăm topic
+    const mistakeBankBoost = mistakeBankTopics.has(chunk.topic.toLowerCase()) ? 0.15 : 0;
 
     // *** PONDERILE CHEIE: BM25 dominant, semantic complementar ***
     // Motivul: embeddings locale nu sunt semantice, BM25 e mult mai precis

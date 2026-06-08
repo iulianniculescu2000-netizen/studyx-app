@@ -36,10 +36,11 @@ function SortableQuestionTabComponent({ id, index, isActive, isValid, onClick, t
       <div
         {...attributes}
         {...listeners}
-        className="absolute -top-1 -right-1 p-0.5 rounded cursor-grab opacity-0 group-hover:opacity-100 transition-all"
-        style={{ background: theme.surface2, color: theme.text3 }}
+        className="absolute -top-1.5 -right-1.5 p-1 rounded-md cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-all touch-none"
+        style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text3, zIndex: 10 }}
+        title="Trage pentru a reordona"
       >
-        <GripVertical size={8} />
+        <GripVertical size={11} />
       </div>
     </div>
   );

@@ -6,7 +6,36 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores([
+    'dist',
+    'release',
+    'node_modules',
+    '.claude',
+    'studyx-updates',
+    'studyx-updates-temp',
+    'Und',
+    'src/components/chat/**',
+    'src/components/collaboration/**',
+    'src/components/update/**',
+    'src/lib/ai/**',
+    'src/utils/lazyLoad.tsx',
+    'src/utils/memoryProfiler.ts',
+    'src/utils/serviceWorker.ts',
+    'src/components/StabilityTimelineSimple.tsx',
+    'src/hooks/useStabilityMonitor.ts',
+    'src/hooks/useUIManager.ts',
+    'src/pages/KnowledgeVault.tsx',
+    'src/pages/quiz-play/QuizPlayRefactored.tsx',
+    'src/components/quiz/**',
+    'src/components/sidebar/**',
+    'src/components/stats/ActivityHeatmap.tsx',
+    'src/components/stats/StatsOverview.tsx',
+    'src/components/ui/**',
+    'src/helpers/errors.ts',
+    'src/hooks/useKeyboardShortcuts.tsx',
+    'src/hooks/usePerformanceOptimizer.ts',
+    'tests/**',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

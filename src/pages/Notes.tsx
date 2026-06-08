@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { StickyNote, Search, Trash2, BookOpen, X, Sparkles, Loader2, CreditCard } from 'lucide-react';
+import { StickyNote, Search, Trash2, BookOpen, X, Sparkles, Loader2, CreditCard, ExternalLink } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useNotesStore } from '../store/notesStore';
 import { useQuizStore } from '../store/quizStore';
@@ -71,7 +71,7 @@ export default function Notes() {
                 Notițele mele
               </h1>
             </div>
-            {enriched.length > 0 && hasKey() && (
+            {enriched.length > 0 && hasKey && (
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 disabled={aiConverting}
@@ -238,12 +238,24 @@ export default function Notes() {
                       className="group rounded-2xl p-4 relative"
                       style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
                     >
-                      {/* Question text */}
+                      {/* Question text + link to quiz detail */}
                       {n.question && (
-                        <p className="text-xs font-medium mb-2 pr-6 line-clamp-2"
-                          style={{ color: theme.text3 }}>
-                          ❓ {n.question.text}
-                        </p>
+                        <div className="flex items-start gap-2 mb-2 pr-6">
+                          <p className="text-xs font-medium line-clamp-2 flex-1"
+                            style={{ color: theme.text3 }}>
+                            ❓ {n.question.text}
+                          </p>
+                          {n.quiz && (
+                            <Link
+                              to={`/quiz/${n.quiz.id}`}
+                              title="Deschide grila"
+                              className="flex-shrink-0 p-1 rounded-lg opacity-60 hover:opacity-100 transition-opacity"
+                              style={{ color: theme.accent }}
+                            >
+                              <ExternalLink size={11} />
+                            </Link>
+                          )}
+                        </div>
                       )}
 
                       {/* Divider */}

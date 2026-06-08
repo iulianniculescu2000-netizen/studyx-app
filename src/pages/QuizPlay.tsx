@@ -1,18 +1,30 @@
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Clock, BookOpen, Layers, Keyboard, Zap, GraduationCap, StickyNote, Sparkles, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, BookOpen, Layers, Keyboard, Zap, Eye, GraduationCap, StickyNote, MessageSquare, Sparkles } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
 import { useAIStore } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
 import { useFocusModeStore } from '../store/focusModeStore';
+import { useUIStore } from '../store/uiStore';
 import { useTheme } from '../theme/ThemeContext';
+import { HERO_COLOR_MAP } from '../theme/colorMaps';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
+import { useViewportProfile } from '../hooks/useViewportProfile';
 import QuizImage from '../components/QuizImage';
 import type { QuizSession, Question, Option } from '../types';
 import type { AIAnalysisResult, HintResult } from '../ai/types';
-import { formatQuizPlayTime, getCorrectOptionIds, isCorrectSelection, shuffleArray } from './quiz-play/helpers';
+import {
+  buildAnalysisFallback,
+  buildHintFallback,
+  buildMnemonicFallback,
+  getAnswerTextForOptionIds,
+  getCorrectAnswerText,
+} from '../helpers/quizAi';
+import { evaluateSelection, formatQuizPlayTime, getCorrectOptionIds, isCorrectSelection, shuffleArray } from './quiz-play/helpers';
+import { AIExplanationPanel, HintPanel, MnemonicPanel } from './quiz-play/ai-panels';
 
 const loadAIEngine = () => import('../ai/AIEngine');
 
@@ -21,20 +33,20 @@ export default function QuizPlay() {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
-  const reduceMotion = useReducedMotion();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
-  const calmMotion = reduceMotion || performanceLite;
+  const { calmMotion } = useAdaptiveMotion();
+  const { compact, crampedHeight, shortHeight, mobile, narrow, tablet, uiScale, density } = useViewportProfile();
   const { quizzes, addSession } = useQuizStore();
   const { recordAnswer, recordStudySession } = useStatsStore();
   const setNote = useNotesStore((s) => s.setNote);
   const { hasKey } = useAIStore();
   const activeProfileId = useUserStore((s) => s.activeProfileId);
   const quiz = quizzes.find((q) => q.id === id);
-  const state = location.state as { mode?: string; wrongQuestionsOnly?: string[] } | null;
+  const state = location.state as { mode?: string; wrongQuestionsOnly?: string[]; practiceCount?: number; blockStart?: number } | null;
   const examMode = state?.mode === 'exam';
   const timedMode = state?.mode === 'timed';
   const wrongQuestionsOnly = state?.wrongQuestionsOnly;
+  const practiceCount = state?.practiceCount;
+  const blockStart = state?.blockStart ?? 0;
   const TIME_PER_Q = 30; // seconds
 
   // Build shuffled question/option order once
@@ -42,13 +54,18 @@ export default function QuizPlay() {
     if (!quiz) return [];
     let qs = quiz.shuffleQuestions ? shuffleArray(quiz.questions) : [...quiz.questions];
     if (wrongQuestionsOnly && wrongQuestionsOnly.length > 0) {
-      qs = qs.filter(q => wrongQuestionsOnly.includes(q.id));
+      const uniqueWrongIds = Array.from(new Set(wrongQuestionsOnly));
+      qs = qs.filter(q => uniqueWrongIds.includes(q.id));
+    }
+    if (practiceCount && practiceCount > 0) {
+      const safeStart = Math.max(0, Math.min(blockStart, Math.max(0, qs.length - 1)));
+      qs = qs.slice(safeStart, safeStart + practiceCount);
     }
     if (quiz.shuffleAnswers) {
       return qs.map((q) => ({ ...q, options: shuffleArray(q.options) }));
     }
     return qs;
-  }, [quiz, wrongQuestionsOnly]);
+  }, [quiz, wrongQuestionsOnly, practiceCount, blockStart]);
 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [questionQueue, setQuestionQueue] = useState<Question[]>(orderedQuestions);
@@ -56,7 +73,7 @@ export default function QuizPlay() {
   const [selectedNow, setSelectedNow] = useState<string[]>([]); // for current question
   const [revealed, setRevealed] = useState(false);
   const [shakeId, setShakeId] = useState<string | null>(null);
-  const [feedbackAnim, setFeedbackAnim] = useState<'correct' | 'wrong' | null>(null);
+  const [feedbackAnim, setFeedbackAnim] = useState<'correct' | 'partial' | 'wrong' | null>(null);
   const [startedAt] = useState(Date.now());
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [showKeys, setShowKeys] = useState(false);
@@ -83,6 +100,18 @@ export default function QuizPlay() {
   const currentNote = useNotesStore((s) => (question ? (s.notes[question.id] ?? '') : ''));
 
   const { focusMode, toggleFocusMode } = useFocusModeStore();
+  const setChatOpen = useUIStore((state) => state.setChatOpen);
+  const openStudyChat = useCallback((mode: 'explain' | 'summarize' | 'test', prompt: string) => {
+    setChatOpen(true);
+    window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
+      detail: {
+        open: true,
+        mode,
+        resetConversation: true,
+        prompt,
+      },
+    }));
+  }, [setChatOpen]);
 
   // Smart nudge logic: if user is stuck for >12s, pulse the hint button
   useEffect(() => {
@@ -95,7 +124,7 @@ export default function QuizPlay() {
   }, [currentIdx, revealed, examMode, hintLevel]);
 
   const handleGetHint = useCallback(async () => {
-    if (!question || !activeProfileId || hintLoading || hintLevel >= 3) return;
+    if (!question || hintLoading || hintLevel >= 3) return;
     
     if (hintLevel > 0 && hintData) {
       setHintLevel(prev => prev + 1);
@@ -109,11 +138,12 @@ export default function QuizPlay() {
       setHintData(result);
       setHintLevel(1);
     } catch {
-      // Fallback
+      setHintData(buildHintFallback(question));
+      setHintLevel(1);
     } finally {
       setHintLoading(false);
     }
-  }, [question, activeProfileId, hintLoading, hintLevel, hintData]);
+  }, [question, hintLoading, hintLevel, hintData]);
 
   useEffect(() => {
     setQuestionQueue(orderedQuestions);
@@ -121,9 +151,17 @@ export default function QuizPlay() {
     setAnswers({});
     setSelectedNow([]);
     setRevealed(false);
+    setAiText(null);
+    setAiLoading(false);
+    setMnemonicText(null);
+    setMnemonicLoading(false);
     setAnalysisResult(null);
     setAnalysisQuestionId(null);
     setNextTopicHint(null);
+    setShakeId(null);
+    setFeedbackAnim(null);
+    setHintLevel(0);
+    setHintData(null);
   }, [orderedQuestions]);
 
   useEffect(() => {
@@ -132,19 +170,26 @@ export default function QuizPlay() {
   }, [currentIdx]);
 
   useEffect(() => {
-    const timer = setInterval(() => setTimeElapsed((t) => t + 1), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    if (examMode) return; // Don't track time in exam mode
+    const intervalId = setInterval(() => {
+      setTimeElapsed((t) => t + 1);
+    }, 1000);
+    return () => clearInterval(intervalId);
+  }, [examMode]);
 
   // Per-question countdown in timed mode
   useEffect(() => {
     if (!timedMode || revealed) return;
     setQuestionTimer(TIME_PER_Q);
-    const timer = setInterval(() => setQuestionTimer((t) => {
-      if (t <= 1) { clearInterval(timer); return 0; }
-      return t - 1;
-    }), 1000);
-    return () => clearInterval(timer);
+    const intervalId = setInterval(() => {
+      setQuestionTimer((t) => {
+        if (t <= 1) {
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(intervalId);
   }, [currentIdx, timedMode, revealed]);
 
   const finishQuiz = useCallback((finalAnswers: Record<string, string[]>) => {
@@ -153,16 +198,24 @@ export default function QuizPlay() {
       const correctIds = getCorrectOptionIds(q.options);
       return isCorrectSelection(userAnswers, correctIds);
     }).length;
+    const partialAnswerIds = questionQueue
+      .filter((q) => {
+        const userAnswers = finalAnswers[q.id] ?? [];
+        const correctIds = getCorrectOptionIds(q.options);
+        return evaluateSelection(userAnswers, correctIds) === 'partial';
+      })
+      .map((q) => q.id);
     questionQueue.forEach((q) => {
       const userAnswers = finalAnswers[q.id] ?? [];
       const correctIds = getCorrectOptionIds(q.options);
-      const isCorrect = isCorrectSelection(userAnswers, correctIds);
-      recordAnswer(quiz!.id, q.id, isCorrect);
+      const result = evaluateSelection(userAnswers, correctIds);
+      // Partial counts as wrong for spaced-repetition tracking
+      recordAnswer(quiz!.id, q.id, result === 'correct');
     });
     const duration = Math.floor((Date.now() - startedAt) / 1000);
     recordStudySession(duration);
 
-    // -- Reziden?iat penalty scoring ------------------------------------------
+    // -- Rezidențiat penalty scoring ------------------------------------------
     // +1 per fully correct answer, -0.25 per wrong option selected.
     // Only active when quiz.penaltyMode is true. Score net is clamped to = 0.
     let penalizedScore: number | undefined;
@@ -195,85 +248,13 @@ export default function QuizPlay() {
       total: questionQueue.length,
       mode: examMode ? 'exam' : timedMode ? 'test' : 'study',
       ...(penalizedScore !== undefined ? { penalizedScore } : {}),
+      ...(partialAnswerIds.length > 0 ? { partialAnswers: partialAnswerIds } : {}),
     };
     addSession(session);
     navigate(`/results/${quiz!.id}`, { state: { session, orderedQuestions: questionQueue } });
   }, [questionQueue, quiz, startedAt, addSession, navigate, recordAnswer, recordStudySession, examMode, timedMode]);
 
-  const handleSkipQuestion = useCallback(() => {
-    // Skip is only meaningful in study mode before revealing the answer.
-    if (examMode || timedMode || revealed || questionQueue.length <= 1 || isLast) return;
-    setAiText(null);
-    setAiLoading(false);
-    setMnemonicText(null);
-    setMnemonicLoading(false);
-    setAnalysisResult(null);
-    setAnalysisQuestionId(null);
-    setNextTopicHint(null);
-    setHintLevel(0);
-    setHintData(null);
-    setQuestionQueue((prev) => {
-      const next = [...prev];
-      const [skipped] = next.splice(currentIdx, 1);
-      next.push(skipped);
-      return next;
-    });
-    setSelectedNow([]);
-    setRevealed(false);
-  }, [examMode, timedMode, revealed, questionQueue.length, isLast, currentIdx]);
-
-  const handleSelect = useCallback((optId: string) => {
-    if (revealed) return;
-    if (isMultiple) {
-      setSelectedNow((prev) =>
-        prev.includes(optId) ? prev.filter((id) => id !== optId) : [...prev, optId]
-      );
-    } else {
-      setSelectedNow([optId]);
-      const newAnswers = { ...answers, [question.id]: [optId] };
-      setAnswers(newAnswers);
-      if (examMode) {
-        if (isLast) finishQuiz(newAnswers);
-        else { setCurrentIdx((i) => i + 1); setSelectedNow([]); }
-      } else {
-        setRevealed(true);
-        const isCorrect = question.options.find((o) => o.id === optId)?.isCorrect;
-        if (isCorrect) {
-          setFeedbackAnim('correct');
-          setTimeout(() => setFeedbackAnim(null), 400);
-        } else {
-          setFeedbackAnim('wrong');
-          setTimeout(() => setFeedbackAnim(null), 450);
-          setShakeId(optId);
-          setTimeout(() => setShakeId(null), 600);
-        }
-      }
-    }
-  }, [revealed, isMultiple, question, answers, examMode, isLast, finishQuiz]);
-
-  const confirmMultiple = useCallback(() => {
-    if (selectedNow.length === 0) return;
-    const newAnswers = { ...answers, [question.id]: selectedNow };
-    setAnswers(newAnswers);
-    if (examMode) {
-      if (isLast) finishQuiz(newAnswers);
-      else { setCurrentIdx((i) => i + 1); setSelectedNow([]); }
-    } else {
-      setRevealed(true);
-      const correctIdsForQuestion = getCorrectOptionIds(question.options);
-      const isCorrect = isCorrectSelection(selectedNow, correctIdsForQuestion);
-      if (isCorrect) {
-        setFeedbackAnim('correct');
-        setTimeout(() => setFeedbackAnim(null), 400);
-      } else {
-        setFeedbackAnim('wrong');
-        setTimeout(() => setFeedbackAnim(null), 450);
-      }
-    }
-  }, [selectedNow, question, answers, examMode, isLast, finishQuiz]);
-
-  const handleNext = useCallback(() => {
-    // Cancel any in-progress AI explanation
+  const resetAssistiveState = useCallback(() => {
     aiAbortRef.current?.abort();
     aiAbortRef.current = null;
     setAiText(null);
@@ -283,8 +264,77 @@ export default function QuizPlay() {
     setAnalysisResult(null);
     setAnalysisQuestionId(null);
     setNextTopicHint(null);
+    setShakeId(null);
+    setFeedbackAnim(null);
     setHintLevel(0);
     setHintData(null);
+  }, []);
+
+  const handleSkipQuestion = useCallback(() => {
+    // Skip is only meaningful in study mode before revealing the answer.
+    if (examMode || timedMode || revealed || questionQueue.length <= 1 || isLast) return;
+    resetAssistiveState();
+    setQuestionQueue((prev) => {
+      const next = [...prev];
+      const [skipped] = next.splice(currentIdx, 1);
+      next.push(skipped);
+      return next;
+    });
+    setSelectedNow([]);
+    setRevealed(false);
+  }, [examMode, timedMode, revealed, questionQueue.length, isLast, currentIdx, resetAssistiveState]);
+
+  const handleSelect = useCallback((optId: string) => {
+    if (revealed) return;
+    if (isMultiple) {
+      setSelectedNow((prev) =>
+        prev.includes(optId) ? prev.filter((id) => id !== optId) : [...prev, optId]
+      );
+      return;
+    }
+
+    setSelectedNow([optId]);
+    if (examMode) {
+      const newAnswers = { ...answers, [question.id]: [optId] };
+      setAnswers(newAnswers);
+      if (isLast) finishQuiz(newAnswers);
+      else {
+        setCurrentIdx((i) => i + 1);
+        setSelectedNow([]);
+      }
+    }
+  }, [revealed, isMultiple, examMode, answers, question, isLast, finishQuiz]);
+
+  const confirmSelection = useCallback(() => {
+    if (selectedNow.length === 0) return;
+    const newAnswers = { ...answers, [question.id]: selectedNow };
+    setAnswers(newAnswers);
+    if (examMode) {
+      if (isLast) finishQuiz(newAnswers);
+      else { setCurrentIdx((i) => i + 1); setSelectedNow([]); }
+    } else {
+      setRevealed(true);
+      const correctIdsForQuestion = getCorrectOptionIds(question.options);
+      const result = evaluateSelection(selectedNow, correctIdsForQuestion);
+      if (result === 'correct') {
+        setFeedbackAnim('correct');
+        window.setTimeout(() => setFeedbackAnim(null), 420);
+      } else if (result === 'partial') {
+        setFeedbackAnim('partial');
+        window.setTimeout(() => setFeedbackAnim(null), 600);
+      } else {
+        setFeedbackAnim('wrong');
+        setShakeId(selectedNow.find((id) => !correctIdsForQuestion.includes(id)) ?? selectedNow[0] ?? null);
+        window.setTimeout(() => {
+          setFeedbackAnim(null);
+          setShakeId(null);
+        }, 520);
+      }
+    }
+  }, [selectedNow, question, answers, examMode, isLast, finishQuiz]);
+
+  const handleNext = useCallback(() => {
+    resetAssistiveState();
     if (isLast) {
       finishQuiz(answers);
     } else {
@@ -292,100 +342,87 @@ export default function QuizPlay() {
       setSelectedNow([]);
       setRevealed(false);
     }
-  }, [isLast, answers, finishQuiz]);
+  }, [isLast, answers, finishQuiz, resetAssistiveState]);
 
   const handleAIExplain = useCallback(async () => {
-    if (!question || aiLoading || !activeProfileId) return;
-    if (analysisResult?.explanation) {
+    if (!question || aiLoading) return;
+    if (analysisResult?.explanation && analysisQuestionId === question.id) {
       setAiText(analysisResult.explanation);
       return;
     }
     setAiLoading(true);
+    const currentAnswers = answers[question.id] ?? selectedNow;
+    const userAnswer = getAnswerTextForOptionIds(question.options, currentAnswers);
+    const correctAnswer = getCorrectAnswerText(question);
+    const correctIdsForQuestion = getCorrectOptionIds(question.options);
+    const isCorrect = isCorrectSelection(currentAnswers, correctIdsForQuestion);
     try {
+      if (!activeProfileId) {
+        const fallbackAnalysis = buildAnalysisFallback({ question, userAnswer, correctAnswer, isCorrect });
+        setAnalysisResult(fallbackAnalysis);
+        setAnalysisQuestionId(question.id);
+        setAiText(fallbackAnalysis.explanation);
+        setNextTopicHint(fallbackAnalysis.recommendedTopic ?? null);
+        return;
+      }
       const { analyzeAnswer } = await loadAIEngine();
-      const currentAnswers = answers[question.id] ?? selectedNow;
-      const userAnswer = question.options.filter((option) => currentAnswers.includes(option.id)).map((option) => option.text).join(', ');
-      const correctAnswer = question.options.filter((option) => option.isCorrect).map((option) => option.text).join(', ');
-      const correctIdsForQuestion = getCorrectOptionIds(question.options);
-      const isCorrect = isCorrectSelection(currentAnswers, correctIdsForQuestion);
       const { analysis } = await analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect });
       setAnalysisResult(analysis);
       setAnalysisQuestionId(question.id);
       setAiText(analysis.explanation);
     } catch {
-      setAiText('Nu s-a putut genera explicatia. Verifica cheia API in Setari.');
+      const fallbackAnalysis = buildAnalysisFallback({ question, userAnswer, correctAnswer, isCorrect });
+      setAnalysisResult(fallbackAnalysis);
+      setAnalysisQuestionId(question.id);
+      setAiText(fallbackAnalysis.explanation);
+      setNextTopicHint(fallbackAnalysis.recommendedTopic ?? null);
     } finally {
       setAiLoading(false);
     }
-  }, [question, aiLoading, activeProfileId, analysisResult, answers, selectedNow]);
+  }, [question, aiLoading, activeProfileId, analysisResult, analysisQuestionId, answers, selectedNow]);
 
   useEffect(() => {
-    if (!revealed || examMode || !question || !activeProfileId || analysisQuestionId === question.id) return;
+    if (!revealed || examMode || !question || analysisQuestionId === question.id) return;
     const currentAnswers = answers[question.id] ?? selectedNow;
     if (currentAnswers.length === 0) return;
-    const userAnswer = question.options.filter((option) => currentAnswers.includes(option.id)).map((option) => option.text).join(', ');
     const correctIdsForQuestion = getCorrectOptionIds(question.options);
-    const correctAnswer = question.options.filter((option) => option.isCorrect).map((option) => option.text).join(', ');
     const isCorrect = isCorrectSelection(currentAnswers, correctIdsForQuestion);
-    let cancelled = false;
 
-    setAiLoading(true);
-    loadAIEngine()
-      .then(({ analyzeAnswer, WeaknessAnalyzer, getNextQuestion }) =>
-        analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect })
-          .then(({ analysis, profile }) => ({ analysis, profile, WeaknessAnalyzer, getNextQuestion }))
-      )
-      .then((result) => {
-        if (!result || cancelled) return;
-        const { profile, WeaknessAnalyzer, getNextQuestion, analysis } = result;
-        setAnalysisResult(analysis);
-        setAnalysisQuestionId(question.id);
-        if (!isCorrect) setAiText(analysis.explanation);
-        const weakTopics = WeaknessAnalyzer.getWeakTopics(profile.profileId);
-        const suggestion = getNextQuestion({
-          previousQuestions: profile.recentQuestions,
-          weakTopics,
-          recentMistakes: profile.recentMistakes,
-          accuracy: profile.globalAccuracy,
-          streak: profile.streak,
-          availableTime: profile.availableTime,
-          preferredDifficulty: profile.currentDifficulty,
-        });
-        setNextTopicHint(suggestion.topic);
-      })
-      .catch(() => {
-        if (!cancelled) setAiText((prev) => prev ?? 'Nu s-a putut genera analiza AI.');
-      })
-      .finally(() => {
-        if (!cancelled) setAiLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [revealed, examMode, question, activeProfileId, analysisQuestionId, answers, selectedNow]);
+    setAnalysisQuestionId(question.id);
+    if (!isCorrect) {
+      setNextTopicHint(question.tags?.[0] ?? question.difficulty ?? null);
+    }
+  }, [revealed, examMode, question, analysisQuestionId, answers, selectedNow]);
 
   // Auto-advance after reveal
+  // Dacă AI-ul a fost activ, așteptăm 5s după ce finalizează (nu 2s) pentru a citi explicația.
+  // Timer-ul pornește NUMAI dacă nu s-a cerut explicație AI (aiText null = nu a fost apăsat).
   useEffect(() => {
     if (!revealed || !autoAdvance || examMode || aiLoading || mnemonicLoading) return;
-    const t = setTimeout(handleNext, 2000);
+    // Dacă există text AI deja afișat, dăm 5s să-l citească; altfel 2s standard
+    const delay = aiText ? 5000 : 2000;
+    const t = setTimeout(handleNext, delay);
     return () => clearTimeout(t);
-  }, [revealed, autoAdvance, handleNext, examMode, aiLoading, mnemonicLoading]);
+  }, [revealed, autoAdvance, handleNext, examMode, aiLoading, mnemonicLoading, aiText]);
 
-  // Timed mode: auto-advance when timer expires (no answer = wrong)
+  // Timed mode: auto-advance when timer expires
+  // Dacă utilizatorul a selectat ceva (parțial), păstrăm selecția — nu o anulăm
   useEffect(() => {
     if (!timedMode || revealed || questionTimer > 0) return;
-    const newAnswers = { ...answers, [question?.id ?? '']: [] };
+    if (!question?.id) return;
+    // Păstrăm selectedNow dacă există (răspuns parțial mai bun decât nimic)
+    const effectiveAnswer = selectedNow.length > 0 ? selectedNow : [];
+    const newAnswers = { ...answers, [question.id]: effectiveAnswer };
     setAnswers(newAnswers);
     setSelectedNow([]);
     if (isLast) finishQuiz(newAnswers);
     else setCurrentIdx(i => i + 1);
-  }, [questionTimer, timedMode, revealed, answers, question, isLast, finishQuiz]);
+  }, [questionTimer, timedMode, revealed, question, isLast, finishQuiz, answers, selectedNow]);
 
   // Maintain latest state for keyboard handler without re-binding listener
-  const kbStateRef = useRef({ question, handleSelect, confirmMultiple, handleNext, handleGetHint, isMultiple, revealed, examMode });
+  const kbStateRef = useRef({ question, handleSelect, confirmSelection, handleNext, handleGetHint, isMultiple, revealed, examMode });
   useEffect(() => {
-    kbStateRef.current = { question, handleSelect, confirmMultiple, handleNext, handleGetHint, isMultiple, revealed, examMode };
+    kbStateRef.current = { question, handleSelect, confirmSelection, handleNext, handleGetHint, isMultiple, revealed, examMode };
   });
 
   // Keyboard shortcuts
@@ -407,7 +444,7 @@ export default function QuizPlay() {
       // Enter or Space to confirm/next
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        if (state.isMultiple && !state.revealed) { state.confirmMultiple(); }
+        if (!state.revealed) { state.confirmSelection(); }
         else if (state.revealed) { state.handleNext(); }
       }
       // 'H' for Hint
@@ -423,14 +460,38 @@ export default function QuizPlay() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost gasita.</p>
-          <Link to="/quizzes" style={{ color: theme.accent }}>Inapoi la grile</Link>
+          <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost găsită.</p>
+          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi la grile</Link>
         </div>
       </div>
     );
   }
 
   const correctIds = getCorrectOptionIds(question.options);
+  const currentSelection = answers[question.id] ?? selectedNow;
+  const selectionResult = evaluateSelection(currentSelection, correctIds);
+  const wasWrong = currentSelection.length > 0 && selectionResult === 'wrong';
+  const wasPartial = currentSelection.length > 0 && selectionResult === 'partial';
+  const selectedAnswerText = getAnswerTextForOptionIds(question.options, currentSelection);
+  const correctAnswerText = getCorrectAnswerText(question);
+  const studyFocusTopic = analysisResult?.recommendedTopic ?? analysisResult?.missingConcept ?? nextTopicHint ?? question.tags?.[0] ?? null;
+  const focusSurface = focusMode
+    ? (theme.isDark ? 'rgba(18, 22, 30, 0.96)' : 'rgba(255, 255, 255, 0.98)')
+    : theme.surface;
+  const focusSurface2 = focusMode
+    ? (theme.isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.055)')
+    : theme.surface2;
+  const focusBorder = focusMode
+    ? (theme.isDark ? 'rgba(255, 255, 255, 0.32)' : 'rgba(15, 23, 42, 0.16)')
+    : theme.border;
+  const focusPanelShadow = focusMode
+    ? (theme.isDark ? '0 24px 70px rgba(0,0,0,0.32)' : '0 24px 70px rgba(15,23,42,0.12)')
+    : undefined;
+  const questionCardSurface = focusMode
+    ? (theme.isDark
+      ? 'linear-gradient(180deg, rgba(24, 28, 38, 0.98), rgba(15, 18, 28, 0.97))'
+      : 'linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 249, 252, 0.98))')
+    : `linear-gradient(180deg, color-mix(in srgb, ${theme.surface} 88%, transparent), color-mix(in srgb, ${theme.surface2} 86%, transparent))`;
 
   const getOptionStyle = (optId: string): React.CSSProperties => {
     const isSelected = selectedNow.includes(optId);
@@ -442,33 +503,101 @@ export default function QuizPlay() {
         boxShadow: `0 8px 24px ${theme.accent}20`,
         transform: 'translateY(-1px)'
       };
-      return { background: theme.surface, border: `1px solid ${theme.border}` };
+      return {
+        background: focusSurface,
+        border: `${focusMode ? '1.5px' : '1px'} solid ${focusBorder}`,
+        boxShadow: focusMode ? focusPanelShadow : undefined,
+      };
     }
-    if (isCorrect) return { 
-      background: `${theme.success}12`, 
+    // Partial correct: selected correct options → green; missed correct → warning amber
+    if (isCorrect && isSelected) return {
+      background: `${theme.success}12`,
+      border: `2px solid ${theme.success}`,
+      boxShadow: `0 8px 24px ${theme.success}15`,
+    };
+    if (isCorrect && !isSelected && wasPartial) return {
+      background: `${theme.warning}10`,
+      border: `2px dashed ${theme.warning}`,
+      boxShadow: `0 8px 24px ${theme.warning}12`,
+    };
+    if (isCorrect) return {
+      background: `${theme.success}12`,
       border: `2px solid ${theme.success}`,
       boxShadow: `0 8px 24px ${theme.success}15`
     };
-    if (isSelected && !isCorrect) return { 
-      background: `${theme.danger}12`, 
+    if (isSelected && !isCorrect) return {
+      background: `${theme.danger}12`,
       border: `2px solid ${theme.danger}`,
       boxShadow: `0 8px 24px ${theme.danger}15`
     };
-    return { background: theme.surface, border: `1px solid ${theme.border}`, opacity: 0.4, filter: 'grayscale(0.5)' };
+    return {
+      background: focusMode ? focusSurface2 : theme.surface,
+      border: `1px solid ${focusMode ? focusBorder : theme.border}`,
+      opacity: focusMode ? 0.68 : 0.4,
+      filter: focusMode ? 'saturate(0.88)' : 'grayscale(0.5)',
+    };
   };
 
   const getOptionTextColor = (optId: string) => {
-    if (!revealed) return selectedNow.includes(optId) ? theme.text : theme.text;
-    if (correctIds.includes(optId)) return theme.success;
-    if (selectedNow.includes(optId)) return theme.danger;
+    if (!revealed) return theme.text;
+    const isCorrectOpt = correctIds.includes(optId);
+    const isSelected = selectedNow.includes(optId);
+    if (isCorrectOpt && isSelected) return theme.success;
+    if (isCorrectOpt && !isSelected && wasPartial) return theme.warning;
+    if (isCorrectOpt) return theme.success;
+    if (isSelected) return theme.danger;
     return theme.text3;
   };
 
   const difficultyColor = { easy: theme.success, medium: theme.warning, hard: theme.danger };
-  const difficultyLabel = { easy: 'Usor', medium: 'Mediu', hard: 'Dificil' };
-
+  const difficultyLabel = { easy: 'Ușor', medium: 'Mediu', hard: 'Dificil' };
+  const heroColors = HERO_COLOR_MAP[quiz.color] ?? HERO_COLOR_MAP.blue;
+  const denseLayout = density === 'dense';
+  const modeLabel = examMode
+    ? 'Simulare examen'
+    : timedMode
+      ? 'Test cronometrat'
+      : wrongQuestionsOnly && wrongQuestionsOnly.length > 0
+        ? 'Recuperare greșeli'
+        : 'Studiu ghidat';
+  const timerTone = questionTimer <= 10 ? theme.danger : timedMode ? theme.warning : theme.accent;
+  const progressSummary = `${answeredCount}/${questionQueue.length}`;
+  const shellPaddingClass = denseLayout
+    ? 'pt-3 pb-8 px-3 sm:px-4'
+    : shortHeight
+      ? 'pt-4 pb-10 px-3 sm:px-5'
+      : 'pt-6 pb-14 px-4 sm:px-6';
+  const heroPaddingClass = denseLayout
+    ? 'px-3.5 py-3.5 sm:px-4 sm:py-4'
+    : crampedHeight
+      ? 'px-4 py-4 sm:px-5 sm:py-5'
+      : 'px-5 py-5 sm:px-6 sm:py-6';
+  const contentCardPaddingClass = denseLayout ? 'p-3' : crampedHeight ? 'p-3 sm:p-4' : 'p-4 sm:p-5';
+  const questionCardPaddingClass = denseLayout ? 'p-3.5 sm:p-4' : crampedHeight ? 'p-4 sm:p-5' : 'p-5 sm:p-6';
+  const questionWidthClass = mobile ? 'max-w-full' : narrow ? 'max-w-[840px]' : tablet ? 'max-w-[920px]' : 'max-w-3xl';
+  const optionStackClass = denseLayout ? 'space-y-2 mb-3.5' : crampedHeight ? 'space-y-2.5 mb-4' : 'space-y-3 mb-5';
+  const optionPaddingClass = denseLayout ? 'p-3' : crampedHeight ? 'p-3.5 sm:p-4' : 'p-4';
+  // heroMetricsGridClass replaced by inline strip layout
+  const heroControlsWrapClass = denseLayout ? 'flex flex-wrap items-center gap-1.5' : 'flex flex-wrap items-center gap-2';
+  const optionTextClass = denseLayout ? 'text-[13px] sm:text-sm font-medium leading-relaxed' : 'text-sm font-medium';
+  const questionTextClass = denseLayout
+    ? 'text-base font-semibold leading-relaxed sm:text-lg'
+    : crampedHeight
+      ? 'text-lg font-semibold leading-snug sm:text-xl'
+      : 'text-xl font-semibold leading-snug';
+  const heroTitleStyle = denseLayout
+    ? { fontSize: `clamp(${(1.55 * uiScale).toFixed(2)}rem, ${(2.4 * uiScale).toFixed(2)}vw, ${(2.05 * uiScale).toFixed(2)}rem)` }
+    : undefined;
+  const heroSubtitleClass = denseLayout ? 'mt-1.5 max-w-2xl text-xs font-medium leading-relaxed text-white/78 sm:text-sm' : 'mt-2 max-w-2xl text-sm font-medium leading-relaxed text-white/78';
+  const questionImageMaxHeight = denseLayout ? 180 : shortHeight ? 220 : 260;
+  const showActionDock = compact || crampedHeight || mobile;
+  const selectionSummary = selectedNow.length > 0
+    ? `${selectedNow.length} variant${selectedNow.length === 1 ? 'ă selectată' : 'e selectate'}`
+    : examMode
+      ? 'Selectează și confirmă'
+      : 'Selectează un răspuns pentru a continua';
   return (
-    <div className="h-full overflow-y-auto relative">
+    <div className="premium-shell h-full overflow-y-auto relative">
       {/* Dark overlay for Focus Mode */}
       <AnimatePresence>
         {focusMode && (
@@ -476,8 +605,11 @@ export default function QuizPlay() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-0 bg-black/40 pointer-events-none"
-            style={{ backdropFilter: calmMotion ? 'none' : 'blur(2px)' }}
+            className="fixed inset-0 z-0 pointer-events-none"
+            style={{
+              background: theme.isDark ? 'rgba(0, 0, 0, 0.26)' : 'rgba(15, 23, 42, 0.08)',
+              backdropFilter: 'none',
+            }}
           />
         )}
       </AnimatePresence>
@@ -493,120 +625,229 @@ export default function QuizPlay() {
         />
       </div>
 
-    <div className="min-h-full pt-6 pb-10 px-6 relative z-10 flex flex-col">
-      {/* Top bar */}
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl mx-auto w-full mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <Link to={`/quiz/${quiz.id}`}
-            className="flex items-center gap-1.5 text-sm transition-all hover:opacity-80"
-            style={{ color: theme.text3 }}>
-            <ChevronLeft size={15} />{quiz.title}
-          </Link>
-          <div className="flex items-center gap-3">
-            {examMode && (
-              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ background: `${theme.danger}18`, color: theme.danger }}>
-                <GraduationCap size={10} />Examen
-              </span>
-            )}
-            {timedMode && (
-              <span className="flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-bold tabular-nums"
-                style={{
-                  background: questionTimer <= 10 ? `${theme.danger}22` : `${theme.warning}18`,
-                  color: questionTimer <= 10 ? theme.danger : theme.warning,
-                  border: `1px solid ${questionTimer <= 10 ? theme.danger + '40' : theme.warning + '30'}`,
-                }}>
-                <Clock size={10} />{questionTimer}s
-              </span>
-            )}
-            {!examMode && (
-              <button onClick={() => setAutoAdvance(!autoAdvance)}
-                title={autoAdvance ? 'Dezactiveaza auto-avansare' : 'Activeaza auto-avansare (1.5s)'}
-                className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
-                style={{ color: autoAdvance ? theme.accent : theme.text3 }}>
-                <Zap size={13} fill={autoAdvance ? theme.accent : 'none'} />
-              </button>
-            )}
-            {!examMode && !timedMode && !revealed && (
-              <button
-                onClick={handleSkipQuestion}
-                disabled={isLast || questionQueue.length <= 1}
-                title="Sari peste aceasta intrebare si revino la final"
-                className="flex items-center gap-1 text-xs transition-all hover:opacity-80 disabled:opacity-40"
-                style={{ color: theme.warning }}
+    <div className={`min-h-full relative z-10 ${shellPaddingClass}`}>
+      <div className="max-w-[1120px] mx-auto shell-main-stage">
+        {/* Session hero */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: calmMotion ? 0.18 : 0.45, ease: [0.16, 1, 0.3, 1] }}
+          className={`editorial-hero luxe-card overflow-hidden ${denseLayout ? 'mb-4 rounded-[26px] sm:rounded-[30px]' : 'mb-6 rounded-[32px] sm:rounded-[38px]'} ${heroPaddingClass}`}
+          style={{ background: heroColors.gradient, boxShadow: `0 26px 72px ${heroColors.glow}` }}
+        >
+          <div className={`relative z-10 flex flex-col ${denseLayout ? 'gap-4' : 'gap-6'}`}>
+            <div className={`flex flex-col ${denseLayout ? 'gap-4' : 'gap-5'} xl:flex-row xl:items-start xl:justify-between`}>
+              <div className="min-w-0 flex-1">
+                <Link
+                  to={`/quiz/${quiz.id}`}
+                  className={`inline-flex items-center gap-2 rounded-full font-black uppercase tracking-[0.18em] transition-all ${denseLayout ? 'px-2.5 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'}`}
+                  style={{ background: 'rgba(255,255,255,0.16)', color: 'rgba(255,255,255,0.88)' }}
+                >
+                  <ChevronLeft size={14} />
+                  Înapoi la detalii
+                </Link>
+
+                <div className={`${denseLayout ? 'mt-3 gap-3' : 'mt-4 gap-4'} flex items-start`}>
+                  <div
+                    className={`flex shrink-0 items-center justify-center shadow-2xl ${denseLayout ? 'h-11 w-11 rounded-[16px] text-2xl sm:h-12 sm:w-12' : 'h-14 w-14 rounded-[20px] text-3xl'}`}
+                    style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(12px)' }}
+                  >
+                    {quiz.emoji}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/65">
+                      Sesiune quiz
+                    </div>
+                    <h1 className={`page-title-compact mt-1 text-white ${denseLayout ? 'leading-tight' : ''}`} style={heroTitleStyle}>{quiz.title}</h1>
+                    <p className={heroSubtitleClass}>
+                      {quiz.category} • {modeLabel}
+                    </p>
+                    <div className={`${denseLayout ? 'mt-2 gap-1.5' : 'mt-3 gap-2'} flex flex-wrap items-center`}>
+                      <span className="rounded-full border border-white/18 bg-white/12 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white/90">
+                        Întrebarea {currentIdx + 1} din {questionQueue.length}
+                      </span>
+                      {isMultiple && (
+                        <span className="rounded-full border border-white/18 bg-white/12 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white/90">
+                          Răspunsuri multiple
+                        </span>
+                      )}
+                      {quiz.penaltyMode && (
+                        <span className="rounded-full border border-white/18 bg-white/12 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white/90">
+                          Scor cu penalizare
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics strip — compact, no wrapping */}
+              <div
+                className="flex shrink-0 self-start items-stretch divide-x rounded-[20px] overflow-hidden border border-white/18"
+                style={{ background: 'rgba(255,255,255,0.12)' }}
               >
-                <ChevronRight size={13} />
-                Skip
-              </button>
-            )}
-            <button onClick={() => setShowKeys(!showKeys)}
-              className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
-              style={{ color: theme.text3 }}>
-              <Keyboard size={13} />
-            </button>
-            <button onClick={toggleFocusMode}
-              title={focusMode ? 'Iesi din Modul Focus' : 'Intra in Modul Focus'}
-              className="flex items-center gap-1 text-xs transition-all hover:opacity-80"
-              style={{ color: focusMode ? theme.accent : theme.text3 }}>
-              <Zap size={13} fill={focusMode ? theme.accent : 'none'} />
-            </button>
-            <div className="flex items-center gap-1.5 text-sm" style={{ color: theme.text3 }}>
-              <Clock size={13} />{formatQuizPlayTime(timeElapsed)}
+                {[
+                  { label: 'Progres', value: progressSummary },
+                  { label: 'Timp', value: formatQuizPlayTime(timeElapsed) },
+                  { label: timedMode ? 'Timer' : 'Ritm', value: timedMode ? `${questionTimer}s` : autoAdvance ? 'Auto' : 'Man.' , accent: timedMode ? timerTone : undefined },
+                  { label: 'Rămase', value: `${Math.max(questionQueue.length - answeredCount, 0)}` },
+                ].map((metric, i) => (
+                  <div
+                    key={metric.label}
+                    className="flex flex-col items-center justify-center px-4 py-3 gap-1"
+                    style={{ borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.16)' : 'none' }}
+                  >
+                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/50 whitespace-nowrap leading-none">
+                      {metric.label}
+                    </span>
+                    <span
+                      className="text-sm font-black tracking-tight whitespace-nowrap leading-none"
+                      style={{ color: metric.accent ?? 'rgba(255,255,255,0.95)' }}
+                    >
+                      {metric.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 text-sm" style={{ color: theme.text3 }}>
-              <BookOpen size={13} />{currentIdx + 1}/{questionQueue.length}
+
+            <div className={`grid ${denseLayout ? 'gap-3' : 'gap-4'} xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end`}>
+              <div className={`rounded-[24px] border border-white/14 bg-black/12 ${denseLayout ? 'px-3 py-3' : 'px-4 py-4'}`}>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/65">Progres sesiune</span>
+                  <span className="text-sm font-black text-white">{Math.round(progress)}%</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden bg-white/16">
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.98), rgba(255,255,255,0.62))' }}
+                    animate={{ width: `${progress}%` }}
+                    transition={calmMotion ? { duration: 0.2, ease: 'linear' } : { duration: 0.4, ease: 'easeOut' }}
+                  />
+                </div>
+              </div>
+
+              <div className={heroControlsWrapClass}>
+                {examMode && (
+                  <span className="rounded-full border border-white/18 bg-white/12 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/90">
+                    <span className="inline-flex items-center gap-1.5">
+                      <GraduationCap size={12} />
+                      Examen
+                    </span>
+                  </span>
+                )}
+                {!examMode && (
+                  <button
+                    onClick={() => setAutoAdvance(!autoAdvance)}
+                    title={autoAdvance ? 'Dezactivează auto-avansarea' : 'Activează auto-avansarea (2 secunde)'}
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                    style={{
+                      background: autoAdvance ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.10)',
+                      borderColor: autoAdvance ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.14)',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Zap size={12} fill={autoAdvance ? '#FFFFFF' : 'none'} />
+                      Auto
+                    </span>
+                  </button>
+                )}
+                {!examMode && !timedMode && !revealed && (
+                  <button
+                    onClick={handleSkipQuestion}
+                    disabled={isLast || questionQueue.length <= 1}
+                    title="Sari peste această întrebare și revino la final"
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] disabled:opacity-45"
+                    style={{
+                      background: 'rgba(255,255,255,0.10)',
+                      borderColor: 'rgba(255,255,255,0.14)',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <ChevronRight size={12} />
+                      Amână
+                    </span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowKeys(!showKeys)}
+                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                  style={{ background: 'rgba(255,255,255,0.10)', borderColor: 'rgba(255,255,255,0.14)', color: '#FFFFFF' }}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Keyboard size={12} />
+                    Taste
+                  </span>
+                </button>
+                <button
+                  onClick={toggleFocusMode}
+                  title={focusMode ? 'Ieși din Modul Focus' : 'Intră în Modul Focus'}
+                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                  style={{
+                    background: focusMode ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.10)',
+                    borderColor: focusMode ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.14)',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Eye size={12} />
+                    Focus
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Progress */}
-        <div className="h-1 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
-          <motion.div className="h-full rounded-full"
-            style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.4, ease: 'easeOut' }}
-          />
-        </div>
-
-        {/* Keyboard hint */}
-        <AnimatePresence>
-          {showKeys && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-3 p-3 rounded-xl text-xs flex flex-wrap gap-3"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text3 }}>
-              {['1-4 / A-D: selecteaza optiune', 'Enter / Space: confirmare / urmator'].map((hint) => (
-                <span key={hint} className="font-mono">{hint}</span>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+          <AnimatePresence>
+            {showKeys && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="relative z-10 mt-4 flex flex-wrap gap-2 overflow-hidden"
+              >
+                {['1-4 / A-D selectează opțiunea', 'Enter / Space confirmă sau continuă', 'H deschide indiciul'].map((hint) => (
+                  <span
+                    key={hint}
+                    className="rounded-full border border-white/16 bg-white/12 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/82"
+                  >
+                    {hint}
+                  </span>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
 
       {/* Question */}
-      <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
+      <div className={`${questionWidthClass} mx-auto w-full flex flex-col`}>
+        <div
+          className={`glass-panel premium-shadow rounded-[32px] ${contentCardPaddingClass}`}
+          style={focusMode ? { background: focusSurface, borderColor: focusBorder, boxShadow: focusPanelShadow } : undefined}
+        >
         <AnimatePresence mode="wait">
           <motion.div key={`${question.id}-${currentIdx}`}
-            initial={calmMotion ? { opacity: 0 } : { opacity: 0, x: 50, scale: 0.98 }}
-            animate={calmMotion ? { opacity: 1 } : { opacity: 1, x: 0, scale: 1 }}
-            exit={calmMotion ? { opacity: 0 } : { opacity: 0, x: -50, scale: 0.98 }}
-            transition={calmMotion
-              ? { duration: 0.18 }
-              : {
-                  type: "spring",
-                  stiffness: 350,
-                  damping: 30,
-                  opacity: { duration: 0.2 }
-                }}
-            className={`flex-1 flex flex-col ${feedbackAnim === 'wrong' ? 'anim-shake' : feedbackAnim === 'correct' ? 'anim-bounce' : ''}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: calmMotion ? 0.18 : 0.25 }}
+            className={`flex-1 flex flex-col ${feedbackAnim === 'wrong' ? 'anim-shake' : feedbackAnim === 'correct' ? 'anim-bounce' : feedbackAnim === 'partial' ? 'anim-pulse-partial' : ''}`}
           >
             {/* Question card */}
-            <div className="rounded-3xl p-6 mb-5"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-              <div className="flex items-center gap-2 mb-3">
+            <div
+              className={`editorial-hero rounded-[30px] mb-5 ${questionCardPaddingClass}`}
+              style={{
+                background: questionCardSurface,
+                border: `1px solid ${focusMode ? focusBorder : theme.border}`,
+                boxShadow: focusMode ? `inset 0 1px 0 rgba(255,255,255,0.12), ${focusPanelShadow}` : undefined,
+              }}
+            >
+              <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>
-                  Intrebarea {currentIdx + 1}
+                  {modeLabel}
                 </span>
                 {isMultiple && (
                   <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
@@ -621,135 +862,59 @@ export default function QuizPlay() {
                   </span>
                 )}
               </div>
-              <p className="text-xl font-semibold leading-snug" style={{ color: theme.text }}>{question.text}</p>
+              <p className="text-xs font-black uppercase tracking-[0.22em] mb-2" style={{ color: theme.text3 }}>
+                Întrebarea {currentIdx + 1} din {questionQueue.length}
+              </p>
+              <p className={questionTextClass} style={{ color: theme.text }}>{question.text}</p>
 
               {/* Question image */}
               {question.imageUrl && (
                 <div className="mt-4">
-                  <QuizImage src={question.imageUrl} maxHeight={260} />
+                  <QuizImage src={question.imageUrl} maxHeight={questionImageMaxHeight} />
                 </div>
               )}
 
               {isMultiple && !revealed && (
                 <p className="text-sm mt-2" style={{ color: theme.text3 }}>
-                  Selecteaza toate raspunsurile corecte, apoi apasa "Confirma"
+                  Selectează toate răspunsurile corecte, apoi apasă "Confirmă"
                 </p>
               )}
             </div>
 
-            {/* AI Hint Button (Premium & Smart) */}
-            {!revealed && !examMode && hasKey() && (
-              <div className="mb-5">
-                <AnimatePresence mode="wait">
-                  {hintLevel === 0 ? (
-                    <motion.button
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ 
-                        opacity: 1, 
-                        y: 0,
-                        scale: showSmartNudge && !calmMotion ? [1, 1.05, 1] : 1,
-                      }}
-                      transition={showSmartNudge && !calmMotion
-                        ? { scale: { repeat: Infinity, duration: 2, ease: "easeInOut" } }
-                        : { duration: 0.18 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      onClick={handleGetHint}
-                      disabled={hintLoading}
-                      className="group relative flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all overflow-hidden"
-                      style={{ 
-                        background: theme.surface, 
-                        border: `1px solid ${showSmartNudge ? theme.accent : theme.border}`,
-                        color: theme.accent,
-                        boxShadow: showSmartNudge ? `0 0 20px ${theme.accent}30` : `0 4px 12px ${theme.accent}10`
-                      }}
-                      whileHover={calmMotion ? undefined : { scale: 1.02, boxShadow: `0 6px 20px ${theme.accent}30` }}
-                      whileTap={calmMotion ? undefined : { scale: 0.98 }}
-                    >
-                      {/* Premium Shimmer Effect */}
-                      {!calmMotion && (
-                        <motion.div 
-                          className="absolute inset-0 z-0"
-                          animate={{ x: ['-100%', '200%'] }}
-                          transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
-                          style={{ 
-                            background: `linear-gradient(90deg, transparent, ${theme.accent}15, transparent)`,
-                            width: '50%'
-                          }}
-                        />
-                      )}
-
-                      <div className="relative z-10 flex items-center gap-2">
-                        {hintLoading ? (
-                          <Loader2 size={13} className="animate-spin" />
-                        ) : (
-                          <Sparkles size={13} className={showSmartNudge ? "animate-pulse" : ""} />
-                        )}
-                        <span>{hintLoading ? 'Analizez...' : 'Indiciu AI'}</span>
-                        <span className="ml-1 font-mono text-[9px] border border-current px-1 rounded" style={{ color: theme.text3 }}>H</span>
-                      </div>
-                    </motion.button>
-                  ) : (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      className="p-4 rounded-[24px] relative overflow-hidden glass-panel"
-                      style={{ 
-                        background: `${theme.accent}08`, 
-                        border: `1px solid ${theme.accent}25`,
-                        boxShadow: `0 8px 32px ${theme.accent}10`
-                      }}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <Sparkles size={14} style={{ color: theme.accent }} />
-                          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accent }}>
-                            Indiciu AI - Nivel {hintLevel}/3
-                          </span>
-                        </div>
-                        {hintLevel < 3 && (
-                          <button 
-                            onClick={handleGetHint}
-                            className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all hover:opacity-80"
-                            style={{ background: `${theme.accent}15`, color: theme.accent }}>
-                            + Mai mult
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-sm font-medium leading-relaxed italic" style={{ color: theme.text }}>
-                        "{hintLevel === 1 ? hintData?.light : hintLevel === 2 ? hintData?.medium : hintData?.full}"
-                      </p>
-                      
-                      {/* Subtle decorative glow */}
-                      <div className="absolute -right-10 -top-10 w-32 h-32 rounded-full blur-[60px] opacity-20"
-                        style={{ background: theme.accent }} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
+            <HintPanel
+              calmMotion={calmMotion}
+              examMode={examMode}
+                usesRemoteAI={hasKey}
+              hintLevel={hintLevel}
+              hintData={hintData}
+              hintLoading={hintLoading}
+              revealed={revealed}
+              showSmartNudge={showSmartNudge}
+              onGetHint={handleGetHint}
+              theme={theme}
+            />
 
             {/* Options */}
-            <div className="space-y-2.5 mb-5">
+            <div className={optionStackClass}>
               {question.options.map((opt: Option, i: number) => (
                 <motion.button key={opt.id}
                   initial={{ opacity: 0, y: 10 }}
-                  animate={
-                    shakeId === opt.id
-                      ? { x: [0, -10, 10, -8, 8, -4, 4, 0], opacity: 1, y: 0 }
-                      : (revealed && correctIds.includes(opt.id))
-                        ? { opacity: 1, y: 0, scale: [1, 1.05, 1] }
-                        : { opacity: 1, y: 0 }
-                  }
-                  transition={shakeId === opt.id
-                    ? { duration: 0.3, ease: 'easeInOut' }
-                    : (revealed && correctIds.includes(opt.id))
-                      ? { duration: 0.6, repeat: 0 }
-                      : { delay: i * 0.05 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    x: shakeId === opt.id && !calmMotion ? [0, -10, 10, -8, 8, -4, 4, 0] : 0,
+                    scale: (revealed && correctIds.includes(opt.id) && !calmMotion) ? [1, 1.05, 1] : 1
+                  }}
+                  transition={{
+                    duration: shakeId === opt.id ? 0.3 : revealed && correctIds.includes(opt.id) ? 0.6 : 0.25,
+                    delay: i * 0.03,
+                    ease: 'easeOut'
+                  }}
                   onClick={() => handleSelect(opt.id)}
                   disabled={revealed && !isMultiple}
-                  className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
+                  className={`premium-option-card w-full flex items-center gap-4 rounded-[24px] text-left transition-all ${optionPaddingClass}`}
                   style={getOptionStyle(opt.id)}
-                  whileHover={!revealed && !calmMotion ? { scale: 1.01 } : {}}
+                  whileHover={!revealed ? { scale: calmMotion ? 1.005 : 1.01 } : {}}
                   whileTap={!revealed && !calmMotion ? { scale: 0.99 } : {}}
                 >
                   {/* Checkbox/Radio */}
@@ -765,11 +930,11 @@ export default function QuizPlay() {
                           ? (revealed ? '\u00D7' : (isMultiple ? '\u25CF' : String.fromCharCode(65 + i))) 
                           : String.fromCharCode(65 + i))}
                   </div>
-                  <span className="text-sm font-medium" style={{ color: getOptionTextColor(opt.id) }}>
+                  <span className={optionTextClass} style={{ color: getOptionTextColor(opt.id) }}>
                     {opt.text}
                   </span>
                   {/* Keyboard hint badge */}
-                  {!revealed && (
+                  {!revealed && !denseLayout && (
                     <span className="ml-auto text-xs font-mono rounded px-1.5 py-0.5 flex-shrink-0"
                       style={{ background: theme.surface2, color: theme.text3 }}>
                       {i + 1}
@@ -779,23 +944,39 @@ export default function QuizPlay() {
               ))}
             </div>
 
-            {/* Confirm button for multi-select */}
+            {/* Confirm button */}
             <AnimatePresence>
-              {isMultiple && !revealed && (
-                <motion.button
+              {showActionDock ? null : ((!revealed && !examMode) || (isMultiple && examMode && !revealed)) ? (
+                <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  onClick={confirmMultiple}
-                  disabled={selectedNow.length === 0}
-                  className="w-full py-3.5 rounded-2xl font-semibold text-white mb-4 disabled:opacity-30 transition-all hover:opacity-90"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent2} 0%, ${theme.accent} 100%)` }}
-                  whileHover={calmMotion ? undefined : { scale: 1.01 }}
-                  whileTap={calmMotion ? undefined : { scale: 0.98 }}
+                  className="mb-4 flex flex-wrap items-center gap-3"
                 >
-                  Confirma selectia ({selectedNow.length} {selectedNow.length === 1 ? 'ales' : 'alese'})
-                </motion.button>
-              )}
+                  <motion.button
+                    onClick={confirmSelection}
+                    disabled={selectedNow.length === 0}
+                    className="press-feedback flex-1 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-35 sm:flex-none sm:min-w-[220px]"
+                    style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 18px 36px ${theme.accent}22` }}
+                    whileHover={calmMotion ? undefined : { scale: 1.01 }}
+                    whileTap={calmMotion ? undefined : { scale: 0.98 }}
+                  >
+                    {examMode
+                      ? `Confirmă (${selectedNow.length})`
+                      : isMultiple
+                        ? `Verifică selecția (${selectedNow.length})`
+                        : 'Verifică răspunsul'}
+                  </motion.button>
+
+                  {!examMode && (
+                    <div className="rounded-[20px] border px-4 py-3 text-xs font-bold" style={{ background: theme.surface2, borderColor: theme.border, color: theme.text3 }}>
+                      {selectedNow.length > 0
+                        ? `${selectedNow.length} variant${selectedNow.length === 1 ? 'ă selectată' : 'e selectate'}`
+                        : 'Selectează un răspuns pentru a continua'}
+                    </div>
+                  )}
+                </motion.div>
+              ) : null}
             </AnimatePresence>
 
             {/* Explanation */}
@@ -809,14 +990,14 @@ export default function QuizPlay() {
                   style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}
                 >
                   <p className="text-sm" style={{ color: theme.text2 }}>
-                    <span className="font-semibold" style={{ color: theme.accent }}>Explicatie: </span>
+                    <span className="font-semibold" style={{ color: theme.accent }}>Explicație: </span>
                     {question.explanation}
                   </p>
                   {autoAdvance && (
                     <div className="mt-3 h-0.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
                       <motion.div className="h-full rounded-full"
                         initial={{ width: '0%' }} animate={{ width: '100%' }}
-                        transition={{ duration: 1.5, ease: 'linear' }}
+                        transition={{ duration: calmMotion ? 1 : 1.5, ease: 'linear' }}
                         style={{ background: theme.accent }} />
                     </div>
                   )}
@@ -824,132 +1005,140 @@ export default function QuizPlay() {
               )}
             </AnimatePresence>
 
-            {/* AI inline explanation */}
-            <AnimatePresence mode="wait">
-              {revealed && !examMode && hasKey() && (
+            <AIExplanationPanel
+              aiLoading={aiLoading}
+              aiText={aiText}
+              analysisResult={analysisResult}
+              examMode={examMode}
+                usesRemoteAI={hasKey}
+              nextTopicHint={nextTopicHint}
+              revealed={revealed}
+              onExplain={handleAIExplain}
+              theme={theme}
+            />
+
+            <MnemonicPanel
+              examMode={examMode}
+                usesRemoteAI={hasKey}
+              mnemonicLoading={mnemonicLoading}
+              mnemonicText={mnemonicText}
+              revealed={revealed}
+              wasWrong={wasWrong}
+              onGenerate={async () => {
+                setMnemonicLoading(true);
+                try {
+                  const correctAnswer = getCorrectAnswerText(question);
+                  const concept = analysisResult?.missingConcept || analysisResult?.recommendedTopic || correctAnswer || question.text;
+                  if (!activeProfileId) {
+                    setMnemonicText(buildMnemonicFallback(concept, correctAnswer));
+                    return;
+                  }
+                  const { getUserProfile, generateMnemonicForConcept } = await loadAIEngine();
+                  const profile = getUserProfile(activeProfileId);
+                  const repeatedMistake = profile.mistakeBank.find((entry) => entry.questionId === question.id)?.wrongCount ?? 0;
+                  const targetConcept = repeatedMistake >= 2 ? concept : `${correctAnswer} | ${question.text}`;
+                  const mnemonic = await generateMnemonicForConcept(targetConcept, correctAnswer);
+                  setMnemonicText(mnemonic);
+                } catch {
+                  const correctAnswer = getCorrectAnswerText(question);
+                  const concept = analysisResult?.missingConcept || analysisResult?.recommendedTopic || correctAnswer || question.text;
+                  setMnemonicText(buildMnemonicFallback(concept, correctAnswer));
+                } finally {
+                  setMnemonicLoading(false);
+                }
+              }}
+              theme={theme}
+            />
+
+            <AnimatePresence>
+            {revealed && !examMode && hasKey && (
                 <motion.div
-                  initial={{ opacity: 0, y: 15, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.98 }}
-                  transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-                  className="mb-4"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className="luxe-card mb-4 rounded-[28px] p-4"
+                  style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
                 >
-                  {aiText === null ? (
-                    <button
-                      onClick={handleAIExplain}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
-                      style={{
-                        background: `${theme.accent2}15`,
-                        border: `1px solid ${theme.accent2}30`,
-                        color: theme.accent2,
-                      }}
-                    >
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="citation-pill inline-flex items-center gap-1.5">
                       <Sparkles size={12} />
-                      Explica AI
-                    </button>
-                  ) : (
-                    <motion.div
-                      layout
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="p-5 rounded-3xl"
-                      style={{ background: `${theme.accent2}0C`, border: `1.5px solid ${theme.accent2}25` }}
+                      Continuă cu AI
+                    </span>
+                    {studyFocusTopic && (
+                      <span className="premium-chip rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+                        Focus: {studyFocusTopic}
+                      </span>
+                    )}
+                    {wasWrong && (
+                      <span className="premium-chip rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.danger }}>
+                        Necesită consolidare
+                      </span>
+                    )}
+                    {wasPartial && (
+                      <span className="premium-chip rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.warning }}>
+                        Parțial corect — mai exersează
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="mb-3 text-sm font-medium leading-relaxed" style={{ color: theme.text }}>
+                    Continuă imediat în chat cu contextul acestei întrebări, fără să pierzi ritmul sesiunii.
+                  </p>
+
+                  <div className="grid gap-2.5 sm:grid-cols-3">
+                    <button
+                      onClick={() => openStudyChat(
+                        'explain',
+                        `Explică-mi clar întrebarea aceasta și de ce răspunsul corect este "${correctAnswerText}". Întrebare: ${question.text}. Răspunsul meu: ${selectedAnswerText || "niciun răspuns"}.`,
+                      )}
+                      className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
+                      style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
                     >
-                      <div className="flex items-center gap-2 mb-3">
-                        <Sparkles size={14} style={{ color: theme.accent2 }} />
-                        <span className="text-xs font-black uppercase tracking-widest" style={{ color: theme.accent2 }}>
-                          Explicatie AI
-                        </span>
-                        {aiLoading && (
-                          <motion.div
-                            animate={{ opacity: [1, 0.3, 1] }}
-                            transition={{ duration: 1, repeat: Infinity }}
-                            className="w-1.5 h-1.5 rounded-full ml-1"
-                            style={{ background: theme.accent2 }}
-                          />
-                        )}
+                      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em]">
+                        <MessageSquare size={14} style={{ color: theme.accent2 }} />
+                        Discută răspunsul
                       </div>
-                      <p className="text-sm leading-generous whitespace-pre-wrap" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
-                        {aiText}
-                        {aiLoading && <span className="animate-pulse">...</span>}
-                      </p>
-                      {analysisResult?.mistakeType && (
-                        <div className="mt-4 pt-4 border-t border-dashed opacity-60" style={{ borderColor: `${theme.accent2}30` }}>
-                          <div className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: theme.accent2 }}>Analiza eroare</div>
-                          <div className="text-xs" style={{ color: theme.text3 }}>{analysisResult.mistakeType}</div>
-                        </div>
+                      <div className="mt-1 text-xs opacity-65" style={{ color: theme.text }}>
+                        Deschide explicația completă în AI chat.
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => openStudyChat(
+                        'test',
+                        `Testează-mă rapid pe tema "${studyFocusTopic ?? question.text}". Pune-mi 3 întrebări scurte, una câte una, și verifică dacă am înțeles.`,
                       )}
-                      {analysisResult?.rule && (
-                        <div className="mt-2 text-xs italic" style={{ color: theme.text3 }}>
-                          Regula: {analysisResult.rule}
-                        </div>
+                      className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
+                      style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
+                    >
+                      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em]">
+                        <Sparkles size={14} style={{ color: theme.accent }} />
+                        Mini-test pe focus
+                      </div>
+                      <div className="mt-1 text-xs opacity-65" style={{ color: theme.text }}>
+                        Fixează imediat conceptul vulnerabil.
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => openStudyChat(
+                        'summarize',
+                        `Rezumă-mi pentru examen regula, capcanele și diferențele-cheie pentru această întrebare. Întrebare: ${question.text}. Răspuns corect: ${correctAnswerText}.${analysisResult?.rule ? ` Regulă actuală: ${analysisResult.rule}.` : ''}`,
                       )}
-                      {nextTopicHint && (
-                        <div className="mt-2 text-xs font-bold" style={{ color: theme.accent }}>
-                          Focus AI recomandat: {nextTopicHint}
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
+                      className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
+                      style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
+                    >
+                      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em]">
+                        <BookOpen size={14} style={{ color: theme.warning }} />
+                        Fixează regula
+                      </div>
+                      <div className="mt-1 text-xs opacity-65" style={{ color: theme.text }}>
+                        Comprimă ideea în format de examen.
+                      </div>
+                    </button>
+                  </div>
                 </motion.div>
               )}
-            </AnimatePresence>
-
-            {/* Mnemonic AI - only when answer was wrong */}
-            <AnimatePresence>
-              {revealed && !examMode && hasKey() && (() => {
-                const userSel = answers[question.id] ?? selectedNow;
-                const correctIds = question.options.filter(o => o.isCorrect).map(o => o.id);
-                const wasWrong = !(userSel.length === correctIds.length && correctIds.every(id => userSel.includes(id)));
-                if (!wasWrong) return null;
-                const correctAnswer = question.options.find(o => o.isCorrect)?.text ?? '';
-                return (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mb-4"
-                  >
-                    {mnemonicText === null ? (
-                      <button
-                        disabled={mnemonicLoading}
-                        onClick={async () => {
-                          if (!activeProfileId) return;
-                          setMnemonicLoading(true);
-                          try {
-                            const { getUserProfile, generateMnemonicForConcept } = await loadAIEngine();
-                            const profile = getUserProfile(activeProfileId);
-                            const concept = analysisResult?.missingConcept || analysisResult?.recommendedTopic || correctAnswer || question.text;
-                            const repeatedMistake = profile.mistakeBank.find((entry) => entry.questionId === question.id)?.wrongCount ?? 0;
-                            const correctAnswerStr = question.options.find((o) => o.isCorrect)?.text || '';
-                            const targetConcept = repeatedMistake >= 2 ? concept : `${correctAnswerStr} | ${question.text}`;
-                            const m = await generateMnemonicForConcept(targetConcept, correctAnswerStr);
-                            setMnemonicText(m);
-                          } catch { setMnemonicText('Nu s-a putut genera mnemonicul.'); }
-                          finally { setMnemonicLoading(false); }
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
-                        style={{ background: `${theme.warning}15`, border: `1px solid ${theme.warning}30`, color: theme.warning }}
-                      >
-                        {mnemonicLoading
-                          ? <><Loader2 size={12} className="animate-spin" />Generez mnemonic...</>
-                          : <><Zap size={12} />Mnemonic AI</>}
-                      </button>
-                    ) : (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.98 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="p-4 rounded-2xl"
-                        style={{ background: `${theme.warning}0C`, border: `1px solid ${theme.warning}25` }}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Zap size={12} style={{ color: theme.warning }} />
-                          <span className="text-xs font-semibold" style={{ color: theme.warning }}>Mnemonic</span>
-                        </div>
-                        <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{mnemonicText}</p>
-                      </motion.div>
-                    )}
-                  </motion.div>
-                );
-              })()}
             </AnimatePresence>
 
             {/* Personal note */}
@@ -964,10 +1153,10 @@ export default function QuizPlay() {
                   <div className="flex items-center gap-2 px-3 py-2"
                     style={{ background: theme.surface2, borderBottom: `1px solid ${theme.border}` }}>
                     <StickyNote size={12} style={{ color: theme.warning }} />
-                    <span className="text-xs font-medium" style={{ color: theme.text3 }}>Notita mea</span>
+                    <span className="text-xs font-medium" style={{ color: theme.text3 }}>Notița mea</span>
                   </div>
                   <textarea
-                    placeholder="Adauga o notita pentru aceasta intrebare..."
+                    placeholder="Adaugă o notiță pentru această întrebare..."
                     value={currentNote}
                     onChange={e => setNote(question.id, e.target.value)}
                     rows={2}
@@ -980,22 +1169,73 @@ export default function QuizPlay() {
 
             {/* Next button */}
             <AnimatePresence>
-              {revealed && (
+              {revealed && !showActionDock && (
                 <motion.button
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   onClick={handleNext}
-                  className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2"
+                  className={`w-full rounded-2xl font-semibold text-white flex items-center justify-center gap-2 ${denseLayout ? 'py-3.5 text-sm' : 'py-4'}`}
                   style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
                   whileHover={calmMotion ? undefined : { scale: 1.01 }}
                   whileTap={calmMotion ? undefined : { scale: 0.98 }}
                 >
-                  {isLast ? 'Vezi rezultatele' : (<>Urmator <ChevronRight size={16} /></>)}
+                  {isLast ? 'Vezi rezultatele' : (<>Următor <ChevronRight size={16} /></>)}
                 </motion.button>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {showActionDock && (
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  className="sticky bottom-3 z-20 mt-4"
+                >
+                  <div className={`glass-panel premium-shadow rounded-[24px] border ${denseLayout ? 'px-3 py-3' : 'px-4 py-4'}`}>
+                    <div className={`flex items-start justify-between gap-3 ${mobile ? 'flex-col' : ''}`}>
+                      <div className="min-w-0">
+                        <p className={`font-semibold leading-relaxed ${denseLayout ? 'text-[13px] sm:text-sm' : 'text-sm'}`} style={{ color: theme.text }}>
+                          {selectionSummary}
+                        </p>
+                      </div>
+
+                      <div className={`flex items-center gap-2 ${mobile ? 'w-full flex-col' : 'shrink-0'}`}>
+                        {!revealed && (
+                          <div
+                            className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] ${mobile ? 'w-full text-center' : ''}`}
+                            style={{ background: theme.surface2, borderColor: theme.border, color: timedMode ? timerTone : theme.text3 }}
+                          >
+                            {timedMode ? `Timer ${questionTimer}s` : `Întrebarea ${currentIdx + 1}/${questionQueue.length}`}
+                          </div>
+                        )}
+
+                        <motion.button
+                          onClick={revealed ? handleNext : confirmSelection}
+                          disabled={!revealed && selectedNow.length === 0}
+                          className={`press-feedback rounded-[20px] text-sm font-black text-white disabled:opacity-35 ${denseLayout ? 'px-4 py-2.5' : 'px-5 py-3'} ${mobile ? 'w-full' : 'min-w-[220px]'}`}
+                          style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 18px 36px ${theme.accent}22` }}
+                          whileHover={calmMotion ? undefined : { scale: 1.01 }}
+                          whileTap={calmMotion ? undefined : { scale: 0.98 }}
+                        >
+                          {revealed
+                            ? (isLast ? 'Vezi rezultatele' : 'Următor')
+                            : examMode
+                              ? `Confirmă (${selectedNow.length})`
+                              : isMultiple
+                                ? `Verifică selecția (${selectedNow.length})`
+                                : 'Verifică răspunsul'}
+                        </motion.button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
               )}
             </AnimatePresence>
           </motion.div>
         </AnimatePresence>
+        </div>
+      </div>
       </div>
     </div>
     </div>

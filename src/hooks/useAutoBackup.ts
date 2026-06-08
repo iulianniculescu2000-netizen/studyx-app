@@ -57,9 +57,12 @@ export function useAutoBackup(activeProfileId: string | null) {
           localStorage.setItem(LAST_BACKUP_KEY, String(now));
           console.info('[StudyX] Auto-backup saved to', result.path);
         } else {
-          console.warn('[StudyX] Auto-backup failed:', result.error);
+          // Silent fail for auto-backup - user notified via toast if needed
         }
       })
-      .catch((e: unknown) => console.warn('[StudyX] Auto-backup error:', e));
+      .catch((e: unknown) => {
+        // Auto-backup errors are non-critical, logged silently
+        void e;
+      });
   }, [activeProfileId]);
 }

@@ -135,7 +135,7 @@ async function write(profileId: string, ns: string, data: unknown) {
     await previousLock;
     // 1. Try Disk Storage (Premium Path)
     if (window.electronAPI?.storageSave) {
-      const success = await window.electronAPI.storageSave(profileId, ns, data);
+      const success = await window.electronAPI.storageSave(profileId, ns, serialized);
       if (success) {
         lastSerializedSnapshot.set(cacheKey, serialized);
         // Clear LS to save space if disk save worked

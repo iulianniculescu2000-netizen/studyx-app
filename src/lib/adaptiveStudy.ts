@@ -13,6 +13,17 @@ function cloneQuestion(question: Question): Question {
   };
 }
 
+function questionFingerprint(question: Question) {
+  return `${question.text} ${question.options.filter((option) => option.isCorrect).map((option) => option.text).join(' ')}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+}
+
 function getQuestionStatMap(stats: Record<string, QuestionStat>) {
   return new Map(Object.values(stats).map((stat) => [`${stat.quizId}:${stat.questionId}`, stat] as const));
 }
@@ -37,6 +48,17 @@ export function buildMistakeFlashcardQuiz(
       const stat = statMap.get(`${located.quiz.id}:${original.id}`);
       const answerText = original.options.filter((option) => option.isCorrect).map((option) => option.text).join(', ');
 
+      // Construiește distractori plauzibili din opțiunile greșite ale întrebării originale
+      const wrongOptions = original.options
+        .filter(o => !o.isCorrect)
+        .slice(0, 3)
+        .map(o => ({ id: uid(), text: o.text, isCorrect: false }));
+
+      // Dacă nu există destui distractori, adaugă un placeholder
+      if (wrongOptions.length === 0) {
+        wrongOptions.push({ id: uid(), text: 'Nu știu / Nu-mi amintesc', isCorrect: false });
+      }
+
       questions.push({
         id: uid(),
         text: `Unde ai ezitat: ${original.text}`,
@@ -44,12 +66,13 @@ export function buildMistakeFlashcardQuiz(
         difficulty: original.difficulty ?? 'medium',
         explanation: [
           mistake.explanation,
-          mistake.missingConcept ? `Concept lipsa: ${mistake.missingConcept}.` : '',
-          stat ? `Istoric: ${stat.timesWrong} greseli, ${stat.timesCorrect} raspunsuri corecte.` : '',
+          mistake.missingConcept ? `Concept lipsă: ${mistake.missingConcept}.` : '',
+          stat ? `Istoric: ${stat.timesWrong} greșeli, ${stat.timesCorrect} răspunsuri corecte.` : '',
         ].filter(Boolean).join(' '),
         tags: [...new Set([...(original.tags ?? []), 'mistake-bank', mistake.topic])],
         options: [
           { id: uid(), text: answerText || mistake.correctAnswer, isCorrect: true },
+          ...wrongOptions,
         ],
       });
 
@@ -60,8 +83,8 @@ export function buildMistakeFlashcardQuiz(
 
   return {
     id: uid(),
-    title: 'Flashcards din greseli',
-    description: `Carduri create din cele mai importante ${questions.length} greseli recente.`,
+    title: 'Flashcards din greșeli',
+    description: `Carduri create din cele mai importante ${questions.length} greșeli recente.`,
     emoji: '🧠',
     color: 'orange',
     category: 'Altele',
@@ -97,6 +120,9 @@ export function buildWeaknessRecoveryQuiz(
     .sort((left, right) => right.score - left.score);
 
   const questions = scoredQuestions
+    .filter((entry, index, all) =>
+      all.findIndex((candidate) => questionFingerprint(candidate.question) === questionFingerprint(entry.question)) === index,
+    )
     .slice(0, 12)
     .map((entry) => cloneQuestion(entry.question));
 
@@ -106,10 +132,10 @@ export function buildWeaknessRecoveryQuiz(
 
   return {
     id: uid(),
-    title: 'Weakness Recovery Session',
+    title: 'Sesiune de recuperare focusată',
     description: focusTopics.length > 0
-      ? `Sesiune ghidata pentru ${focusTopics.join(', ')}.`
-      : 'Sesiune ghidata din intrebarile unde ai cea mai mare nevoie de consolidare.',
+      ? `Sesiune ghidată pentru ${focusTopics.join(', ')}.`
+      : 'Sesiune ghidată din întrebările unde ai cea mai mare nevoie de consolidare.',
     emoji: '🎯',
     color: 'red',
     category: 'Altele',
@@ -140,7 +166,12 @@ export function buildAdaptiveExamQuiz(
   }));
 
   const sorted = [...pool].sort((left, right) => right.score - left.score);
-  const selected = sorted.slice(0, 18).map((entry) => cloneQuestion(entry.question));
+  const selected = sorted
+    .filter((entry, index, all) =>
+      all.findIndex((candidate) => questionFingerprint(candidate.question) === questionFingerprint(entry.question)) === index,
+    )
+    .slice(0, 18)
+    .map((entry) => cloneQuestion(entry.question));
   if (selected.length === 0) return null;
 
   const hardCount = Math.max(4, Math.floor(selected.length * 0.35));
@@ -155,8 +186,8 @@ export function buildAdaptiveExamQuiz(
 
   return {
     id: uid(),
-    title: 'Adaptive Exam Mode',
-    description: 'Simulare de examen construita din istoricul tau, cu accent pe lacune si dificultate progresiva.',
+    title: 'Simulare adaptivă de examen',
+    description: 'Simulare de examen construită din istoricul tău, cu accent pe lacune și dificultate progresivă.',
     emoji: '🎓',
     color: 'purple',
     category: 'Altele',

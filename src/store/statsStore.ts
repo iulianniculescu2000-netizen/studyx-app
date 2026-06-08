@@ -20,6 +20,7 @@ interface StatsStore {
   getStatsByTag: (quizzes: import('../types').Quiz[]) => Record<string, { correct: number; total: number }>;
   _hydrate: (data: { questionStats: Record<string, QuestionStat>; streak: StudyStreak; totalStudyTime: number }) => void;
   _snapshot: () => { questionStats: Record<string, QuestionStat>; streak: StudyStreak; totalStudyTime: number };
+  reset: () => void;
 }
 
 function getToday(): string {
@@ -30,24 +31,27 @@ function getToday(): string {
  * SuperMemo-2 (SM-2) Pro Algorithm
  * Used by Anki and professional SRS systems.
  */
-function calcNextReview(stat: QuestionStat, correct: boolean): { nextReview: number; interval: number; eFactor: number } {
+function calcNextReview(stat: QuestionStat, correct: boolean): { nextReview: number; interval: number; eFactor: number; consecutiveCorrect: number } {
   let eFactor = stat.eFactor ?? 2.5;
   let interval = stat.interval ?? 0;
-  const n = (stat.timesCorrect + (correct ? 1 : 0));
+  // consecutiveCorrect se resetează la 0 la greșeală (SM-2 corect)
+  let n = stat.consecutiveCorrect ?? 0;
 
   if (!correct) {
-    // Lapse: Re-learning phase
-    // Reduce eFactor (punish ease) and reset interval to 1 day
+    // Lapse: Re-learning phase — resetăm n și reducem eFactor
     eFactor = Math.max(1.3, eFactor - 0.2);
-    return { 
-      nextReview: Date.now() + 86400000, // 1 day
-      interval: 1, 
-      eFactor 
+    return {
+      nextReview: Date.now() + 86400000, // 1 zi
+      interval: 1,
+      eFactor,
+      consecutiveCorrect: 0,
     };
   }
 
-  // Correct answer: Calculate next interval
-  if (n <= 1) {
+  // Răspuns corect: incrementăm n și calculăm intervalul
+  n += 1;
+
+  if (n === 1) {
     interval = 1;
   } else if (n === 2) {
     interval = 4; // Standard SM-2 leap
@@ -55,16 +59,17 @@ function calcNextReview(stat: QuestionStat, correct: boolean): { nextReview: num
     interval = Math.round(interval * eFactor);
   }
 
-  // Cap interval at 1 year for medical students (long-term memory)
+  // Cap la 1 an pentru studenți la medicină (memorie pe termen lung)
   interval = Math.min(interval, 365);
 
-  // Slightly increase eFactor for correct answers (reward ease)
+  // Ușor crește eFactor pentru răspunsuri corecte consecutive
   eFactor = Math.min(3.0, eFactor + 0.1);
 
-  return { 
-    nextReview: Date.now() + interval * 86400000, 
-    interval, 
-    eFactor 
+  return {
+    nextReview: Date.now() + interval * 86400000,
+    interval,
+    eFactor,
+    consecutiveCorrect: n,
   };
 }
 
@@ -80,11 +85,12 @@ export const useStatsStore = create<StatsStore>()(
         const existing: QuestionStat = s.questionStats[key] ?? {
           questionId, quizId,
           timesCorrect: 0, timesWrong: 0,
-          lastSeen: 0, nextReview: 0, interval: 0, eFactor: 2.5
+          lastSeen: 0, nextReview: 0, interval: 0, eFactor: 2.5,
+          consecutiveCorrect: 0,
         };
-        
+
         const review = calcNextReview(existing, correct);
-        
+
         const updated: QuestionStat = {
           ...existing,
           timesCorrect: existing.timesCorrect + (correct ? 1 : 0),
@@ -93,6 +99,7 @@ export const useStatsStore = create<StatsStore>()(
           nextReview: review.nextReview,
           interval: review.interval,
           eFactor: review.eFactor,
+          consecutiveCorrect: review.consecutiveCorrect,
         };
         
         return { questionStats: { ...s.questionStats, [key]: updated } };
@@ -192,6 +199,11 @@ export const useStatsStore = create<StatsStore>()(
       questionStats: get().questionStats,
       streak: get().streak,
       totalStudyTime: get().totalStudyTime,
+    }),
+    reset: () => set({
+      questionStats: {},
+      streak: { ...EMPTY_STREAK },
+      totalStudyTime: 0,
     }),
   })
 );

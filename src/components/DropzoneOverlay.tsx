@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { FilePlus, Sparkles } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 
 interface Props {
   onFilesDropped: (files: File[]) => void;
@@ -10,8 +11,7 @@ interface Props {
 export default function DropzoneOverlay({ onFilesDropped }: Props) {
   const [active, setActive] = useState(false);
   const theme = useTheme();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
+  const { performanceLite, calmMotion } = useAdaptiveMotion();
 
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
@@ -60,7 +60,7 @@ export default function DropzoneOverlay({ onFilesDropped }: Props) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[10000] flex items-center justify-center p-6 sm:p-10 pointer-events-none"
-          style={{ 
+          style={{
             background: 'rgba(0,0,0,0.4)', 
             backdropFilter: performanceLite ? 'blur(4px)' : 'blur(12px)',
           }}
@@ -77,12 +77,12 @@ export default function DropzoneOverlay({ onFilesDropped }: Props) {
             }}
           >
             <motion.div
-              animate={performanceLite ? { y: 0, rotate: 0, scale: 1 } : { 
+              animate={performanceLite ? { y: 0, rotate: 0, scale: 1 } : {
                 y: [0, -20, 0],
                 rotate: [0, 5, -5, 0],
                 scale: [1, 1.1, 1]
               }}
-              transition={performanceLite ? { duration: 0.18 } : { repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
+              transition={calmMotion ? { duration: 0.18 } : { repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
               className="w-28 h-28 rounded-[32px] flex items-center justify-center shadow-2xl"
               style={{ 
                 background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, 

@@ -12,7 +12,7 @@ export default function GlobalSearchTrigger() {
       style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text3 }}
     >
       <Search size={13} />
-      <span>Cauta</span>
+      <span>Caută</span>
       <kbd className="font-mono ml-1" style={{ opacity: 0.6 }}>Ctrl+K</kbd>
     </button>
   );

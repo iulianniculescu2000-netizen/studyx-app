@@ -3,6 +3,8 @@ import { HEART_IMG, ECG_IMG, CELL_IMG, DNA_IMG, NEURON_IMG } from '../data/sampl
 import { getMedicalSystemPrompt } from './aiContext';
 import { logAIDebug } from '../ai/debug';
 import type { AIRequestTask } from '../ai/types';
+import { createRequestGovernor } from './aiRequestGovernor';
+import { logDiagnosticEvent } from '../store/diagnosticsStore';
 
 export interface GroqMessage {
   role: 'system' | 'user' | 'assistant';
@@ -33,7 +35,7 @@ const TASK_TEMPERATURE: Record<AIRequestTask, number> = {
 
 const TASK_MAX_TOKENS: Record<AIRequestTask, number> = {
   questions: 2200,
-  explanation: 900,
+  explanation: 1300,
   mnemonic: 300,
   hint: 500,
   chat: 1200,
@@ -43,6 +45,22 @@ const TASK_MAX_TOKENS: Record<AIRequestTask, number> = {
 function sanitizeKey(key: string): string {
   // eslint-disable-next-line no-control-regex
   return key.replace(/[^\x00-\x7F]/g, '').trim();
+}
+
+function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['provider']) {
+  if (provider === 'deepseek') {
+    return {
+      name: 'DeepSeek',
+      endpoint: 'https://api.deepseek.com/chat/completions',
+      keyHint: 'Cheia API DeepSeek nu este configurata. Mergi la Setari AI.',
+    };
+  }
+
+  return {
+    name: 'Groq',
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    keyHint: 'Cheia API Groq nu este configurata. Mergi la Setari AI.',
+  };
 }
 
 function extractJsonArray(raw: string): string | null {
@@ -113,11 +131,11 @@ function isValidQuestion(q: GeneratedQuestion): boolean {
 
 // ── Smart Context Chunking ────────────────────────────────────────────────────
 // Splits long medical texts into overlapping chunks that fit within the AI context window.
-function chunkText(text: string, maxSize = 4500, overlap = 350): string[] {
+function chunkText(text: string, maxSize = 4500, overlap = 350, maxChunks = 4): string[] {
   if (text.length <= maxSize) return [text];
   const chunks: string[] = [];
   let start = 0;
-  while (start < text.length && chunks.length < 4) {
+  while (start < text.length && chunks.length < maxChunks) {
     let end = Math.min(start + maxSize, text.length);
     if (end < text.length) {
       // Prefer natural paragraph/sentence breaks over arbitrary cuts
@@ -200,22 +218,16 @@ export function recommendImage(questionText: string): string | null {
 
 // ── Request Queue & Rate Limiting ──────────────────────────────────────────
 // Ensures we don't hit Groq's rate limits by controlling concurrency and spacing.
-const CONCURRENCY_LIMIT = 2; // Maximum concurrent requests
-let activeRequests = 0;
+const groqGovernor = createRequestGovernor({ concurrency: 1, baseSpacingMs: 650 });
 
-async function enqueueRequest<T>(operation: () => Promise<T>): Promise<T> {
-  while (activeRequests >= CONCURRENCY_LIMIT) {
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-  
-  activeRequests++;
-  try {
-    // Add a small staggered delay to prevent bursts
-    await new Promise(resolve => setTimeout(resolve, activeRequests * 100));
-    return await operation();
-  } finally {
-    activeRequests--;
-  }
+function getRetryDelayMs(attempt: number, retryAfterHeader: string | null) {
+  const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : 0;
+  const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+    ? retryAfterSeconds * 1000
+    : 0;
+  const exponentialBackoffMs = 2500 * 2 ** attempt;
+  const jitterMs = Math.floor(Math.random() * 450);
+  return Math.max(retryAfterMs, exponentialBackoffMs) + jitterMs;
 }
 
 // ── Core API ──────────────────────────────────────────────────────────────────
@@ -224,18 +236,21 @@ export async function groqRequest({
   messages,
   temperature,
   maxTokens,
-  skipLibraryContext = false,
+  abortSignal,
+  skipLibraryContext,
 }: {
   task: AIRequestTask;
   messages: GroqMessage[];
   temperature?: number;
   maxTokens?: number;
+  abortSignal?: AbortSignal;
   skipLibraryContext?: boolean;
 }): Promise<string> {
-  return enqueueRequest(async () => {
-    const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
+  return groqGovernor.run(task, async () => {
+    const { apiKey, provider, model, getKnowledgeContext } = useAIStore.getState();
+    const providerConfig = getProviderConfig(provider);
     const key = sanitizeKey(apiKey);
-    if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
+    if (!key) throw new Error(providerConfig.keyHint);
     const kb = skipLibraryContext ? '' : await getKnowledgeContext(buildKnowledgeQuery(messages), 6000);
     const finalMessages: GroqMessage[] = kb
       ? [
@@ -255,52 +270,75 @@ export async function groqRequest({
 
     logAIDebug('groq:request', {
       task,
+      provider,
       model,
       temperature: finalTemperature,
       maxTokens: finalMaxTokens,
-      messages: finalMessages,
+      messagesCount: messages.length,
     });
 
+    if (abortSignal?.aborted) {
+      throw new Error('Request aborted before start');
+    }
+
     let lastError = 'Eroare necunoscuta';
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const response = await fetch(providerConfig.endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+          },
           body: JSON.stringify({
             model,
             messages: finalMessages,
             temperature: finalTemperature,
             max_tokens: finalMaxTokens,
           }),
-          signal: AbortSignal.timeout(10_000), // Increased to 10s for reliability
+          signal: abortSignal,
         });
 
-        if (!res.ok) {
-          const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-          const msg = err?.error?.message ?? res.statusText;
-          if (res.status === 429) { // Rate limit hit
-            logAIDebug('groq:ratelimit', { task, retryAfter: res.headers.get('retry-after') });
-            await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+        if (!response.ok) {
+          const err = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+          const msg = err?.error?.message ?? response.statusText;
+          if (response.status === 429 && attempt < maxAttempts - 1) { // Rate limit hit
+            const retryAfter = response.headers.get('retry-after');
+            const delayMs = getRetryDelayMs(attempt, retryAfter);
+            logAIDebug('groq:ratelimit', { task, retryAfter, delayMs });
+            logDiagnosticEvent({
+              area: 'ai',
+              level: 'warning',
+              title: `Limita ${providerConfig.name} atinsa`,
+              detail: `Task ${task}: StudyX pune cererea in pauza ${Math.ceil(delayMs / 1000)}s si reincerca automat.`,
+            });
+            await new Promise(resolve => setTimeout(resolve, delayMs));
             continue;
           }
           throw new Error(msg);
         }
 
-        const data = await res.json();
+        const data = await response.json();
         const output = (data.choices?.[0]?.message?.content ?? '').trim();
         logAIDebug('groq:response', { task, output });
         return output;
       } catch (error: unknown) {
         lastError = error instanceof Error ? error.message : String(error);
         logAIDebug('groq:error', { task, attempt, error: lastError });
-        if (attempt < 2) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        if (attempt < maxAttempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(attempt, null)));
         }
       }
     }
 
-    throw new Error(`Eroare Groq API: ${lastError}`);
+    logDiagnosticEvent({
+      area: 'ai',
+      level: 'error',
+      title: `${providerConfig.name} indisponibil`,
+      detail: `Task ${task}: ${lastError}`,
+    });
+    throw new Error(`Eroare ${providerConfig.name} API: ${lastError}`);
   });
 }
 
@@ -312,91 +350,104 @@ export async function groqStream(
   messages: GroqMessage[],
   onChunk: (text: string) => void,
   temperature = 0.7,
-  signal?: AbortSignal
+  abortSignal?: AbortSignal
 ): Promise<string> {
-  const { apiKey, model, getKnowledgeContext } = useAIStore.getState();
-  const key = sanitizeKey(apiKey);
-  if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
-  const kb = await getKnowledgeContext(buildKnowledgeQuery(messages), 4500);
-  const finalMessages: GroqMessage[] = kb
-    ? [
-        {
-          role: 'system',
-          content:
-            'Context suplimentar din biblioteca locală a utilizatorului. ' +
-            'Folosește-l strict ca referință, fără halucinații.\n\n' +
-            kb,
-        },
-        ...messages,
-      ]
-    : messages;
-
-  // Combine caller's signal with a 60s timeout (streaming can be slower)
-  const timeoutSignal = AbortSignal.timeout(60_000);
-  const combinedSignal = signal
-    ? AbortSignal.any([signal, timeoutSignal])
-    : timeoutSignal;
-
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages: finalMessages, temperature, max_tokens: 4096, stream: true }),
-    signal: combinedSignal,
-  });
-
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-    throw new Error(`Eroare Groq API: ${err?.error?.message ?? res.statusText}`);
+  if (abortSignal?.aborted) {
+    throw new Error('Stream aborted before start');
   }
-  if (!res.body) throw new Error('Răspuns fără corp — încearcă din nou.');
+  return groqGovernor.run('chat', async () => {
+    const { apiKey, provider, model, getKnowledgeContext } = useAIStore.getState();
+    const providerConfig = getProviderConfig(provider);
+    const key = sanitizeKey(apiKey);
+    if (!key) throw new Error(providerConfig.keyHint);
+    const kb = await getKnowledgeContext(buildKnowledgeQuery(messages), 4500);
+    const finalMessages: GroqMessage[] = kb
+      ? [
+          {
+            role: 'system',
+            content:
+              'Context suplimentar din biblioteca locală a utilizatorului. ' +
+              'Folosește-l strict ca referință, fără halucinații.\n\n' +
+              kb,
+          },
+          ...messages,
+        ]
+      : messages;
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let full = '';
-  let carry = '';
+    const timeoutSignal = AbortSignal.timeout(60_000);
+    const combinedSignal = abortSignal
+      ? AbortSignal.any([abortSignal, timeoutSignal])
+      : timeoutSignal;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      // Flush any remaining bytes and process trailing buffered line once.
-      const tail = carry + decoder.decode();
-      if (tail.trim()) {
-        const trimmed = tail.replace(/^data: /, '').trim();
-        if (trimmed && trimmed !== '[DONE]') {
-          try {
-            const json = JSON.parse(trimmed);
-            const delta = json.choices?.[0]?.delta?.content ?? '';
-            if (delta) { full += delta; onChunk(delta); }
-          } catch (err) {
-            console.error(err);
+    const res = await fetch(providerConfig.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages: finalMessages, temperature, max_tokens: 4096, stream: true }),
+      signal: combinedSignal,
+    });
+
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+      const message = err?.error?.message ?? res.statusText;
+      logDiagnosticEvent({
+        area: 'ai',
+        level: 'warning',
+        title: 'Stream AI oprit',
+        detail: message,
+      });
+      throw new Error(`Eroare ${providerConfig.name} API: ${message}`);
+    }
+    if (!res.body) throw new Error('Răspuns fără corp — încearcă din nou.');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let full = '';
+    let carry = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        const tail = carry + decoder.decode();
+        if (tail.trim()) {
+          const trimmed = tail.replace(/^data: /, '').trim();
+          if (trimmed && trimmed !== '[DONE]') {
+            try {
+              const json = JSON.parse(trimmed);
+              const delta = json.choices?.[0]?.delta?.content ?? '';
+              if (delta) { full += delta; onChunk(delta); }
+            } catch (err) {
+              console.error(err);
+            }
           }
         }
+        break;
       }
-      break;
-    }
-    const chunk = carry + decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n');
-    carry = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.replace(/^data: /, '').trim();
-      if (!trimmed || trimmed === '[DONE]') continue;
-      try {
-        const json = JSON.parse(trimmed);
-        const delta = json.choices?.[0]?.delta?.content ?? '';
-        if (delta) { full += delta; onChunk(delta); }
-      } catch (err) {
-        console.error(err);
+      const chunk = carry + decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+      carry = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.replace(/^data: /, '').trim();
+        if (!trimmed || trimmed === '[DONE]') continue;
+        try {
+          const json = JSON.parse(trimmed);
+          const delta = json.choices?.[0]?.delta?.content ?? '';
+          if (delta) { full += delta; onChunk(delta); }
+        } catch (err) {
+          console.error(err);
+        }
       }
     }
-  }
-  return full;
+    return full;
+  });
 }
 
 // ── Question Generation (with chunking + anti-hallucination) ──────────────────
 export async function generateQuestionsFromText(
   text: string,
   count = 5,
-  difficulty = 3
+  difficulty = 3,
+  existingQuestionTexts: string[] = [],
+  onProgress?: (generated: number, total: number) => void,
 ): Promise<GeneratedQuestion[]> {
   const cleanText = text
     .replace(/\f/g, '\n').replace(/^\s*\d{1,4}\s*$/gm, '')
@@ -418,11 +469,11 @@ export async function generateQuestionsFromText(
     `\nCreezi întrebări EXCLUSIV din textul primit. LIMBĂ: ${language}. DIFICULTATE: ${difficultyInstruction}`;
 
   // ── Smart chunking: split long texts into digestible pieces ──────────────────
-  const chunks = chunkText(cleanText); // max 4 chunks of ~4500 chars
+  const chunks = chunkText(cleanText, 4500, 350, Math.max(4, Math.min(14, Math.ceil(count / 8))));
   const perChunk = Math.max(1, Math.ceil(count / chunks.length));
 
   const allQuestions: GeneratedQuestion[] = [];
-  const seenTexts: string[] = [];
+  const seenTexts: string[] = [...existingQuestionTexts];
 
   for (const chunk of chunks) {
     if (allQuestions.length >= count) break;
@@ -482,6 +533,7 @@ Format (${needed} obiecte):
 
     valid.forEach(q => seenTexts.push(q.text));
     allQuestions.push(...valid);
+    onProgress?.(Math.min(allQuestions.length, count), count);
   }
 
   // ── Silent regeneration pass ──────────────────────────────────────────────
@@ -569,45 +621,109 @@ Format JSON pur (${count} cazuri):
   return parsed.filter(isValidQuestion);
 }
 
+function normalizeFlashcardKey(text: string) {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
+}
+
+function isDuplicateFlashcard(front: string, existingFronts: string[]) {
+  const normalized = normalizeFlashcardKey(front);
+  if (!normalized) return true;
+
+  return existingFronts.some((existing) => {
+    const candidate = normalizeFlashcardKey(existing);
+    if (!candidate) return false;
+    if (candidate === normalized) return true;
+    const maxLen = Math.max(candidate.length, normalized.length);
+    if (maxLen < 24) return candidate.includes(normalized) || normalized.includes(candidate);
+    return 1 - levenshtein(candidate, normalized) / maxLen > 0.82;
+  });
+}
+
 export async function notesToFlashcards(
-  notesText: string
+  notesText: string,
+  options: {
+    count?: number;
+    avoidFronts?: string[];
+    sourceName?: string;
+  } = {},
 ): Promise<{ front: string; back: string }[]> {
   if (!notesText || notesText.trim().length < 20)
-    throw new Error('Notițele sunt prea scurte pentru conversie în flashcarduri.');
+    throw new Error('Notitele sunt prea scurte pentru conversie in flashcarduri.');
 
-  const cleanText = notesText.slice(0, 12000); // Increased limit for better coverage
-  const userPrompt = `Transformă textul medical de mai jos în flashcarduri ultra-eficiente pentru examen. Max 15 perechi.
+  const targetCount = Math.max(1, Math.min(100, Math.round(options.count ?? 15)));
+  const cleanText = notesText
+    .replace(/\f/g, '\n')
+    .replace(/[ \t]{3,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const maxChunks = Math.max(4, Math.min(14, Math.ceil(targetCount / 8)));
+  const chunks = chunkText(cleanText, 5200, 420, maxChunks);
+  const batchSize = 10;
+  const generated: { front: string; back: string }[] = [];
+  const seenFronts = [...(options.avoidFronts ?? [])];
+
+  for (let index = 0; index < chunks.length && generated.length < targetCount; index += 1) {
+    const requested = Math.min(batchSize, targetCount - generated.length);
+    const avoidList = seenFronts.slice(-35).map((front) => `- ${front.slice(0, 120)}`).join('\n');
+    const userPrompt = `Transforma textul medical de mai jos in exact ${requested} flashcarduri ultra-eficiente pentru examen.
 REGULI:
-- "front": întrebare provocatoare sau termen cheie
-- "back": răspuns critic, scurt și clar
-- Axează-te pe mecanisme patologice, tratamente de elecție și semne clinice patognomonice.
-Răspunde strict cu array JSON.
+- "front": intrebare de active recall, clara si specifica
+- "back": raspuns critic, scurt si explicativ; include mecanismul daca ajuta memorarea
+- Acopera definitii, mecanisme, semne clinice, diagnostic, tratament, capcane si diferente intre concepte apropiate.
+- Nu repeta carduri deja existente.
+- Nu formula carduri despre document/PDF/pagina; intreaba despre continutul medical.
+- Raspunde strict cu array JSON valid, fara markdown.
+${avoidList ? `CARDURI DE EVITAT (deja exista sau au fost generate):\n${avoidList}\n` : ''}
 
-TEXT SURSĂ:
+TEXT SURSA${options.sourceName ? ` (${options.sourceName})` : ''}:
 ---
-${cleanText}
+${chunks[index]}
 ---
 
 Format: [{"front":"?","back":"..."}]`;
 
-  let raw = '';
-  for (let attempt = 0; attempt < 3; attempt++) {
-    raw = await groqChat([
-      { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEști expert în transformarea cursurilor medicale dense în flashcarduri de tip Active Recall.' },
-      { role: 'user', content: userPrompt },
-    ], 0.4);
-    if (raw.includes('[') && raw.includes(']')) break;
+    let raw = '';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      raw = await groqChat([
+        { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEsti expert in transformarea cursurilor medicale dense in flashcarduri de tip Active Recall, fara repetitii si fara umplutura.' },
+        { role: 'user', content: userPrompt },
+      ], attempt === 0 ? 0.32 : 0.45);
+      if (raw.includes('[') && raw.includes(']')) break;
+    }
+
+    const jsonStr = extractJsonArray(raw);
+    if (!jsonStr) continue;
+
+    try {
+      const parsed = JSON.parse(jsonStr) as { front: string; back: string }[];
+      parsed
+        .filter(f => f.front?.trim() && f.back?.trim())
+        .filter(f => !isDuplicateFlashcard(f.front, seenFronts))
+        .forEach((flashcard) => {
+          if (generated.length >= targetCount) return;
+          generated.push({
+            front: flashcard.front.trim(),
+            back: flashcard.back.trim(),
+          });
+          seenFronts.push(flashcard.front);
+        });
+    } catch {
+      // Continue with the next chunk; partial high-quality output is better than losing the deck.
+    }
   }
 
-  const jsonStr = extractJsonArray(raw);
-  if (!jsonStr) throw new Error('Nu s-au putut genera flashcardurile. Textul ar putea fi prea complex sau ilizibil.');
-
-  try {
-    const parsed = JSON.parse(jsonStr) as { front: string; back: string }[];
-    return parsed.filter(f => f.front && f.back);
-  } catch {
-    throw new Error('Validarea AI a eșuat — te rugăm să încerci din nou.');
+  if (generated.length === 0) {
+    throw new Error('Nu s-au putut genera flashcardurile. Textul ar putea fi prea complex sau ilizibil.');
   }
+
+  return generated.slice(0, targetCount);
 }
 
 export async function explainWrongAnswer(
@@ -616,13 +732,29 @@ export async function explainWrongAnswer(
   correctAnswer: string,
   userContext?: string
 ): Promise<string> {
+  const forgotContext = /am uitat contextul/i.test(userAnswer);
+  const studentAnswerLine = forgotContext
+    ? 'Studentul foloseste flashcardul pentru active recall si nu a formulat raspunsul din memorie.'
+    : `Raspunsul studentului: "${userAnswer}".`;
+
   return groqChat([
     { role: 'system', content: getMedicalSystemPrompt('explainer', userContext) },
     {
       role: 'user',
-      content: `Explică pe scurt (3-4 fraze) de ce "${correctAnswer}" este corect și nu "${userAnswer}".\n\nÎntrebare: ${questionText}`,
+      content: `Explică SCURT și DIRECT. Maxim 4-5 propoziții totale, fără eseuri.
+
+FORMAT:
+1. De ce "${correctAnswer}" e corect — 1-2 propoziții cu mecanismul cheie.
+2. De ce răspunsul ales cade — 1 propoziție, direct.
+3. Regula scurtă de reținut pentru examen — 1 propoziție memorabilă.
+
+Nu repeta întrebarea. Nu enumera toate variantele. Răspunde în română.
+
+Întrebare: ${questionText}
+${studentAnswerLine}
+Răspuns corect: "${correctAnswer}"`,
     },
-  ], 0.4);
+  ], 0.3);
 }
 
 // ── New smart AI functions ──────────────────────────────────────────────────────
@@ -646,7 +778,19 @@ export async function explainAnswerInline(
     { role: 'system', content: getMedicalSystemPrompt('explainer', userContext) },
     {
       role: 'user',
-      content: `Întrebare: "${questionText}"\nCorect: "${correct}"\nGreșite: ${wrong}\n\nExplică (3-4 fraze) de ce "${correct}" este corect și de ce celelalte sunt greșite. Menționează mecanismul clinic relevant.`,
+      content: `Intrebare: "${questionText}"
+Corect: "${correct}"
+Gresite: ${wrong}
+
+Explica raspunsul ca pentru un student la medicina:
+- incepe direct cu: "${correct}" este raspunsul corect deoarece...
+- de ce varianta corecta este buna,
+- de ce fiecare varianta gresita pica si cand ar putea deveni corecta,
+- mecanismul fiziologic/fiziopatologic,
+- capcana de examen,
+- regula scurta de retinut.
+
+Raspunde in romana, concis, dar fara superficialitate.`,
     },
   ], onChunk, 0.3, signal);
 }
@@ -677,6 +821,60 @@ export async function generateStudyRecommendation(
 /**
  * Generates a medical mnemonic for a hard question answered wrong repeatedly.
  */
+/**
+ * Streams a personalized weak-spot analysis report.
+ * Call from Stats page after gathering category-level accuracy data.
+ */
+export async function generateWeakSpotReport(
+  data: {
+    weakCategories: { name: string; accuracy: number; quizCount: number }[];
+    totalAccuracy: number;
+    streak: number;
+    totalAnswered: number;
+    recentMistakeTopics: string[];
+  },
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const hasData = data.weakCategories.length > 0 || data.recentMistakeTopics.length > 0 || data.totalAnswered > 0;
+  if (!hasData) {
+    onChunk('Nu există suficiente date de studiu. Rezolvă câteva sesiuni de grile pentru a activa raportul personalizat!');
+    return;
+  }
+  const weakList = data.weakCategories
+    .slice(0, 6)
+    .map(c => `• ${c.name}: ${c.accuracy}% (${c.quizCount} grile)`)
+    .join('\n');
+  const mistakeTopics = data.recentMistakeTopics.slice(0, 6).join(', ');
+  await groqStream(
+    [
+      { role: 'system', content: getMedicalSystemPrompt('advisor') },
+      {
+        role: 'user',
+        content: `Analizează datele de studiu ale studentului și generează un raport SCURT, SPECIFIC și MOTIVANT.
+
+DATE:
+- Acuratețe globală: ${data.totalAccuracy}%
+- Streak actual: ${data.streak} zile
+- Total răspunsuri date: ${data.totalAnswered}
+${weakList ? `\nCATEGORII CU ACURATEȚE SCĂZUTĂ:\n${weakList}` : ''}
+${mistakeTopics ? `\nTOPICURI CU GREȘELI RECENTE: ${mistakeTopics}` : ''}
+
+INSTRUCȚIUNI:
+- 3-5 fraze, fără bullet points, ton de tutor
+- Identifică zona cea mai problematică și explică DE CE poate fi dificilă
+- O recomandare concretă și acționabilă pentru săptămâna asta
+- Un sfat tactic pentru examen legat de punctele slabe
+- Închide cu o notă de încurajare sinceră bazată pe datele actuale
+- Limbă: română, stil direct și cald`,
+      },
+    ],
+    onChunk,
+    0.5,
+    signal,
+  );
+}
+
 export async function generateMnemonic(
   questionText: string,
   correctAnswer: string

@@ -5,6 +5,7 @@ import { Search, X, BookOpen, FileQuestion, ArrowRight, Command } from 'lucide-r
 import { useQuizStore } from '../store/quizStore';
 import { useTheme } from '../theme/ThemeContext';
 import { useUIStore } from '../store/uiStore';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
 import { type Theme } from '../theme/themes';
 
@@ -28,8 +29,15 @@ interface QuickAction {
   icon: 'quiz' | 'question' | 'settings';
 }
 
+function normalizeSearchText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
 function toQuestionCountLabel(count: number) {
-  return `${count} ${count === 1 ? 'intrebare' : 'intrebari'}`;
+  return `${count} ${count === 1 ? 'întrebare' : 'întrebări'}`;
 }
 
 export default function GlobalSearch() {
@@ -37,31 +45,35 @@ export default function GlobalSearch() {
   const navigate = useNavigate();
   const { quizzes } = useQuizStore();
   const setChatOpen = useUIStore((state) => state.setChatOpen);
+  const { calmMotion, performanceLite } = useAdaptiveMotion();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const performanceLite = typeof document !== 'undefined' && document.documentElement.getAttribute('data-performance') === 'lite';
 
   const quickActions = useMemo<QuickAction[]>(() => [
-    { id: 'new-quiz', label: 'Creeaza grila noua', sub: 'Ajungi direct in editorul de grile', href: '/create', icon: 'quiz' },
-    { id: 'review', label: 'Recapitulare zilnica', sub: 'Porneste intrebarile scadente acum', href: '/daily-review', icon: 'question' },
-    { id: 'vault', label: 'Knowledge Vault', sub: 'Importa cursuri, verifica sursele si curata biblioteca AI', href: '/vault', icon: 'quiz' },
-    { id: 'chat', label: 'Deschide AI chat', sub: 'Continua o explicatie direct din assistant sheet', href: '/vault', icon: 'question' },
-    { id: 'stats', label: 'Deschide statistici', sub: 'Vezi progresul, acuratetea si trendurile', href: '/stats', icon: 'quiz' },
-    { id: 'settings', label: 'Setari si AI', sub: 'Tema, backup, performanta si configurare AI', href: '/settings', icon: 'settings' },
+    { id: 'new-quiz', label: 'Creează grilă nouă', sub: 'Ajungi direct în editorul de grile', href: '/create', icon: 'quiz' },
+    { id: 'review', label: 'Recapitulare zilnică', sub: 'Pornește întrebările scadente acum', href: '/daily-review', icon: 'question' },
+    { id: 'vault', label: 'Biblioteca AI', sub: 'Importă cursuri, verifică sursele și organizează baza de cunoștințe', href: '/vault', icon: 'quiz' },
+    { id: 'chat', label: 'Deschide chatul AI', sub: 'Continuă o explicație direct din asistentul StudyX', href: '/vault', icon: 'question' },
+    { id: 'stats', label: 'Deschide statisticile', sub: 'Vezi progresul, acuratețea și trendurile', href: '/stats', icon: 'quiz' },
+    { id: 'settings', label: 'Setări și AI', sub: 'Temă, backup, performanță și configurare AI', href: '/settings', icon: 'settings' },
   ], []);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault();
         setQuery('');
         setActiveIdx(0);
         setOpen(true);
       }
-      if (e.key === 'Escape') setOpen(false);
+
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
     };
+
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
@@ -75,15 +87,15 @@ export default function GlobalSearch() {
   const results = useMemo<SearchResult[]>(() => {
     if (query.trim().length < 1) return [];
 
-    const normalized = query.toLowerCase();
+    const normalizedQuery = normalizeSearchText(query);
     const out: SearchResult[] = [];
 
     for (const quiz of quizzes) {
       if (
-        quiz.title.toLowerCase().includes(normalized)
-        || quiz.description.toLowerCase().includes(normalized)
-        || quiz.category.toLowerCase().includes(normalized)
-        || (quiz.tags ?? []).some((tag) => tag.toLowerCase().includes(normalized))
+        normalizeSearchText(quiz.title).includes(normalizedQuery)
+        || normalizeSearchText(quiz.description).includes(normalizedQuery)
+        || normalizeSearchText(quiz.category).includes(normalizedQuery)
+        || (quiz.tags ?? []).some((tag) => normalizeSearchText(tag).includes(normalizedQuery))
       ) {
         out.push({
           type: 'quiz',
@@ -98,7 +110,7 @@ export default function GlobalSearch() {
       }
 
       for (const question of quiz.questions) {
-        if (question.text.toLowerCase().includes(normalized)) {
+        if (normalizeSearchText(question.text).includes(normalizedQuery)) {
           out.push({
             type: 'question',
             quizId: quiz.id,
@@ -112,7 +124,7 @@ export default function GlobalSearch() {
           });
         }
 
-        if ((question.tags ?? []).some((tag) => tag.toLowerCase().includes(normalized))) {
+        if ((question.tags ?? []).some((tag) => normalizeSearchText(tag).includes(normalizedQuery))) {
           out.push({
             type: 'question',
             quizId: quiz.id,
@@ -144,10 +156,13 @@ export default function GlobalSearch() {
       sub: action.sub,
       href: action.href,
     })),
-    [quickActions]
+    [quickActions],
   );
 
   const navigableResults = query.trim().length === 0 ? quickActionResults : results;
+  const safeActiveIdx = navigableResults.length > 0
+    ? Math.min(activeIdx, navigableResults.length - 1)
+    : 0;
 
   const handleSelect = useCallback((result: SearchResult) => {
     setOpen(false);
@@ -165,22 +180,31 @@ export default function GlobalSearch() {
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setActiveIdx((idx) => Math.min(idx + 1, Math.max(navigableResults.length - 1, 0)));
+
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveIdx((index) => Math.min(index + 1, Math.max(navigableResults.length - 1, 0)));
       }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setActiveIdx((idx) => Math.max(idx - 1, 0));
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveIdx((index) => Math.max(index - 1, 0));
       }
-      if (e.key === 'Enter' && navigableResults[activeIdx]) {
-        handleSelect(navigableResults[activeIdx]);
+
+      if (event.key === 'Enter' && navigableResults[safeActiveIdx]) {
+        const result = navigableResults[safeActiveIdx];
+        if (query.trim().length === 0 && result.type === 'action') {
+          handleQuickAction(quickActions[safeActiveIdx]);
+        } else {
+          handleSelect(result);
+        }
       }
     };
+
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [activeIdx, handleSelect, navigableResults, open]);
+  }, [activeIdx, handleQuickAction, handleSelect, navigableResults, open, query, quickActions, safeActiveIdx]);
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
@@ -195,7 +219,7 @@ export default function GlobalSearch() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={calmMotion ? { duration: 0.12 } : { duration: 0.15 }}
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-50"
             style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(3px)' : 'blur(7px)' }}
@@ -205,7 +229,7 @@ export default function GlobalSearch() {
             initial={{ opacity: 0, scale: 0.95, y: -18 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -12 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            transition={calmMotion ? { duration: 0.18, ease: 'easeOut' } : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className="fixed left-1/2 z-50 w-full max-w-[min(720px,calc(100vw-24px))] -translate-x-1/2"
             style={{ top: 'clamp(72px, 12vh, 132px)', paddingInline: 12 }}
           >
@@ -224,7 +248,7 @@ export default function GlobalSearch() {
                 <input
                   ref={inputRef}
                   type="text"
-                  placeholder="Cauta grile, intrebari, taguri sau actiuni..."
+                  placeholder="Caută grile, întrebări, taguri sau acțiuni..."
                   value={query}
                   onChange={(event) => handleQueryChange(event.target.value)}
                   className="flex-1 bg-transparent text-base font-semibold"
@@ -233,7 +257,7 @@ export default function GlobalSearch() {
 
                 {query && (
                   <motion.button
-                    whileHover={{ scale: 1.05, rotate: 90 }}
+                    whileHover={calmMotion ? undefined : { scale: 1.05, rotate: 90 }}
                     whileTap={{ scale: 0.92 }}
                     onClick={() => setQuery('')}
                     className="press-feedback rounded-2xl p-2"
@@ -248,7 +272,7 @@ export default function GlobalSearch() {
                   style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}
                 >
                   <kbd className="font-mono">Esc</kbd>
-                  <span>inchide</span>
+                  <span>închide</span>
                 </div>
               </div>
 
@@ -261,19 +285,19 @@ export default function GlobalSearch() {
                     </div>
 
                     <p className="mx-auto mb-5 max-w-md text-center text-sm leading-relaxed" style={{ color: theme.text3 }}>
-                      Cauta rapid orice grila, intrebare sau porneste o actiune fara sa iesi din fluxul de lucru.
+                      Caută rapid orice grilă, întrebare sau pornește o acțiune fără să ieși din fluxul de lucru.
                     </p>
 
                     <div className="space-y-2">
-                      {quickActionResults.map((result, idx) => (
+                      {quickActionResults.map((result, index) => (
                         <ResultRow
                           key={result.quizId}
                           result={result}
-                          isActive={activeIdx === idx}
+                          isActive={safeActiveIdx === index}
                           colors={CARD_COLOR_MAP[result.quizColor] ?? CARD_COLOR_MAP.blue}
                           theme={theme}
-                          onSelect={() => handleQuickAction(quickActions[idx])}
-                          onHover={() => setActiveIdx(idx)}
+                          onSelect={() => handleQuickAction(quickActions[index])}
+                          onHover={() => setActiveIdx(index)}
                         />
                       ))}
                     </div>
@@ -286,8 +310,8 @@ export default function GlobalSearch() {
                     >
                       <Search size={26} />
                     </div>
-                    <p className="mb-1 text-base font-semibold" style={{ color: theme.text }}>Nu am gasit rezultate</p>
-                    <p className="text-sm" style={{ color: theme.text3 }}>Incearca alt cuvant cheie pentru "{query}".</p>
+                    <p className="mb-1 text-base font-semibold" style={{ color: theme.text }}>Nu am găsit rezultate</p>
+                    <p className="text-sm" style={{ color: theme.text3 }}>Încearcă alt cuvânt-cheie pentru "{query}".</p>
                   </div>
                 ) : (
                   <div className="py-2">
@@ -307,7 +331,7 @@ export default function GlobalSearch() {
                         <ResultRow
                           key={`quiz-${result.quizId}`}
                           result={result}
-                          isActive={activeIdx === globalIdx}
+                          isActive={safeActiveIdx === globalIdx}
                           colors={colors}
                           theme={theme}
                           onSelect={() => handleSelect(result)}
@@ -319,7 +343,7 @@ export default function GlobalSearch() {
                     {results.some((result) => result.type === 'question') && (
                       <div className="mt-1 px-4 py-2 sm:px-5">
                         <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.text3 }}>
-                          Intrebari
+                          Întrebări
                         </span>
                       </div>
                     )}
@@ -332,7 +356,7 @@ export default function GlobalSearch() {
                         <ResultRow
                           key={`question-${result.questionId ?? result.label.slice(0, 20)}-${result.quizId}`}
                           result={result}
-                          isActive={activeIdx === globalIdx}
+                          isActive={safeActiveIdx === globalIdx}
                           colors={colors}
                           theme={theme}
                           onSelect={() => handleSelect(result)}
@@ -349,10 +373,10 @@ export default function GlobalSearch() {
                   className="flex items-center gap-3 px-4 py-3 text-xs sm:px-5"
                   style={{ borderTop: `1px solid ${theme.border}`, color: theme.text3 }}
                 >
-                  <span className="font-mono">↑↓</span> navigheaza
-                  <span className="font-mono">↵</span> selecteaza
+                  <span className="font-mono">↑↓</span> navighează
+                  <span className="font-mono">↵</span> selectează
                   <span className="ml-auto">
-                    {query.trim().length === 0 ? `${quickActions.length} actiuni rapide` : `${results.length} rezultate`}
+                    {query.trim().length === 0 ? `${quickActions.length} acțiuni rapide` : `${results.length} rezultate`}
                   </span>
                 </div>
               )}
@@ -423,7 +447,7 @@ export function GlobalSearchTrigger() {
       style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text3 }}
     >
       <Search size={13} />
-      <span>Cauta</span>
+      <span>Caută</span>
       <kbd className="ml-1 font-mono" style={{ opacity: 0.6 }}>Ctrl+K</kbd>
     </button>
   );

@@ -1,6 +1,7 @@
 import React from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useTheme } from '../theme/ThemeContext';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 
 /**
  * Premium Minimal Background
@@ -9,10 +10,9 @@ import { useTheme } from '../theme/ThemeContext';
  */
 const AnimatedBackground: React.FC = () => {
   const theme = useTheme();
-  const reduceMotion = useReducedMotion();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
-  const useStaticBackground = reduceMotion || performanceLite;
+  const { performanceLite, calmMotion } = useAdaptiveMotion();
+  const useStaticBackground = calmMotion;
+  const showTexture = !performanceLite;
 
   return (
     <div
@@ -25,12 +25,14 @@ const AnimatedBackground: React.FC = () => {
       }}
     >
       {/* Subtle Grain Texture */}
-      <div 
-        className="absolute inset-0 opacity-[0.03] pointer-events-none"
-        style={{ 
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` 
-        }} 
-      />
+      {showTexture && (
+        <div
+          className="absolute inset-0 opacity-[0.03] pointer-events-none"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+          }}
+        />
+      )}
 
       {/* Very Soft Ambient Glow - Top Right */}
       <motion.div
@@ -46,11 +48,11 @@ const AnimatedBackground: React.FC = () => {
           position: 'absolute',
           top: '-15%',
           right: '-10%',
-          width: '70vw',
-          height: '70vw',
+          width: useStaticBackground ? '62vw' : '70vw',
+          height: useStaticBackground ? '62vw' : '70vw',
           borderRadius: '50%',
           background: `radial-gradient(circle, ${theme.orb1}, transparent 70%)`,
-          filter: useStaticBackground ? 'blur(88px)' : 'blur(120px)',
+          filter: useStaticBackground ? 'blur(68px)' : 'blur(112px)',
           willChange: useStaticBackground ? 'auto' : 'transform, opacity',
         }}
       />
@@ -69,11 +71,11 @@ const AnimatedBackground: React.FC = () => {
           position: 'absolute',
           bottom: '-15%',
           left: '-10%',
-          width: '60vw',
-          height: '60vw',
+          width: useStaticBackground ? '52vw' : '60vw',
+          height: useStaticBackground ? '52vw' : '60vw',
           borderRadius: '50%',
           background: `radial-gradient(circle, ${theme.orb2}, transparent 70%)`,
-          filter: useStaticBackground ? 'blur(96px)' : 'blur(132px)',
+          filter: useStaticBackground ? 'blur(74px)' : 'blur(120px)',
           willChange: useStaticBackground ? 'auto' : 'transform, opacity',
         }}
       />

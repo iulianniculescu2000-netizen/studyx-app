@@ -6,7 +6,7 @@ import type { Theme } from '../../theme/themes';
 interface HintPanelProps {
   calmMotion: boolean;
   examMode: boolean;
-  hasAI: boolean;
+  usesRemoteAI: boolean;
   hintLevel: number;
   hintData: HintResult | null;
   hintLoading: boolean;
@@ -19,7 +19,7 @@ interface HintPanelProps {
 export function HintPanel({
   calmMotion,
   examMode,
-  hasAI,
+  usesRemoteAI,
   hintLevel,
   hintData,
   hintLoading,
@@ -28,7 +28,7 @@ export function HintPanel({
   onGetHint,
   theme,
 }: HintPanelProps) {
-  if (revealed || examMode || !hasAI) return null;
+  if (revealed || examMode) return null;
 
   return (
     <div className="mb-5">
@@ -47,7 +47,7 @@ export function HintPanel({
             exit={{ opacity: 0, scale: 0.95 }}
             onClick={onGetHint}
             disabled={hintLoading}
-            className="group relative flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all overflow-hidden"
+            className="group relative flex items-center gap-2 overflow-hidden rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-all"
             style={{
               background: theme.surface,
               border: `1px solid ${showSmartNudge ? theme.accent : theme.border}`,
@@ -75,43 +75,43 @@ export function HintPanel({
               ) : (
                 <Sparkles size={13} className={showSmartNudge ? 'animate-pulse' : ''} />
               )}
-              <span>{hintLoading ? 'Analizez...' : 'Indiciu AI'}</span>
-              <span className="ml-1 font-mono text-[9px] border border-current px-1 rounded" style={{ color: theme.text3 }}>H</span>
+              <span>{hintLoading ? 'Analizez...' : (usesRemoteAI ? 'Indiciu AI' : 'Indiciu smart')}</span>
+              <span className="ml-1 rounded border border-current px-1 font-mono text-[9px]" style={{ color: theme.text3 }}>H</span>
             </div>
           </motion.button>
         ) : (
           <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="p-4 rounded-[24px] relative overflow-hidden glass-panel"
+            className="glass-panel relative overflow-hidden rounded-[24px] p-4"
             style={{
               background: `${theme.accent}08`,
               border: `1px solid ${theme.accent}25`,
               boxShadow: `0 8px 32px ${theme.accent}10`,
             }}
           >
-            <div className="flex items-center justify-between mb-3">
+            <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles size={14} style={{ color: theme.accent }} />
                 <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accent }}>
-                  Indiciu AI • Nivel {hintLevel}/3
+                  {usesRemoteAI ? 'Indiciu AI' : 'Indiciu ghidat'} • Nivel {hintLevel}/3
                 </span>
               </div>
               {hintLevel < 3 && (
                 <button
                   onClick={onGetHint}
-                  className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all hover:opacity-80"
+                  className="rounded-lg px-2 py-1 text-[10px] font-bold transition-all hover:opacity-80"
                   style={{ background: `${theme.accent}15`, color: theme.accent }}
                 >
                   + Mai mult
                 </button>
               )}
             </div>
-            <p className="text-sm font-medium leading-relaxed italic" style={{ color: theme.text }}>
+            <p className="text-sm font-medium italic leading-relaxed" style={{ color: theme.text }}>
               "{hintLevel === 1 ? hintData?.light : hintLevel === 2 ? hintData?.medium : hintData?.full}"
             </p>
 
-            <div className="absolute -right-10 -top-10 w-32 h-32 rounded-full blur-[60px] opacity-20" style={{ background: theme.accent }} />
+            <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full blur-[60px] opacity-20" style={{ background: theme.accent }} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -124,7 +124,7 @@ interface AIExplanationPanelProps {
   aiText: string | null;
   analysisResult: AIAnalysisResult | null;
   examMode: boolean;
-  hasAI: boolean;
+  usesRemoteAI: boolean;
   nextTopicHint: string | null;
   revealed: boolean;
   onExplain: () => void;
@@ -136,13 +136,13 @@ export function AIExplanationPanel({
   aiText,
   analysisResult,
   examMode,
-  hasAI,
+  usesRemoteAI,
   nextTopicHint,
   revealed,
   onExplain,
   theme,
 }: AIExplanationPanelProps) {
-  if (!revealed || examMode || !hasAI) return null;
+  if (!revealed || examMode) return null;
 
   return (
     <AnimatePresence mode="wait">
@@ -156,45 +156,48 @@ export function AIExplanationPanel({
         {aiText === null ? (
           <button
             onClick={onExplain}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
+            disabled={aiLoading}
+            className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-all hover:opacity-80"
             style={{
               background: `${theme.accent2}15`,
               border: `1px solid ${theme.accent2}30`,
               color: theme.accent2,
+              opacity: aiLoading ? 0.72 : 1,
+              cursor: aiLoading ? 'wait' : 'pointer',
             }}
           >
-            <Sparkles size={12} />
-            Explică AI
+            {aiLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {aiLoading ? 'Pregătesc explicația...' : (usesRemoteAI ? 'Explică AI' : 'Explică smart')}
           </button>
         ) : (
           <motion.div
             layout
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="p-5 rounded-3xl"
+            className="rounded-3xl p-5"
             style={{ background: `${theme.accent2}0C`, border: `1.5px solid ${theme.accent2}25` }}
           >
-            <div className="flex items-center gap-2 mb-3">
+            <div className="mb-3 flex items-center gap-2">
               <Sparkles size={14} style={{ color: theme.accent2 }} />
               <span className="text-xs font-black uppercase tracking-widest" style={{ color: theme.accent2 }}>
-                Explicație AI
+                {usesRemoteAI ? 'Explicație AI' : 'Explicație ghidată'}
               </span>
               {aiLoading && (
                 <motion.div
                   animate={{ opacity: [1, 0.3, 1] }}
                   transition={{ duration: 1, repeat: Infinity }}
-                  className="w-1.5 h-1.5 rounded-full ml-1"
+                  className="ml-1 h-1.5 w-1.5 rounded-full"
                   style={{ background: theme.accent2 }}
                 />
               )}
             </div>
-            <p className="text-sm leading-generous whitespace-pre-wrap" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
+            <p className="whitespace-pre-wrap text-sm leading-generous" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
               {aiText}
-              {aiLoading && <span className="animate-pulse">▊</span>}
+              {aiLoading && <span className="animate-pulse">...</span>}
             </p>
             {analysisResult?.mistakeType && (
-              <div className="mt-4 pt-4 border-t border-dashed opacity-60" style={{ borderColor: `${theme.accent2}30` }}>
-                <div className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: theme.accent2 }}>Analiză eroare</div>
+              <div className="mt-4 border-t border-dashed pt-4 opacity-60" style={{ borderColor: `${theme.accent2}30` }}>
+                <div className="mb-1 text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accent2 }}>Analiză eroare</div>
                 <div className="text-xs" style={{ color: theme.text3 }}>{analysisResult.mistakeType}</div>
               </div>
             )}
@@ -217,7 +220,7 @@ export function AIExplanationPanel({
 
 interface MnemonicPanelProps {
   examMode: boolean;
-  hasAI: boolean;
+  usesRemoteAI: boolean;
   mnemonicLoading: boolean;
   mnemonicText: string | null;
   revealed: boolean;
@@ -228,7 +231,7 @@ interface MnemonicPanelProps {
 
 export function MnemonicPanel({
   examMode,
-  hasAI,
+  usesRemoteAI,
   mnemonicLoading,
   mnemonicText,
   revealed,
@@ -236,7 +239,7 @@ export function MnemonicPanel({
   onGenerate,
   theme,
 }: MnemonicPanelProps) {
-  if (!revealed || examMode || !hasAI || !wasWrong) return null;
+  if (!revealed || examMode || !wasWrong) return null;
 
   return (
     <AnimatePresence>
@@ -249,21 +252,21 @@ export function MnemonicPanel({
           <button
             disabled={mnemonicLoading}
             onClick={onGenerate}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
+            className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-all hover:opacity-80"
             style={{ background: `${theme.warning}15`, border: `1px solid ${theme.warning}30`, color: theme.warning }}
           >
             {mnemonicLoading
               ? <><Loader2 size={12} className="animate-spin" />Generez mnemonic...</>
-              : <><Zap size={12} />Mnemonic AI</>}
+              : <><Zap size={12} />{usesRemoteAI ? 'Mnemonic AI' : 'Mnemonic smart'}</>}
           </button>
         ) : (
           <motion.div
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="p-4 rounded-2xl"
+            className="rounded-2xl p-4"
             style={{ background: `${theme.warning}0C`, border: `1px solid ${theme.warning}25` }}
           >
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <Zap size={12} style={{ color: theme.warning }} />
               <span className="text-xs font-semibold" style={{ color: theme.warning }}>Mnemonic</span>
             </div>

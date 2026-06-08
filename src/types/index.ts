@@ -59,6 +59,8 @@ export interface QuizSession {
   timePerQuestion?: Record<string, number>; // questionId -> seconds
   /** Only set when quiz.penaltyMode is true. Score net: +1 correct, -0.25/wrong option */
   penalizedScore?: number;
+  /** Question IDs answered partially correct (some correct selected, no wrong selected) */
+  partialAnswers?: string[];
 }
 
 // Spaced repetition per question
@@ -71,6 +73,7 @@ export interface QuestionStat {
   nextReview: number; // timestamp
   interval: number; // days until next review
   eFactor?: number; // SM-2 ease factor (default 2.5)
+  consecutiveCorrect?: number; // SM-2: resetat la 0 la greșeală, folosit pentru faza de repetare
 }
 
 export interface StudyStreak {

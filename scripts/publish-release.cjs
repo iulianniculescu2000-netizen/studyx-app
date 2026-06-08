@@ -43,6 +43,8 @@ function main() {
     GH_TOKEN: token,
     GITHUB_TOKEN: token,
   });
+  run('node scripts/sync-updates-local.cjs');
+  run('node scripts/publish-update.cjs current --skip-build --metadata-only "StudyX update"');
 }
 
 main();

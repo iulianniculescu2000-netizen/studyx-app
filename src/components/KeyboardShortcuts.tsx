@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Command } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useNavigate } from 'react-router-dom';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 
 const SHORTCUTS = [
   { category: 'Navigare', items: [
@@ -44,12 +45,9 @@ export default function KeyboardShortcuts() {
   const [open, setOpen] = useState(false);
   const theme = useTheme();
   const navigate = useNavigate();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
+  const { calmMotion, performanceLite } = useAdaptiveMotion();
 
-  // G + key navigation state
-  const [gPressed, setGPressed] = useState(false);
-  const [gTimer, setGTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  // G + key navigation state - eliminat pentru a evita conflicte
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -57,7 +55,7 @@ export default function KeyboardShortcuts() {
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable;
 
       // Esc always closes modal
-      if (e.key === 'Escape') { setOpen(false); setGPressed(false); return; }
+      if (e.key === 'Escape') { setOpen(false); return; }
 
       if (isInput) return;
 
@@ -70,36 +68,16 @@ export default function KeyboardShortcuts() {
 
       // Ctrl+K → global search (dispatched separately in GlobalSearch)
 
-      // G + [key] navigation
-      if (gPressed) {
-        setGPressed(false);
-        if (gTimer) clearTimeout(gTimer);
-        switch (e.key.toLowerCase()) {
-          case 'h': navigate('/'); break;
-          case 'q': navigate('/quizzes'); break;
-          case 's': navigate('/stats'); break;
-          case 'r': navigate('/review'); break;
-          case 'n': navigate('/notes'); break;
-        }
-        return;
-      }
+      // G + [key] navigation - eliminat pentru a evita conflictele cu typing
+      // Folosim Ctrl+G + key în schimb
 
-      if (e.key.toLowerCase() === 'g') {
-        setGPressed(true);
-        const t = setTimeout(() => setGPressed(false), 1200);
-        setGTimer(t);
-        return;
-      }
-
-      // N → new quiz
-      if (e.key.toLowerCase() === 'n') {
-        navigate('/create');
-      }
+      // N -> new quiz - eliminat pentru a evita conflictele
+      // Folosim Ctrl+N în schimb
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [gPressed, gTimer, navigate]);
+  }, [navigate]);
 
   return (
     <AnimatePresence>
@@ -110,7 +88,7 @@ export default function KeyboardShortcuts() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
+            transition={calmMotion ? { duration: 0.12 } : { duration: 0.18 }}
             className="fixed inset-0 z-[200]"
             style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(2px)' : 'blur(6px)' }}
             onClick={() => setOpen(false)}
@@ -121,7 +99,7 @@ export default function KeyboardShortcuts() {
             initial={{ opacity: 0, scale: 0.93, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.93, y: 20 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            transition={calmMotion ? { duration: 0.16, ease: 'easeOut' } : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className="fixed z-[201] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-3xl overflow-hidden"
             style={{
               background: theme.modalBg,
@@ -143,8 +121,8 @@ export default function KeyboardShortcuts() {
                 </div>
               </div>
               <motion.button 
-                whileHover={{ scale: 1.1, rotate: 90 }}
-                whileTap={{ scale: 0.9 }}
+                whileHover={calmMotion ? undefined : { scale: 1.1, rotate: 90 }}
+                whileTap={calmMotion ? undefined : { scale: 0.9 }}
                 onClick={() => setOpen(false)}
                 className="p-2 rounded-xl transition-all"
                 style={{ color: theme.text3, background: theme.surface2, cursor: 'pointer' }}>

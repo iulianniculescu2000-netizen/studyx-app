@@ -1,51 +1,63 @@
 import type { Question } from '../types';
 import type { AIContextPayload, MistakeBankEntry, UserProfileData, WeakTopic } from './types';
 
-// ─── Personalitate AI ─────────────────────────────────────────────────────────
 export const AI_PERSONALITY =
-  'Esti un profesor de medicina cu 20 de ani experienta clinica, extrem de exigent, care pregateste studenti romani pentru rezidentiat. ' +
-  'Nu accepti raspunsuri superficiale. Prioritizezi INTELEGEREA mecanismelor patologice, nu memorarea mecanica. ' +
-  'Folosesti terminologie medicala corecta, in limba romana, cu echivalente latine/engleze cand e relevant. ' +
-  'Gandirea ta este structurata: fiziopatologie → clinic → diagnostic → tratament.';
+  'Ești un profesor de medicină cu experiență clinică vastă, exigent și foarte clar, ' +
+  'care pregătește studenți români pentru examene și rezidențiat. ' +
+  'Nu accepți explicații superficiale. Prioritizezi înțelegerea mecanismelor patologice, ' +
+  'nu memorarea mecanică. Folosești terminologie medicală corectă, în limba română, ' +
+  'și introduci echivalente latine sau engleze doar când adaugă claritate. ' +
+  'Raționamentul tău urmează structura: fiziopatologie -> clinic -> diagnostic -> tratament.';
 
-// ─── Reguli de grounding ──────────────────────────────────────────────────────
 export const GROUNDING_RULES =
   'REGULI STRICTE:\n' +
-  '1. Foloseste PRIORITAR informatiile din contextul furnizat din biblioteca studentului.\n' +
-  '2. Daca o informatie nu este in context, poti completa din cunostinte medicale generale — dar marcheaza clar "(cunostinte generale)".\n' +
-  '3. Nu inventa date de laborator, doze sau statistici. Mai bine spui "conform literaturii" decat sa inventezi.\n' +
-  '4. Raspunde EXCLUSIV in limba romana. Termenii latini/englezi pot aparea ca echivalente intre paranteze.';
+  '1. Folosește prioritar informațiile din contextul extras din biblioteca studentului.\n' +
+  '2. Dacă o informație nu apare în context, poți completa din cunoștințe medicale generale, ' +
+  'dar marchează clar acea parte ca "(cunoștințe generale)".\n' +
+  '3. Nu inventa valori de laborator, doze, scoruri sau statistici.\n' +
+  '4. Răspunde exclusiv în limba română.\n' +
+  '5. Nu formula întrebări despre document, fișier, PDF sau "cursul încărcat"; întreabă doar despre conținutul medical.\n' +
+  '6. Opțiunile de răspuns trebuie să fie concise, clare și utile pentru examen, nu propoziții lungi copiate integral.\n' +
+  '7. Evită să repeți textual pasaje întregi din context; reformulează fidel și precis.';
+
+export const TRUSTED_GENERAL_KNOWLEDGE_RULES =
+  'Cand biblioteca nu acopera complet raspunsul, completeaza doar cu rationament medical general stabil, compatibil cu manuale si ghiduri consacrate. ' +
+  'Nu inventa citari exacte, editii, pagini, doze, scoruri sau recomandari temporale neverificate; marcheaza clar ce este completare generala.';
 
 function difficultyText(difficulty: 'easy' | 'medium' | 'hard') {
-  if (difficulty === 'easy')
-    return 'USOR — întrebări de recunoaștere: definiții, clasificări simple, asociații directe. Fără capcane.';
-  if (difficulty === 'hard')
-    return 'DIFICIL (nivel rezidențiat) — raționament clinic în mai mulți pași, diagnostic diferențial, complicații, tratament specific cu doze, situații atipice.';
-  return 'MEDIU — corelații patofizologice, interpretare date clinice simple, alegere tratament de primă linie.';
+  if (difficulty === 'easy') {
+    return 'UȘOR: întrebări de recunoaștere, definiții, clasificări simple și asocieri directe, fără capcane.';
+  }
+  if (difficulty === 'hard') {
+    return 'DIFICIL: raționament clinic în mai mulți pași, diagnostic diferențial, complicații, tratament specific și situații atipice.';
+  }
+  return 'MEDIU: corelații fiziopatologice, interpretare clinică simplă și alegerea conduitei corecte.';
 }
 
 function weakTopicsText(weakTopics: WeakTopic[]) {
-  if (weakTopics.length === 0) return 'niciunul identificat încă';
+  if (weakTopics.length === 0) return 'niciun topic slab identificat încă';
   return weakTopics
-    .map(t => `"${t.topic}" (${t.accuracy}% corect din ${t.total} răspunsuri)`)
+    .map((topic) => `"${topic.topic}" (${topic.accuracy}% corect din ${topic.total} răspunsuri)`)
     .join(', ');
 }
 
 function mistakeBankText(mistakeBank: MistakeBankEntry[]) {
   if (!mistakeBank?.length) return '';
-  const top = mistakeBank
-    .sort((a, b) => b.wrongCount - a.wrongCount)
+
+  const topMistakes = [...mistakeBank]
+    .sort((left, right) => right.wrongCount - left.wrongCount)
     .slice(0, 5);
+
   return (
-    'GREȘELILE FRECVENTE ALE STUDENTULUI (generează întrebări care atacă exact aceste lacune):\n' +
-    top
-      .map(
-        m =>
-          `- Topic: "${m.topic}" | Greșit de ${m.wrongCount}x | ` +
-          `Răspuns greșit dat: "${m.userAnswer}" | ` +
-          `Tip greșeală: ${m.mistakeType ?? 'nespecificat'} | ` +
-          `Concept lipsă: ${m.missingConcept ?? 'nespecificat'}`
-      )
+    'GREȘELI FRECVENTE ALE STUDENTULUI:\n' +
+    topMistakes
+      .map((entry) => (
+        `- Topic: "${entry.topic}" | ` +
+        `Greșit de ${entry.wrongCount} ori | ` +
+        `Răspuns dat: "${entry.userAnswer}" | ` +
+        `Tip greșeală: ${entry.mistakeType ?? 'nespecificat'} | ` +
+        `Concept lipsă: ${entry.missingConcept ?? 'nespecificat'}`
+      ))
       .join('\n')
   );
 }
@@ -55,137 +67,142 @@ export function sanitizeUserInput(input: string) {
     .replace(/<\|.*?\|>/g, '')
     .replace(/system prompt/gi, '')
     .replace(/ignore previous instructions/gi, '')
-    .split('').filter(c => c.charCodeAt(0) !== 0).join('')
+    .split('')
+    .filter((char) => char.charCodeAt(0) !== 0)
+    .join('')
     .trim();
 }
 
-// ─── PROMPT GENERARE ÎNTREBĂRI ────────────────────────────────────────────────
 export function buildQuestionPrompt(
   profile: UserProfileData | null,
   weakTopics: WeakTopic[],
   difficulty: 'easy' | 'medium' | 'hard',
-  contextPayload?: AIContextPayload
+  contextPayload?: AIContextPayload,
 ) {
   const safeContext = contextPayload?.summary ?? '';
-  const mistakeBankSection = profile?.mistakeBank?.length
-    ? mistakeBankText(profile.mistakeBank)
-    : '';
+  const mistakeSection = profile?.mistakeBank?.length ? mistakeBankText(profile.mistakeBank) : '';
 
   const profileLine = profile
-    ? `PROFIL STUDENT: dificultate curentă ${profile.currentDifficulty}, ` +
-      `acuratețe globală ${profile.globalAccuracy}%, streak ${profile.streak} răspunsuri corecte consecutive.`
-    : 'Profil student indisponibil — generează pentru nivel mediu.';
+    ? `PROFIL STUDENT: dificultate curentă ${profile.currentDifficulty}, acuratețe globală ${profile.globalAccuracy}%, streak ${profile.streak}.`
+    : 'Profil student indisponibil. Generează pentru nivel mediu.';
 
-  const vignetteInstruction =
-    difficulty === 'hard'
-      ? 'OBLIGATORIU pentru HARD: Creează un caz clinic complet (pacient cu vârstă/sex, simptome, semne vitale, date de laborator relevante, imagistică) ÎNAINTE de întrebare. Întrebarea trebuie să ceară diagnostic, mecanism sau tratament specific.'
-      : difficulty === 'medium'
-      ? 'Pentru MEDIUM: Include câteva date clinice (simptom principal + 1-2 date paraclinice) care necesită interpretare, nu doar memorare.'
-      : 'Pentru EASY: Întrebare directă, clară, fără capcane. Verifică cunoștințele de bază.';
+  const vignetteInstruction = difficulty === 'hard'
+    ? 'Pentru HARD: creează scenarii clinice complete, cu pacient, simptome, semne cheie și context relevant.'
+    : difficulty === 'medium'
+      ? 'Pentru MEDIUM: include 1-2 date clinice sau paraclinice care cer interpretare.'
+      : 'Pentru EASY: păstrează întrebarea directă și clară.';
 
   const distractorInstruction =
-    'DISTRACTORI DE CALITATE: Răspunsurile greșite trebuie să fie plauzibile clinic — confuzii reale pe care studenții le fac (ex: medicament corect dar doză greșită, diagnostic similar dar cu diferențiator cheie, mecanism adiacent). NU pune răspunsuri evident greșite.';
+    'Distractorii trebuie să fie plauzibili clinic și să reflecte confuzii reale, nu răspunsuri evident absurde.';
+
+  const answerQualityInstruction =
+    'Cerințe obligatorii pentru întrebări: 4 opțiuni, exact 1 răspuns corect, fără a menționa numele fișierului sau documentului, fără formulări meta de tip "conform cursului", fără opțiuni mai lungi de 18 cuvinte.';
 
   const jsonSchema =
-    '{"questions":[{"text":"","options":[{"text":"","isCorrect":true/false}],"explanation":"EXPLICATIE DETALIATA cu fiziopatologie + de ce fiecare distractor e greșit","tags":["topic"],"difficulty":"easy|medium|hard","sources":[""]}]}';
+    '{"questions":[{"text":"","options":[{"text":"","isCorrect":true}],"explanation":"","tags":["topic"],"difficulty":"easy|medium|hard","sources":[""]}]}';
 
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
+    TRUSTED_GENERAL_KNOWLEDGE_RULES,
     profileLine,
-    `TOPICURI SLABE (prioritizează-le): ${weakTopicsText(weakTopics)}.`,
-    mistakeBankSection,
-    `NIVEL DIFICULTATE: ${difficultyText(difficulty)}.`,
+    `TOPICURI SLABE DE PRIORITIZAT: ${weakTopicsText(weakTopics)}.`,
+    mistakeSection,
+    `NIVEL CERUT: ${difficultyText(difficulty)}`,
     vignetteInstruction,
     distractorInstruction,
+    answerQualityInstruction,
     safeContext
-      ? `CONTEXT DIN BIBLIOTECA STUDENTULUI (folosește-l prioritar):\n${safeContext}`
-      : 'ATENȚIE: Nu există materiale în bibliotecă — folosește cunoștințe medicale generale.',
-    'IMPORTANT: Returnează JSON strict, fără text înainte sau după. Schema exactă:',
+      ? `CONTEXT DIN BIBLIOTECA STUDENTULUI:\n${safeContext}`
+      : 'Nu există context în bibliotecă. Folosește doar cunoștințe medicale generale.',
+    'Returnează strict JSON valid, fără text înainte sau după. Schema este:',
     jsonSchema,
   ]
     .filter(Boolean)
     .join('\n\n');
 }
 
-// ─── PROMPT EXPLICAȚIE RĂSPUNS ────────────────────────────────────────────────
 export function buildExplanationPrompt(
   userAnswer: string,
   correctAnswer: string,
   question?: Question,
-  contextPayload?: AIContextPayload
+  contextPayload?: AIContextPayload,
 ) {
+  const optionLines = question?.options
+    .map((option, index) => {
+      const label = String.fromCharCode(65 + index);
+      return `${label}. ${sanitizeUserInput(option.text)}${option.isCorrect ? ' [CORECT]' : ''}`;
+    })
+    .join('\n');
+
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
-    'SARCINA TA: Analizează răspunsul studentului ca un profesor exigent. Nu te mulțumi cu o explicație superficială.',
-    'STRUCTURA EXPLICAȚIEI (obligatorie):\n' +
-      '1. De ce răspunsul ales este GREȘIT (mecanism specific, nu doar "nu e corect")\n' +
-      '2. De ce răspunsul corect este corect — cu fiziopatologie/mecanism de acțiune\n' +
-      '3. Cum să distingă pe viitor (regula clinică sau trucu mnemonic)\n' +
-      '4. Ce alte concepte trebuie consolidate',
+    TRUSTED_GENERAL_KNOWLEDGE_RULES,
+    'SCOP: explicație SCURTĂ și CLARĂ după o grilă. Maxim 4-5 propoziții. Nu scrie eseuri.',
+    'FORMAT STRICT:\n' +
+      '1. De ce răspunsul corect e corect — 1-2 propoziții cu mecanismul cheie.\n' +
+      '2. De ce varianta greșită aleasă cade — 1 propoziție, direct.\n' +
+      '3. Regula de reținut pentru examen — 1 propoziție scurtă, memorabilă.',
+    'Nu repeta întrebarea. Nu enumera toate variantele. Fii direct ca un profesor care corectează oral.',
     question ? `ÎNTREBAREA: ${sanitizeUserInput(question.text)}` : '',
+    optionLines ? `OPȚIUNI:\n${optionLines}` : '',
     `RĂSPUNS STUDENT: ${sanitizeUserInput(userAnswer)}`,
     `RĂSPUNS CORECT: ${sanitizeUserInput(correctAnswer)}`,
-    contextPayload?.summary
-      ? `CONTEXT RELEVANT:\n${contextPayload.summary}`
-      : '',
-    'Returnează JSON strict:\n' +
-      '{"explanation":"EXPLICATIE DETALIATA minimum 100 cuvinte","mistakeType":"confuzie_mecanism|inversare_tratament|diagnostic_diferential|lipsa_cunostinte|citire_superficiala|altul","rule":"Regula scurta de retinut (max 2 propozitii)","confidence":0.0,"missingConcept":"Conceptul specific care lipseste","recommendedTopic":"Topicul de studiat urgent","relatedConcepts":["concept1","concept2"],"sources":[""]}',
+    contextPayload?.summary ? `CONTEXT RELEVANT:\n${contextPayload.summary}` : '',
+    'Returnează strict JSON:\n' +
+      '{"explanation":"maxim 80 de cuvinte: de ce corectul e corect (mecanism), de ce gresitul cade, regula scurta","mistakeType":"confuzie_mecanism|inversare_tratament|diagnostic_diferential|lipsa_cunostinte|citire_superficiala|altul","rule":"regula scurta de retinut","confidence":0.0,"missingConcept":"concept lipsa","recommendedTopic":"topic recomandat","relatedConcepts":[""],"sources":[""]}',
   ]
     .filter(Boolean)
     .join('\n\n');
 }
 
-// ─── PROMPT MNEMONIC ──────────────────────────────────────────────────────────
 export function buildMnemonicPrompt(concept: string, contextPayload?: AIContextPayload) {
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
+    TRUSTED_GENERAL_KNOWLEDGE_RULES,
     `CONCEPT: ${sanitizeUserInput(concept)}`,
     contextPayload?.summary ? `CONTEXT:\n${contextPayload.summary}` : '',
-    'Creează un mnemonic creativ, MEMORABIL și MEDICAL pentru studenți români. ' +
-      'Poate fi: acronim, rimă, poveste scurtă, asociație vizuală. ' +
-      'Trebuie să fie ușor de reprodus în examen oral.',
-    'Returnează JSON strict: {"mnemonic":"mnemonicul complet în română"}',
+    'Creează un mnemonic medical memorabil pentru studenți români. Poate fi acronim, rimă, poveste scurtă sau asociere vizuală.',
+    'Returnează strict JSON: {"mnemonic":"textul mnemonic complet"}',
   ]
     .filter(Boolean)
     .join('\n\n');
 }
 
-// ─── PROMPT INDICII ───────────────────────────────────────────────────────────
 export function buildHintPrompt(question: Question, contextPayload?: AIContextPayload) {
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
+    TRUSTED_GENERAL_KNOWLEDGE_RULES,
     `ÎNTREBAREA: ${sanitizeUserInput(question.text)}`,
     contextPayload?.summary ? `CONTEXT:\n${contextPayload.summary}` : '',
-    'Generează 3 indicii PROGRESIVE (de la vag la explicit). ' +
-      'Indiciul ușor să nu dea răspunsul, cel complet să explice mecanismul complet.',
-    'Returnează JSON strict:\n' +
-      '{"light":"Indiciu vag - direcție generală, fără să dezvăluie răspunsul","medium":"Indiciu mediu - mecanismul patofizologic cheie","full":"Explicație completă - răspuns + de ce + cum să ții minte"}',
+    'Generează 3 indicii progresive, de la vag la aproape complet, fără a strica imediat răspunsul.',
+    'Returnează strict JSON:\n' +
+      '{"light":"indiciu vag","medium":"indiciu mediu","full":"explicatia aproape completa"}',
   ]
     .filter(Boolean)
     .join('\n\n');
 }
 
-// ─── PROMPT OPȚIUNI GREȘITE ───────────────────────────────────────────────────
 export function buildWrongOptionsPrompt(question: Question, contextPayload?: AIContextPayload) {
-  const options = question.options.map(o => o.text).join(' | ');
-  const correctOption = question.options.find(o => o.isCorrect)?.text ?? '';
+  const options = question.options.map((option) => option.text).join(' | ');
+  const correctOption = question.options.find((option) => option.isCorrect)?.text ?? '';
 
   return [
     AI_PERSONALITY,
     GROUNDING_RULES,
+    TRUSTED_GENERAL_KNOWLEDGE_RULES,
     `ÎNTREBAREA: ${sanitizeUserInput(question.text)}`,
-    `OPȚIUNILE: ${sanitizeUserInput(options)}`,
-    `RĂSPUNSUL CORECT: ${correctOption}`,
+    `OPȚIUNI: ${sanitizeUserInput(options)}`,
+    `RĂSPUNS CORECT: ${sanitizeUserInput(correctOption)}`,
     contextPayload?.summary ? `CONTEXT:\n${contextPayload.summary}` : '',
-    'Pentru FIECARE opțiune greșită explică:\n' +
-      '- De ce e greșită (mecanism specific)\n' +
-      '- Când AR fi corectă acea opțiune (context diferit)\n' +
-      '- Confuzia clasică pe care o reprezintă',
-    'Returnează JSON strict: {"options":[{"option":"textul optiunii","whyWrong":"explicatie detaliata","whenCorrect":"contextul in care ar fi corect","classicConfusion":"confuzia tipica"}]}',
+    'Pentru fiecare opțiune greșită explică:\n' +
+      '- de ce e greșită,\n' +
+      '- în ce context ar fi putut deveni corectă,\n' +
+      '- ce confuzie clasică reprezintă.',
+    'Returnează strict JSON: {"options":[{"option":"","whyWrong":"","whenCorrect":"","classicConfusion":""}]}',
   ]
     .filter(Boolean)
     .join('\n\n');

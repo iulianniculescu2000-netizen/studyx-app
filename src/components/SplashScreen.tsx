@@ -1,16 +1,14 @@
 import React from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import Logo from './Logo';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 
 interface SplashScreenProps {
   visible: boolean;
 }
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
-  const reduceMotion = useReducedMotion();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
-  const calm = reduceMotion || performanceLite;
+  const { calmMotion: calm } = useAdaptiveMotion();
 
   return (
     <AnimatePresence>
@@ -118,7 +116,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
               />
             </div>
             <p style={{ color: 'rgba(255,255,255,0.24)', fontSize: '0.68rem', marginTop: 8 }}>
-              Se incarca experienta premium...
+              Se încarcă experiența premium...
             </p>
           </motion.div>
         </motion.div>

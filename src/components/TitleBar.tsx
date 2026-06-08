@@ -38,7 +38,7 @@ declare global {
       setHardwareAccel: (enabled: boolean) => Promise<void>;
       getSettings: () => Promise<{ hardwareAccel?: boolean }>;
       hardReset: () => Promise<void>;
-      storageSave: (profileId: string, namespace: string, data: unknown) => Promise<boolean>;
+      storageSave: (profileId: string, namespace: string, serialized: string) => Promise<boolean>;
       storageLoad: (profileId: string, namespace: string) => Promise<unknown>;
       onAppClose: (cb: () => void) => () => void;
     };
@@ -53,15 +53,15 @@ const PAGE_TITLES: Record<string, string> = {
   '/stats': 'Statistici',
   '/review': 'Recapitulare',
   '/flashcards': 'Flashcarduri',
-  '/notes': 'Notite',
-  '/settings': 'Setari',
-  '/create': 'Grila noua',
+  '/notes': 'Notițe',
+  '/settings': 'Setări',
+  '/create': 'Grilă nouă',
 };
 
 function getPageTitle(pathname: string): string {
   if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
-  if (pathname.startsWith('/quiz/')) return 'Detalii grila';
-  if (pathname.startsWith('/play/')) return 'Rezolva';
+  if (pathname.startsWith('/quiz/')) return 'Detalii grilă';
+  if (pathname.startsWith('/play/')) return 'Rezolvă';
   if (pathname.startsWith('/results/')) return 'Rezultate';
   if (pathname.startsWith('/folder/')) return 'Folder';
   if (pathname.startsWith('/flashcards/')) return 'Sesiune';

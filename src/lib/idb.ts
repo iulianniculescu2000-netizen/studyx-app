@@ -15,7 +15,9 @@ function resetDBConnection() {
   if (dbInstance) {
     try {
       dbInstance.close();
-    } catch {}
+    } catch {
+      // Ignore close failures; we'll recreate the connection on next access.
+    }
   }
   dbInstance = null;
   dbPromise = null;
@@ -31,7 +33,9 @@ function bindDBLifecycle(db: IDBDatabase) {
   db.onversionchange = () => {
     try {
       db.close();
-    } catch {}
+    } catch {
+      // Ignore versionchange close failures; stale handles are dropped below.
+    }
     if (dbInstance === db) {
       dbInstance = null;
       dbPromise = null;
@@ -98,7 +102,9 @@ async function runOperation<T>(
         settled = true;
         try {
           transaction.abort();
-        } catch {}
+        } catch {
+          // Ignore abort failures when the transaction is already closed.
+        }
         resetDBConnection();
         reject(new Error(`IndexedDB ${mode} timeout`));
       }, OPERATION_TIMEOUT_MS);

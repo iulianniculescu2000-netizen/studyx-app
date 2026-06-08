@@ -6,14 +6,37 @@ import {
   Loader2
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
-import { useAIStore, type AIModel } from '../store/aiStore';
+import { useAIStore, type AIModel, type AIProvider } from '../store/aiStore';
 import Portal from './Portal';
 
-const MODELS: { id: AIModel; name: string; desc: string; speed: string }[] = [
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', desc: 'Cel mai inteligent', speed: 'Rapid' },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B', desc: 'Ultra rapid', speed: 'Instant' },
-  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', desc: 'Echilibrat, context mare', speed: 'Rapid' },
+const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; docs: string }[] = [
+  {
+    id: 'groq',
+    name: 'Groq',
+    desc: 'Rapid pentru chat si generare de grile',
+    keyHint: 'gsk_...',
+    docs: 'https://console.groq.com/keys',
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    desc: 'Rationament puternic pentru explicatii si sinteze',
+    keyHint: 'sk-...',
+    docs: 'https://platform.deepseek.com/api_keys',
+  },
 ];
+
+const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; speed: string }[]> = {
+  groq: [
+    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', desc: 'Cel mai inteligent', speed: 'Rapid' },
+    { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B', desc: 'Ultra rapid', speed: 'Instant' },
+    { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', desc: 'Echilibrat, context mare', speed: 'Rapid' },
+  ],
+  deepseek: [
+    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', desc: 'Cel mai bun pentru raționament', speed: 'Smart' },
+    { id: 'deepseek-chat', name: 'DeepSeek Chat', desc: 'Rapid pentru chat și sinteze', speed: 'Rapid' },
+  ],
+};
 
 interface AISettingsProps {
   open: boolean;
@@ -23,7 +46,7 @@ interface AISettingsProps {
 export default function AISettings({ open, onClose }: AISettingsProps) {
   const theme = useTheme();
   const {
-    apiKey, model, setApiKey, setModel,
+    apiKey, provider, model, setApiKey, setProvider, setModel,
     knowledgeSources, addKnowledgeSource, removeKnowledgeSource
   } = useAIStore();
   
@@ -36,21 +59,42 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
   const [processStep, setProcessProcessingStep] = useState('');
   
   const fileRef = useRef<HTMLInputElement>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (open) setDraft(apiKey);
   }, [open, apiKey]);
 
+  useEffect(() => () => {
+    if (savedTimerRef.current) {
+      clearTimeout(savedTimerRef.current);
+    }
+  }, []);
+
   const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string) => {
-    return await Promise.race<T>([
-      promise,
-      new Promise<T>((_, reject) => {
-        window.setTimeout(() => reject(new Error(message)), timeoutMs);
-      }),
-    ]);
+    let timeoutId: ReturnType<typeof window.setTimeout>;
+    try {
+      return await Promise.race<T>([
+        promise,
+        new Promise<T>((_, reject) => {
+          timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+        }),
+      ]);
+    } finally {
+      window.clearTimeout(timeoutId!);
+    }
   };
 
-  const isValidKey = (k: string) => k.trim().startsWith('gsk_') && k.trim().length > 20;
+  const activeProvider = PROVIDERS.find((entry) => entry.id === provider) ?? PROVIDERS[0];
+  const modelOptions = MODELS[provider] ?? MODELS.groq;
+  const isValidKey = (k: string) => {
+    const trimmed = k.trim();
+    if (!trimmed) return true;
+    return provider === 'groq'
+      ? trimmed.startsWith('gsk_') && trimmed.length > 20
+      : trimmed.startsWith('sk-') && trimmed.length > 20;
+  };
+  const keyInvalid = draft.trim().length > 0 && !isValidKey(draft);
 
   const handleSave = () => {
     const trimmed = draft.trim();
@@ -60,7 +104,10 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
     }
     setApiKey(trimmed);
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (savedTimerRef.current) {
+      clearTimeout(savedTimerRef.current);
+    }
+    savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
   };
 
   const handleKnowledgeFile = async (file: File) => {
@@ -149,7 +196,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.93, y: 20 }}
               transition={{ type: 'spring', stiffness: 360, damping: 28 }}
-              className="fixed z-[201] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-[28px] shadow-2xl overflow-hidden flex flex-col premium-modal"
+              className="fixed z-[201] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl rounded-[28px] shadow-2xl overflow-hidden flex flex-col premium-modal"
               style={{
                 maxHeight: '85vh',
                 WebkitAppRegion: 'no-drag',
@@ -171,7 +218,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                 <div>
                   <h2 className="text-lg font-black tracking-tight" style={{ color: theme.text }}>Setări AI</h2>
                   <p className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: theme.text }}>
-                    Powered by Groq Cloud
+                    Provider, model si biblioteca AI
                   </p>
                 </div>
                 <motion.button
@@ -190,7 +237,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                 {/* API Key */}
                 <div className="mb-6">
                   <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.1em] mb-2.5 opacity-60" style={{ color: theme.text }}>
-                    <Key size={12} /> Cheie API Groq
+                    <Key size={12} /> Cheie API {activeProvider.name}
                   </label>
                   <div className="relative">
                     <input
@@ -198,7 +245,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-                      placeholder="gsk_..."
+                      placeholder={activeProvider.keyHint}
                       className="w-full px-4 py-3 rounded-2xl text-sm pr-10 font-medium"
                       style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text, outline: 'none' }}
                     />
@@ -206,9 +253,45 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                       {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
-                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-bold mt-2.5 hover:underline" style={{ color: theme.accent }}>
-                    <ExternalLink size={11} /> Obține cheie gratuită
+                  <a href={activeProvider.docs} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-bold mt-2.5 hover:underline" style={{ color: theme.accent }}>
+                    <ExternalLink size={11} /> Deschide pagina pentru cheie
                   </a>
+                  {keyInvalid && (
+                    <p className="mt-2 text-[11px] font-bold" style={{ color: theme.danger }}>
+                      Cheia nu se potrivește cu providerul selectat.
+                    </p>
+                  )}
+                </div>
+
+                <div className="mb-6">
+                  <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.1em] mb-2.5 opacity-60" style={{ color: theme.text }}>
+                    <Cpu size={12} /> Provider AI
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PROVIDERS.map((entry) => {
+                      const active = provider === entry.id;
+                      return (
+                        <button
+                          key={entry.id}
+                          onClick={() => {
+                            setProvider(entry.id);
+                            setSaved(false);
+                          }}
+                          className="flex min-h-[82px] items-start gap-3 rounded-2xl px-4 py-3 text-left transition-all"
+                          style={{
+                            background: active ? `${theme.accent}14` : theme.surface2,
+                            border: `1px solid ${active ? theme.accent + '50' : theme.border}`,
+                          }}
+                        >
+                          <div className="flex-1">
+                            <p className="text-sm font-black" style={{ color: theme.text }}>{entry.name}</p>
+                            <p className="mt-1 text-[11px] font-medium leading-5 opacity-60" style={{ color: theme.text }}>{entry.desc}</p>
+                          </div>
+                          {active && <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 shadow-lg"><Check size={12} color="white" strokeWidth={4} /></div>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Model Selection */}
@@ -217,7 +300,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                     <Cpu size={12} /> Model AI
                   </label>
                   <div className="space-y-2">
-                    {MODELS.map((m) => (
+                    {modelOptions.map((m) => (
                       <button key={m.id} onClick={() => setModel(m.id)} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all"
                         style={{
                           background: model === m.id ? `${theme.accent}14` : theme.surface2,
@@ -233,8 +316,8 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                   </div>
                 </div>
 
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={handleSave} className="w-full py-3.5 rounded-2xl font-black text-sm text-white shadow-xl mb-8"
-                  style={{ background: saved ? theme.success : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                <motion.button whileHover={{ scale: keyInvalid ? 1 : 1.02 }} whileTap={{ scale: keyInvalid ? 1 : 0.97 }} onClick={handleSave} disabled={keyInvalid} className="w-full py-3.5 rounded-2xl font-black text-sm text-white shadow-xl mb-8 disabled:opacity-45"
+                  style={{ background: saved ? theme.success : keyInvalid ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: keyInvalid ? theme.text3 : '#fff' }}>
                   {saved ? 'Salvat!' : 'Salvează Configurarea'}
                 </motion.button>
 

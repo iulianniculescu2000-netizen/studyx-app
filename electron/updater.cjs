@@ -1,9 +1,9 @@
 /**
  * StudyX updater.
  *
- * Supports two delivery modes:
- * - overlay: updates dist assets in userData/app-overlay
- * - installer: downloads the full installer for packaged builds
+ * Delivery strategy:
+ * - packaged app: native electron-updater or full installer fallback
+ * - development/unpackaged app: overlay updates for renderer assets
  */
 
 const { ipcMain, app, shell } = require('electron');
@@ -511,9 +511,30 @@ function buildNoUpdateResponse(localVersion, latestVersion = localVersion) {
     localVersion,
     files: [],
     contentUpdates: [],
-    delivery: 'overlay',
+    delivery: app.isPackaged ? 'native' : 'overlay',
     isSequential: false,
     stepsRemaining: 0,
+  };
+}
+
+function buildInstallerResponse(localVersion, manifest, latestVersionOverride) {
+  const version = manifest.version || latestVersionOverride || localVersion;
+  const latestVersion = latestVersionOverride || manifest.latestVersion || version;
+  const hasUpdate = isNewerVersion(localVersion, version);
+
+  return {
+    hasUpdate,
+    version,
+    latestVersion,
+    releaseDate: manifest.releaseDate,
+    changes: manifest.changes,
+    localVersion,
+    files: [],
+    contentUpdates: manifest.contentUpdates,
+    installer: manifest.installer,
+    delivery: 'installer',
+    isSequential: false,
+    stepsRemaining: hasUpdate ? 1 : 0,
   };
 }
 
@@ -524,13 +545,15 @@ function getLocalVersion() {
     } catch {}
   }
 
-  try {
-    const overlayManifest = path.join(getOverlayRoot(), 'manifest.json');
-    if (fs.existsSync(overlayManifest)) {
-      const manifest = JSON.parse(fs.readFileSync(overlayManifest, 'utf-8'));
-      if (manifest.version) return manifest.version;
-    }
-  } catch {}
+  if (!app.isPackaged) {
+    try {
+      const overlayManifest = path.join(getOverlayRoot(), 'manifest.json');
+      if (fs.existsSync(overlayManifest)) {
+        const manifest = JSON.parse(fs.readFileSync(overlayManifest, 'utf-8'));
+        if (manifest.version) return manifest.version;
+      }
+    } catch {}
+  }
 
   try {
     const packageJson = JSON.parse(fs.readFileSync(path.join(getAppRoot(), 'package.json'), 'utf-8'));
@@ -641,6 +664,10 @@ async function downloadNativeUpdate() {
 }
 
 async function downloadOverlay(manifest) {
+  if (app.isPackaged) {
+    throw new Error('Overlay updates are disabled in installed builds. Use the installer update flow.');
+  }
+
   const files = Array.isArray(manifest?.files) ? manifest.files : [];
   if (files.length === 0) throw new Error('Manifestul nu contine fisiere de actualizat.');
 
@@ -661,6 +688,7 @@ async function downloadOverlay(manifest) {
   }
 
   let completed = 0;
+  const downloadedPaths = [];
   for (const file of files) {
     const safePath = path.normalize(file.path).replace(/^(\.\.[/\\])+/, '');
     const overlayFilesRoot = path.join(overlayRoot, 'files');
@@ -679,6 +707,18 @@ async function downloadOverlay(manifest) {
           total,
         });
       });
+
+      // Verify hash if manifest provides one
+      if (file.sha256) {
+        const actualHash = await sha256File(destPath);
+        if (actualHash.toLowerCase() !== String(file.sha256).toLowerCase()) {
+          // Remove the corrupt file so a future update attempt won't use it
+          try { fs.unlinkSync(destPath); } catch {}
+          throw new Error(`Hash invalid pentru ${path.basename(file.path)}: asteptat ${file.sha256}, primit ${actualHash}`);
+        }
+      }
+
+      downloadedPaths.push(destPath);
       completed += 1;
       sendToRenderer('updater:progress', {
         percent: Math.round((completed / files.length) * 90) + 5,
@@ -687,6 +727,10 @@ async function downloadOverlay(manifest) {
         total: -1,
       });
     } catch (err) {
+      // Roll back all files downloaded so far to leave overlay in a clean state
+      for (const p of downloadedPaths) {
+        try { fs.unlinkSync(p); } catch {}
+      }
       throw new Error(`Eroare la ${path.basename(file.path)}: ${err.message}`);
     }
   }
@@ -717,13 +761,56 @@ function registerUpdaterIPC(mainWindow) {
   ipcMain.handle('updater:check', async () => {
     const localVersion = getLocalVersion();
     try {
+      let nativeResult = null;
+      let packagedManifestResult = null;
+      let githubFallbackResult = null;
+
       try {
-        const nativeResult = await checkNativeForUpdates();
-        if (nativeResult) {
+        nativeResult = await checkNativeForUpdates();
+        if (nativeResult?.hasUpdate) {
           return nativeResult;
         }
       } catch (nativeErr) {
         console.warn('[Updater] Native check failed, falling back to legacy updater:', nativeErr);
+      }
+
+      if (app.isPackaged) {
+        try {
+          const versionMeta = await fetchJsonFromAny(VERSION_URLS);
+          const latestVersion = String(versionMeta?.version || '').trim();
+          if (latestVersion) {
+            const manifestUrl = typeof versionMeta?.manifestUrl === 'string'
+              ? versionMeta.manifestUrl
+              : `${UPDATE_REPO_RAW}/manifests/${latestVersion}.json`;
+            const manifest = normalizeManifest(await fetchJsonFromAny(getFallbackUrls(manifestUrl)));
+            if (manifest.version && manifest.installer?.url) {
+              packagedManifestResult = buildInstallerResponse(localVersion, manifest, latestVersion);
+              if (packagedManifestResult.hasUpdate) {
+                return packagedManifestResult;
+              }
+            }
+          }
+        } catch (versionErr) {
+          logUpdater('Packaged manifest fallback failed:', versionErr?.message || versionErr);
+        }
+
+        const fallbackRelease = await fetchLatestGithubRelease() || await fetchGithubRelease(localVersion);
+        if (fallbackRelease) {
+          const normalized = normalizeGithubRelease(fallbackRelease, localVersion);
+          if (normalized?.hasUpdate) return normalized;
+          githubFallbackResult = normalized;
+        }
+
+        if (packagedManifestResult && githubFallbackResult) {
+          return compareVersion(packagedManifestResult.latestVersion, githubFallbackResult.latestVersion) >= 0
+            ? packagedManifestResult
+            : githubFallbackResult;
+        }
+        if (packagedManifestResult) return packagedManifestResult;
+        if (nativeResult) return nativeResult;
+        if (githubFallbackResult) return githubFallbackResult;
+
+        throw new Error('Nu exista metadata valida pentru actualizare installer.');
       }
 
       const history = await fetchJsonFromAny(HISTORY_URLS);

@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Zap, Trophy, BookOpen, Upload } from 'lucide-react';
+import { ArrowRight, Zap, Trophy, BookOpen, Flame, Brain } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
 import { useUserStore } from '../store/userStore';
+import { useStatsStore } from '../store/statsStore';
 import { useTheme } from '../theme/ThemeContext';
 import QuizCard from '../components/QuizCard';
 import ImportQuizButton from '../components/ImportQuizButton';
@@ -10,17 +12,34 @@ import ImportQuizButton from '../components/ImportQuizButton';
 export default function Home() {
   const { quizzes, sessions } = useQuizStore();
   const { username } = useUserStore();
+  const { streak, getDueQuestions } = useStatsStore();
+  const dueCount = useMemo(() => getDueQuestions().length, [getDueQuestions]);
   const theme = useTheme();
-  const recentQuizzes = quizzes.slice(0, 3);
+
+  // Ultimele 3 grile JUCATE (nu create) — sortate după cea mai recentă sesiune
+  const recentQuizzes = useMemo(() => {
+    const lastPlayedAt = new Map<string, number>();
+    for (const s of sessions) {
+      const t = s.finishedAt ?? s.startedAt;
+      if (!lastPlayedAt.has(s.quizId) || t > lastPlayedAt.get(s.quizId)!) {
+        lastPlayedAt.set(s.quizId, t);
+      }
+    }
+    return quizzes
+      .filter(q => !q.archived && lastPlayedAt.has(q.id))
+      .sort((a, b) => (lastPlayedAt.get(b.id) ?? 0) - (lastPlayedAt.get(a.id) ?? 0))
+      .slice(0, 3);
+  }, [quizzes, sessions]);
 
   const bestEver = sessions.length > 0
     ? `${Math.max(...sessions.map(s => Math.round((s.score / s.total) * 100)))}%`
     : '—';
 
   const stats = [
-    { label: 'Grile create', value: quizzes.length, icon: <BookOpen size={18} />, color: theme.accent },
+    { label: 'Grile create', value: quizzes.filter(q => !q.archived).length, icon: <BookOpen size={18} />, color: theme.accent },
     { label: 'Sesiuni', value: sessions.length, icon: <Zap size={18} />, color: theme.accent2 },
     { label: 'Scor maxim', value: bestEver, icon: <Trophy size={18} />, color: theme.warning },
+    { label: 'Streak', value: `${streak.currentStreak}${streak.currentStreak > 0 ? ' 🔥' : ''}`, icon: <Flame size={18} />, color: '#FF9F0A' },
   ];
 
   const hour = new Date().getHours();
@@ -80,12 +99,40 @@ export default function Home() {
           </motion.div>
         </div>
 
+        {/* Daily Review Banner */}
+        {dueCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="mb-10 -mt-10"
+          >
+            <Link
+              to="/review"
+              className="flex items-center gap-4 px-6 py-4 rounded-2xl transition-all hover:scale-[1.02]"
+              style={{ background: `linear-gradient(135deg, ${theme.accent}18, ${theme.accent2}12)`, border: `1px solid ${theme.accent}30` }}
+            >
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                <Brain size={18} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold" style={{ color: theme.text }}>
+                  {dueCount} {dueCount === 1 ? 'întrebare de recapitulat' : 'întrebări de recapitulat'} azi
+                </p>
+                <p className="text-xs" style={{ color: theme.text3 }}>Recapitulare zilnică SM-2 — menține streakul activ</p>
+              </div>
+              <ArrowRight size={16} style={{ color: theme.accent }} />
+            </Link>
+          </motion.div>
+        )}
+
         {/* Stats */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.4 }}
-          className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-16"
+          className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-16"
         >
           {stats.map((stat, i) => (
             <motion.div key={stat.label}
@@ -108,8 +155,8 @@ export default function Home() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}>
           <div className="flex items-end justify-between mb-6 px-1">
             <div>
-              <h2 className="text-xl font-black tracking-tight" style={{ color: theme.text }}>Recent Accesate</h2>
-              <p className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: theme.text }}>Ultimele tale sesiuni de studiu</p>
+              <h2 className="text-xl font-black tracking-tight" style={{ color: theme.text }}>Continuă de Unde Ai Rămas</h2>
+              <p className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: theme.text }}>Ultimele grile jucate</p>
             </div>
             <Link to="/quizzes" className="text-xs font-black uppercase tracking-widest hover:opacity-70 transition-opacity" style={{ color: theme.accent }}>
               Vezi Tot →
@@ -123,35 +170,28 @@ export default function Home() {
             </div>
           ) : (
             <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
-              className="text-center py-20 rounded-[32px]" 
+              className="text-center py-16 rounded-[32px]"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
-              <div className="text-5xl mb-4">📭</div>
-              <p className="font-bold mb-2" style={{ color: theme.text3 }}>Nicio grilă creată încă.</p>
-              <Link to="/create" className="text-xs font-black uppercase tracking-widest hover:underline" style={{ color: theme.accent }}>
-                Creează Prima Grilă →
+              <div className="text-5xl mb-4">🎯</div>
+              <p className="font-bold mb-1" style={{ color: theme.text3 }}>
+                {quizzes.filter(q => !q.archived).length > 0 ? 'Nicio sesiune jucată încă.' : 'Nicio grilă creată încă.'}
+              </p>
+              <p className="text-xs mb-5" style={{ color: theme.text3, opacity: 0.6 }}>
+                {quizzes.filter(q => !q.archived).length > 0
+                  ? 'Deschide o grilă și joacă prima sesiune.'
+                  : 'Creează sau importă prima ta grilă.'}
+              </p>
+              <Link
+                to={quizzes.filter(q => !q.archived).length > 0 ? '/quizzes' : '/create'}
+                className="text-xs font-black uppercase tracking-widest hover:underline"
+                style={{ color: theme.accent }}
+              >
+                {quizzes.filter(q => !q.archived).length > 0 ? 'Mergi la Grile →' : 'Creează Prima Grilă →'}
               </Link>
             </motion.div>
           )}
         </motion.div>
 
-        {/* Import hint */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-          className="mt-12 p-6 rounded-[28px] flex items-start gap-4"
-          style={{ background: `${theme.accent}08`, border: `1px solid ${theme.accent}15` }}
-        >
-          <div className="p-2 rounded-xl" style={{ background: `${theme.accent}15`, color: theme.accent }}>
-            <Upload size={18} />
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-medium leading-relaxed" style={{ color: theme.text2 }}>
-              Poți importa grile din fișiere <strong style={{ color: theme.text }}>.json</strong> sau
-              le poți exporta pentru a le partaja. Trage fișierul direct pe butonul de import.
-            </p>
-          </div>
-        </motion.div>
       </div>
     </div>
   );

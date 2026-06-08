@@ -72,13 +72,18 @@ export async function addChunksToVault(
       const batch = chunks.slice(index, index + batchSize);
 
       for (const chunk of batch) {
+        // Extract a meaningful topic from the chunk text (first 6 words, title-cased)
+        // This allows the weakness-boost in retriever to match by content topic, not just filename
+        const topicWords = chunk.text.trim().split(/\s+/).slice(0, 6).join(' ');
+        const derivedTopic = topicWords.length > 4 ? topicWords : sourceName;
+
         newRecords.push({
           id: chunk.id,
           sourceId,
           text: chunk.text,
           source: sourceName,
           embedding: embedText(chunk.text),
-          topic: sourceName,
+          topic: derivedTopic,
           difficulty: 'medium',
           createdAt: Date.now(),
         });

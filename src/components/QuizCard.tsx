@@ -1,4 +1,5 @@
 import { useState, memo } from 'react';
+import type { DragEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trash2, Layers, AlertTriangle, Pencil, Pin, Play, PinOff } from 'lucide-react';
@@ -57,9 +58,26 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
   const multipleCount = quiz.questions.filter(q => q.multipleCorrect).length;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
+    setDragging(true);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/x-studyx-quiz-id', quiz.id);
+    event.dataTransfer.setData('text/plain', quiz.id);
+  };
+
+  const handleDragEnd = () => {
+    setDragging(false);
+  };
 
   return (
     <motion.div
+      data-testid="quiz-card"
+      data-quiz-id={quiz.id}
+      draggable
+      onDragStartCapture={handleDragStart}
+      onDragEndCapture={handleDragEnd}
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.05, ease: [0.16, 1, 0.3, 1] }}
@@ -73,6 +91,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
           ? `linear-gradient(135deg, ${colors.from}22 0%, ${colors.to}22 100%)`
           : `linear-gradient(135deg, ${colors.from}12 0%, ${colors.to}12 100%)`,
         border: `1px solid ${hovered ? colors.badge + '55' : 'rgba(255,255,255,0.06)'}`,
+        opacity: dragging ? 0.55 : 1,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
 

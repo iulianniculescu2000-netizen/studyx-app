@@ -63,7 +63,12 @@ export default function QuizList() {
     const matchCategory = category === 'Toate' || q.category === category;
     const matchTag = !activeTag || (q.tags ?? []).includes(activeTag);
     return matchSearch && matchCategory && matchTag;
-  }).sort(sortFn);
+  }).sort((a, b) => {
+    // Pinned mereu deasupra, indiferent de sortare
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return sortFn(a, b);
+  });
 
   const paginated = filtered.slice(0, page * ITEMS_PER_PAGE);
 

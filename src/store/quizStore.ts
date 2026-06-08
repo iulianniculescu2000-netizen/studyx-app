@@ -23,6 +23,7 @@ interface QuizStore {
   cleanupOrphanImages: () => void;
   _hydrate: (data: { quizzes: Quiz[]; sessions: QuizSession[] }) => void;
   _snapshot: () => { quizzes: Quiz[]; sessions: QuizSession[] };
+  reset: () => void;
 }
 
 export const useQuizStore = create<QuizStore>()(
@@ -51,6 +52,9 @@ export const useQuizStore = create<QuizStore>()(
         title: `Copie — ${original.title}`,
         createdAt: Date.now(),
         updatedAt: undefined,
+        // Resetăm archived și pinned — copia trebuie să fie vizibilă și nepinned
+        archived: false,
+        pinned: false,
         questions: original.questions.map((q) => ({
           ...q,
           id: uid(),
@@ -111,5 +115,6 @@ export const useQuizStore = create<QuizStore>()(
 
     _hydrate: (data) => set({ quizzes: data.quizzes ?? [], sessions: data.sessions ?? [], _hasHydrated: true }),
     _snapshot: () => ({ quizzes: get().quizzes, sessions: get().sessions }),
+    reset: () => set({ quizzes: [], sessions: [], _hasHydrated: true }),
   })
 );

@@ -1,4 +1,5 @@
 import type { Difficulty, Question, QuizColor } from '../../types';
+import { resizeImageDataUrl } from '../../lib/imageProcessing';
 
 export const EMOJIS = ['📚', '🧠', '💡', '🔬', '🌍', '💻', '🔢', '🎯', '⚡', '🏆', '🎓', '🌱', '🧪', '🗺️', '📖', '🏛️', '🩺', '💊', '❤️', '🦠', '🔭', '🧬'];
 
@@ -22,29 +23,12 @@ export const DIFFICULTIES: { id: Difficulty; label: string; color: string }[] = 
 
 export const OPTION_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
 
-export function compressImage(dataUrl: string, maxPx = 800, quality = 0.75): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > maxPx || height > maxPx) {
-        if (width > height) {
-          height = Math.round((height * maxPx) / width);
-          width = maxPx;
-        } else {
-          width = Math.round((width * maxPx) / height);
-          height = maxPx;
-        }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
+export function compressImage(dataUrl: string, maxPx = 1680, quality = 0.88): Promise<string> {
+  return resizeImageDataUrl(dataUrl, {
+    maxLongEdge: maxPx,
+    quality,
+    mimeType: 'image/jpeg',
+  }).catch(() => dataUrl);
 }
 
 export function generateId() {

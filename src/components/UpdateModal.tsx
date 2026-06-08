@@ -9,6 +9,7 @@ import { useUpdateStore, type ContentUpdate } from '../store/updateStore';
 import { useQuizStore } from '../store/quizStore';
 import { useFolderStore } from '../store/folderStore';
 import { saveRollbackSnapshot } from '../lib/rollback';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import Portal from './Portal';
 import type { Quiz } from '../types';
 
@@ -27,7 +28,7 @@ async function fetchContentPack(url: string): Promise<{
   }>;
 }> {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Eroare retea: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Eroare rețea: HTTP ${res.status}`);
   return res.json();
 }
 
@@ -45,12 +46,15 @@ function VersionPill({ label, value, tone }: { label: string; value: string; ton
   const theme = useTheme();
   return (
     <div
+      className="luxe-card"
       style={{
         background: theme.surface2,
         border: `1px solid ${tone === theme.text ? theme.border : `${tone}28`}`,
         borderRadius: 14,
         padding: '12px 14px',
-        boxShadow: theme.isDark ? 'inset 0 1px 0 rgba(255,255,255,0.04)' : 'inset 0 1px 0 rgba(255,255,255,0.8)',
+        boxShadow: theme.isDark
+          ? `inset 0 1px 0 rgba(255,255,255,0.05), 0 18px 34px ${tone}12`
+          : `inset 0 1px 0 rgba(255,255,255,0.8), 0 18px 34px ${tone}12`,
       }}
     >
       <div style={{ fontSize: 10, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
@@ -75,6 +79,7 @@ function ContentPackCard({
   onInstall: () => void;
 }) {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const accent = {
     blue: '#0A84FF',
     purple: '#5E5CE6',
@@ -87,6 +92,7 @@ function ContentPackCard({
 
   return (
     <div
+      className="premium-card-hover flex flex-col items-start gap-4 sm:flex-row sm:items-center"
       style={{
         background: installed ? `${accent}0E` : theme.surface2,
         border: `1px solid ${installed ? `${accent}28` : theme.border}`,
@@ -95,6 +101,7 @@ function ContentPackCard({
         display: 'flex',
         alignItems: 'center',
         gap: 14,
+        boxShadow: installed ? `0 18px 40px ${accent}16` : '0 16px 34px rgba(0,0,0,0.04)',
       }}
     >
       <div
@@ -113,7 +120,7 @@ function ContentPackCard({
         {pack.emoji}
       </div>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <span style={{ fontSize: 14, fontWeight: 800, color: theme.text }}>{pack.subject}</span>
           {installed && (
@@ -137,7 +144,7 @@ function ContentPackCard({
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: theme.text3 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <BookOpen size={10} />
-            {pack.questionCount} intrebari
+            {pack.questionCount} întrebări
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <FolderPlus size={10} />
@@ -172,9 +179,10 @@ function ContentPackCard({
         </motion.div>
       ) : (
         <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.96 }}
+          whileHover={calmMotion ? undefined : { scale: 1.03 }}
+          whileTap={calmMotion ? undefined : { scale: 0.96 }}
           onClick={onInstall}
+          className="w-full sm:w-auto"
           style={{
             padding: '9px 14px',
             borderRadius: 12,
@@ -188,7 +196,7 @@ function ContentPackCard({
             flexShrink: 0,
           }}
         >
-          Instaleaza
+          Instalează
         </motion.button>
       )}
     </div>
@@ -197,6 +205,7 @@ function ContentPackCard({
 
 export default function UpdateModal() {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const {
     showUpdateModal, setShowUpdateModal,
     status, localVersion, manifest, downloadPercent, lastCheckedAt, error,
@@ -215,10 +224,10 @@ export default function UpdateModal() {
   const hasContent = contentUpdates.length > 0;
   const canRefresh = status !== 'checking' && status !== 'downloading';
   const deliveryLabel = manifest?.delivery === 'native'
-    ? 'Auto-update'
+    ? 'Actualizare automată'
     : manifest?.delivery === 'installer'
-      ? 'Installer'
-      : 'Overlay';
+      ? 'Pachet de instalare'
+      : 'Actualizare locală';
   const checkedLabel = lastCheckedAt
     ? new Intl.DateTimeFormat('ro-RO', {
         hour: '2-digit',
@@ -241,7 +250,7 @@ export default function UpdateModal() {
         useQuizStore.getState().quizzes,
         useQuizStore.getState().sessions,
         useFolderStore.getState().folders,
-        `Inainte de instalare: ${pack.subject}`,
+        `Înainte de instalare: ${pack.subject}`,
       );
 
       const data = await fetchContentPack(pack.url);
@@ -300,8 +309,9 @@ export default function UpdateModal() {
               initial={{ scale: 0.94, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.94, opacity: 0, y: 20 }}
-              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+              transition={calmMotion ? { duration: 0.16, ease: 'easeOut' } : { duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
               onClick={(e) => e.stopPropagation()}
+              className="premium-modal"
               style={{
                 width: '100%',
                 maxWidth: 680,
@@ -316,12 +326,10 @@ export default function UpdateModal() {
               }}
             >
               <div
+                className="flex flex-wrap items-start gap-3 sm:flex-nowrap"
                 style={{
                   padding: '22px 24px 18px',
                   borderBottom: `1px solid ${theme.border}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
                   background: `linear-gradient(135deg, ${theme.accent}10 0%, transparent 60%)`,
                 }}
               >
@@ -341,10 +349,10 @@ export default function UpdateModal() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: theme.text }}>
-                    Centru actualizari
+                    Centru actualizări
                   </h2>
                   <p style={{ margin: '2px 0 0', fontSize: 12, color: theme.text3 }}>
-                    Vezi clar versiunea curenta, urmatorul pas si ultima versiune publicata.
+                    Vezi clar versiunea curentă, următorul pas și ultima versiune publicată.
                   </p>
                   {checkedLabel && (
                     <div style={{ marginTop: 6, fontSize: 11, color: theme.text3 }}>
@@ -357,7 +365,7 @@ export default function UpdateModal() {
                   whileTap={{ scale: 0.9 }}
                   onClick={() => checkForUpdate()}
                   disabled={!canRefresh}
-                   title="Verifica actualizari"
+                  title="Verifică actualizările"
                   style={{
                     width: 36,
                     height: 36,
@@ -401,11 +409,11 @@ export default function UpdateModal() {
                 </motion.button>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 24px', minHeight: 0 }} className="custom-scrollbar">
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 18 }}>
-                  <VersionPill label="Curenta" value={localVersion} tone={theme.text} />
-                  <VersionPill label="Urmatoarea" value={nextVersion} tone={theme.accent} />
-                  <VersionPill label="Ultima publicata" value={latestVersion} tone={theme.success} />
+              <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 24px', minHeight: 0 }} className="custom-scrollbar sm:p-[20px_24px_24px]">
+                <div className="mb-[18px] grid grid-cols-1 gap-[10px] sm:grid-cols-3">
+                  <VersionPill label="Curentă" value={localVersion} tone={theme.text} />
+                  <VersionPill label="Următoarea" value={nextVersion} tone={theme.accent} />
+                  <VersionPill label="Ultima publicată" value={latestVersion} tone={theme.success} />
                 </div>
 
                 <div style={{ marginBottom: hasContent ? 28 : 0 }}>
@@ -442,7 +450,7 @@ export default function UpdateModal() {
                             cursor: 'pointer', fontSize: 13, fontWeight: 600,
                           }}
                         >
-                          Incearca din nou
+                          Încearcă din nou
                         </button>
                       </motion.div>
                     )}
@@ -465,10 +473,10 @@ export default function UpdateModal() {
                         </div>
                         <div>
                           <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>
-                            Aplicatia este la zi
+                            Aplicația este la zi
                           </div>
                           <div style={{ fontSize: 12, color: theme.text3, marginTop: 2 }}>
-                            Versiunea {localVersion} este cea mai recenta.
+                            Versiunea {localVersion} este cea mai recentă.
                           </div>
                         </div>
                       </motion.div>
@@ -488,7 +496,7 @@ export default function UpdateModal() {
                         {[
                           { id: 'checking', label: 'Verificare', icon: RefreshCw },
                           { id: 'available', label: 'Noua versiune', icon: Sparkles },
-                          { id: 'downloading', label: 'Descarcare', icon: Download },
+                          { id: 'downloading', label: 'Descărcare', icon: Download },
                           { id: 'ready', label: 'Finalizare', icon: RotateCcw }
                         ].map((step, idx, arr) => {
                           const currentIdx = status === 'checking' ? 0 : status === 'available' ? 1 : status === 'downloading' ? 2 : 3;
@@ -558,7 +566,7 @@ export default function UpdateModal() {
                                       {/* --- Checking --- */}
                                       {status === 'checking' && (
                                         <div style={{ fontSize: 13, color: theme.text2 }}>
-                                          Ne conectam la server pentru a cauta cea mai noua versiune...
+                                          Ne conectăm la server pentru a căuta cea mai nouă versiune...
                                         </div>
                                       )}
 
@@ -604,7 +612,7 @@ export default function UpdateModal() {
                                                fontSize: 12, color: theme.warning, background: `${theme.warning}12`,
                                                border: `1px solid ${theme.warning}30`, borderRadius: 8, padding: '8px 10px', marginBottom: 16
                                              }}>
-                                                Upgrade secvential ({manifest.stepsRemaining} pasi ramasi pana la ultima versiune).
+                                                Upgrade secvențial ({manifest.stepsRemaining} pași rămași până la ultima versiune).
                                              </div>
                                            )}
 
@@ -619,7 +627,7 @@ export default function UpdateModal() {
                                                boxShadow: `0 4px 12px ${theme.accent}40`,
                                              }}
                                            >
-                                              <Download size={15} /> Incepe descarcarea
+                                              <Download size={15} /> Începe descărcarea
                                            </motion.button>
                                         </div>
                                       )}
@@ -631,7 +639,7 @@ export default function UpdateModal() {
                                            border: `1px solid ${theme.border}`
                                         }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, alignItems: 'center' }}>
-                                            <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Se descarca pachetul...</span>
+                                            <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Se descarcă pachetul...</span>
                                             <span style={{ fontSize: 13, fontWeight: 800, color: theme.accent, fontFamily: 'monospace' }}>{downloadPercent}%</span>
                                           </div>
                                           <div style={{ height: 6, borderRadius: 3, background: theme.surface2, overflow: 'hidden' }}>
@@ -651,7 +659,7 @@ export default function UpdateModal() {
                                            border: `1px solid ${theme.success}30`
                                         }}>
                                           <p style={{ margin: '0 0 16px', fontSize: 13, color: theme.text2 }}>
-                                            Pachetul a fost descarcat cu succes. Reporneste aplicatia pentru a aplica modificarile.
+                                            Pachetul a fost descărcat cu succes. Repornește aplicația pentru a aplica modificările.
                                           </p>
                                           <motion.button
                                             onClick={applyUpdate}
@@ -664,7 +672,7 @@ export default function UpdateModal() {
                                               boxShadow: `0 4px 12px ${theme.success}40`,
                                             }}
                                           >
-                                            <RotateCcw size={15} /> Reporneste StudyX
+                                            <RotateCcw size={15} /> Repornește StudyX
                                           </motion.button>
                                         </div>
                                       )}
@@ -684,7 +692,7 @@ export default function UpdateModal() {
                   <div>
                     <div style={{ height: 1, background: theme.border, marginBottom: 24 }} />
                     <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
-                      Continut optional
+                      Conținut opțional
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {contentUpdates.map((pack) => (
@@ -731,7 +739,7 @@ export default function UpdateModal() {
                     >
                       <ArrowDownCircle size={14} color={theme.text3} style={{ flexShrink: 0, marginTop: 1 }} />
                       <p style={{ margin: 0, fontSize: 12, color: theme.text3, lineHeight: 1.6 }}>
-                        La instalarea unui pachet optional se creeaza automat un folder pentru materie si se salveaza un snapshot de rollback.
+                        La instalarea unui pachet opțional se creează automat un folder pentru materie și se salvează un snapshot de rollback.
                       </p>
                     </div>
                   </div>
@@ -740,8 +748,8 @@ export default function UpdateModal() {
                 {!hasContent && !hasSystemUpdate && status !== 'checking' && (
                   <div style={{ textAlign: 'center', padding: '14px 0 4px', fontSize: 13, color: theme.text3 }}>
                     {status === 'up-to-date'
-                      ? 'Aplicatia este deja la zi. Nu exista continut optional disponibil momentan.'
-                      : 'Nu exista continut optional disponibil momentan.'}
+                      ? 'Aplicația este deja la zi. Nu există conținut opțional disponibil momentan.'
+                      : 'Nu există conținut opțional disponibil momentan.'}
                   </div>
                 )}
               </div>

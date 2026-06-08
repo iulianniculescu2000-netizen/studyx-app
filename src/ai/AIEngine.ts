@@ -1,9 +1,14 @@
-import type { Question, Difficulty } from '../types';
+import type { Difficulty, Question } from '../types';
+import { groqRequest } from '../lib/groq';
 import { logAIDebug } from './debug';
 import { runAIPipeline } from './pipeline';
-import { buildExplanationPrompt, buildHintPrompt, buildMnemonicPrompt, buildQuestionPrompt, buildWrongOptionsPrompt } from './prompts';
-import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile, generateFromMistakes } from './UserProfile';
-import { validateJson } from './validator';
+import {
+  buildExplanationPrompt,
+  buildHintPrompt,
+  buildMnemonicPrompt,
+  buildQuestionPrompt,
+  buildWrongOptionsPrompt,
+} from './prompts';
 import { retrieveRelevantChunks } from './retriever';
 import type {
   AIAnalysisResult,
@@ -12,21 +17,52 @@ import type {
   AIQuestionRequest,
   AIQuestionResult,
   AdaptiveDifficultyInput,
+  ChunkRecord,
   ExplainWrongOptionsResult,
   HintResult,
   QuestionGenerationResponse,
+  RetrievedChunk,
   UserProfileData,
-  ChunkRecord,
-  RetrievedChunk
 } from './types';
-import { groqRequest } from '../lib/groq';
+import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile, generateFromMistakes } from './UserProfile';
+import { validateJson } from './validator';
 
-async function buildRelevantContext(query: string, k: number) {
-  const chunks = await retrieveRelevantChunks(query, null, k);
+type ContextChunk = ChunkRecord | RetrievedChunk;
+export type ChatMode = 'grounded' | 'explain' | 'summarize' | 'diagram' | 'test' | 'mnemonic';
+
+interface ChatResponseOptions {
+  mode?: ChatMode;
+  hasContext?: boolean;
+  scopedSourceName?: string;
+  studyContext?: string;
+  focusTopics?: string[];
+}
+
+async function buildRelevantContext(query: string, limit: number, userProfile?: UserProfileData | null) {
+  const chunks = await retrieveRelevantChunks(query, userProfile ?? null, limit);
   return {
     chunks,
     summary: chunks.map((chunk) => `[Sursă: ${chunk.source}]\n${chunk.text}`).join('\n\n'),
   };
+}
+
+function uniqueSourceList(chunks: ContextChunk[]) {
+  const seen = new Set<string>();
+  const sources: string[] = [];
+
+  chunks.forEach((chunk) => {
+    const label = `${chunk.source} - ${chunk.topic}`;
+    if (seen.has(label)) return;
+    seen.add(label);
+    sources.push(label);
+  });
+
+  return sources;
+}
+
+function clampConfidence(value: number | undefined, fallback = 0.72) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
+  return Math.min(1, Math.max(0, value));
 }
 
 function normalizeQuestion(question: QuestionGenerationResponse['questions'][number], index: number): Question {
@@ -44,21 +80,55 @@ function normalizeQuestion(question: QuestionGenerationResponse['questions'][num
   };
 }
 
+function normalizeAnalysisResult(result: AIAnalysisResult, context: AIContextPayload): AIAnalysisResult {
+  const chunks = (context.chunks as ContextChunk[] | undefined) ?? [];
+  const fallbackSources = uniqueSourceList(chunks).slice(0, 4);
+  const contextScores = chunks
+    .map((chunk) => ('score' in chunk ? chunk.score : 0))
+    .filter((score) => typeof score === 'number' && Number.isFinite(score));
+  const averageScore = contextScores.length > 0
+    ? contextScores.reduce((sum, score) => sum + score, 0) / contextScores.length
+    : 0.72;
+
+  return {
+    ...result,
+    confidence: clampConfidence(result.confidence, averageScore),
+    rule: result.rule?.trim() || 'Compară mai atent mecanismul-cheie și elimină variantele care nu îl susțin.',
+    missingConcept: result.missingConcept?.trim() || context.query,
+    recommendedTopic: result.recommendedTopic?.trim() || chunks[0]?.topic || 'Concept de bază',
+    relatedConcepts: (result.relatedConcepts ?? []).filter(Boolean).slice(0, 5),
+    sources: (result.sources ?? []).filter(Boolean).slice(0, 4).length > 0
+      ? (result.sources ?? []).filter(Boolean).slice(0, 4)
+      : fallbackSources,
+  };
+}
+
 export class QuestionGenerator {
   static async generate(profile: UserProfileData | null, request: AIQuestionRequest): Promise<AIQuestionResult> {
     const weakTopics = request.weakTopics ?? (profile ? getWeakTopicsForProfile(profile.profileId) : []);
     const difficulty = request.difficulty ?? profile?.currentDifficulty ?? 'medium';
-    
-    // RAG: Find the most relevant chunks from the vault for the generation request
-    const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(request.context || 'General medical knowledge', 10);
-    
-    const context: AIContextPayload = {
-      summary: contextSummary,
-      chunks: vaultResults,
-      query: request.context || 'General medical knowledge',
-      weakTopics,
-      level: difficulty
-    };
+    const query = request.context || 'Cunoștințe medicale generale';
+    let context: AIContextPayload;
+
+    if (request.prefetchedContext) {
+      context = {
+        ...request.prefetchedContext,
+        query: request.prefetchedContext.query || query,
+        summary: request.prefetchedContext.summary
+          || ((request.prefetchedContext.chunks ?? []).map((chunk) => `[Sursă: ${chunk.source}]\n${chunk.text}`).join('\n\n')),
+        weakTopics: request.prefetchedContext.weakTopics ?? weakTopics,
+        level: request.prefetchedContext.level ?? difficulty,
+      };
+    } else {
+      const { chunks, summary } = await buildRelevantContext(query, 10);
+      context = {
+        summary,
+        chunks,
+        query,
+        weakTopics,
+        level: difficulty,
+      };
+    }
 
     const parsed = await runAIPipeline<QuestionGenerationResponse>({
       retrieve: () => context.summary,
@@ -76,19 +146,20 @@ export class QuestionGenerator {
         const result = validateJson<QuestionGenerationResponse>(raw);
         return result.ok && result.value?.questions?.length ? result.value : null;
       },
-      fix: async (_raw, error) =>
+      fix: async (_raw, error) => (
         groqRequest({
           task: 'questions',
           messages: [
-            { role: 'system', content: 'Repara JSON-ul. Returneaza doar JSON valid, fara trailing commas si fara text suplimentar. Pastreaza continutul in romana.' },
+            { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Păstrează conținutul în română.' },
             { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}` },
           ],
-        }),
+        })
+      ),
     });
 
     return {
       questions: parsed.questions.map(normalizeQuestion),
-      sources: (context.chunks as (ChunkRecord | RetrievedChunk)[] | undefined)?.map((chunk) => `${chunk.source} - ${chunk.topic}`) ?? [],
+      sources: uniqueSourceList((context.chunks as ContextChunk[] | undefined) ?? []),
       mode: request.mode ?? 'standard',
     };
   }
@@ -122,49 +193,53 @@ export class LearningStrategist {
       streak: state.streak,
       time: state.availableTime,
     });
+
     return { topic: nextTopic, difficulty };
   }
 }
 
 export async function analyzeAnswer(
   profileId: string,
-  payload: { question: Question; userAnswer: string; correctAnswer: string; isCorrect: boolean }
+  payload: { question: Question; userAnswer: string; correctAnswer: string; isCorrect: boolean },
 ) {
-  // Use RAG to find relevant knowledge for the specific question/answer
   const query = `${payload.question.text} ${payload.correctAnswer}`;
-  const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(query, 5);
+  const profile = loadUserProfile(profileId);
+  const { chunks, summary } = await buildRelevantContext(query, 5, profile);
 
   const context: AIContextPayload = {
-    summary: contextSummary,
-    chunks: vaultResults,
+    summary,
+    chunks,
     query,
-    level: payload.question.difficulty
+    level: payload.question.difficulty,
   };
 
-  const analysis = await runAIPipeline<AIAnalysisResult>({
+  const rawAnalysis = await runAIPipeline<AIAnalysisResult>({
     retrieve: () => context.summary,
-    generate: async () =>
+    generate: async () => (
       groqRequest({
         task: 'explanation',
         messages: [
           { role: 'system', content: buildExplanationPrompt(payload.userAnswer, payload.correctAnswer, payload.question, context) },
           { role: 'user', content: 'Analizează răspunsul și returnează JSON-ul solicitat, exclusiv în limba română.' },
         ],
-      }),
+      })
+    ),
     validate: (raw) => {
       const result = validateJson<AIAnalysisResult>(raw);
       return result.ok && result.value?.explanation ? result.value : null;
     },
-      fix: async (_raw, error) =>
-        groqRequest({
-          task: 'explanation',
-          messages: [
-            { role: 'system', content: 'Repara JSON-ul invalid si pastreaza exact aceeasi schema. Nu adauga text in afara JSON-ului. Pastreaza valorile in romana.' },
-            { role: 'user', content: `JSON invalid: ${error}` },
-          ],
-        }),
+    fix: async (_raw, error) => (
+      groqRequest({
+        task: 'explanation',
+        messages: [
+          { role: 'system', content: 'Repară JSON-ul invalid și păstrează exact aceeași schemă. Nu adăuga text în afara JSON-ului. Păstrează valorile în română.' },
+          { role: 'user', content: `JSON invalid: ${error}` },
+        ],
+      })
+    ),
   });
 
+  const analysis = normalizeAnalysisResult(rawAnalysis, context);
   const nextProfile = updateUserProfileAfterAnswer(profileId, { ...payload, analysis });
   return { analysis, profile: nextProfile };
 }
@@ -180,25 +255,26 @@ export function getNextQuestion(state: AINextQuestionState) {
 
 export async function generateHint(question: Question) {
   const query = question.text;
-  const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(query, 4);
-  
-  const context: AIContextPayload = { 
-    summary: contextSummary, 
+  const { chunks, summary } = await buildRelevantContext(query, 4);
+
+  const context: AIContextPayload = {
+    summary,
     query,
-    chunks: vaultResults,
-    level: question.difficulty
+    chunks,
+    level: question.difficulty,
   };
 
   return runAIPipeline<HintResult>({
     retrieve: () => context.summary,
-    generate: () =>
+    generate: () => (
       groqRequest({
         task: 'hint',
         messages: [
           { role: 'system', content: buildHintPrompt(question, context) },
           { role: 'user', content: 'Returnează indicii progresive în JSON, integral în română.' },
         ],
-      }),
+      })
+    ),
     validate: (raw) => {
       const result = validateJson<HintResult>(raw);
       return result.ok && result.value?.full ? result.value : null;
@@ -208,11 +284,12 @@ export async function generateHint(question: Question) {
 
 export async function generateMnemonicForConcept(concept: string, correctAnswer: string) {
   const query = `${concept} ${correctAnswer}`;
-  const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(query, 3);
-  const context: AIContextPayload = { 
-    summary: contextSummary, 
+  const { chunks, summary } = await buildRelevantContext(query, 3);
+
+  const context: AIContextPayload = {
+    summary,
     query,
-    chunks: vaultResults
+    chunks,
   };
 
   const raw = await groqRequest({
@@ -222,18 +299,19 @@ export async function generateMnemonicForConcept(concept: string, correctAnswer:
       { role: 'user', content: `Creează un mnemonic creativ în JSON, integral în română, pentru a reține răspunsul "${correctAnswer}" la conceptul "${concept}".` },
     ],
   });
+
   const parsed = validateJson<{ mnemonic: string }>(raw);
   return parsed.value?.mnemonic ?? '';
 }
 
-
 export async function explainWrongOptions(question: Question) {
-  const { chunks: vaultResults, summary: contextSummary } = await buildRelevantContext(question.text, 4);
-  const context: AIContextPayload = { 
-    summary: contextSummary, 
+  const { chunks, summary } = await buildRelevantContext(question.text, 4);
+
+  const context: AIContextPayload = {
+    summary,
     query: question.text,
-    chunks: vaultResults,
-    level: question.difficulty
+    chunks,
+    level: question.difficulty,
   };
 
   const raw = await groqRequest({
@@ -243,6 +321,7 @@ export async function explainWrongOptions(question: Question) {
       { role: 'user', content: 'Analizează opțiunile și returnează JSON, integral în română.' },
     ],
   });
+
   const parsed = validateJson<ExplainWrongOptionsResult>(raw);
   return parsed.value?.options ?? [];
 }
@@ -279,53 +358,100 @@ export function getAdaptiveDifficulty(input: AdaptiveDifficultyInput) {
 }
 
 function deepCleanText(text: string): string {
-  if (!text) return "";
-  // regex avoids control characters properly
+  if (!text) return '';
   // eslint-disable-next-line no-control-regex
   const controlCharsRe = new RegExp('[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F-\\x9F]', 'g');
   return text
-    .replace(controlCharsRe, "")
-    .replace(/\s+/g, " ")
+    .replace(controlCharsRe, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-logAIDebug('AIEngine:init', 'initializat');
+logAIDebug('AIEngine:init', 'inițializat');
+
+function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOptions) {
+  const mode = options.mode ?? 'grounded';
+  const hasContext = options.hasContext ?? Boolean(contextSummary.trim());
+  const studyContext = deepCleanText(options.studyContext ?? '');
+  const focusTopics = (options.focusTopics ?? []).map((topic) => deepCleanText(topic)).filter(Boolean);
+
+  const modeInstructions: Record<ChatMode, string[]> = {
+    grounded: [
+      'Rol: bibliotecar clinic. Pleacă din fragmentele găsite, apoi conectează cu noțiuni medicale stabile doar când este necesar.',
+      'Extrage ce pare important pentru examen: definiții, criterii, mecanisme, diferențiale, complicații, tratamente și capcane recurente.',
+      'Dacă vezi detalii foarte rare, istorice sau decorative, marchează-le ca probabilitate mică, fără să promiți că profesorul nu le va cere.',
+    ],
+    explain: [
+      'Rol: profesor care face lucrurile să se lege. Explică în pași: definiție -> mecanism -> clinic/paraclinic -> capcană -> regulă scurtă.',
+      'Pentru grile, nu spune "studentul a ales". Scrie direct: "C este răspunsul corect deoarece..." și apoi explică de ce celelalte variante cad.',
+      'Pentru variante greșite, spune și în ce context ar fi putut deveni corecte, dacă există un astfel de context.',
+    ],
+    summarize: [
+      'Rol: editor de curs pentru examen. Comprimă agresiv fără să pierzi mecanismele.',
+      'Folosește segmentele: "Foarte probabil", "Posibil", "Puțin probabil", "Capcane", "Regula de 30 secunde".',
+      'Pune accent pe ce ar transforma profesorul ușor într-o grilă: diferențe, excepții, indicații, contraindicații, triade, criterii.',
+    ],
+    diagram: [
+      'Rol: arhitect de scheme. Transformă conținutul în structură vizuală textuală, nu în eseu.',
+      'Când există mecanism, folosește lanțuri cu săgeți: cauză -> proces -> manifestare -> consecință -> capcană.',
+      'Când există diferențial, folosește tabel compact. Când există conduită, folosește algoritm pas-cu-pas.',
+      'După schemă, adaugă 3-5 "noduri de examen" care sunt cele mai probabile de întrebat.',
+    ],
+    test: [
+      'Rol: examinator. Creează întrebări care verifică mecanismul, diferențialul și capcana, nu doar definiții.',
+      'Nu da răspunsurile imediat decât dacă utilizatorul cere explicit; când le dai, explică varianta corectă și de ce distractorii sunt plauzibili dar greșiți.',
+      'Adaptează dificultatea la topicurile vulnerabile dacă apar în profil.',
+    ],
+    mnemonic: [
+      'Rol: coach de memorie medicală. Creează 2-3 mnemonice scurte, memorabile și corecte medical.',
+      'Leagă mnemonic-ul de mecanism sau diferențial, nu doar de primele litere.',
+      'Spune pe scurt când se folosește și ce confuzie previne.',
+    ],
+  };
+
+  return [
+    'Ești asistentul medical virtual premium din StudyX: empatic, clar, organizat și riguros.',
+    '',
+    'STIL:',
+    '- răspunde exclusiv în limba română',
+    '- folosește paragrafe scurte și liste doar când clarifică; evită blocuri dense de text',
+    '- dacă utilizatorul cere ceva practic, oferă pași concreți numerotați',
+    '- folosește formatare curată: titluri scurte cu emoji relevant (ex: 🔑 Mecanism, ⚠️ Capcană, 📋 Regulă), bullets cu liniuță sau săgeți, enumerări clare',
+    '- evită steluțele markdown (* **) vizibile — folosește titluri cu emoji în loc',
+    '- când o schemă, un algoritm sau un tabel ar scurta înțelegerea cu 50%+, include-l fără să aștepți să fie cerut explicit',
+    '- dimensiunea răspunsului trebuie să fie proporțională cu complexitatea întrebării: simplu → scurt și direct, complex → structurat și complet',
+    '',
+    'INTELIGENȚĂ DE EXAMEN:',
+    '- estimează probabilitatea de întrebare pe baza structurii cursului: definiții, clasificări, criterii, diferențiale, indicații, complicații și excepții sunt de obicei mai testabile',
+    '- marchează transparent: "foarte probabil", "posibil", "puțin probabil"; nu afirma niciodată că ceva sigur nu se cere',
+    '- când spui că ceva e puțin probabil, explică de ce: prea rar, prea granular, fără valoare diferențială, detaliu istoric sau neancorat în context',
+    '- pentru grile cu variante, formulează direct răspunsul: "C este răspunsul corect deoarece..."; apoi explică A/B/D: de ce sunt greșite și când ar fi devenit corecte',
+    '- folosește biblioteca drept memorie principală, dar completează cu cunoștințe medicale generale stabile când contextul e incomplet',
+    '',
+    'REGULI DE GROUNDING:',
+    '- prioritizează contextul extras din biblioteca utilizatorului când este relevant',
+    '- nu inventa surse, citate, ghiduri, scoruri sau detalii din documente',
+    '- dacă biblioteca nu oferă destul context, spune explicit asta și separă ce urmează ca explicație medicală generală',
+    ...(options.scopedSourceName ? [`- document țintă curent: ${options.scopedSourceName}`] : []),
+    ...(focusTopics.length > 0 ? [`- topicuri vulnerabile de urmărit: ${focusTopics.join(', ')}`] : []),
+    '',
+    `MOD ACTIV: ${mode.toUpperCase()}`,
+    ...modeInstructions[mode],
+    '',
+    studyContext ? `PROFIL DE STUDIU ȘI ADAPTARE:\n${studyContext}\n` : '',
+    hasContext
+      ? `CONTEXT DIN BIBLIOTECA UTILIZATORULUI:\n${deepCleanText(contextSummary)}`
+      : 'NU EXISTĂ CONTEXT SPECIFIC DIN BIBLIOTECA UTILIZATORULUI PENTRU ACEASTĂ ÎNTREBARE.',
+  ].join('\n');
+}
 
 export async function generateChatResponse(
-  message: string, 
-  contextSummary: string, 
-  history: { role: 'user' | 'assistant'; content: string }[] = []
+  message: string,
+  contextSummary: string,
+  history: { role: 'user' | 'assistant'; content: string }[] = [],
+  options: ChatResponseOptions = {},
 ): Promise<string> {
-  const systemPrompt = [
-    'Esti asistentul medical virtual premium din StudyX - un AI empatic, inteligent si foarte bine organizat. 🧠',
-    '',
-    '🎯 **STILUL TAU DE RASPUNS:**',
-    '• Raspunde intotdeauna in limba romana, clar, structurat si prietenos',
-    '• Foloseste emoji-uri relevante pentru a face conversatia mai placuta (📚, 🧠, 💡, ✅, ❌, ⚡, 🎯, 📝, 🏥)',
-    '• Structureaza raspunsurile cu spatii entre paragrafe pentru lizibilitate',
-    '• Pentru concepte complexe, foloseste o abordare metodică in pași:',
-    '  A) **Ce a cerut utilizatorul** - reformulează cererea',
-    '  B) **Analiza conceptelor** - descompune informația logic',
-    '  C) **Explicație pas cu pas** - dezvoltă raționamentul',
-    '  D) **Concluzie/Aplicație practică** - leagă de context clinic',
-    '',
-    '📚 **CONTEXTUL BIBLIOTECII:**',
-    '• Prioritizeaza contextul extras din biblioteca utilizatorului atunci cand este relevant',
-    '• Cand contextul contine surse, mentioneaza pe scurt sursa sau documentul relevant',
-    '• Daca raspunsul depaseste contextul disponibil, spune explicit ca acea parte se bazeaza pe cunostinte medicale generale',
-    '• Nu inventa citate, ghiduri sau surse inexistente',
-    '',
-    '💡 **FORMATARE:**',
-    '• Foloseste **bold** pentru conceptele cheie',
-    '• Foloseste *italic* pentru termeni importanti',
-    '• Liste cu puncte pentru enumerări',
-    '• Spatii entre paragrafe pentru respiratie vizuala',
-    '• Maxim 3-4 emoji-uri per raspuns, plasate strategic',
-    '',
-    contextSummary ? `📖 **Context din biblioteca ta:**\n${deepCleanText(contextSummary)}` : 'Nu exista context specific furnizat din biblioteca ta.'
-  ].join('\n\n');
-
-  // Limit history to last 10 messages to save tokens
+  const systemPrompt = buildChatSystemPrompt(contextSummary, options);
   const recentHistory = history.slice(-10);
 
   return groqRequest({
@@ -346,5 +472,3 @@ export function getUserProfile(profileId: string) {
 export function generateFromMistakeBank(profileId: string) {
   return generateFromMistakes(profileId);
 }
-
-logAIDebug('AIEngine:init', 'initializat');

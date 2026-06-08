@@ -6,21 +6,23 @@ const fsp = require('fs').promises;
 const { fork } = require('child_process');
 const { registerUpdaterIPC } = require('./updater.cjs');
 
+// Must be called before any other app.* API — Windows reads AUMID at startup
+// to associate the process with the correct taskbar button and icon.
+app.setAppUserModelId('com.studyx.app');
+app.setName('StudyX');
+
 const isDev = !app.isPackaged;
 const sharedUserDataPath = path.join(app.getPath('appData'), 'StudyX');
 const legacyDevUserDataPath = path.join(app.getPath('appData'), 'StudyX-Dev');
 
 app.setPath('userData', sharedUserDataPath);
-app.setAppUserModelId('com.studyx.app');
 
-// ── GPU disk-cache suppression ───────────────────────────────────────────────
-app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-
-// ── 1. Dev vs Prod userData isolation ───────────────────────────────────────
+// 1. Dev vs Prod userData isolation
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let saveWindowStateTimer = null;
+let backgroundTasksStarted = false;
 async function pathExists(targetPath) {
   try {
     await fsp.access(targetPath);
@@ -41,7 +43,10 @@ async function getDirectorySize(targetPath) {
       try {
         const stat = await fsp.stat(fullPath);
         total += stat.size;
-      } catch {}
+      } catch (error) {
+        // Silently ignore file stat errors in directory size calculation
+        console.debug('[StudyX] File stat error during directory size calculation:', error.message);
+      }
     }
   }
   return total;
@@ -70,12 +75,89 @@ async function copyRecursive(sourceDir, targetDir) {
   }
 }
 
+function getLegacyMigrationMarkerPath() {
+  return path.join(app.getPath('userData'), '.legacy-dev-migration.json');
+}
+
+function getHardResetMarkerPath() {
+  return path.join(app.getPath('userData'), '.hard-reset-pending.json');
+}
+
+async function writeLegacyMigrationMarker(status) {
+  try {
+    await fsp.mkdir(app.getPath('userData'), { recursive: true });
+    await fsp.writeFile(
+      getLegacyMigrationMarkerPath(),
+      JSON.stringify({ status, checkedAt: new Date().toISOString() }, null, 2),
+      'utf-8',
+    );
+  } catch (err) {
+    console.warn('[StudyX] Failed to persist legacy migration marker:', err);
+  }
+}
+
+async function writeHardResetMarker() {
+  await fsp.mkdir(app.getPath('userData'), { recursive: true });
+  await fsp.writeFile(
+    getHardResetMarkerPath(),
+    JSON.stringify({ requestedAt: new Date().toISOString() }, null, 2),
+    'utf-8',
+  );
+}
+
+async function removeUserDataEntriesForHardReset() {
+  const userDataPath = app.getPath('userData');
+  const markerName = path.basename(getHardResetMarkerPath());
+  const keepEntries = new Set(['settings.json', markerName]);
+  const entries = await fsp.readdir(userDataPath).catch(() => []);
+  let removed = 0;
+  let locked = 0;
+
+  for (const entry of entries) {
+    if (keepEntries.has(entry)) continue;
+    const fullPath = path.join(userDataPath, entry);
+    try {
+      await fsp.rm(fullPath, { recursive: true, force: true, maxRetries: 4, retryDelay: 160 });
+      removed += 1;
+    } catch (error) {
+      if (['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error?.code)) {
+        locked += 1;
+      } else {
+        console.warn('[StudyX] Hard reset cleanup skipped entry:', entry, error?.message || String(error));
+      }
+    }
+  }
+
+  return { removed, locked };
+}
+
+async function runPendingHardResetCleanup() {
+  if (!(await pathExists(getHardResetMarkerPath()))) return;
+
+  const result = await removeUserDataEntriesForHardReset();
+  await writeLegacyMigrationMarker('skipped-after-hard-reset');
+  await fsp.rm(getHardResetMarkerPath(), { force: true }).catch(() => undefined);
+
+  if (result.locked > 0) {
+    console.warn(`[StudyX] Hard reset cleaned ${result.removed} entries; ${result.locked} Chromium files were still locked and will be ignored.`);
+  } else {
+    console.log(`[StudyX] Hard reset cleanup completed (${result.removed} entries removed).`);
+  }
+}
+
 async function migrateLegacyUserData() {
-  if (!(await pathExists(legacyDevUserDataPath))) return;
+  if (await pathExists(getLegacyMigrationMarkerPath())) return;
+  if (!(await pathExists(legacyDevUserDataPath))) {
+    await writeLegacyMigrationMarker('no-legacy');
+    return;
+  }
 
   const currentScore = await profileDataScore(sharedUserDataPath);
   const legacyScore = await profileDataScore(legacyDevUserDataPath);
-  if (legacyScore <= currentScore) return;
+  if (legacyScore <= currentScore) {
+    await writeLegacyMigrationMarker('current-newer');
+    return;
+  }
 
   const importantEntries = [
     '.first-run',
@@ -101,7 +183,9 @@ async function migrateLegacyUserData() {
         const stat = await fsp.stat(targetPath);
         if (stat.isDirectory()) await fsp.rm(targetPath, { recursive: true, force: true });
         else await fsp.unlink(targetPath);
-      } catch {}
+      } catch (error) {
+        console.warn('[StudyX] Failed to remove file during cleanup:', targetPath, error.message);
+      }
     }
 
     const sourceStat = await fsp.stat(sourcePath);
@@ -110,6 +194,7 @@ async function migrateLegacyUserData() {
   }
 
   console.log('[StudyX] Migrated richer data set from legacy StudyX-Dev storage.');
+  await writeLegacyMigrationMarker('migrated');
 }
 
 async function writeJsonAtomically(filePath, serialized) {
@@ -129,15 +214,80 @@ async function markCorruptFile(filePath) {
 }
 
 function getAppIconPath() {
-  const icoPath = path.join(__dirname, '../public/icon.ico');
-  const pngPath = path.join(__dirname, '../public/icon.png');
-  if (fs.existsSync(icoPath)) return icoPath;
-  if (fs.existsSync(pngPath)) return pngPath;
+  // In packaged app, icons are in app.asar.unpacked (not inside asar archive)
+  // In dev, they're in the regular public folder
+  const candidates = [
+    path.join(process.resourcesPath || '', 'app.asar.unpacked', 'public', 'icon.ico'),
+    path.join(process.resourcesPath || '', 'app.asar.unpacked', 'public', 'icon.png'),
+    path.join(__dirname, '../public/icon.ico'),
+    path.join(__dirname, '../public/icon.png'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
   return undefined;
 }
 
 function getWindowStatePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function getSettingsPath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function sanitizeProfileId(profileId) {
+  return String(profileId || '').replace(/[^a-z0-9_-]/gi, '_');
+}
+
+function getProfileNamespacePath(profileId, namespace) {
+  return path.join(app.getPath('userData'), 'profiles', sanitizeProfileId(profileId), `${namespace}.json`);
+}
+
+async function readJsonFileSafe(filePath) {
+  try {
+    const raw = await fsp.readFile(filePath, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function readDiskLastStudyDate(profileId) {
+  if (!profileId) return '';
+  const stats = await readJsonFileSafe(getProfileNamespacePath(profileId, 'stats'));
+  return stats?.streak?.lastStudyDate ?? '';
+}
+
+function initializeTray() {
+  if (tray) return;
+  try {
+    const trayIcon = nativeImage.createFromPath(getAppIconPath() || '').resize({ width: 16, height: 16 });
+    tray = new Tray(trayIcon);
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Deschide StudyX', click: () => mainWindow?.show() },
+      { type: 'separator' },
+      { label: '\u00CEnchide', click: () => app.quit() },
+    ]));
+    tray.on('click', () => mainWindow?.show());
+  } catch (error) {
+    console.warn('[StudyX] Failed to create system tray:', error.message);
+  }
+}
+
+function scheduleBackgroundTasks() {
+  if (backgroundTasksStarted) return;
+  backgroundTasksStarted = true;
+  setTimeout(() => scheduleDailyReminder(), 1200);
+  setTimeout(() => initializeTray(), 1800);
+}
+
+function readStartupSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(getSettingsPath(), 'utf-8'));
+  } catch {
+    return {};
+  }
 }
 
 function getAdaptiveWindowMetrics() {
@@ -207,26 +357,53 @@ function compareVersionParts(a, b) {
   return a3 - b3;
 }
 
+function getOverlayRoot() {
+  return path.join(app.getPath('userData'), 'app-overlay');
+}
+
+function readOverlayManifest() {
+  const overlayManifestPath = path.join(getOverlayRoot(), 'manifest.json');
+  if (!fs.existsSync(overlayManifestPath)) return null;
+
+  try {
+    return JSON.parse(fs.readFileSync(overlayManifestPath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
 function getPreferredRendererEntry() {
   const bundledHtml = path.join(__dirname, '../dist/index.html');
-  const overlayRoot = path.join(app.getPath('userData'), 'app-overlay');
+  const overlayRoot = getOverlayRoot();
   const overlayHtml = path.join(overlayRoot, 'files', 'dist', 'index.html');
-  const overlayManifest = path.join(overlayRoot, 'manifest.json');
+  const manifest = readOverlayManifest();
 
-  if (!fs.existsSync(overlayHtml) || !fs.existsSync(overlayManifest)) {
+  if (!fs.existsSync(overlayHtml) || !manifest) {
     return bundledHtml;
   }
 
-  try {
-    const manifest = JSON.parse(fs.readFileSync(overlayManifest, 'utf-8'));
-    const overlayVersion = manifest?.version;
-    const bundledVersion = getBundledVersion();
-    if (!overlayVersion || compareVersionParts(overlayVersion, bundledVersion) < 0) {
-      return bundledHtml;
-    }
-    return overlayHtml;
-  } catch {
+  const overlayVersion = manifest?.version;
+  const bundledVersion = getBundledVersion();
+  if (!overlayVersion || compareVersionParts(overlayVersion, bundledVersion) <= 0) {
     return bundledHtml;
+  }
+
+  return overlayHtml;
+}
+
+async function pruneStaleOverlay() {
+  const manifest = readOverlayManifest();
+  if (!manifest?.version) return;
+
+  const bundledVersion = getBundledVersion();
+  if (compareVersionParts(manifest.version, bundledVersion) > 0) return;
+
+  const overlayRoot = getOverlayRoot();
+  try {
+    await fsp.rm(overlayRoot, { recursive: true, force: true });
+    console.log(`[StudyX] Removed stale overlay ${manifest.version}; bundled app is ${bundledVersion}.`);
+  } catch (err) {
+    console.warn('[StudyX] Failed to remove stale overlay:', err);
   }
 }
 
@@ -256,7 +433,13 @@ function ensureWindowFitsDisplay(win) {
   if (changed) win.setBounds(nextBounds);
 }
 
-// ── Helper Functions ────────────────────────────────────────────────────────
+const startupSettings = readStartupSettings();
+if (startupSettings.hardwareAccel === false) {
+  app.disableHardwareAcceleration();
+  console.log('[StudyX] Hardware acceleration disabled by saved setting.');
+}
+
+// Helper Functions
 
 const PDF_JOB_TIMEOUT_MS = 12000;
 let pdfQueue = Promise.resolve();
@@ -282,7 +465,9 @@ function runPdfWorker(payload, timeoutMs = PDF_JOB_TIMEOUT_MS) {
       child.removeAllListeners('exit');
       try {
         if (child.connected) child.disconnect();
-      } catch {}
+      } catch (error) {
+        console.warn('[StudyX] Failed to disconnect PDF worker:', error.message);
+      }
       resolve(typeof result === 'string' && result.trim().length > 0 ? result : null);
     };
 
@@ -290,7 +475,9 @@ function runPdfWorker(payload, timeoutMs = PDF_JOB_TIMEOUT_MS) {
       console.warn('[PDF] Worker timed out and will be terminated.');
       try {
         child.kill();
-      } catch {}
+      } catch (error) {
+        console.warn('[StudyX] Failed to kill PDF worker timeout:', error.message);
+      }
       finish(null);
     }, timeoutMs);
 
@@ -328,7 +515,9 @@ function runPdfWorker(payload, timeoutMs = PDF_JOB_TIMEOUT_MS) {
       console.error('[PDF] Failed to start worker job:', error);
       try {
         child.kill();
-      } catch {}
+      } catch (killError) {
+        console.warn('[StudyX] Failed to kill PDF worker on error:', killError.message);
+      }
       finish(null);
     }
   });
@@ -392,7 +581,7 @@ const extractOCRText = async (filePath) => {
   return job;
 };
 
-// ── IPC Handlers Registration ──────────────────────────────────────────────
+// IPC Handlers Registration
 
 function registerIpcHandlers() {
   // Window controls
@@ -546,19 +735,21 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('app:setHardwareAccel', async (_, enabled) => {
-    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+    const settingsPath = getSettingsPath();
     let settings = {};
     try { 
       const data = await fsp.readFile(settingsPath, 'utf-8');
       settings = JSON.parse(data); 
-    } catch {}
+    } catch (error) {
+      console.warn('[StudyX] Failed to read hardware acceleration settings:', error.message);
+    }
     settings.hardwareAccel = enabled;
     await fsp.writeFile(settingsPath, JSON.stringify(settings), 'utf-8');
     return true;
   });
 
   ipcMain.handle('app:getSettings', async () => {
-    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+    const settingsPath = getSettingsPath();
     try { 
       const data = await fsp.readFile(settingsPath, 'utf-8');
       return JSON.parse(data); 
@@ -566,21 +757,24 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('app:hardReset', async () => {
+    let markerWritten = false;
     try {
+      await writeHardResetMarker();
+      markerWritten = true;
       await session.defaultSession.clearStorageData();
-      const ud = app.getPath('userData');
-      const entries = await fsp.readdir(ud);
-      for (const entry of entries) {
-        const full = path.join(ud, entry);
-        if (entry === 'settings.json') continue;
+    } catch (error) {
+      console.warn('[StudyX] Hard reset error:', error?.message || String(error));
+      if (!markerWritten) {
+        // Marker not written — do the cleanup inline so the reset actually takes effect.
         try {
-          const stat = await fsp.stat(full);
-          if (stat.isDirectory()) await fsp.rm(full, { recursive: true, force: true });
-          else await fsp.unlink(full);
-        } catch {}
+          await removeUserDataEntriesForHardReset();
+        } catch (cleanupErr) {
+          console.warn('[StudyX] Hard reset inline cleanup failed:', cleanupErr?.message || String(cleanupErr));
+        }
       }
-    } catch (e) { console.warn('[StudyX] Hard reset error:', e); }
+    }
     app.relaunch();
+    isQuitting = true;
     app.quit();
     return true;
   });
@@ -613,11 +807,11 @@ function registerIpcHandlers() {
   });
 
   // Persistent Disk Storage for Profiles (Fixes 5MB LocalStorage limit)
-  ipcMain.handle('storage:save', async (_, { profileId, namespace, data }) => {
+  ipcMain.handle('storage:save', async (_, { profileId, namespace, serialized }) => {
     try {
+      if (typeof serialized !== 'string') throw new Error('Invalid storage payload');
       const safeId = profileId.replace(/[^a-z0-9_-]/gi, '_');
       const safeNs = namespace.replace(/[^a-z0-9_-]/gi, '_');
-      const serialized = JSON.stringify(data);
       // Increased limit to 500MB for large image-heavy quiz sets
       if (serialized.length > 500 * 1024 * 1024) throw new Error('Data too large (>500MB)');
       const storageDir = path.join(app.getPath('userData'), 'profiles', safeId);
@@ -655,7 +849,7 @@ function registerIpcHandlers() {
   ipcMain.once('app:ready', () => mainWindow?.show());
 }
 
-// ── Main Functions ───────────────────────────────────────────────────────────
+// Main Functions
 
 function createWindow() {
   const iconPath = getAppIconPath();
@@ -668,6 +862,15 @@ function createWindow() {
     height: adaptiveMetrics.height,
   };
 
+  // Creăm nativeImage ÎNAINTE de BrowserWindow — Windows citește icon-ul din constructor
+  let appIcon = null;
+  if (iconPath) {
+    try {
+      appIcon = nativeImage.createFromPath(iconPath);
+      if (appIcon.isEmpty()) appIcon = null;
+    } catch (e) { appIcon = null; }
+  }
+
   mainWindow = new BrowserWindow({
     ...initialBounds,
     minWidth: 720,
@@ -679,10 +882,19 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
+      spellcheck: false,
     },
-    icon: iconPath,
+    // Folosim nativeImage (nu string) — mai fiabil pe Windows pentru taskbar
+    icon: appIcon || iconPath || undefined,
     show: false,
   });
+
+  // Setăm din nou icon-ul după creare pentru a forța actualizarea taskbar-ului
+  if (appIcon) {
+    try {
+      mainWindow.setIcon(appIcon);
+    } catch (e) { /* ignore */ }
+  }
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
@@ -697,8 +909,19 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => {
+    if (appIcon) {
+      try { mainWindow?.setIcon(appIcon); } catch { /* ignore */ }
+    }
     if (!savedBounds && adaptiveMetrics.shouldMaximize) {
       mainWindow?.maximize();
+    }
+  });
+
+  // Re-apply icon after renderer finishes loading — Chromium can reset the
+  // window icon when it initialises its own rendering pipeline on Windows.
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (appIcon) {
+      try { mainWindow?.setIcon(appIcon); } catch { /* ignore */ }
     }
   });
   mainWindow.on('maximize', () => mainWindow?.webContents.send('win:maximized', true));
@@ -730,7 +953,9 @@ function scheduleDailyReminder() {
     let lastNotified = '';
     try { 
       lastNotified = (await fsp.readFile(stored, 'utf-8')).trim(); 
-    } catch {}
+    } catch (error) {
+      console.debug('[StudyX] Failed to read last reminder notification date:', error.message);
+    }
     if (lastNotified === today) return;
 
     if (mainWindow) {
@@ -739,33 +964,41 @@ function scheduleDailyReminder() {
           try {
             const activeRaw = localStorage.getItem('studyx-user');
             const activeState = activeRaw ? JSON.parse(activeRaw)?.state ?? JSON.parse(activeRaw) : null;
-            const profileId = activeState?.activeProfileId;
-            if (profileId) {
-              const perProfileRaw = localStorage.getItem(\`studyx-p-\${profileId}-stats\`);
-              if (perProfileRaw) {
-                const perProfile = JSON.parse(perProfileRaw);
-                return perProfile?.streak?.lastStudyDate ?? perProfile?.state?.streak?.lastStudyDate ?? '';
-              }
-            }
-            return '';
-          } catch { return ''; }
+            const profileId = activeState?.activeProfileId ?? '';
+            const perProfileRaw = profileId ? localStorage.getItem(\`studyx-p-\${profileId}-stats\`) : null;
+            const perProfile = perProfileRaw ? JSON.parse(perProfileRaw) : null;
+            return {
+              profileId,
+              localLastStudyDate: perProfile?.streak?.lastStudyDate ?? perProfile?.state?.streak?.lastStudyDate ?? '',
+            };
+          } catch { return { profileId: '', localLastStudyDate: '' }; }
         })()
-      `).then(async (lastStudy) => {
+      `).then(async (payload) => {
+        const profileId = typeof payload?.profileId === 'string' ? payload.profileId : '';
+        const localLastStudyDate = typeof payload?.localLastStudyDate === 'string' ? payload.localLastStudyDate : '';
+        const diskLastStudyDate = await readDiskLastStudyDate(profileId);
+        const lastStudy = diskLastStudyDate || localLastStudyDate;
         if (lastStudy !== today) {
           new Notification({
-            title: '📚 StudyX — Ai studiat azi?',
-            body: 'Nu uita să-ți faci sesiunea de grile de azi! Menține streak-ul! 🔥',
+            title: 'StudyX - Ai studiat azi?',
+            body: 'Nu uita s\u0103-\u021Bi faci sesiunea de grile de azi! Men\u021Bine streak-ul!',
           }).show();
-          try { await fsp.writeFile(stored, today); } catch {}
+          try {
+            await fsp.writeFile(stored, today);
+          } catch (error) {
+            console.warn('[StudyX] Failed to write reminder notification date:', error.message);
+          }
         }
-      }).catch(() => {});
+      }).catch((error) => {
+        console.warn('[Reminder] Failed to evaluate reminder state:', error);
+      });
     }
   };
   setTimeout(checkAndNotify, 5000);
   setInterval(checkAndNotify, 60 * 60 * 1000);
 }
 
-// ── App Lifecycle ────────────────────────────────────────────────────────────
+// App Lifecycle
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -780,30 +1013,30 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
+    await runPendingHardResetCleanup();
     await migrateLegacyUserData();
+    await pruneStaleOverlay();
     const ud = app.getPath('userData');
     const sentinelPath = path.join(ud, '.first-run');
     try {
       await fsp.access(sentinelPath);
     } catch {
       // First run or file missing
-      try { await session.defaultSession.clearStorageData(); } catch {}
-      try { await fsp.mkdir(ud, { recursive: true }); } catch {}
+      try {
+        await session.defaultSession.clearStorageData();
+      } catch (error) {
+        console.warn('[StudyX] Failed to clear storage data on first run:', error.message);
+      }
+      try {
+        await fsp.mkdir(ud, { recursive: true });
+      } catch (error) {
+        console.warn('[StudyX] Failed to create user data directory:', error.message);
+      }
       await fsp.writeFile(sentinelPath, new Date().toISOString());
     }
     registerIpcHandlers();
     createWindow();
-    scheduleDailyReminder();
-    try {
-      const trayIcon = nativeImage.createFromPath(getAppIconPath() || '').resize({ width: 16, height: 16 });
-      tray = new Tray(trayIcon);
-      tray.setContextMenu(Menu.buildFromTemplate([
-        { label: 'Deschide StudyX', click: () => mainWindow?.show() },
-        { type: 'separator' },
-        { label: 'Închide', click: () => app.quit() },
-      ]));
-      tray.on('click', () => mainWindow?.show());
-    } catch {}
+    scheduleBackgroundTasks();
   });
 }
 
@@ -816,5 +1049,7 @@ app.on('before-quit', async () => {
       await worker.terminate();
       ocrWorkerPromise = null;
     }
-  } catch {}
+  } catch (error) {
+    console.warn('[StudyX] Failed to terminate OCR worker:', error.message);
+  }
 });

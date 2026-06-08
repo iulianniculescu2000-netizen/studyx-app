@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Download, Upload, Check, AlertCircle } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import Portal from './Portal';
 import { useQuizStore } from '../store/quizStore';
 import { useFolderStore } from '../store/folderStore';
@@ -16,8 +17,7 @@ interface BackupExportProps {
 
 export default function BackupExport({ open, onClose }: BackupExportProps) {
   const theme = useTheme();
-  const performanceLite = typeof document !== 'undefined'
-    && document.documentElement.getAttribute('data-performance') === 'lite';
+  const { calmMotion, performanceLite } = useAdaptiveMotion();
   const [status, setStatus] = useState<'idle' | 'ok' | 'error'>('idle');
   const [msg, setMsg] = useState('');
 
@@ -105,7 +105,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
             initial={{ opacity: 0, scale: 0.93, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.93, y: 20 }}
-            transition={{ type: 'spring', stiffness: 360, damping: 28 }}
+            transition={calmMotion ? { duration: 0.16, ease: 'easeOut' } : { type: 'spring', stiffness: 360, damping: 28 }}
             className="fixed z-[201] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm rounded-[28px] shadow-2xl overflow-hidden flex flex-col"
             style={{ 
               maxHeight: '85vh',
@@ -120,11 +120,11 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
                 <h2 className="text-lg font-black tracking-tight" style={{ color: theme.text }}>Backup & Export</h2>
                 <p className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: theme.text }}>Datele tale sunt în siguranță</p>
               </div>
-              <motion.button 
-                whileHover={{ rotate: 90, scale: 1.1, background: theme.surface }} 
-                whileTap={{ scale: 0.88 }}
-                onClick={onClose} 
-                className="p-2 rounded-2xl transition-all" 
+              <motion.button
+                whileHover={calmMotion ? undefined : { rotate: 90, scale: 1.1, background: theme.surface }}
+                whileTap={calmMotion ? undefined : { scale: 0.88 }}
+                onClick={onClose}
+                className="p-2 rounded-2xl transition-all"
                 style={{ color: theme.text3, background: theme.surface2, border: `1px solid ${theme.border}`, cursor: 'pointer' }}>
                 <X size={16} />
               </motion.button>
@@ -132,7 +132,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
 
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar" style={{ minHeight: 0 }}>
               <div className="space-y-3">
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={exportBackup}
+                <motion.button whileHover={calmMotion ? undefined : { scale: 1.02 }} whileTap={calmMotion ? undefined : { scale: 0.97 }} onClick={exportBackup}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
                   style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}30` }}>
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"
@@ -145,7 +145,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
                   </div>
                 </motion.button>
 
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={importBackup}
+                <motion.button whileHover={calmMotion ? undefined : { scale: 1.02 }} whileTap={calmMotion ? undefined : { scale: 0.97 }} onClick={importBackup}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
                   style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}30` }}>
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"

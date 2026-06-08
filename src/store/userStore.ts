@@ -34,6 +34,7 @@ interface UserStore {
   removeProfile: (id: string) => void;
   logout: () => void;
   clearPendingTutorialProfile: (id?: string) => void;
+  reset: () => void;
 }
 
 export const useUserStore = create<UserStore>()(
@@ -97,6 +98,13 @@ export const useUserStore = create<UserStore>()(
       clearPendingTutorialProfile: (id) => set((s) => ({
         pendingTutorialProfileId: !id || s.pendingTutorialProfileId === id ? null : s.pendingTutorialProfileId,
       })),
+      reset: () => set({
+        profiles: [],
+        activeProfileId: null,
+        pendingTutorialProfileId: null,
+        username: null,
+        themeId: 'obsidian',
+      }),
     }),
     {
       name: 'studyx-user',

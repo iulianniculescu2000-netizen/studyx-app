@@ -1,7 +1,9 @@
 /**
- * Semantic-aware chunker for large medical documents.
- * Splits safely even when a paragraph is much larger than the target chunk size.
+ * Enhanced chunker with document processor integration
+ * Uses DocumentProcessor for complete PDF reading without truncation
  */
+
+import { documentProcessor } from './documentProcessor';
 
 function normalizeText(text: string) {
   return text
@@ -48,6 +50,10 @@ function splitOversizedSegment(segment: string, chunkSize: number): string[] {
   return windows.filter(Boolean);
 }
 
+/**
+ * Legacy chunkText function - use documentProcessor.processDocument instead
+ * @deprecated Use documentProcessor.processDocument for better results
+ */
 export function chunkText(
   text: string,
   sourceName: string,
@@ -74,17 +80,50 @@ export function chunkText(
 
     if (content.length > chunkSize + overlap) {
       for (const segment of splitOversizedSegment(content, chunkSize)) {
-        if (segment.trim().length > 40) {
+        if (segment.trim().length > 0) {
           chunks.push({ text: segment.trim(), id: `${sourceName}-${index++}` });
         }
       }
       continue;
     }
 
-    if (content.length > 40) {
+    if (content.length > 0) {
       chunks.push({ text: content, id: `${sourceName}-${index++}` });
     }
   }
 
   return chunks;
+}
+
+/**
+ * Enhanced chunking with DocumentProcessor
+ * Processes complete documents without truncation
+ */
+export async function chunkDocument(
+  text: string,
+  sourceName: string,
+  options?: {
+    chunkSize?: number;
+    overlap?: number;
+    preserveStructure?: boolean;
+    minChunkLength?: number;
+  }
+): Promise<{ text: string; id: string }[]> {
+  try {
+    const processedDoc = await documentProcessor.processDocument(text, sourceName, options);
+    const validation = documentProcessor.validateDocument(processedDoc);
+
+    if (!validation.isValid) {
+      console.warn('Document processing validation failed:', validation.errors);
+    }
+
+    return processedDoc.chunks.map(chunk => ({
+      text: chunk.text,
+      id: chunk.id
+    }));
+  } catch (error) {
+    console.error('Enhanced document processing failed, falling back to legacy chunker:', error);
+    // Fallback to legacy chunking
+    return chunkText(text, sourceName, options?.chunkSize, options?.overlap);
+  }
 }
