@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Content protection (exam mode screenshot block)
   setContentProtection: (enabled) => ipcRenderer.invoke('win:setContentProtection', enabled),
+  // Desktop notifications (agent background tasks)
+  notify: (opts) => ipcRenderer.invoke('notify:show', opts),
   // App settings
   setHardwareAccel: (enabled) => ipcRenderer.invoke('app:setHardwareAccel', enabled),
   getSettings: () => ipcRenderer.invoke('app:getSettings'),

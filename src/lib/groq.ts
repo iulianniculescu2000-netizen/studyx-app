@@ -6,9 +6,21 @@ import type { AIRequestTask } from '../ai/types';
 import { createRequestGovernor } from './aiRequestGovernor';
 import { logDiagnosticEvent } from '../store/diagnosticsStore';
 
+export type GroqMessagePart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } };
+
 export interface GroqMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | GroqMessagePart[];
+}
+
+/** Groq Llama 4 Scout — vision-capable, fast, cost-efficient. */
+export const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+
+/** Returns true if the given provider supports multimodal (image) requests. */
+export function supportsVision(provider: string): boolean {
+  return provider !== 'deepseek';
 }
 
 export interface GeneratedQuestion {
@@ -20,8 +32,13 @@ export interface GeneratedQuestion {
 }
 
 function buildKnowledgeQuery(messages: GroqMessage[]): string {
-  const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
-  return lastUserMessage.slice(0, 1200).trim() || 'Context medical general';
+  const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+  if (!lastUserMsg) return 'Context medical general';
+  if (typeof lastUserMsg.content === 'string') {
+    return lastUserMsg.content.slice(0, 1200).trim() || 'Context medical general';
+  }
+  const textPart = lastUserMsg.content.find((p): p is Extract<GroqMessagePart, { type: 'text' }> => p.type === 'text');
+  return (textPart?.text ?? '').slice(0, 1200).trim() || 'Context medical general';
 }
 
 const TASK_TEMPERATURE: Record<AIRequestTask, number> = {
@@ -35,10 +52,10 @@ const TASK_TEMPERATURE: Record<AIRequestTask, number> = {
 
 const TASK_MAX_TOKENS: Record<AIRequestTask, number> = {
   questions: 2200,
-  explanation: 1300,
+  explanation: 1800,
   mnemonic: 300,
   hint: 500,
-  chat: 1200,
+  chat: 2000,
   analysis: 1000,
 };
 
@@ -217,8 +234,11 @@ export function recommendImage(questionText: string): string | null {
 }
 
 // ── Request Queue & Rate Limiting ──────────────────────────────────────────
-// Ensures we don't hit Groq's rate limits by controlling concurrency and spacing.
-const groqGovernor = createRequestGovernor({ concurrency: 1, baseSpacingMs: 650 });
+// Two governors:
+//  - groqGovernor: chat / stream / analysis / hints — serial, generous spacing
+//  - generationGovernor: question generation — 2 concurrent, tighter spacing
+const groqGovernor = createRequestGovernor({ concurrency: 1, baseSpacingMs: 400 });
+const generationGovernor = createRequestGovernor({ concurrency: 2, baseSpacingMs: 450 });
 
 function getRetryDelayMs(attempt: number, retryAfterHeader: string | null) {
   const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : 0;
@@ -246,7 +266,8 @@ export async function groqRequest({
   abortSignal?: AbortSignal;
   skipLibraryContext?: boolean;
 }): Promise<string> {
-  return groqGovernor.run(task, async () => {
+  const governor = task === 'questions' ? generationGovernor : groqGovernor;
+  return governor.run(task, async () => {
     const { apiKey, provider, model, getKnowledgeContext } = useAIStore.getState();
     const providerConfig = getProviderConfig(provider);
     const key = sanitizeKey(apiKey);
@@ -346,11 +367,56 @@ export async function groqChat(messages: GroqMessage[], temperature = 0.7): Prom
   return groqRequest({ task: 'chat', messages, temperature, maxTokens: 4096 });
 }
 
+/**
+ * Single-turn vision request — sends an image (data URL) + text prompt to
+ * Llama 4 Scout on Groq. Only available when provider !== 'deepseek'.
+ */
+export async function groqVisionRequest(
+  imageDataUrl: string,
+  prompt: string,
+  abortSignal?: AbortSignal,
+): Promise<string> {
+  const { apiKey, provider } = useAIStore.getState();
+  if (!supportsVision(provider)) {
+    throw new Error('Vision necesită Groq. Schimbă providerul în setări AI.');
+  }
+  const key = sanitizeKey(apiKey);
+  if (!key) throw new Error('Cheia API Groq nu este configurată. Mergi la Setări AI.');
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: GROQ_VISION_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: imageDataUrl, detail: 'low' } },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ],
+      max_tokens: 800,
+      temperature: 0.3,
+    }),
+    signal: abortSignal,
+  });
+
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err?.error?.message ?? res.statusText);
+  }
+  const data = await res.json();
+  return ((data.choices?.[0]?.message?.content as string | undefined) ?? '').trim();
+}
+
 export async function groqStream(
   messages: GroqMessage[],
   onChunk: (text: string) => void,
   temperature = 0.7,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  skipLibraryContext = false,
 ): Promise<string> {
   if (abortSignal?.aborted) {
     throw new Error('Stream aborted before start');
@@ -360,7 +426,7 @@ export async function groqStream(
     const providerConfig = getProviderConfig(provider);
     const key = sanitizeKey(apiKey);
     if (!key) throw new Error(providerConfig.keyHint);
-    const kb = await getKnowledgeContext(buildKnowledgeQuery(messages), 4500);
+    const kb = skipLibraryContext ? '' : await getKnowledgeContext(buildKnowledgeQuery(messages), 4500);
     const finalMessages: GroqMessage[] = kb
       ? [
           {
@@ -469,7 +535,7 @@ export async function generateQuestionsFromText(
     `\nCreezi întrebări EXCLUSIV din textul primit. LIMBĂ: ${language}. DIFICULTATE: ${difficultyInstruction}`;
 
   // ── Smart chunking: split long texts into digestible pieces ──────────────────
-  const chunks = chunkText(cleanText, 4500, 350, Math.max(4, Math.min(14, Math.ceil(count / 8))));
+  const chunks = chunkText(cleanText, 6500, 400, Math.max(2, Math.min(10, Math.ceil(count / 10))));
   const perChunk = Math.max(1, Math.ceil(count / chunks.length));
 
   const allQuestions: GeneratedQuestion[] = [];
@@ -483,7 +549,8 @@ export async function generateQuestionsFromText(
 
 REGULI:
 - Un singur răspuns corect (isCorrect: true), 3 distractori plauzibili
-- Câmp "explanation": justificare medicală (2-3 fraze)
+- Distractori: din ACEEAȘI categorie, lungime similară cu răspunsul corect, plauzibili medical dar greșiți; NU folosi "toate de mai sus", "niciunul", "ambele A și B"
+- Câmp "explanation": justificare medicală (2-3 fraze): de ce varianta corectă e corectă + de ce fiecare distractor e greșit
 - Câmp "tags": 3-5 cuvinte cheie ex: ["cardiologie","fibrilație"]
 - Câmp "reference": referință Harrison/Gomella sau "" dacă nu există
 - NU genera întrebări despre JSON/format

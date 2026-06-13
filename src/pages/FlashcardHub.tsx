@@ -10,9 +10,10 @@ import { useUserStore } from '../store/userStore';
 import { useFolderStore } from '../store/folderStore';
 import { notesToFlashcards } from '../lib/groq';
 import { buildMistakeFlashcardQuiz } from '../lib/adaptiveStudy';
-import { renderPdfPagesAsImages, renderPdfPagesWithText, resizeImageFile, type PdfFlashcardPageSnapshot } from '../lib/imageProcessing';
+import { extractCaptionedImagesFromPdf, renderPdfPagesAsImages, renderPdfPagesWithText, resizeImageFile, type CaptionedPdfImage, type PdfFlashcardPageSnapshot } from '../lib/imageProcessing';
+import { flashcardImageKey, flashcardImageRef, putFlashcardImage } from '../lib/flashcardImageStore';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
-import type { Difficulty, Question } from '../types';
+import type { Difficulty, Question, QuizColor } from '../types';
 import { FlashcardDeckGrid, FlashcardHubActions } from './flashcard-hub/sections';
 
 function generateId() {
@@ -23,6 +24,31 @@ const OPTION_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
 const FLASHCARD_ANSWER_SOFT_LIMIT = 210;
 const VISUAL_FLASHCARD_IMAGE_MAX_EDGE = 1680;
 const USE_NATIVE_TEXT_ONLY_PDF_IMPORT = false;
+const PHOTO_CARD_PROMPT = 'Privește imaginea și descrie aspectul clinic.';
+const LAST_FOLDER_LS_KEY = 'studyx-flashcard-last-folder';
+
+/**
+ * Builds one flashcard per course photo: the image on the front, the verbatim
+ * caption on the back. Nothing is rewritten — the AI only decided these were
+ * captioned photos worth turning into cards. Images are stored in IndexedDB and
+ * referenced by tag so the quiz snapshot stays small.
+ */
+function buildPhotoCardQuestion(entry: CaptionedPdfImage, quizId: string): Question {
+  return {
+    id: generateId(),
+    text: PHOTO_CARD_PROMPT,
+    imageUrl: flashcardImageRef(quizId, entry.tag),
+    multipleCorrect: false,
+    difficulty: 'medium' as Difficulty,
+    explanation: `${entry.section} · imaginea ${entry.tag}`,
+    options: [{
+      id: OPTION_IDS[0] ?? generateId(),
+      text: normalizeFlashcardCopy(entry.caption),
+      isCorrect: true,
+    }],
+    tags: ['foto', entry.tag],
+  };
+}
 
 function normalizeFlashcardCopy(value: string) {
   return value
@@ -154,6 +180,7 @@ export default function FlashcardHub() {
   const navigate = useNavigate();
   const { quizzes, addQuiz } = useQuizStore();
   const folders = useFolderStore((state) => state.folders);
+  const addFolder = useFolderStore((state) => state.addFolder);
   const { questionStats, getDueQuestions } = useStatsStore();
   const { hasKey, addKnowledgeSource, knowledgeSources } = useAIStore();
   const activeProfileId = useUserStore((state) => state.activeProfileId);
@@ -165,7 +192,11 @@ export default function FlashcardHub() {
   const [csvError, setCsvError] = useState('');
   const [photoImporting, setPhotoImporting] = useState(false);
   const [photoError, setPhotoError] = useState('');
-  const [targetFolderId, setTargetFolderId] = useState<string>('__uncategorized__');
+  const [aiProgress, setAiProgress] = useState('');
+  const [targetFolderId, setTargetFolderId] = useState<string>(() => {
+    if (typeof localStorage === 'undefined') return '__uncategorized__';
+    return localStorage.getItem(LAST_FOLDER_LS_KEY) ?? '__uncategorized__';
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -174,6 +205,47 @@ export default function FlashcardHub() {
   const selectedFolder = targetFolderId === '__uncategorized__'
     ? null
     : folders.find((folder) => folder.id === targetFolderId) ?? null;
+
+  // Remember the last chosen folder so AI decks stop landing in "Neclasificate".
+  const handleTargetFolderChange = (folderId: string) => {
+    setTargetFolderId(folderId);
+    try { localStorage.setItem(LAST_FOLDER_LS_KEY, folderId); } catch { /* ignore */ }
+  };
+
+  // Create a folder (or subfolder) inline from the flashcard hub.
+  const handleCreateFolder = (name: string, parentId: string | null): string => {
+    const palette: QuizColor[] = ['purple', 'blue', 'teal', 'green', 'pink', 'orange', 'red'];
+    const color = palette[folders.length % palette.length];
+    return addFolder(name, parentId ? '📁' : '📚', color, parentId);
+  };
+
+  // One card per captioned course photo (front = image, back = verbatim caption).
+  const generateVisualDeckFromCaptions = async (captioned: CaptionedPdfImage[], sourceName: string) => {
+    const deckId = generateId();
+    await Promise.all(
+      captioned.map((entry) => putFlashcardImage(flashcardImageKey(deckId, entry.tag), entry.imageDataUrl)),
+    );
+
+    const questions: Question[] = captioned.map((entry) => buildPhotoCardQuestion(entry, deckId));
+    const baseName = sourceName.replace(/\.[^.]+$/, '') || 'Curs';
+
+    addQuiz({
+      id: deckId,
+      title: `Atlas foto · ${baseName}`,
+      description: `${questions.length} carduri vizuale din ${sourceName}. Față = imaginea din curs, spate = descrierea originală.`,
+      emoji: '🩺',
+      color: selectedFolder?.color ?? 'pink',
+      category: selectedFolder?.name ?? 'Atlas vizual',
+      folderId: selectedFolder?.id ?? null,
+      shuffleQuestions: true,
+      shuffleAnswers: false,
+      tags: ['ai', 'foto', 'atlas'],
+      questions,
+      createdAt: Date.now(),
+    });
+
+    navigate(`/flashcards/session/${deckId}?mode=all`);
+  };
 
   const existingFlashcardFronts = useMemo(() => (
     quizzes
@@ -580,30 +652,59 @@ export default function FlashcardHub() {
           if (!file) return;
 
           const isPdf = file.name.toLowerCase().endsWith('.pdf');
-          const pageSnapshots = isPdf
-            ? await renderPdfPagesWithText(file, {
+          setAiLoading(true);
+          setAiError('');
+
+          try {
+            // Course with captioned photos → one card per image, verbatim caption.
+            if (isPdf) {
+              setAiProgress('Caut imagini cu descriere în curs...');
+              const captioned = await extractCaptionedImagesFromPdf(file, {
                 maxLongEdge: VISUAL_FLASHCARD_IMAGE_MAX_EDGE,
                 quality: 0.84,
                 mimeType: 'image/jpeg',
-              })
-            : [];
-          let text = '';
-          if (isPdf) {
-            try {
-              text = await (await import('../ai/pdfParser')).parsePDF(file);
-            } catch {
-              text = pageSnapshots.map((page) => page.text).filter(Boolean).join('\n\n');
+              }).catch(() => [] as CaptionedPdfImage[]);
+
+              if (captioned.length >= 2) {
+                setAiProgress(`Pregătesc ${captioned.length} carduri foto...`);
+                await generateVisualDeckFromCaptions(captioned, file.name);
+                return;
+              }
             }
-          } else {
-            text = await file.text();
-          }
 
-          if (text.trim().length < 60) {
-            setAiError('PDF-ul pare să fie scanat fără text digital. Încearcă alt PDF sau procesează-l întâi cu OCR în Biblioteca AI.');
-            return;
-          }
+            // Plain text PDF / TXT → AI generates flashcards from the text.
+            setAiProgress('Extrag textul...');
+            const pageSnapshots = isPdf
+              ? await renderPdfPagesWithText(file, {
+                  maxLongEdge: VISUAL_FLASHCARD_IMAGE_MAX_EDGE,
+                  quality: 0.84,
+                  mimeType: 'image/jpeg',
+                })
+              : [];
+            let text = '';
+            if (isPdf) {
+              try {
+                text = await (await import('../ai/pdfParser')).parsePDF(file);
+              } catch {
+                text = pageSnapshots.map((page) => page.text).filter(Boolean).join('\n\n');
+              }
+            } else {
+              text = await file.text();
+            }
 
-          await generateDeckFromPdf(text, file.name, pageSnapshots);
+            if (text.trim().length < 60) {
+              setAiError('PDF-ul pare să fie scanat fără text digital. Încearcă alt PDF sau procesează-l întâi cu OCR în Biblioteca AI.');
+              return;
+            }
+
+            setAiProgress('AI generează cardurile...');
+            await generateDeckFromPdf(text, file.name, pageSnapshots);
+          } catch (error: unknown) {
+            setAiError(error instanceof Error ? error.message : 'Eroare la procesarea fișierului.');
+          } finally {
+            setAiLoading(false);
+            setAiProgress('');
+          }
         }}
       />
 
@@ -661,6 +762,7 @@ export default function FlashcardHub() {
           aiCount={aiCount}
           aiError={aiError}
           aiLoading={aiLoading}
+          aiProgress={aiProgress}
           csvError={csvError}
           csvImporting={csvImporting}
           folders={folders}
@@ -673,15 +775,16 @@ export default function FlashcardHub() {
           totalMastered={totalMastered}
           targetFolderId={targetFolderId}
           onAiCountChange={setAiCount}
+          onCreateFolder={handleCreateFolder}
           onCsvImport={handleCsvImport}
           onMistakeDeckCreate={createMistakeDeck}
           onPhotoImport={handlePhotoImport}
           onPdfImport={handlePdfImport}
           onQuickDeckCreate={createQuickDeck}
-          onTargetFolderChange={setTargetFolderId}
+          onTargetFolderChange={handleTargetFolderChange}
         />
 
-        <FlashcardDeckGrid decks={decks} theme={theme} />
+        <FlashcardDeckGrid decks={decks} folders={folders} theme={theme} />
       </div>
     </div>
   );

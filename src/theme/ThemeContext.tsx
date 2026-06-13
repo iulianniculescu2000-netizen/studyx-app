@@ -83,6 +83,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         '--shadow-color': theme.isDark ? 'rgba(0,0,0,0.42)' : 'rgba(26,33,56,0.10)',
         '--shadow-color-soft': theme.isDark ? 'rgba(0,0,0,0.24)' : 'rgba(26,33,56,0.055)',
         '--focus-ring': theme.isDark ? 'rgba(10,132,255,0.38)' : `color-mix(in srgb, ${theme.accent} 26%, transparent)`,
+        '--accent-glow': `color-mix(in srgb, ${theme.accent} ${theme.isDark ? '34%' : '22%'}, transparent)`,
+        '--accent-soft': `color-mix(in srgb, ${theme.accent} 11%, transparent)`,
         '--selection': theme.accent,
         '--shell-gutter': performanceProfile === 'lite' ? '18px' : '24px',
         '--shell-curve': performanceProfile === 'lite' ? '24px' : '32px',

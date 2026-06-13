@@ -1,5 +1,5 @@
 import type { Difficulty, Question } from '../types';
-import { groqRequest } from '../lib/groq';
+import { groqRequest, groqStream } from '../lib/groq';
 import { logAIDebug } from './debug';
 import { runAIPipeline } from './pipeline';
 import {
@@ -463,6 +463,30 @@ export async function generateChatResponse(
     ],
     skipLibraryContext: true,
   });
+}
+
+export async function generateChatResponseStream(
+  message: string,
+  contextSummary: string,
+  history: { role: 'user' | 'assistant'; content: string }[] = [],
+  onChunk: (text: string) => void,
+  options: ChatResponseOptions = {},
+  abortSignal?: AbortSignal,
+): Promise<void> {
+  const systemPrompt = buildChatSystemPrompt(contextSummary, options);
+  const recentHistory = history.slice(-10);
+
+  await groqStream(
+    [
+      { role: 'system', content: systemPrompt },
+      ...recentHistory,
+      { role: 'user', content: message },
+    ],
+    onChunk,
+    0.5,
+    abortSignal,
+    true, // context already injected via systemPrompt — skip internal library search
+  );
 }
 
 export function getUserProfile(profileId: string) {

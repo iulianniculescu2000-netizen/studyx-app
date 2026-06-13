@@ -56,10 +56,10 @@ export const THEMES: Record<string, Theme> = {
     id: 'obsidian',
     name: 'Obsidian Glow',
     emoji: '\u{1F311}',
-    bg: '#1C1C1E',
+    bg: '#161618',                            // mai adânc → orbii și glow-urile ies mai frumos
     surface: 'rgba(255, 255, 255, 0.08)',     // mai întunecată → carduri mai subtile
     surface2: 'rgba(255, 255, 255, 0.14)',    // mai clară față de surface → ierarhie mai bună
-    modalBg: 'rgba(26, 26, 28, 0.97)',
+    modalBg: 'rgba(24, 24, 26, 0.97)',
     border: 'rgba(255, 255, 255, 0.11)',      // mai fin, fără să taie în ochi
     border2: 'rgba(255, 255, 255, 0.24)',
     text: '#FFFFFF',
@@ -70,7 +70,7 @@ export const THEMES: Record<string, Theme> = {
     success: '#30D158',
     danger: '#FF453A',
     warning: '#FF9F0A',
-    navBg: 'rgba(28, 28, 30, 0.88)',
+    navBg: 'rgba(22, 22, 24, 0.88)',
     orb1: 'rgba(10, 132, 255, 0.26)',
     orb2: 'rgba(94, 92, 230, 0.20)',
     orb3: 'rgba(48, 209, 88, 0.14)',
@@ -125,7 +125,7 @@ export const THEMES: Record<string, Theme> = {
     navBg: 'rgba(22, 16, 42, 0.92)',
     orb1: 'rgba(168, 85, 247, 0.28)',
     orb2: 'rgba(244, 114, 182, 0.20)',
-    orb3: 'rgba(74, 222, 128, 0.12)',
+    orb3: 'rgba(56, 189, 248, 0.14)',         // cyan — armonizează cu violet/roz, verdele tăia paleta
     inputBg: 'rgba(22, 16, 42, 0.65)',
     gridColor: 'rgba(168, 85, 247, 0.05)',
     isDark: true,

@@ -214,16 +214,25 @@ async function markCorruptFile(filePath) {
 }
 
 function getAppIconPath() {
-  // In packaged app, icons are in app.asar.unpacked (not inside asar archive)
-  // In dev, they're in the regular public folder
+  const exeDir = path.dirname(app.getPath('exe'));
   const candidates = [
+    // Packaged: asarUnpack path via process.resourcesPath
     path.join(process.resourcesPath || '', 'app.asar.unpacked', 'public', 'icon.ico'),
     path.join(process.resourcesPath || '', 'app.asar.unpacked', 'public', 'icon.png'),
+    // Packaged: exe-relative path (more portable)
+    path.join(exeDir, 'resources', 'app.asar.unpacked', 'public', 'icon.ico'),
+    path.join(exeDir, 'resources', 'app.asar.unpacked', 'public', 'icon.png'),
+    // Packaged: resources root
+    path.join(process.resourcesPath || '', 'icon.ico'),
+    path.join(process.resourcesPath || '', 'icon.png'),
+    // Dev: project public folder
     path.join(__dirname, '../public/icon.ico'),
     path.join(__dirname, '../public/icon.png'),
   ];
   for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch { /* ignore */ }
   }
   return undefined;
 }
@@ -750,10 +759,30 @@ function registerIpcHandlers() {
 
   ipcMain.handle('app:getSettings', async () => {
     const settingsPath = getSettingsPath();
-    try { 
+    try {
       const data = await fsp.readFile(settingsPath, 'utf-8');
-      return JSON.parse(data); 
+      return JSON.parse(data);
     } catch { return {}; }
+  });
+
+  ipcMain.handle('notify:show', async (_, opts) => {
+    try {
+      if (!Notification.isSupported()) return false;
+      const title = typeof opts?.title === 'string' ? opts.title : 'StudyX';
+      const body = typeof opts?.body === 'string' ? opts.body : '';
+      const notification = new Notification({ title, body, silent: false });
+      notification.on('click', () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+        }
+      });
+      notification.show();
+      return true;
+    } catch (error) {
+      console.warn('[StudyX] notify:show failed:', error.message);
+      return false;
+    }
   });
 
   ipcMain.handle('app:hardReset', async () => {
@@ -912,6 +941,8 @@ function createWindow() {
     if (appIcon) {
       try { mainWindow?.setIcon(appIcon); } catch { /* ignore */ }
     }
+    // Force Windows taskbar to pick up the correct icon and AUMID association.
+    try { app.setAppUserModelId('com.studyx.app'); } catch { /* ignore */ }
     if (!savedBounds && adaptiveMetrics.shouldMaximize) {
       mainWindow?.maximize();
     }
@@ -923,6 +954,8 @@ function createWindow() {
     if (appIcon) {
       try { mainWindow?.setIcon(appIcon); } catch { /* ignore */ }
     }
+    // Overlay icon = null clears any residual Electron default overlay on Windows.
+    try { mainWindow?.setOverlayIcon(null, ''); } catch { /* ignore */ }
   });
   mainWindow.on('maximize', () => mainWindow?.webContents.send('win:maximized', true));
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('win:maximized', false));

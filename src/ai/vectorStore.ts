@@ -72,10 +72,14 @@ export async function addChunksToVault(
       const batch = chunks.slice(index, index + batchSize);
 
       for (const chunk of batch) {
-        // Extract a meaningful topic from the chunk text (first 6 words, title-cased)
-        // This allows the weakness-boost in retriever to match by content topic, not just filename
-        const topicWords = chunk.text.trim().split(/\s+/).slice(0, 6).join(' ');
-        const derivedTopic = topicWords.length > 4 ? topicWords : sourceName;
+        // Extract a meaningful topic: prefer first phrase before colon/newline over raw first N words
+        const rawFirstLine = chunk.text.trim().split('\n')[0].trim();
+        const phraseMatch = rawFirstLine.match(/^([^:.\-–—]{6,50})/);
+        const smartPhrase = phraseMatch ? phraseMatch[1].trim() : '';
+        const cleanSourceBase = sourceName.toLowerCase().replace(/\.(pdf|docx|txt)$/i, '').slice(0, 8);
+        const derivedTopic = (smartPhrase.length >= 6 && !smartPhrase.toLowerCase().startsWith(cleanSourceBase))
+          ? smartPhrase
+          : chunk.text.trim().split(/\s+/).filter((w) => w.length > 2).slice(0, 5).join(' ') || sourceName;
 
         newRecords.push({
           id: chunk.id,

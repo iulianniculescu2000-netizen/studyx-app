@@ -15,6 +15,13 @@ export type AIProvider = 'groq' | 'deepseek';
 export type AIKnowledgeSourceType = 'txt' | 'pdf' | 'docx' | 'image';
 export type AIKnowledgeSourceStatus = 'indexing' | 'ready' | 'error';
 
+export interface AILibraryFolder {
+  id: string;
+  name: string;
+  emoji: string;
+  createdAt: number;
+}
+
 export interface AIKnowledgeSource {
   id: string;
   name: string;
@@ -28,6 +35,8 @@ export interface AIKnowledgeSource {
   indexStatus: AIKnowledgeSourceStatus;
   indexProgress: number;
   indexError?: string;
+  /** Library folder this course belongs to (null = unfiled). */
+  folderId?: string | null;
 }
 
 export interface AIResponse {
@@ -60,6 +69,7 @@ export interface AIStudyMemoryProfile {
     likesMnemonics: number;
     prefersStepByStep: number;
     asksForExamFocus: number;
+    usesLibraryContext: number;
   };
   averagePromptLength: number;
   lastMode?: AIMemoryMode;
@@ -89,6 +99,7 @@ export interface AIState {
   hasKey: boolean;
   isHydrated: boolean;
   knowledgeSources: AIKnowledgeSource[];
+  libraryFolders: AILibraryFolder[];
   cache: {
     size: number;
     lastCleared: number | null;
@@ -113,6 +124,10 @@ export interface AIActions {
     options?: AddKnowledgeSourceOptions,
   ) => Promise<AIKnowledgeSource>;
   removeKnowledgeSource: (sourceId: string) => Promise<void>;
+  addLibraryFolder: (name: string, emoji?: string) => string;
+  renameLibraryFolder: (folderId: string, name: string) => void;
+  deleteLibraryFolder: (folderId: string) => void;
+  moveSourceToLibraryFolder: (sourceId: string, folderId: string | null) => void;
   getKnowledgeContext: (query: string, maxChars?: number) => Promise<string>;
   clearCache: () => void;
   updateCacheSize: () => void;
@@ -158,6 +173,7 @@ const createDefaultState = (): AIState => ({
   hasKey: false,
   isHydrated: false,
   knowledgeSources: [],
+  libraryFolders: [],
   cache: {
     size: 0,
     lastCleared: null,
@@ -182,6 +198,7 @@ function createMemoryProfile(profileId: string): AIStudyMemoryProfile {
       likesMnemonics: 0,
       prefersStepByStep: 0,
       asksForExamFocus: 0,
+      usesLibraryContext: 0,
     },
     averagePromptLength: 0,
     recentTopics: [],
@@ -209,36 +226,59 @@ function inferTopics(prompt: string) {
 }
 
 function buildMemoryContext(memory?: AIStudyMemoryProfile) {
-  if (!memory || memory.interactions < 2) return '';
+  if (!memory || memory.interactions < 3) return '';
 
-  const topModes = Object.entries(memory.modeUsage)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([mode, count]) => `${mode} (${count})`);
-  const activeHours = Object.entries(memory.activeHours)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 2)
-    .map(([hour]) => `${hour}:00`);
-  const source = memory.lastSourceName ? `Ultima sursa folosita: ${memory.lastSourceName}.` : '';
-  const preferences = [
-    memory.signals.likesDiagrams >= 2 ? 'include scheme/tabele cand ajuta' : '',
-    memory.signals.likesSummaries >= 2 ? 'prefera sinteze compacte' : '',
-    memory.signals.likesTests >= 2 ? 'raspunde bine la mini-teste' : '',
-    memory.signals.likesMnemonics >= 2 ? 'accepta mnemonice scurte' : '',
-    memory.signals.prefersStepByStep >= 2 ? 'explicatiile pas-cu-pas sunt utile' : '',
-    memory.signals.asksForExamFocus >= 2 ? 'accent pe probabilitate de examen si capcane' : '',
-  ].filter(Boolean);
-  const recentTopics = memory.recentTopics.slice(0, 5);
+  const n = memory.interactions;
+  const instructions: string[] = [];
 
-  return [
-    `Memorie AI locala: ${memory.interactions} interactiuni anterioare.`,
-    topModes.length > 0 ? `Moduri preferate: ${topModes.join(', ')}.` : '',
-    activeHours.length > 0 ? `Intervale obisnuite de studiu: ${activeHours.join(', ')}.` : '',
-    preferences.length > 0 ? `Preferinte invatate: ${preferences.join('; ')}.` : '',
-    recentTopics.length > 0 ? `Topicuri recente: ${recentTopics.join(', ')}.` : '',
-    source,
-    memory.averagePromptLength > 120 ? 'Userul pune intrebari ample; raspunde structurat si nu pierde firul.' : '',
-  ].filter(Boolean).join(' ');
+  // ── Dominant study subject ────────────────────────────────────────────────
+  const topSource = Object.entries(memory.sourceUsage)
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (topSource) {
+    instructions.push(`Subiectul principal de studiu al acestui utilizator este „${topSource}" — ancorează explicațiile în acest domeniu când e posibil.`);
+  }
+
+  // ── Response length ───────────────────────────────────────────────────────
+  if (memory.averagePromptLength < 50 && n >= 5) {
+    instructions.push('Utilizatorul pune întrebări scurte — preferă răspunsuri concise (max 3 paragrafe); nu adăuga context nesolicitat.');
+  } else if (memory.averagePromptLength > 130 && n >= 5) {
+    instructions.push('Utilizatorul formulează întrebări ample — răspunde structurat și complet, cu titluri și bullet-uri când clarifică.');
+  }
+
+  // ── Style signals (activate after 3+ hits for reliability) ────────────────
+  const sig = memory.signals;
+  if (sig.usesLibraryContext >= 4) {
+    instructions.push('Utilizatorul citează des din bibliotecă — ancorează ÎNTOTDEAUNA răspunsul în contextul extras din cursuri; marchează cu „📚" când vine din biblioteca lui.');
+  }
+  if (sig.likesDiagrams >= 3) instructions.push('Când există un mecanism, diferențial sau algoritm, include OBLIGATORIU o schemă cu săgeți sau tabel compact — nu-l sări.');
+  if (sig.likesSummaries >= 3) instructions.push('Termină fiecare răspuns cu o sinteză de 2-3 rânduri cu ideile-cheie.');
+  if (sig.likesTests >= 3) instructions.push('După orice explicație, propune spontan 1-2 întrebări rapide de verificare.');
+  if (sig.likesMnemonics >= 3) instructions.push('La concepte greu de reținut, adaugă un mnemonic scurt fără să fii cerut.');
+  if (sig.prefersStepByStep >= 3) instructions.push('Explică mecanismele pas cu pas (1. → 2. → 3.) înainte de concluzie.');
+  if (sig.asksForExamFocus >= 3) instructions.push('Marchează explicit ce e „foarte probabil la examen" și care sunt capcanele frecvente.');
+
+  // ── Dominant chat mode ────────────────────────────────────────────────────
+  const topMode = Object.entries(memory.modeUsage).sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (topMode && topMode !== 'grounded') {
+    const modeHint: Record<string, string> = {
+      explain: 'Utilizatorul preferă modul Explică — aprofundează mecanismele chiar dacă nu sunt explicit cerute.',
+      diagram: 'Utilizatorul preferă modul Scheme — privilegiază reprezentările vizuale textuale.',
+      summarize: 'Utilizatorul preferă sinteze — fii direct și dens, fără introduceri lungi.',
+      test: 'Utilizatorul preferă modul Test — poți propune mini-quiz-uri spontan.',
+      mnemonic: 'Utilizatorul iubește mnemonicele — include-le la fiecare concept nou.',
+    };
+    if (modeHint[topMode]) instructions.push(modeHint[topMode]);
+  }
+
+  // ── Recent topics ─────────────────────────────────────────────────────────
+  const recent = memory.recentTopics.slice(0, 4);
+  if (recent.length > 0) {
+    instructions.push(`Topicuri studiate recent: ${recent.join(', ')} — folosește-le ca referință pentru analogii și exemple.`);
+  }
+
+  if (instructions.length === 0) return '';
+
+  return `PROFIL ÎNVĂȚAT (${n} interacțiuni):\n${instructions.map((i) => `• ${i}`).join('\n')}`;
 }
 
 function buildSourcePreview(text: string) {
@@ -386,6 +426,46 @@ export const useAIStore = create<AIState & AIActions>()(
           get().updateCacheSize();
         },
 
+        addLibraryFolder: (name, emoji = '📚') => {
+          const trimmed = name.trim();
+          const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+          if (!trimmed) return id;
+          set((state) => ({
+            libraryFolders: [
+              { id, name: trimmed, emoji, createdAt: Date.now() },
+              ...state.libraryFolders,
+            ],
+          }), false, 'ai/addLibraryFolder');
+          return id;
+        },
+
+        renameLibraryFolder: (folderId, name) => {
+          const trimmed = name.trim();
+          if (!trimmed) return;
+          set((state) => ({
+            libraryFolders: state.libraryFolders.map((folder) => (
+              folder.id === folderId ? { ...folder, name: trimmed } : folder
+            )),
+          }), false, 'ai/renameLibraryFolder');
+        },
+
+        deleteLibraryFolder: (folderId) => {
+          set((state) => ({
+            libraryFolders: state.libraryFolders.filter((folder) => folder.id !== folderId),
+            knowledgeSources: state.knowledgeSources.map((source) => (
+              source.folderId === folderId ? { ...source, folderId: null } : source
+            )),
+          }), false, 'ai/deleteLibraryFolder');
+        },
+
+        moveSourceToLibraryFolder: (sourceId, folderId) => {
+          set((state) => ({
+            knowledgeSources: state.knowledgeSources.map((source) => (
+              source.id === sourceId ? { ...source, folderId } : source
+            )),
+          }), false, 'ai/moveSourceToLibraryFolder');
+        },
+
         getKnowledgeContext: async (query, maxChars = 6000) => {
           const readySources = get().knowledgeSources.filter((source) => source.indexStatus === 'ready');
           if (readySources.length === 0) return '';
@@ -470,6 +550,10 @@ export const useAIStore = create<AIState & AIActions>()(
                 likesMnemonics: incrementSignal(current.signals.likesMnemonics, input.mode === 'mnemonic' || /mnemonic|retin|memorez/.test(lowerPrompt)),
                 prefersStepByStep: incrementSignal(current.signals.prefersStepByStep, input.mode === 'explain' || /pas cu pas|explica|mecanism|de ce/.test(lowerPrompt)),
                 asksForExamFocus: incrementSignal(current.signals.asksForExamFocus, /examen|prof|capcana|probabil|cerut/.test(lowerPrompt)),
+                usesLibraryContext: incrementSignal(
+                  current.signals.usesLibraryContext,
+                  (input.citationsCount ?? 0) > 0,
+                ),
               },
               averagePromptLength: Math.round(((current.averagePromptLength * current.interactions) + prompt.length) / nextInteractions),
               lastMode: input.mode,
@@ -513,6 +597,7 @@ export const useAIStore = create<AIState & AIActions>()(
           model: state.model,
           hasKey: state.hasKey,
           knowledgeSources: state.knowledgeSources,
+          libraryFolders: state.libraryFolders,
           cache: state.cache,
           studyMemory: state.studyMemory,
         }),
@@ -522,6 +607,7 @@ export const useAIStore = create<AIState & AIActions>()(
           state.model = normalizeProviderModel(state.provider, state.model);
           state.hasKey = isValidProviderKey(state.provider, state.apiKey);
           state.isHydrated = true;
+          state.libraryFolders = state.libraryFolders ?? [];
           state.cache.size = state.knowledgeSources.reduce((sum, source) => sum + source.chunkCount, 0);
           state.studyMemory = state.studyMemory ?? {};
         },

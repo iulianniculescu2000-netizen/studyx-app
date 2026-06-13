@@ -41,6 +41,7 @@ declare global {
       storageSave: (profileId: string, namespace: string, serialized: string) => Promise<boolean>;
       storageLoad: (profileId: string, namespace: string) => Promise<unknown>;
       onAppClose: (cb: () => void) => () => void;
+      notify: (opts: { title: string; body?: string }) => Promise<boolean>;
     };
   }
 }

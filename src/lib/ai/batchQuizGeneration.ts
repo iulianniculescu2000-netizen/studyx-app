@@ -82,13 +82,20 @@ export async function generateQuizPackagesFromSource({
   let aiQuestionCount = 0;
   let fallbackQuestionCount = 0;
   const globalSeenQuestionSignatures = new Set(
-    existingQuizzes
-      .flatMap((quiz) => quiz.questions.map(questionSignature)),
+    existingQuizzes.flatMap((quiz) => quiz.questions.map(questionSignature)),
   );
 
-  for (let packIndex = 0; packIndex < normalizedPackCount; packIndex += 1) {
+  // Generate packs in parallel — up to 2 at a time to avoid rate-limit spikes.
+  const PACK_CONCURRENCY = 2;
+  const packIndexes = Array.from({ length: normalizedPackCount }, (_, i) => i);
+
+  type PackResult =
+    | { ok: true; packIndex: number; questions: Quiz['questions']; warning: string | null }
+    | { ok: false; packIndex: number; error: string };
+
+  const generatePack = async (packIndex: number): Promise<PackResult> => {
     const packQuestions: Quiz['questions'] = [];
-    const seenQuestionSignatures = new Set<string>(globalSeenQuestionSignatures);
+    const seenPackSignatures = new Set<string>(globalSeenQuestionSignatures);
     let aiError: string | null = null;
 
     for (let offset = 0; offset < normalizedQuestionCount; offset += STUDIO_AI_BATCH_SIZE) {
@@ -114,12 +121,11 @@ export async function generateQuizPackagesFromSource({
         });
 
         result.questions
-          .filter((question) => isStudioQuestionQualityAcceptable(question, sourceName))
-          .filter((question) => !seenQuestionSignatures.has(questionSignature(question)))
-          .forEach((question) => {
-            packQuestions.push(question);
-            seenQuestionSignatures.add(questionSignature(question));
-            globalSeenQuestionSignatures.add(questionSignature(question));
+          .filter((q) => isStudioQuestionQualityAcceptable(q, sourceName))
+          .filter((q) => !seenPackSignatures.has(questionSignature(q)))
+          .forEach((q) => {
+            packQuestions.push(q);
+            seenPackSignatures.add(questionSignature(q));
           });
       } catch (error) {
         aiError = error instanceof Error ? error.message : 'Generarea AI a eșuat pentru acest batch.';
@@ -127,51 +133,73 @@ export async function generateQuizPackagesFromSource({
       }
     }
 
-    aiQuestionCount += packQuestions.length;
-
     if (packQuestions.length < normalizedQuestionCount) {
-      const fallbackQuestions = buildFallbackQuestionsFromChunks({
+      const fallback = buildFallbackQuestionsFromChunks({
         sourceName,
         chunks,
         count: normalizedQuestionCount - packQuestions.length,
         difficulty: targetDifficulty,
         packIndex,
-      }).filter((question) => !seenQuestionSignatures.has(questionSignature(question)));
-
-      fallbackQuestions.forEach((question) => {
-        packQuestions.push(question);
-        seenQuestionSignatures.add(questionSignature(question));
-        globalSeenQuestionSignatures.add(questionSignature(question));
-      });
-      fallbackQuestionCount += fallbackQuestions.length;
-    }
-
-    if (aiError) {
-      warnings.push(`Pachetul ${packIndex + 1} a folosit fallback local: ${aiError}`);
+      }).filter((q) => !seenPackSignatures.has(questionSignature(q)));
+      packQuestions.push(...fallback);
     }
 
     if (packQuestions.length === 0) {
-      throw new Error(aiError ?? 'Nu am reușit să generăm întrebări pentru documentul selectat.');
+      return { ok: false, packIndex, error: aiError ?? 'Nu am reușit să generăm întrebări.' };
     }
 
-    const titleSuffix = normalizedPackCount === 1 ? 'Set premium' : `Set premium ${packIndex + 1}`;
-    const title = `${sourceName} · ${titleSuffix}`;
+    return { ok: true, packIndex, questions: packQuestions, warning: aiError };
+  };
 
-    quizzes.push({
-      id: uid(),
-      title,
-      description: `Generat de AI Studio din documentul "${sourceName}" cu ${packQuestions.length} întrebări și dificultate ${targetDifficulty}.`,
-      emoji: folder?.emoji ?? '\u{1F9E0}',
-      category: folder?.name ?? 'AI Studio',
-      folderId,
-      color: folder?.color ?? 'blue',
-      questions: packQuestions,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      shuffleQuestions: true,
-      shuffleAnswers: true,
-      tags: ['ai-studio', 'document-pack', sourceName],
-    });
+  // Run packs in batches of PACK_CONCURRENCY.
+  for (let start = 0; start < packIndexes.length; start += PACK_CONCURRENCY) {
+    const batch = packIndexes.slice(start, start + PACK_CONCURRENCY);
+    const results = await Promise.allSettled(batch.map(generatePack));
+
+    for (const settled of results) {
+      const result: PackResult = settled.status === 'fulfilled'
+        ? settled.value
+        : { ok: false, packIndex: -1, error: String((settled as PromiseRejectedResult).reason) };
+
+      if (!result.ok) {
+        if (quizzes.length === 0 && start === 0) {
+          throw new Error(result.error);
+        }
+        warnings.push(`Pachetul ${result.packIndex + 1} a eșuat: ${result.error}`);
+        continue;
+      }
+
+      // Dedup against globally seen signatures (packs ran in parallel, check now).
+      const dedupedQuestions = result.questions.filter(
+        (q) => !globalSeenQuestionSignatures.has(questionSignature(q)),
+      );
+      dedupedQuestions.forEach((q) => globalSeenQuestionSignatures.add(questionSignature(q)));
+
+      const aiCount = dedupedQuestions.filter((q) => !('isFallback' in q)).length;
+      const fbCount = dedupedQuestions.length - aiCount;
+      aiQuestionCount += aiCount;
+      fallbackQuestionCount += fbCount;
+
+      if (result.warning) warnings.push(`Pachetul ${result.packIndex + 1} a folosit fallback: ${result.warning}`);
+
+      const packNumber = result.packIndex + 1;
+      const titleSuffix = normalizedPackCount === 1 ? 'Set premium' : `Set premium ${packNumber}`;
+      quizzes.push({
+        id: uid(),
+        title: `${sourceName} · ${titleSuffix}`,
+        description: `Generat de AI Studio din documentul "${sourceName}" cu ${dedupedQuestions.length} întrebări și dificultate ${targetDifficulty}.`,
+        emoji: folder?.emoji ?? '\u{1F9E0}',
+        category: folder?.name ?? 'AI Studio',
+        folderId,
+        color: folder?.color ?? 'blue',
+        questions: dedupedQuestions,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        shuffleQuestions: true,
+        shuffleAnswers: true,
+        tags: ['ai-studio', 'document-pack', sourceName],
+      });
+    }
   }
 
   return {

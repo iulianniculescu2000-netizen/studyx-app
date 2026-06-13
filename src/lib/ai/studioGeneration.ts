@@ -209,7 +209,7 @@ export function clampStudioPackCount(value: number) {
 }
 
 export function clampStudioQuestionCount(value: number) {
-  return clamp(value, 3, STUDIO_MAX_QUESTIONS_PER_PACK);
+  return clamp(value, 1, STUDIO_MAX_QUESTIONS_PER_PACK);
 }
 
 export function buildStudioContextPayload({

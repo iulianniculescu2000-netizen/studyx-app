@@ -409,7 +409,7 @@ export default function Sidebar() {
   const compact = typeof window !== 'undefined' && (window.innerHeight < 820 || window.innerWidth < 1240);
   const { username, logout } = useUserStore();
   const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
-  const { quizzes, moveToFolder } = useQuizStore();
+  const { quizzes, bulkDeleteQuizzes, moveToFolder } = useQuizStore();
   const { streak, getDueQuestions, getWeakQuestions, questionStats } = useStatsStore();
   const aiReady = useAIStore((state) => state.hasKey);
   const knowledgeSourceCount = useAIStore((state) => state.knowledgeSources.length);
@@ -493,9 +493,12 @@ export default function Sidebar() {
         }
       });
     }
-    quizzes.filter(q => q.folderId && toDelete.has(q.folderId)).forEach(q => {
-      useQuizStore.getState().moveToFolder(q.id, null);
-    });
+    const quizIdsToDelete = quizzes
+      .filter(q => q.folderId && toDelete.has(q.folderId))
+      .map(q => q.id);
+    if (quizIdsToDelete.length > 0) {
+      bulkDeleteQuizzes(quizIdsToDelete);
+    }
     deleteFolder(deleteTarget.id);
     setDeleteTarget(null);
   };
@@ -1047,7 +1050,7 @@ export default function Sidebar() {
       <ConfirmDialog
         open={deleteTarget !== null}
         title={`Ștergi folderul "${deleteTarget?.name}"?`}
-        description="Grilele din el vor rămâne neclasificate. Această acțiune nu poate fi anulată."
+        description="Grilele din el vor fi șterse definitiv împreună cu folderul. Această acțiune nu poate fi anulată."
         confirmLabel="Șterge folderul" cancelLabel="Anulează" variant="danger"
         onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)}
       />

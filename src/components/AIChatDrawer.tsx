@@ -7,12 +7,14 @@ import {
   Check,
   ChevronDown,
   FolderOpen,
+  ImageIcon,
   Layers3,
   Loader2,
   PanelRightClose,
   PanelRightOpen,
   SendHorizonal,
   Sparkles,
+  Square,
   Target,
   Wand2,
   X,
@@ -42,14 +44,23 @@ import {
   resolveStudioFolderFromCommand,
   resolveStudioSourceFromCommand,
 } from '../lib/ai/studioChatCommands';
+import {
+  describeStep,
+  executeAgentPlan,
+  looksLikeAgentCommand,
+  planAgentCommand,
+  type AgentPlan,
+} from '../lib/ai/agent';
+import { useAgentJobsStore } from '../store/agentJobsStore';
+import { desktopNotify } from '../lib/desktopNotify';
 import { getWeakTopicsForProfile } from '../ai/UserProfile';
 import type { Folder } from '../types';
+import AgentJobCard from './ai-chat/AgentJobCard';
 import {
   CHAT_MODES,
   buildFollowUpSuggestions,
   buildRecommendedActions,
   formatMessage,
-  getCitationStrength,
   getContextState,
   type ChatMessage,
   type ChatMode,
@@ -58,6 +69,7 @@ import {
 
 let aiChatRuntimePromise: Promise<{
   generateChatResponse: typeof import('../ai/AIEngine').generateChatResponse;
+  generateChatResponseStream: typeof import('../ai/AIEngine').generateChatResponseStream;
   retrieveRelevantChunks: typeof import('../ai/retriever').retrieveRelevantChunks;
   getVaultChunksBySource: typeof import('../ai/vectorStore').getVaultChunksBySource;
 }> | null = null;
@@ -70,6 +82,7 @@ function loadAIChatRuntime() {
       import('../ai/vectorStore'),
     ]).then(([engine, retriever, vectorStore]) => ({
       generateChatResponse: engine.generateChatResponse,
+      generateChatResponseStream: engine.generateChatResponseStream,
       retrieveRelevantChunks: retriever.retrieveRelevantChunks,
       getVaultChunksBySource: vectorStore.getVaultChunksBySource,
     }));
@@ -85,6 +98,51 @@ type StudioOption = {
   label: string;
   hint?: string;
 };
+
+function diversifyChunks<T extends { source: string; score: number }>(
+  chunks: T[],
+  limit: number,
+): T[] {
+  const bySource = new Map<string, T[]>();
+  for (const chunk of chunks) {
+    const group = bySource.get(chunk.source) ?? [];
+    group.push(chunk);
+    bySource.set(chunk.source, group);
+  }
+  const result: T[] = [];
+  for (const group of bySource.values()) {
+    if (result.length >= Math.min(3, limit)) break;
+    result.push(group[0]);
+  }
+  for (const chunk of chunks) {
+    if (result.length >= limit) break;
+    if (!result.includes(chunk)) result.push(chunk);
+  }
+  return result;
+}
+
+function extractRelevantExcerpt(chunkText: string, query: string, maxLen = 220): string {
+  const clean = chunkText.replace(/\s+/g, ' ').trim();
+  const sentences = clean.match(/[^.!?]+[.!?]*/g) ?? [clean];
+  const queryWords = new Set(
+    query.toLowerCase().split(/\s+/).filter((w) => w.length > 3),
+  );
+  let bestSentence = sentences[0];
+  let bestScore = -1;
+  for (const sentence of sentences) {
+    const lower = sentence.toLowerCase();
+    const matches = [...queryWords].filter((w) => lower.includes(w)).length;
+    if (matches > bestScore) {
+      bestScore = matches;
+      bestSentence = sentence;
+    }
+  }
+  const idx = clean.indexOf(bestSentence);
+  if (idx >= 0) {
+    return clean.slice(Math.max(0, idx - 10), idx + bestSentence.length + 60).slice(0, maxLen);
+  }
+  return clean.slice(0, maxLen);
+}
 
 function formatFolderPath(folders: Folder[], folder: Folder) {
   const byId = new Map(folders.map((item) => [item.id, item]));
@@ -239,10 +297,14 @@ export default function AIChatDrawer() {
   const quizzes = useQuizStore((state) => state.quizzes);
   const addQuiz = useQuizStore((state) => state.addQuiz);
   const knowledgeSources = useAIStore((state) => state.knowledgeSources);
+  const hasKey = useAIStore((state) => state.hasKey);
   const recordAIInteraction = useAIStore((state) => state.recordAIInteraction);
   const memoryContext = useAIStore((state) => (
     activeProfileId ? state.getAIMemoryContext(activeProfileId) : ''
   ));
+  const memoryInteractions = useAIStore((state) =>
+    activeProfileId ? (state.studyMemory[activeProfileId]?.interactions ?? 0) : 0
+  );
   const folders = useFolderStore((state) => state.folders);
   const addFolder = useFolderStore((state) => state.addFolder);
   const addToast = useToastStore((state) => state.addToast);
@@ -258,7 +320,17 @@ export default function AIChatDrawer() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const contextCacheRef = useRef<Map<string, any[]>>(new Map());
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // v2: bumped to clear old messages with malformed citation.topic === citation.source
+  const CHAT_STORAGE_KEY = 'studyx:chat:messages:v2';
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const stored = localStorage.getItem('studyx:chat:messages:v2');
+      if (!stored) return [];
+      return JSON.parse(stored) as ChatMessage[];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<ChatMode>('grounded');
@@ -273,8 +345,12 @@ export default function AIChatDrawer() {
   const [studioDifficulty, setStudioDifficulty] = useState<StudioDifficulty>('auto');
   const [studioGenerating, setStudioGenerating] = useState(false);
   const [generatedSummary, setGeneratedSummary] = useState<string | null>(null);
+  const [pastedImage, setPastedImage] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const pendingAgentPlansRef = useRef<Map<string, AgentPlan>>(new Map());
+  const agentUndoRef = useRef<Map<string, (() => void) | null>>(new Map());
 
   const activeModeConfig = useMemo(
     () => CHAT_MODES.find((entry) => entry.id === mode) ?? CHAT_MODES[0],
@@ -311,10 +387,9 @@ export default function AIChatDrawer() {
 
   const smartMode = useMemo<ChatMode>(() => {
     if (scopedSource) return 'summarize';
-    if (weakTopics.length > 0) return 'test';
     if (performanceSummary.dueCount > 0) return 'summarize';
     return 'grounded';
-  }, [performanceSummary.dueCount, scopedSource, weakTopics]);
+  }, [performanceSummary.dueCount, scopedSource]);
 
   const readySources = useMemo(
     () => knowledgeSources.filter((source) => source.indexStatus === 'ready'),
@@ -407,6 +482,15 @@ export default function AIChatDrawer() {
   }, [messages, open, calmMotion]);
 
   useEffect(() => {
+    try {
+      const toSave = messages.slice(-60);
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toSave));
+    } catch {
+      // quota exceeded — ignore
+    }
+  }, [CHAT_STORAGE_KEY, messages]);
+
+  useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = '0px';
@@ -423,8 +507,8 @@ export default function AIChatDrawer() {
     const targetSourceId = sourceIdOverride ?? scopedSource?.id ?? null;
 
     if (!targetSourceId) {
-      const chunks = await retrieveRelevantChunks(text, null, 5);
-      return chunks.slice(0, 5);
+      const candidates = await retrieveRelevantChunks(text, null, 8);
+      return diversifyChunks(candidates, 5);
     }
 
     const source = readySources.find((entry) => entry.id === targetSourceId) ?? scopedSource;
@@ -525,6 +609,86 @@ export default function AIChatDrawer() {
     }
   };
 
+  const runAgentJob = async (jobId: string) => {
+    const plan = pendingAgentPlansRef.current.get(jobId);
+    if (!plan) return;
+    const jobs = useAgentJobsStore.getState();
+    jobs.setJobStatus(jobId, 'running');
+
+    const result = await executeAgentPlan(
+      plan,
+      { defaultPackCount: studioPackCount, defaultQuestionsPerPack: studioQuestionsPerPack },
+      {
+        onStep: (index, status, detail) => {
+          useAgentJobsStore.getState().setStepStatus(jobId, `s${index}`, status, detail);
+        },
+      },
+    );
+
+    agentUndoRef.current.set(jobId, result.undo);
+    const failedAll = result.errors.length > 0 && result.createdQuizIds.length === 0;
+    jobs.setJobStatus(jobId, failedAll ? 'error' : 'done', result.summary);
+    pendingAgentPlansRef.current.delete(jobId);
+
+    addToast(result.summary, failedAll ? 'error' : result.errors.length ? 'warning' : 'success');
+    if (isDocumentHidden() || !open) {
+      void desktopNotify('StudyX — agent', result.summary);
+    }
+  };
+
+  const tryHandleAgentCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
+    if (!hasKey || !looksLikeAgentCommand(text)) return false;
+
+    let plan: AgentPlan;
+    try {
+      plan = await planAgentCommand(text);
+    } catch {
+      return false;
+    }
+    if (!plan.isCommand || plan.steps.length === 0) return false;
+
+    const steps = plan.steps.map((step, index) => ({
+      id: `s${index}`,
+      label: describeStep(step),
+      status: 'pending' as const,
+    }));
+    const jobId = useAgentJobsStore.getState().createJob(
+      text,
+      steps,
+      plan.needsConfirm ? 'awaiting-confirm' : 'running',
+    );
+    if (plan.needsConfirm) {
+      useAgentJobsStore.getState().setJobStatus(jobId, 'awaiting-confirm', plan.confirmReason);
+    }
+    pendingAgentPlansRef.current.set(jobId, plan);
+
+    setMessages((prev) => [...prev, {
+      role: 'assistant',
+      content: plan.reply || (plan.needsConfirm ? 'Am pregătit un plan. Confirmă ca să îl execut.' : 'Execut planul...'),
+      mode: activeMode,
+      agentJobId: jobId,
+    }]);
+
+    if (!plan.needsConfirm) {
+      await runAgentJob(jobId);
+    }
+    return true;
+  };
+
+  const cancelAgentJob = (jobId: string) => {
+    pendingAgentPlansRef.current.delete(jobId);
+    useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Anulat de utilizator.');
+  };
+
+  const undoAgentJob = (jobId: string) => {
+    const undo = agentUndoRef.current.get(jobId);
+    if (!undo) return;
+    undo();
+    agentUndoRef.current.delete(jobId);
+    useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Acțiunile au fost anulate (undo).');
+    addToast('Am anulat acțiunile agentului.', 'info');
+  };
+
   const tryHandleStudioCommand = async (text: string, activeMode: ChatMode) => {
     const parsed = parseStudioChatCommand(text);
     if (!parsed.shouldGenerate) return false;
@@ -587,62 +751,97 @@ export default function AIChatDrawer() {
     return true;
   };
 
+  const stopGeneration = () => {
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+  };
+
   const sendMessage = async (overrideText?: string, modeOverride?: ChatMode) => {
     const text = (overrideText || input).trim();
-    if (!text || loading) return;
+    if ((!text && !pastedImage) || loading) return;
 
     const activeMode = modeOverride ?? mode;
-    const userMsg: ChatMessage = { role: 'user', content: text, mode: activeMode };
+    const imageSnapshot = pastedImage;
+    const userMsg: ChatMessage = { role: 'user', content: text || '📷 Imagine atașată', mode: activeMode };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    setPastedImage(null);
     setLoading(true);
     setActiveCitationKey(null);
-    if (activeProfileId) {
-      recordAIInteraction(activeProfileId, {
-        mode: activeMode,
-        prompt: text,
-        scopedSourceName: scopedSource?.name,
-      });
-    }
+    // recordAIInteraction is called after citations are available (below in the streaming path).
+
+    const abortCtrl = new AbortController();
+    streamAbortRef.current = abortCtrl;
 
     try {
-      const commandHandled = await tryHandleStudioCommand(text, activeMode);
-      if (commandHandled) {
+      const agentHandled = !imageSnapshot && await tryHandleAgentCommand(text, activeMode);
+      if (agentHandled) return;
+
+      const commandHandled = !imageSnapshot && await tryHandleStudioCommand(text, activeMode);
+      if (commandHandled) return;
+
+      // ── Vision path: user pasted an image ────────────────────────────────
+      if (imageSnapshot) {
+        const { groqVisionRequest, supportsVision } = await import('../lib/groq');
+        const { useAIStore: store } = await import('../store/aiStore');
+        if (!supportsVision(store.getState().provider)) {
+          addToast('Vision necesită Groq. Schimbă providerul în Setări AI.', 'warning');
+          setMessages((prev) => [...prev, {
+            role: 'assistant',
+            content: '⚠️ Analiza imaginilor necesită Groq ca provider. Schimbă în Setări AI.',
+          }]);
+          return;
+        }
+        setMessages((prev) => [...prev, { role: 'assistant', content: '', mode: activeMode }]);
+        const visionPrompt = text
+          ? `${text}\n\nContextul imaginii atașate:`
+          : 'Analizează această imagine medicală/clinică. Descrie ce observi, ce diagnostic sau interpretare sugerezi, și ce aspecte sunt relevante pentru un student la medicină.';
+        const visionResponse = await groqVisionRequest(imageSnapshot, visionPrompt, abortCtrl.signal);
+        const words = visionResponse.split(' ');
+        let current = '';
+        for (let i = 0; i < words.length; i += 10) {
+          current += (current ? ' ' : '') + words.slice(i, i + 10).join(' ');
+          setMessages((prev) => {
+            const next = [...prev];
+            next[next.length - 1] = { ...next[next.length - 1], content: current };
+            return next;
+          });
+          if (i + 10 < words.length) await new Promise((r) => setTimeout(r, 30));
+        }
         return;
       }
 
-      const { generateChatResponse } = await loadAIChatRuntime();
+      // ── Regular streaming chat path ───────────────────────────────────────
+      const { generateChatResponseStream } = await loadAIChatRuntime();
       const contextCacheKey = `${text.slice(0, 120)}::${scopedSource?.id ?? ''}`;
       const cachedChunks = contextCacheRef.current.get(contextCacheKey);
       const contextChunks = cachedChunks ?? await buildScopedContext(text);
       if (!cachedChunks) contextCacheRef.current.set(contextCacheKey, contextChunks);
-      const citations = contextChunks
-        .reduce<Citation[]>((acc, chunk) => {
-          if (acc.some((item) => item.source === chunk.source && item.topic === chunk.topic)) return acc;
-          acc.push({
+      // Build one citation per source document, keeping the highest-scoring chunk excerpt.
+      const citationsBySource = new Map<string, Citation>();
+      for (const chunk of contextChunks) {
+        const existing = citationsBySource.get(chunk.source);
+        if (!existing || chunk.score > existing.score) {
+          citationsBySource.set(chunk.source, {
             source: chunk.source,
             topic: chunk.topic,
             score: chunk.score,
-            excerpt: chunk.text.replace(/\s+/g, ' ').trim().slice(0, 220),
+            excerpt: extractRelevantExcerpt(chunk.text, text),
           });
-          return acc;
-        }, [])
-        .slice(0, 3);
+        }
+      }
+      const citations = [...citationsBySource.values()]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 4);
 
       const contextSummary = contextChunks
-        .map((chunk) => `[Sursă: ${chunk.source} | Topic: ${chunk.topic} | Relevanță: ${(chunk.score * 100).toFixed(0)}%]\n${chunk.text}`)
-        .join('\n\n');
+        .map((chunk, i) => `${i === 0 ? '⭐ ' : ''}[Sursă: ${chunk.source} | Relevanță: ${(chunk.score * 100).toFixed(0)}%]\n${chunk.text}`)
+        .join('\n\n---\n\n');
 
-      const historyForAI = [...messages.filter((message) => (message.mode ?? 'grounded') === activeMode), userMsg]
+      const historyForAI = [...messages.slice(-14), userMsg]
+        .slice(-8)
         .map(({ role, content }) => ({ role, content }));
       const scopePrefix = scopedSource ? `Document țintă: ${scopedSource.name}\n` : '';
-      const response = await generateChatResponse(text, `${scopePrefix}${contextSummary}`, historyForAI, {
-        mode: activeMode,
-        hasContext: contextChunks.length > 0,
-        scopedSourceName: scopedSource?.name,
-        studyContext,
-        focusTopics: weakTopics.map((topic) => topic.topic),
-      });
 
       const suggestions = buildFollowUpSuggestions(
         text,
@@ -652,30 +851,60 @@ export default function AIChatDrawer() {
         weakTopics[0]?.topic,
       );
 
+      if (activeProfileId) {
+        recordAIInteraction(activeProfileId, {
+          mode: activeMode,
+          prompt: text,
+          scopedSourceName: scopedSource?.name,
+          citationsCount: citations.length,
+        });
+      }
+
+      // Add empty assistant message then fill it via streaming.
       setMessages((prev) => [...prev, { role: 'assistant', content: '', citations, suggestions, mode: activeMode }]);
 
-      let current = '';
-      const words = response.split(' ');
-      const skipStreaming = calmMotion || isDocumentHidden();
-      const batchSize = skipStreaming ? words.length : 8;
+      await generateChatResponseStream(
+        text,
+        `${scopePrefix}${contextSummary}`,
+        historyForAI,
+        (chunk) => {
+          if (abortCtrl.signal.aborted) return;
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last.role === 'assistant') {
+              next[next.length - 1] = { ...last, content: last.content + chunk };
+            }
+            return next;
+          });
+        },
+        {
+          mode: activeMode,
+          hasContext: contextChunks.length > 0,
+          scopedSourceName: scopedSource?.name,
+          studyContext,
+          focusTopics: weakTopics.map((topic) => topic.topic),
+        },
+        abortCtrl.signal,
+      );
 
-      for (let index = 0; index < words.length; index += batchSize) {
-        const nextWords = words.slice(index, index + batchSize).join(' ');
-        current += `${current ? ' ' : ''}${nextWords}`;
+      // If stream finished but produced no content (API hiccup), show a fallback.
+      if (!abortCtrl.signal.aborted) {
         setMessages((prev) => {
           const next = [...prev];
-          next[next.length - 1].content = current;
+          const last = next[next.length - 1];
+          if (last.role === 'assistant' && !last.content.trim()) {
+            next[next.length - 1] = { ...last, content: 'Nu am primit un răspuns de la AI. Verifică conexiunea și încearcă din nou.' };
+          }
           return next;
         });
-
-        if (!skipStreaming && index + batchSize < words.length) {
-          await new Promise((resolve) => setTimeout(resolve, 42));
-        }
       }
     } catch (err: unknown) {
+      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) return;
       const errorMessage = err instanceof Error ? err.message : 'Nu am putut genera un răspuns.';
       setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${errorMessage}` }]);
     } finally {
+      streamAbortRef.current = null;
       setLoading(false);
     }
   };
@@ -706,12 +935,8 @@ export default function AIChatDrawer() {
     contextCacheRef.current.clear();
   };
 
-  const getModeThread = (targetMode: ChatMode) => (
-    messages.filter((message) => (message.mode ?? 'grounded') === targetMode)
-  );
-
   const renderMessageList = (compact = false) => {
-    const threadMessages = getModeThread(mode);
+    const threadMessages = messages;
 
     return (
     <div className={compact ? 'space-y-4' : 'space-y-5'}>
@@ -823,7 +1048,26 @@ export default function AIChatDrawer() {
                     boxShadow: message.role === 'user' ? `0 10px 24px ${theme.accent}24` : '0 8px 18px rgba(0,0,0,0.04)',
                   }}
                 >
-                  <span className="font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
+                  {isLastAssistant && loading ? (
+                    <>
+                      <span className="font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
+                      <span className="streaming-cursor" style={{ color: theme.accent }}>▌</span>
+                    </>
+                  ) : (
+                    <span className="font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
+                  )}
+
+                  {message.role === 'assistant' && message.agentJobId && (
+                    <div className="mt-3">
+                      <AgentJobCard
+                        jobId={message.agentJobId}
+                        theme={theme}
+                        onConfirm={() => void runAgentJob(message.agentJobId!)}
+                        onCancel={() => cancelAgentJob(message.agentJobId!)}
+                        onUndo={() => undoAgentJob(message.agentJobId!)}
+                      />
+                    </div>
+                  )}
 
                   {message.role === 'assistant' && message.mode && (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -836,9 +1080,6 @@ export default function AIChatDrawer() {
                   {message.role === 'assistant' && message.citations && message.citations.length > 0 && (
                     <div className="mt-4">
                       <div className="mb-2 flex flex-wrap gap-2">
-                        {getCitationStrength(message.citations) && (
-                          <span className="citation-pill">{getCitationStrength(message.citations)}</span>
-                        )}
                         <span className="citation-pill">{getContextState(message.citations)}</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -856,7 +1097,7 @@ export default function AIChatDrawer() {
                                 color: isActiveCitation ? theme.accent : undefined,
                               }}
                             >
-                              {citation.source} · {citation.topic}
+                              {citation.source} · {(citation.score * 100).toFixed(0)}%
                             </button>
                           );
                         })}
@@ -1016,7 +1257,9 @@ export default function AIChatDrawer() {
                           ? `Focus activ: ${scopedSource.name}`
                           : weakTopics[0]
                             ? `Arii slabe: ${weakTopics.slice(0, 2).map(t => t.topic).join(', ')}`
-                            : 'Asistent calibrat pe profilul tău de studiu'}
+                            : memoryInteractions >= 3
+                              ? `Te cunoaște după ${memoryInteractions} interacțiuni`
+                              : 'Asistent calibrat pe profilul tău de studiu'}
                     </p>
                   </div>
 
@@ -1055,56 +1298,6 @@ export default function AIChatDrawer() {
                   </motion.button>
                 </div>
 
-                <div className="flex gap-2 overflow-x-auto px-6 py-3" style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  {CHAT_MODES.map((entry) => {
-                    const active = entry.id === mode;
-                    const threadCount = getModeThread(entry.id).length;
-                    return (
-                      <button
-                        key={entry.id}
-                        onClick={() => {
-                          setMode(entry.id);
-                          setManualMode(true);
-                        }}
-                        className="rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] whitespace-nowrap transition-all"
-                        style={{
-                          background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
-                          color: active ? '#fff' : theme.text3,
-                          border: `1px solid ${active ? 'transparent' : theme.border}`,
-                          boxShadow: active ? `0 10px 18px ${theme.accent}30` : 'none',
-                        }}
-                      >
-                        {entry.shortLabel}
-                        {threadCount > 0 && (
-                          <span
-                            className="ml-1 rounded-full px-1.5 py-0.5 text-[9px]"
-                            style={{ background: active ? 'rgba(255,255,255,0.2)' : theme.surface, color: active ? '#fff' : theme.text3 }}
-                          >
-                            {threadCount}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {view === 'chat' && (
-                  <div className="border-b px-5 py-2.5" style={{ borderColor: theme.border, background: `${theme.accent}06` }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[11px] font-bold" style={{ color: theme.accent }}>
-                          {activeModeConfig.label}
-                        </span>
-                        <span className="text-[11px]" style={{ color: theme.text3 }}>
-                          {activeModeConfig.description ?? 'răspuns calibrat pe profilul tău'}
-                        </span>
-                      </div>
-                      <span className="citation-pill shrink-0 text-[10px]">
-                        {scopedSource ? `📎 ${scopedSource.name}` : '🔗 Biblioteca ta'}
-                      </span>
-                    </div>
-                  </div>
-                )}
 
                 {view === 'studio' ? (
                   <div className={`grid min-h-0 flex-1 ${mobile ? 'grid-cols-1' : 'grid-cols-[minmax(0,1.15fr)_340px]'}`}>
@@ -1316,6 +1509,23 @@ export default function AIChatDrawer() {
                   style={{ borderColor: theme.border, background: theme.isDark ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.6)' }}
                 >
                   <div className="rounded-[24px] p-1" style={{ background: theme.surface2, border: `1px solid ${theme.border}`, boxShadow: `0 2px 12px ${theme.accent}08` }}>
+                    {pastedImage && (
+                      <div className="relative mx-2 mt-2 mb-1 inline-block">
+                        <img
+                          src={pastedImage}
+                          alt="Imagine atașată"
+                          className="h-16 w-auto max-w-[160px] rounded-[12px] object-cover"
+                          style={{ border: `1px solid ${theme.border}` }}
+                        />
+                        <button
+                          onClick={() => setPastedImage(null)}
+                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border text-white"
+                          style={{ background: theme.danger, borderColor: theme.surface }}
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    )}
                     <div className="relative flex items-end gap-2 rounded-[20px] border px-4 py-3 transition-all"
                       style={{ borderColor: `${theme.accent}30`, background: theme.surface }}>
                       <textarea
@@ -1329,37 +1539,84 @@ export default function AIChatDrawer() {
                             void sendMessage();
                           }
                         }}
+                        onPaste={(event) => {
+                          const items = Array.from(event.clipboardData.items);
+                          const imgItem = items.find((item) => item.type.startsWith('image/'));
+                          if (!imgItem) return;
+                          event.preventDefault();
+                          const file = imgItem.getAsFile();
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => setPastedImage(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }}
                         placeholder={view === 'studio'
                           ? 'Discută despre document, capcane, ce vrei să generezi...'
                           : activeModeConfig.placeholder}
                         className="custom-scrollbar max-h-36 min-h-[44px] flex-1 resize-none border-none bg-transparent p-0 text-sm font-medium leading-relaxed outline-none focus:ring-0"
                         style={{ color: theme.text, cursor: 'text' }}
                       />
-                      <motion.button
-                        whileHover={calmMotion ? undefined : { scale: 1.06 }}
-                        whileTap={calmMotion ? undefined : { scale: 0.9 }}
-                        onClick={() => void sendMessage()}
-                        disabled={!input.trim() || loading}
-                        aria-label={loading ? 'Se trimite mesajul' : 'Trimite mesajul'}
-                        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] transition-all press-feedback"
-                        style={{
-                          background: input.trim() && !loading ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : `${theme.accent}18`,
-                          color: input.trim() && !loading ? '#fff' : theme.accent,
-                          boxShadow: input.trim() && !loading ? `0 6px 14px ${theme.accent}40` : 'none',
-                          cursor: input.trim() && !loading ? 'pointer' : 'default',
-                        }}
-                      >
-                        {loading ? <Loader2 size={16} className="animate-spin" /> : <SendHorizonal size={16} />}
-                      </motion.button>
+                      {loading ? (
+                        <motion.button
+                          whileHover={calmMotion ? undefined : { scale: 1.06 }}
+                          whileTap={calmMotion ? undefined : { scale: 0.9 }}
+                          onClick={stopGeneration}
+                          aria-label="Oprește generarea"
+                          title="Oprește generarea"
+                          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] transition-all press-feedback"
+                          style={{ background: `${theme.danger}18`, color: theme.danger }}
+                        >
+                          <Square size={14} />
+                        </motion.button>
+                      ) : (
+                        <motion.button
+                          whileHover={calmMotion ? undefined : { scale: 1.06 }}
+                          whileTap={calmMotion ? undefined : { scale: 0.9 }}
+                          onClick={() => void sendMessage()}
+                          disabled={!input.trim() && !pastedImage}
+                          aria-label="Trimite mesajul"
+                          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] transition-all press-feedback"
+                          style={{
+                            background: (input.trim() || pastedImage) ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : `${theme.accent}18`,
+                            color: (input.trim() || pastedImage) ? '#fff' : theme.accent,
+                            boxShadow: (input.trim() || pastedImage) ? `0 6px 14px ${theme.accent}40` : 'none',
+                            cursor: (input.trim() || pastedImage) ? 'pointer' : 'default',
+                          }}
+                        >
+                          {pastedImage && !input.trim() ? <ImageIcon size={16} /> : <SendHorizonal size={16} />}
+                        </motion.button>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between px-3 py-1.5">
-                      <span className="text-[10px]" style={{ color: theme.text3 }}>Enter trimite · Shift+Enter linie nouă</span>
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+                      <div className="flex items-center gap-1.5 overflow-x-auto min-w-0">
+                        {CHAT_MODES.map((entry) => {
+                          const active = entry.id === mode;
+                          return (
+                            <button
+                              key={entry.id}
+                              onClick={() => { setMode(entry.id); setManualMode(true); }}
+                              className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all"
+                              style={{
+                                background: active ? `${theme.accent}20` : 'transparent',
+                                color: active ? theme.accent : theme.text3,
+                                border: `1px solid ${active ? `${theme.accent}40` : 'transparent'}`,
+                              }}
+                            >
+                              {entry.shortLabel}
+                            </button>
+                          );
+                        })}
+                      </div>
                       {messages.length > 0 && (
                         <button
-                          onClick={() => { setMessages([]); setActiveCitationKey(null); }}
-                          className="text-[10px] font-semibold transition-opacity hover:opacity-80"
+                          onClick={() => {
+                            setMessages([]);
+                            setActiveCitationKey(null);
+                            try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* ignore */ }
+                          }}
+                          className="shrink-0 text-[10px] font-semibold transition-opacity hover:opacity-80"
                           style={{ color: theme.text3 }}
-                        >Golește conversația</button>
+                        >Golește</button>
                       )}
                     </div>
 

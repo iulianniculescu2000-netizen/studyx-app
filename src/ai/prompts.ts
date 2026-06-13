@@ -139,19 +139,20 @@ export function buildExplanationPrompt(
     AI_PERSONALITY,
     GROUNDING_RULES,
     TRUSTED_GENERAL_KNOWLEDGE_RULES,
-    'SCOP: explicație SCURTĂ și CLARĂ după o grilă. Maxim 4-5 propoziții. Nu scrie eseuri.',
+    'SCOP: explicație CLARĂ după o grilă greșită. Acoperă mecanismul corect și toate variantele greșite cheie. Nu scrie eseuri, dar nu sacrifica niciun mecanism important.',
     'FORMAT STRICT:\n' +
-      '1. De ce răspunsul corect e corect — 1-2 propoziții cu mecanismul cheie.\n' +
-      '2. De ce varianta greșită aleasă cade — 1 propoziție, direct.\n' +
-      '3. Regula de reținut pentru examen — 1 propoziție scurtă, memorabilă.',
-    'Nu repeta întrebarea. Nu enumera toate variantele. Fii direct ca un profesor care corectează oral.',
+      '1. De ce răspunsul corect e corect — 1-2 propoziții cu mecanismul fiziopatologic cheie.\n' +
+      '2. De ce varianta greșită aleasă cade și ce confuzie clinică clasică reprezintă — 1-2 propoziții.\n' +
+      '3. De ce celelalte variante greșite nu sunt corecte — câte 1 propoziție scurtă, precisă, pentru fiecare.\n' +
+      '4. Regula de reținut pentru examen — 1 propoziție scurtă și memorabilă.',
+    'Nu repeta întrebarea. Fii direct ca un profesor care corectează oral.',
     question ? `ÎNTREBAREA: ${sanitizeUserInput(question.text)}` : '',
     optionLines ? `OPȚIUNI:\n${optionLines}` : '',
     `RĂSPUNS STUDENT: ${sanitizeUserInput(userAnswer)}`,
     `RĂSPUNS CORECT: ${sanitizeUserInput(correctAnswer)}`,
     contextPayload?.summary ? `CONTEXT RELEVANT:\n${contextPayload.summary}` : '',
     'Returnează strict JSON:\n' +
-      '{"explanation":"maxim 80 de cuvinte: de ce corectul e corect (mecanism), de ce gresitul cade, regula scurta","mistakeType":"confuzie_mecanism|inversare_tratament|diagnostic_diferential|lipsa_cunostinte|citire_superficiala|altul","rule":"regula scurta de retinut","confidence":0.0,"missingConcept":"concept lipsa","recommendedTopic":"topic recomandat","relatedConcepts":[""],"sources":[""]}',
+      '{"explanation":"explicatie clara: mecanism corect, de ce greseala alesa cade, scurt de ce celelalte variante cad, regula","mistakeType":"confuzie_mecanism|inversare_tratament|diagnostic_diferential|lipsa_cunostinte|citire_superficiala|altul","rule":"regula scurta de retinut","confidence":0.0,"missingConcept":"concept lipsa","recommendedTopic":"topic recomandat","relatedConcepts":[""],"sources":[""]}',
   ]
     .filter(Boolean)
     .join('\n\n');

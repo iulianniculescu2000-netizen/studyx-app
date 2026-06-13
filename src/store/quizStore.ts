@@ -39,8 +39,10 @@ export const useQuizStore = create<QuizStore>()(
         quizzes: s.quizzes.map((q) => q.id === id ? { ...q, ...updates, updatedAt: Date.now() } : q),
       })),
 
-    deleteQuiz: (id) =>
-      set((s) => ({ quizzes: s.quizzes.filter((q) => q.id !== id) })),
+    deleteQuiz: (id) => {
+      void import('../lib/flashcardImageStore').then((m) => m.deleteFlashcardImagesForQuiz(id)).catch(() => {});
+      set((s) => ({ quizzes: s.quizzes.filter((q) => q.id !== id) }));
+    },
 
     duplicateQuiz: (id) => {
       const original = get().quizzes.find((q) => q.id === id);
@@ -99,8 +101,12 @@ export const useQuizStore = create<QuizStore>()(
         return q.folderId === folderId;
       }),
 
-    bulkDeleteQuizzes: (ids) =>
-      set((s) => ({ quizzes: s.quizzes.filter((q) => !ids.includes(q.id)) })),
+    bulkDeleteQuizzes: (ids) => {
+      void import('../lib/flashcardImageStore')
+        .then((m) => Promise.all(ids.map((id) => m.deleteFlashcardImagesForQuiz(id))))
+        .catch(() => {});
+      set((s) => ({ quizzes: s.quizzes.filter((q) => !ids.includes(q.id)) }));
+    },
 
     bulkMoveToFolder: (ids, folderId) =>
       set((s) => ({

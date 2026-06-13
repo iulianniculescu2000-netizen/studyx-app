@@ -13,6 +13,8 @@ export type ChatMessage = {
   citations?: Citation[];
   suggestions?: string[];
   mode?: ChatMode;
+  /** When set, this assistant message renders an agent job (plan/progress) card. */
+  agentJobId?: string;
 };
 
 export type RecommendedAction = {

@@ -1,7 +1,8 @@
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ZoomIn, X, ImageOff } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
+import { getFlashcardImage, isFlashcardImageRef } from '../lib/flashcardImageStore';
 import Portal from './Portal';
 
 interface QuizImageProps {
@@ -109,9 +110,25 @@ export default function QuizImage({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [lightbox, setLightbox] = useState(false);
+  const isRef = isFlashcardImageRef(src);
+  const [idb, setIdb] = useState<{ key: string; data: string | null }>({ key: '', data: null });
+
+  // Visual decks store their photos in IndexedDB; resolve the `idb:` pointer to a data URL.
+  useEffect(() => {
+    if (!isRef) return undefined;
+    let cancelled = false;
+    getFlashcardImage(src)
+      .then((dataUrl) => { if (!cancelled) setIdb({ key: src, data: dataUrl }); })
+      .catch(() => { if (!cancelled) setIdb({ key: src, data: null }); });
+    return () => { cancelled = true; };
+  }, [src, isRef]);
+
+  const idbResolved = isRef && idb.key === src;
+  const resolvedSrc = isRef ? (idbResolved ? (idb.data ?? '') : '') : src;
+  const showError = error || (idbResolved && !idb.data);
 
   const openLightbox = (event: MouseEvent<HTMLDivElement>) => {
-    if (!noLightbox && loaded && !error) {
+    if (!noLightbox && loaded && !showError) {
       event.stopPropagation();
       setLightbox(true);
     }
@@ -134,7 +151,7 @@ export default function QuizImage({
           placeItems: 'center',
           width: '100%',
           maxHeight: maxHeight + framePadding * 2,
-          padding: loaded && !error ? framePadding : 0,
+          padding: loaded && !showError ? framePadding : 0,
           borderRadius: frameRadius,
           overflow: 'hidden',
           border: `1px solid ${theme.border}`,
@@ -142,19 +159,19 @@ export default function QuizImage({
             ? 'linear-gradient(180deg, rgba(255,255,255,0.07), rgba(0,0,0,0.22))'
             : 'linear-gradient(180deg, rgba(255,255,255,0.94), rgba(247,248,252,0.82))',
           boxShadow: shadow,
-          cursor: !noLightbox && loaded && !error ? 'zoom-in' : 'default',
+          cursor: !noLightbox && loaded && !showError ? 'zoom-in' : 'default',
         }}
         onClick={openLightbox}
       >
-        {!loaded && !error && (
+        {!loaded && !showError && (
           <div style={{ width: '100%', padding: '12px' }}>
             <ImageSkeleton maxHeight={maxHeight} />
           </div>
         )}
 
-        {!error && (
+        {!showError && resolvedSrc && (
           <img
-            src={normalizeImageSrc(src)}
+            src={normalizeImageSrc(resolvedSrc)}
             alt={alt}
             style={{
               display: 'block',
@@ -177,7 +194,7 @@ export default function QuizImage({
           />
         )}
 
-        {error && (
+        {showError && (
           <div
             style={{
               display: 'flex',
@@ -194,7 +211,7 @@ export default function QuizImage({
           </div>
         )}
 
-        {!noLightbox && loaded && !error && (
+        {!noLightbox && loaded && !showError && (
           <div
             style={{
               position: 'absolute',
@@ -221,8 +238,8 @@ export default function QuizImage({
       {!noLightbox && (
         <Portal>
           <AnimatePresence>
-            {lightbox && (
-              <Lightbox src={src} alt={alt} onClose={() => setLightbox(false)} />
+            {lightbox && resolvedSrc && (
+              <Lightbox src={resolvedSrc} alt={alt} onClose={() => setLightbox(false)} />
             )}
           </AnimatePresence>
         </Portal>

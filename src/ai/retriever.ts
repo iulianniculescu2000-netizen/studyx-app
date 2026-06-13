@@ -123,11 +123,14 @@ export async function retrieveRelevantChunks(
     // Boost pentru banca de greșeli (greșit de mai multe ori) — comparăm topic
     const mistakeBankBoost = mistakeBankTopics.has(chunk.topic.toLowerCase()) ? 0.15 : 0;
 
-    // *** PONDERILE CHEIE: BM25 dominant, semantic complementar ***
-    // Motivul: embeddings locale nu sunt semantice, BM25 e mult mai precis
+    // *** PONDERILE CHEIE: adaptive după lungimea query-ului ***
+    // Query scurt (keyword): BM25 dominant; query lung (limbaj natural): mai mult semantic
+    const queryLen = query.trim().length;
+    const bm25Weight = queryLen <= 25 ? 0.65 : queryLen <= 60 ? 0.55 : 0.42;
+    const semanticWeight = queryLen <= 25 ? 0.12 : queryLen <= 60 ? 0.25 : 0.38;
     const score =
-      bm25Normalized * 0.55 +
-      semanticScore * 0.25 +
+      bm25Normalized * bm25Weight +
+      semanticScore * semanticWeight +
       weaknessBoost +
       recencyBoost +
       mistakeBankBoost;
