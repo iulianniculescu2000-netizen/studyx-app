@@ -59,6 +59,9 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const isFlashcard = quiz.tags?.includes('flashcard') ?? false;
+  const quizPath = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
+  const playPath = isFlashcard ? `/flashcards/session/${quiz.id}` : `/play/${quiz.id}`;
 
   const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
     setDragging(true);
@@ -99,7 +102,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
       <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full pointer-events-none opacity-20 transition-opacity duration-500"
         style={{ background: `radial-gradient(circle, ${colors.badge}80, transparent 70%)`, filter: 'blur(30px)', opacity: hovered ? 0.4 : 0.1 }} />
 
-      <Link to={`/quiz/${quiz.id}`} className="block p-6 flex flex-col h-full relative z-10">
+      <Link to={quizPath} className="block p-6 flex flex-col h-full relative z-10">
         <div className="flex items-start justify-between mb-5">
           <div className="text-5xl drop-shadow-sm filter transition-transform duration-300 group-hover:scale-110 origin-bottom-left">
             {quiz.emoji}
@@ -131,7 +134,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
               {quiz.category}
             </div>
             <p className="text-xs font-bold opacity-60 uppercase tracking-widest" style={{ color: theme.text }}>
-              {quiz.questions.length} {quiz.questions.length === 1 ? 'întrebare' : 'întrebări'}
+              {quiz.questions.length} {isFlashcard ? (quiz.questions.length === 1 ? 'card' : 'carduri') : (quiz.questions.length === 1 ? 'întrebare' : 'întrebări')}
             </p>
           </div>
         </div>
@@ -187,15 +190,15 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
             animate={{ opacity: 1, scale: 1, x: 0 }}
             exit={{ opacity: 0, scale: 0.8, x: 10 }}
             transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/play/${quiz.id}`); }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(playPath); }}
             className="absolute bottom-6 right-6 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-2xl transition-transform hover:scale-110 active:scale-95 press-feedback"
-            style={{ 
+            style={{
               background: colors.badge,
               color: '#FFFFFF',
               boxShadow: `0 8px 20px ${colors.badge}60`,
               transition: 'all 0.15s ease-out'
             }}>
-            <Play size={13} fill="white" /> Joacă
+            <Play size={13} fill="white" /> {isFlashcard ? 'Studiază' : 'Joacă'}
           </motion.button>
         )}
       </AnimatePresence>

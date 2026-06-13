@@ -97,6 +97,8 @@ export default function GlobalSearch() {
         || normalizeSearchText(quiz.category).includes(normalizedQuery)
         || (quiz.tags ?? []).some((tag) => normalizeSearchText(tag).includes(normalizedQuery))
       ) {
+        const isFlashcard = (quiz.tags ?? []).includes('flashcard');
+        const quizHref = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
         out.push({
           type: 'quiz',
           quizId: quiz.id,
@@ -105,11 +107,13 @@ export default function GlobalSearch() {
           quizColor: quiz.color,
           label: quiz.title,
           sub: `${toQuestionCountLabel(quiz.questions.length)} · ${quiz.category}`,
-          href: `/quiz/${quiz.id}`,
+          href: quizHref,
         });
       }
 
       for (const question of quiz.questions) {
+        const isFlashcard = (quiz.tags ?? []).includes('flashcard');
+        const quizHref = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
         if (normalizeSearchText(question.text).includes(normalizedQuery)) {
           out.push({
             type: 'question',
@@ -120,7 +124,7 @@ export default function GlobalSearch() {
             quizColor: quiz.color,
             label: question.text,
             sub: quiz.title,
-            href: `/quiz/${quiz.id}`,
+            href: quizHref,
           });
         }
 
@@ -134,7 +138,7 @@ export default function GlobalSearch() {
             quizColor: quiz.color,
             label: question.text,
             sub: `${quiz.title} · ${(question.tags ?? []).join(', ')}`,
-            href: `/quiz/${quiz.id}`,
+            href: quizHref,
           });
         }
       }
