@@ -628,11 +628,18 @@ export default function AIChatDrawer() {
     agentUndoRef.current.set(jobId, result.undo);
     const failedAll = result.errors.length > 0 && result.createdQuizIds.length === 0;
     jobs.setJobStatus(jobId, failedAll ? 'error' : 'done', result.summary);
+
+    // If the plan generated a study plan text, surface it in chat now (after execution)
+    const studyPlanText = plan.reply && plan.steps.some(s => s.action === 'create_study_plan') ? plan.reply : null;
     pendingAgentPlansRef.current.delete(jobId);
 
     addToast(result.summary, failedAll ? 'error' : result.errors.length ? 'warning' : 'success');
     if (isDocumentHidden() || !open) {
       void desktopNotify('StudyX — agent', result.summary);
+    }
+
+    if (studyPlanText && !failedAll) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: studyPlanText }]);
     }
   };
 

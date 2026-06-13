@@ -210,19 +210,25 @@ export default function QuizPlayRefactored() {
 
   const handleGetHint = useCallback(async () => {
     if (!hasKey || !question || hintLevel >= 3) return;
-    
+
+    // If hint already loaded, just advance the level (light → medium → full)
+    if (hintLevel > 0 && hintData) {
+      setHintLevel(prev => prev + 1);
+      return;
+    }
+
     setHintLoading(true);
     try {
       const { generateHint } = await loadAIEngine();
-      const hint = await generateHint(question, hintLevel + 1);
+      const hint = await generateHint(question);
       setHintData(hint);
-      setHintLevel(prev => prev + 1);
-    } catch (error) {
-      console.error('Hint generation failed:', error);
+      setHintLevel(1);
+    } catch {
+      setHintLevel(1);
     } finally {
       setHintLoading(false);
     }
-  }, [hasKey, question, hintLevel]);
+  }, [hasKey, question, hintLevel, hintData]);
 
   const handleToggleNote = useCallback(() => {
     setNotePanelOpen(!notePanelOpen);
