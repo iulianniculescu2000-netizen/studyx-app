@@ -106,7 +106,7 @@ export default function GlobalSearch() {
           quizEmoji: quiz.emoji,
           quizColor: quiz.color,
           label: quiz.title,
-          sub: `${toQuestionCountLabel(quiz.questions.length)} · ${quiz.category}`,
+          sub: `${isFlashcard ? `${quiz.questions.length} ${quiz.questions.length === 1 ? 'card' : 'carduri'}` : toQuestionCountLabel(quiz.questions.length)} · ${quiz.category}`,
           href: quizHref,
         });
       }

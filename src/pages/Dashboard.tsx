@@ -212,7 +212,8 @@ export default function Dashboard() {
   const studyHours = Math.floor(totalStudyTime / 3600);
   const studyMinutes = Math.floor(totalStudyTime / 60);
 
-  const animatedQuizzes = useCountUp(quizzes.length);
+  const quizOnlyCount = useMemo(() => quizzes.filter(q => !(q.tags?.includes('flashcard'))).length, [quizzes]);
+  const animatedQuizzes = useCountUp(quizOnlyCount);
   const animatedStreak = useCountUp(streak.currentStreak);
   const animatedAccuracy = useCountUp(accuracy);
   const animatedStudyHours = useCountUp(studyHours);
@@ -232,7 +233,7 @@ export default function Dashboard() {
 
   const greeting = hour < 12 ? 'Bună dimineața' : hour < 18 ? 'Bună ziua' : 'Bună seara';
   const stats: DashboardStat[] = [
-    { label: 'Grile', numeric: quizzes.length, display: String(animatedQuizzes), suffix: '', color: theme.accent, trend: 'neutral' },
+    { label: 'Grile', numeric: quizOnlyCount, display: String(animatedQuizzes), suffix: '', color: theme.accent, trend: 'neutral' },
     { label: 'Streak', numeric: streak.currentStreak, display: `${animatedStreak} ${animatedStreak === 1 ? 'zi' : 'zile'}`, suffix: '', color: theme.warning, trend: 'up' },
     { label: 'Acuratețe', numeric: accuracy, display: accuracy > 0 ? `${animatedAccuracy}%` : '-', suffix: '%', color: theme.success, trend: accuracy >= 75 ? 'up' : 'down' },
     { label: 'Timp studiu', numeric: studyHours, display: studyHours > 0 ? `${animatedStudyHours}h` : `${animatedStudyMinutes}m`, suffix: 'h', color: theme.accent2, trend: 'up' },

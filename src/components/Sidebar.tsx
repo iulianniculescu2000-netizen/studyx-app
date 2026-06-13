@@ -441,7 +441,7 @@ export default function Sidebar() {
 
   const totalAnswered = Object.values(questionStats).reduce((a, s) => a + s.timesCorrect + s.timesWrong, 0);
   const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT LA MEDICINĂ';
-  const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived).length, [quizzes]);
+  const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived && !q.tags?.includes('flashcard')).length, [quizzes]);
   const newQuizCount = useMemo(() => quizzes.filter(q => now - q.createdAt < 86400000 * 2).length, [quizzes, now]);
   const uncategorizedCount = useMemo(() => quizzes.filter(q => !q.folderId).length, [quizzes]);
   const folderQuizCount = useMemo(() => {
@@ -740,7 +740,7 @@ export default function Sidebar() {
             <Tip label="Dashboard">
               <NavItem to="/" icon={<LayoutDashboard size={17} />} label="Dashboard" end collapsed />
             </Tip>
-            <Tip label={`Toate grilele (${quizzes.length})`}>
+            <Tip label={`Toate grilele (${activeQuizCount})`}>
               <NavItem to="/quizzes" icon={<BookOpen size={17} />} label="Toate grilele" collapsed />
             </Tip>
             <Tip label={`Recapitulare${dueCount > 0 ? ` (${dueCount})` : ''}`}>

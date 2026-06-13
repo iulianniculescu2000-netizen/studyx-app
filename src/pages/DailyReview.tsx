@@ -29,8 +29,10 @@ function buildDueItems(
     .filter(s => s.nextReview > 0 && s.nextReview <= now)
     .flatMap(s => {
       const quiz = quizzes.find(q => q.id === s.quizId);
-      const question = quiz?.questions.find(q => q.id === s.questionId);
-      if (!quiz || !question) return [];
+      // Flashcard decks have their own spaced repetition in FlashcardSession — skip here
+      if (!quiz || quiz.tags?.includes('flashcard')) return [];
+      const question = quiz.questions.find(q => q.id === s.questionId);
+      if (!question) return [];
       return [{ quizId: quiz.id, quizTitle: quiz.title, question }];
     });
 }
