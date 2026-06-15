@@ -78,6 +78,7 @@ export function buildQuestionPrompt(
   weakTopics: WeakTopic[],
   difficulty: 'easy' | 'medium' | 'hard',
   contextPayload?: AIContextPayload,
+  questionType: 'single' | 'multiple' = 'single',
 ) {
   const safeContext = contextPayload?.summary ?? '';
   const mistakeSection = profile?.mistakeBank?.length ? mistakeBankText(profile.mistakeBank) : '';
@@ -95,11 +96,13 @@ export function buildQuestionPrompt(
   const distractorInstruction =
     'Distractorii trebuie să fie plauzibili clinic și să reflecte confuzii reale, nu răspunsuri evident absurde.';
 
-  const answerQualityInstruction =
-    'Cerințe obligatorii pentru întrebări: 4 opțiuni, exact 1 răspuns corect, fără a menționa numele fișierului sau documentului, fără formulări meta de tip "conform cursului", fără opțiuni mai lungi de 18 cuvinte.';
+  const answerQualityInstruction = questionType === 'multiple'
+    ? 'Cerințe obligatorii (COMPLEMENT MULTIPLU): exact 5 opțiuni, ÎNTRE 2 ȘI 3 răspunsuri corecte (isCorrect:true) pe întrebare — niciodată unul singur. Formulează enunțul ca să sugereze că pot fi mai multe corecte (ex. "Care dintre următoarele..."). Restul opțiunilor sunt distractori plauzibili. Fără a menționa numele fișierului, fără formulări meta, fără opțiuni mai lungi de 18 cuvinte.'
+    : 'Cerințe obligatorii (COMPLEMENT SIMPLU): exact 4 opțiuni, exact 1 răspuns corect, fără a menționa numele fișierului sau documentului, fără formulări meta de tip "conform cursului", fără opțiuni mai lungi de 18 cuvinte.';
 
-  const jsonSchema =
-    '{"questions":[{"text":"","options":[{"text":"","isCorrect":true}],"explanation":"","tags":["topic"],"difficulty":"easy|medium|hard","sources":[""]}]}';
+  const jsonSchema = questionType === 'multiple'
+    ? '{"questions":[{"text":"","options":[{"text":"","isCorrect":true},{"text":"","isCorrect":true},{"text":"","isCorrect":false},{"text":"","isCorrect":false},{"text":"","isCorrect":false}],"explanation":"","tags":["topic"],"difficulty":"easy|medium|hard","sources":[""]}]}'
+    : '{"questions":[{"text":"","options":[{"text":"","isCorrect":true},{"text":"","isCorrect":false},{"text":"","isCorrect":false},{"text":"","isCorrect":false}],"explanation":"","tags":["topic"],"difficulty":"easy|medium|hard","sources":[""]}]}';
 
   return [
     AI_PERSONALITY,

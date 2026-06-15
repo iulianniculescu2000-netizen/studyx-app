@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
@@ -75,13 +74,6 @@ export default function TitleBar() {
   const { phase, message } = useSaveStatusStore();
   const compact = typeof window !== 'undefined' && (window.innerHeight < 860 || window.innerWidth < 1260);
   const ultraCompact = typeof window !== 'undefined' && (window.innerHeight < 760 || window.innerWidth < 1080);
-
-  useEffect(() => {
-    if (!window.electronAPI?.onMaximized) return;
-    const unsub = window.electronAPI.onMaximized(() => {});
-    window.electronAPI.isMaximized().catch(() => {});
-    return () => unsub();
-  }, []);
 
   if (!isElectron) return null;
 

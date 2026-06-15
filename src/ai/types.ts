@@ -97,6 +97,8 @@ export interface AIQuestionRequest {
   weakTopics?: WeakTopic[];
   userProfile?: UserProfileData;
   mode?: 'standard' | 'exam' | 'tutor';
+  /** 'multiple' = complement multiplu (2-3 răspunsuri corecte). Default 'single'. */
+  questionType?: 'single' | 'multiple';
   prefetchedContext?: AIContextPayload;
 }
 

@@ -254,6 +254,99 @@ function FolderTargetSelect({
   );
 }
 
+function LibrarySourceSelect({
+  sources,
+  value,
+  disabled,
+  theme,
+  onChange,
+}: {
+  sources: Array<{ id: string; name: string }>;
+  value: string;
+  disabled?: boolean;
+  theme: Theme;
+  onChange: (sourceId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = sources.find((source) => source.id === value);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onEsc = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative flex-1">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center gap-2 rounded-[12px] border px-3 py-2.5 text-left transition-all disabled:opacity-60"
+        style={{
+          background: theme.surface,
+          borderColor: open ? `${theme.accent}55` : theme.border,
+          color: theme.text,
+        }}
+      >
+        <span className="min-w-0 flex-1 truncate text-xs font-bold">
+          {selected?.name ?? 'Alege un curs'}
+        </span>
+        <motion.div animate={{ rotate: open ? 180 : 0 }} style={{ color: theme.text3 }}>
+          <ChevronDown size={14} />
+        </motion.div>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.98 }}
+            transition={{ duration: 0.16 }}
+            className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 rounded-[16px] border p-1.5 shadow-2xl"
+            style={{
+              background: theme.isDark ? 'rgba(20,24,30,0.98)' : 'rgba(255,255,255,0.98)',
+              borderColor: theme.border,
+              backdropFilter: 'blur(18px) saturate(160%)',
+            }}
+          >
+            <div className="custom-scrollbar max-h-52 overflow-y-auto">
+              {sources.map((source) => {
+                const active = source.id === value;
+                return (
+                  <button
+                    key={source.id}
+                    type="button"
+                    onClick={() => { onChange(source.id); setOpen(false); }}
+                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2 text-left transition-all"
+                    style={{
+                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
+                      color: active ? '#fff' : theme.text,
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-xs font-bold">{source.name}</span>
+                    {active && <Check size={14} />}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 interface SecondaryAction {
   key: string;
   label: string;
@@ -279,9 +372,12 @@ interface FlashcardHubActionsProps {
   totalDue: number;
   totalMastered: number;
   targetFolderId: string;
+  librarySources: Array<{ id: string; name: string }>;
+  libraryGenerating: boolean;
   onAiCountChange: (count: number) => void;
   onCreateFolder: (name: string, parentId: string | null) => string;
   onCsvImport: () => void;
+  onLibraryGenerate: (sourceId: string) => void;
   onMistakeDeckCreate: () => void;
   onPhotoImport: () => void;
   onPdfImport: () => void;
@@ -305,15 +401,22 @@ export function FlashcardHubActions({
   totalDue,
   totalMastered,
   targetFolderId,
+  librarySources,
+  libraryGenerating,
   onAiCountChange,
   onCreateFolder,
   onCsvImport,
+  onLibraryGenerate,
   onMistakeDeckCreate,
   onPhotoImport,
   onPdfImport,
   onQuickDeckCreate,
   onTargetFolderChange,
 }: FlashcardHubActionsProps) {
+  const [librarySourceId, setLibrarySourceId] = useState('');
+  const activeLibrarySourceId = librarySources.some((source) => source.id === librarySourceId)
+    ? librarySourceId
+    : librarySources[0]?.id ?? '';
   const stats = [
     { label: 'Carduri', value: totalCards, icon: <CreditCard size={15} />, color: theme.accent },
     { label: 'Restante', value: totalDue, icon: <Clock size={15} />, color: totalDue > 0 ? theme.warning : theme.success },
@@ -430,6 +533,38 @@ export function FlashcardHubActions({
             </>
           )}
         </motion.button>
+
+        {hasAI && librarySources.length > 0 && (
+          <div className="mt-3 rounded-[16px] border p-3" style={{ borderColor: theme.border, background: theme.surface2 }}>
+            <div className="mb-2 flex items-center gap-1.5">
+              <Sparkles size={12} style={{ color: theme.accent }} />
+              <span className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                Sau din cursurile din Biblioteca AI
+              </span>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <LibrarySourceSelect
+                sources={librarySources}
+                value={activeLibrarySourceId}
+                disabled={libraryGenerating}
+                theme={theme}
+                onChange={setLibrarySourceId}
+              />
+              <button
+                onClick={() => activeLibrarySourceId && onLibraryGenerate(activeLibrarySourceId)}
+                disabled={libraryGenerating || !activeLibrarySourceId}
+                className="flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-white transition-all disabled:opacity-60"
+                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+              >
+                {libraryGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {libraryGenerating ? 'Generez...' : 'Generează carduri'}
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] font-medium opacity-55" style={{ color: theme.text }}>
+              Folosește numărul de carduri și folderul alese mai sus. Cardurile acoperă definiții, mecanisme, semne și capcane.
+            </p>
+          </div>
+        )}
 
         {!hasAI && (
           <p className="mt-2.5 text-center text-[11px] font-medium opacity-55" style={{ color: theme.text }}>

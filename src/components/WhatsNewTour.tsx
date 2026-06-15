@@ -21,7 +21,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
 import { useUserStore } from '../store/userStore';
 
-const WHATS_NEW_VERSION = '1.0.4';
+const WHATS_NEW_VERSION = '1.0.5';
 const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}:seen`;
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
@@ -423,8 +423,8 @@ const SLIDES: Slide[] = [
   {
     id: 'hero',
     badge: `Update ${WHATS_NEW_VERSION}`,
-    title: 'StudyX v1.0.4 — mai rapid, mai curat',
-    description: 'Agent AI pentru comenzi complexe, imagini extrase HD din PDF-uri, Bibliotecă pe foldere cu navigare directă și un chat mai simplu care nu te distrage. Totul în 60 de secunde.',
+    title: 'StudyX v1.0.5 — bibliotecă pe subfoldere, AI mai deștept',
+    description: 'Subfoldere reale în Bibliotecă, provider Google Gemini pe lângă Groq, un agent care ține minte firul conversației și extragere de poze fără dubluri. Plus zeci de fix-uri de fundal. Totul în 60 de secunde.',
     Demo: HeroDemo,
   },
   {
@@ -468,10 +468,10 @@ const SLIDES: Slide[] = [
   {
     id: 'folders',
     badge: 'Bibliotecă pe foldere',
-    title: 'Navighezi direct în materie',
-    description: 'Biblioteca AI e acum pe foldere: dai click pe Hematologie și vezi doar cursurile de hematologie. Adaugi documente direct în folderul activ — fără să muți nimic manual după import.',
+    title: 'Navighezi direct în materie — acum cu subfoldere',
+    description: 'Biblioteca AI e pe foldere și acum pe subfoldere: intri în Hematologie › Cursuri, organizezi în adâncime și muți documentele direct în subfolderul potrivit. Agentul știe ierarhia și pune ce-i ceri exact unde trebuie.',
     Demo: FoldersDemo,
-    tip: 'Ștergi un folder? Documentele rămân în „Neclasificate”, nu se pierd.',
+    tip: 'Ștergi un folder? Confirmare elegantă în aplicație, iar documentele rămân în „Neclasificate”.',
   },
 ];
 

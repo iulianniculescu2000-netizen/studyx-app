@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
@@ -6,12 +7,16 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  Copy,
+  CreditCard,
   FolderOpen,
   ImageIcon,
   Layers3,
+  ListChecks,
   Loader2,
   PanelRightClose,
   PanelRightOpen,
+  RotateCcw,
   SendHorizonal,
   Sparkles,
   Square,
@@ -47,18 +52,24 @@ import {
 import {
   describeStep,
   executeAgentPlan,
+  isRetryPhrase,
   looksLikeAgentCommand,
   planAgentCommand,
   type AgentPlan,
 } from '../lib/ai/agent';
+import { detectChatIntent, shouldApplyIntent } from '../lib/ai/intentRouter';
+import { isFlashcardDeck } from '../lib/deckKind';
+import { suggestFolderAppearance } from '../lib/folderAppearance';
 import { useAgentJobsStore } from '../store/agentJobsStore';
 import { desktopNotify } from '../lib/desktopNotify';
 import { getWeakTopicsForProfile } from '../ai/UserProfile';
-import type { Folder } from '../types';
+import type { Folder, Question, Quiz } from '../types';
 import AgentJobCard from './ai-chat/AgentJobCard';
+import AIOrb from './ai-chat/AIOrb';
 import {
   CHAT_MODES,
   buildFollowUpSuggestions,
+  buildProactiveGreeting,
   buildRecommendedActions,
   formatMessage,
   getContextState,
@@ -70,6 +81,7 @@ import {
 let aiChatRuntimePromise: Promise<{
   generateChatResponse: typeof import('../ai/AIEngine').generateChatResponse;
   generateChatResponseStream: typeof import('../ai/AIEngine').generateChatResponseStream;
+  summarizeConversation: typeof import('../ai/AIEngine').summarizeConversation;
   retrieveRelevantChunks: typeof import('../ai/retriever').retrieveRelevantChunks;
   getVaultChunksBySource: typeof import('../ai/vectorStore').getVaultChunksBySource;
 }> | null = null;
@@ -83,6 +95,7 @@ function loadAIChatRuntime() {
     ]).then(([engine, retriever, vectorStore]) => ({
       generateChatResponse: engine.generateChatResponse,
       generateChatResponseStream: engine.generateChatResponseStream,
+      summarizeConversation: engine.summarizeConversation,
       retrieveRelevantChunks: retriever.retrieveRelevantChunks,
       getVaultChunksBySource: vectorStore.getVaultChunksBySource,
     }));
@@ -90,6 +103,11 @@ function loadAIChatRuntime() {
 
   return aiChatRuntimePromise;
 }
+
+// Once a thread passes this many messages, older turns are compressed into a
+// running summary so we keep continuity without resending the whole transcript.
+const CONVERSATION_SUMMARY_THRESHOLD = 12;
+const CONVERSATION_RECENT_KEEP = 6;
 
 type DrawerView = 'chat' | 'studio';
 type StudioDifficulty = 'auto' | 'easy' | 'medium' | 'hard';
@@ -333,8 +351,13 @@ export default function AIChatDrawer() {
   });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [thinkingPhase, setThinkingPhase] = useState<string | null>(null);
   const [mode, setMode] = useState<ChatMode>('grounded');
   const [manualMode, setManualMode] = useState(false);
+  const [modePickerOpen, setModePickerOpen] = useState(false);
+  // Per-job "open the result" CTA so the agent closes the create→study loop.
+  const [agentResults, setAgentResults] = useState<Record<string, { route: string; label: string }>>({});
+  const navigate = useNavigate();
   const [scopedSource, setScopedSource] = useState<{ id: string; name: string } | null>(null);
   const [activeCitationKey, setActiveCitationKey] = useState<string | null>(null);
   const [view, setView] = useState<DrawerView>('chat');
@@ -349,8 +372,19 @@ export default function AIChatDrawer() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
+  // Set when the user hits Stop — lets non-abortable generators (flashcards /
+  // grile) discard their result instead of surprising the user after a stop.
+  const generationAbortedRef = useRef(false);
   const pendingAgentPlansRef = useRef<Map<string, AgentPlan>>(new Map());
+  // Last genuine agent command, so a follow-up "mai încearcă" re-runs it instead
+  // of letting the planner invent a new (wrong) request from "mai încearcă".
+  const lastAgentCommandRef = useRef<string>('');
   const agentUndoRef = useRef<Map<string, (() => void) | null>>(new Map());
+  // Running compressed summary of older turns + how many messages it covers.
+  const conversationSummaryRef = useRef<string>('');
+  const summaryCoveredCountRef = useRef<number>(0);
+  const summarizingRef = useRef<boolean>(false);
+  const messagesRef = useRef<ChatMessage[]>([]);
 
   const activeModeConfig = useMemo(
     () => CHAT_MODES.find((entry) => entry.id === mode) ?? CHAT_MODES[0],
@@ -452,6 +486,8 @@ export default function AIChatDrawer() {
         setActiveCitationKey(null);
         setManualMode(false);
         contextCacheRef.current.clear();
+        conversationSummaryRef.current = '';
+        summaryCoveredCountRef.current = 0;
       }
 
       if (detail.sourceId && detail.sourceName) {
@@ -482,6 +518,7 @@ export default function AIChatDrawer() {
   }, [messages, open, calmMotion]);
 
   useEffect(() => {
+    messagesRef.current = messages;
     try {
       const toSave = messages.slice(-60);
       localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toSave));
@@ -551,6 +588,7 @@ export default function AIChatDrawer() {
     forceChatView?: boolean;
     announceMode?: ChatMode;
   }) => {
+    generationAbortedRef.current = false;
     setStudioGenerating(true);
     setGeneratedSummary(null);
     setStudioSourceId(source.id);
@@ -572,6 +610,8 @@ export default function AIChatDrawer() {
         activeProfileId,
         existingQuizzes: quizzes,
       });
+
+      if (generationAbortedRef.current) return false; // user pressed Stop — discard
 
       result.quizzes.forEach((quiz) => addQuiz(quiz));
 
@@ -629,6 +669,21 @@ export default function AIChatDrawer() {
     const failedAll = result.errors.length > 0 && result.createdQuizIds.length === 0;
     jobs.setJobStatus(jobId, failedAll ? 'error' : 'done', result.summary);
 
+    // Close the loop: if the agent created sets, offer to jump straight in.
+    if (!failedAll && result.createdQuizIds.length > 0) {
+      const firstId = result.createdQuizIds[0];
+      const created = useQuizStore.getState().quizzes.find((q) => q.id === firstId);
+      const isFlashcard = created ? isFlashcardDeck(created) : false;
+      const many = result.createdQuizIds.length > 1;
+      setAgentResults((prev) => ({
+        ...prev,
+        [jobId]: {
+          route: isFlashcard ? `/flashcards/session/${firstId}?mode=all` : `/play/${firstId}`,
+          label: isFlashcard ? 'Începe sesiunea' : many ? 'Începe primul set' : 'Începe acum',
+        },
+      }));
+    }
+
     // If the plan generated a study plan text, surface it in chat now (after execution)
     const studyPlanText = plan.reply && plan.steps.some(s => s.action === 'create_study_plan') ? plan.reply : null;
     pendingAgentPlansRef.current.delete(jobId);
@@ -644,11 +699,32 @@ export default function AIChatDrawer() {
   };
 
   const tryHandleAgentCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
-    if (!hasKey || !looksLikeAgentCommand(text)) return false;
+    if (!hasKey) return false;
 
+    // "mai încearcă" → re-run the last real command (same course/count). If there
+    // is nothing to retry, let it fall through to normal chat.
+    const retry = isRetryPhrase(text);
+    let commandText = text;
+    if (retry) {
+      if (!lastAgentCommandRef.current) return false;
+      commandText = lastAgentCommandRef.current;
+    } else if (!looksLikeAgentCommand(text)) {
+      return false;
+    } else {
+      // Remember this genuine command so a later "mai încearcă" can repeat it.
+      lastAgentCommandRef.current = text;
+    }
+
+    // Give the planner the recent thread so partial follow-ups resolve in context.
+    const history = messagesRef.current
+      .filter((message) => !message.agentJobId && message.content.trim())
+      .slice(-6)
+      .map(({ role, content }) => ({ role, content }));
+
+    setThinkingPhase(retry ? 'Reiau comanda anterioară…' : 'Analizez comanda…');
     let plan: AgentPlan;
     try {
-      plan = await planAgentCommand(text);
+      plan = await planAgentCommand(commandText, history);
     } catch {
       return false;
     }
@@ -727,15 +803,16 @@ export default function AIChatDrawer() {
     if (folderResolution.kind === 'existing') {
       targetFolder = folderResolution.folder;
     } else if (folderResolution.kind === 'create') {
-      const id = addFolder(folderResolution.name, '📚', 'blue');
+      const appearance = suggestFolderAppearance(folderResolution.name);
+      const id = addFolder(folderResolution.name, appearance.emoji, appearance.color);
       targetFolder = {
         id,
         name: folderResolution.name,
-        emoji: '📚',
-        color: 'blue',
+        emoji: appearance.emoji,
+        color: appearance.color,
         createdAt: Date.now(),
       };
-      addToast(`Am creat folderul "${folderResolution.name}".`, 'success');
+      addToast(`Am creat folderul ${appearance.emoji} "${folderResolution.name}".`, 'success');
     } else {
       targetFolder = null;
     }
@@ -758,22 +835,185 @@ export default function AIChatDrawer() {
     return true;
   };
 
+  // Deterministic flashcard generator for the chat — mirrors the grile studio
+  // command but builds a flashcard deck. Runs WITHOUT the LLM planner, so
+  // "fă-mi 3 flashcarduri din X" works even when the planner is rate-limited.
+  const tryHandleFlashcardCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
+    const wantsFlashcards = /\b(flash\s?carduri|flash\s?card|fi[șs]e|carduri)\b/i.test(text);
+    const wantsGeneration = /\b(f[ăa]|f[ăa][- ]?mi|genereaz[ăa]|cre(?:e|ea)z[ăa]?|creaz[ăa]?|vreau|preg[ăa]te|construie)\b/i.test(text);
+    if (!wantsFlashcards || !wantsGeneration) return false;
+
+    if (!hasKey) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Pentru flashcarduri AI ai nevoie de o cheie în Setări AI.', mode: activeMode }]);
+      addToast('Adaugă o cheie AI în Setări.', 'warning');
+      return true;
+    }
+    if (readySources.length === 0) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Nu ai încă cursuri indexate în Biblioteca AI. Încarcă un curs și apoi cere-mi flashcarduri din el.', mode: activeMode }]);
+      addToast('Încarcă mai întâi un curs în Biblioteca AI.', 'warning');
+      return true;
+    }
+
+    const scopedReadySource = scopedSource
+      ? readySources.find((entry) => entry.id === scopedSource.id) ?? null
+      : null;
+    const source = resolveStudioSourceFromCommand(text, readySources, scopedReadySource);
+    if (!source) {
+      const sourceList = readySources.slice(0, 6).map((entry) => `- ${entry.name}`).join('\n');
+      setMessages((prev) => [...prev, { role: 'assistant', content: `Din ce curs vrei flashcardurile? Exemple disponibile:\n${sourceList}`, mode: activeMode }]);
+      addToast('Spune-mi din ce curs să fac flashcardurile.', 'warning');
+      return true;
+    }
+
+    const folderResolution = resolveStudioFolderFromCommand(text, folders, selectedStudioFolder);
+    let targetFolder = selectedStudioFolder;
+    if (folderResolution.kind === 'existing') {
+      targetFolder = folderResolution.folder;
+    } else if (folderResolution.kind === 'create') {
+      const appearance = suggestFolderAppearance(folderResolution.name);
+      const id = addFolder(folderResolution.name, appearance.emoji, appearance.color);
+      targetFolder = { id, name: folderResolution.name, emoji: appearance.emoji, color: appearance.color, createdAt: Date.now() };
+      addToast(`Am creat folderul ${appearance.emoji} "${folderResolution.name}".`, 'success');
+    } else {
+      targetFolder = null;
+    }
+
+    const countMatch = text
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .match(/(\d+)\s*(?:de\s+)?(?:flash\s?carduri|flash\s?card|carduri|fise|card)/i);
+    const count = Math.max(1, Math.min(60, countMatch ? Number(countMatch[1]) : 15));
+
+    setThinkingPhase(`Generez ${count} flashcarduri din „${source.name}"…`);
+    try {
+      const { notesToFlashcards } = await import('../lib/groq');
+      const { getVaultChunksBySource } = await loadAIChatRuntime();
+      const chunks = await getVaultChunksBySource(source.id);
+      let sourceText = '';
+      for (const chunk of chunks) {
+        sourceText += (sourceText ? '\n\n' : '') + chunk.text;
+        if (sourceText.length > 24000) break;
+      }
+      if (sourceText.trim().length < 80) {
+        throw new Error('Cursul nu are destul text indexat pentru flashcarduri.');
+      }
+
+      const existingFronts = quizzes
+        .filter((quiz) => (quiz.tags ?? []).some((tag) => /flashcard|deck|anki/i.test(tag)))
+        .flatMap((quiz) => quiz.questions.map((question) => question.text));
+      const pairs = await notesToFlashcards(sourceText, { count, sourceName: source.name, avoidFronts: existingFronts });
+      if (generationAbortedRef.current) return true; // user pressed Stop — drop the result
+      if (pairs.length === 0) throw new Error('Nu am putut genera flashcarduri din acest curs.');
+
+      const deckId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+      const questions: Question[] = pairs.map((pair) => ({
+        id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+        text: pair.front.trim(),
+        multipleCorrect: false,
+        difficulty: 'medium',
+        explanation: '',
+        options: [{ id: 'a', text: pair.back.trim(), isCorrect: true }],
+      }));
+
+      addQuiz({
+        id: deckId,
+        title: `Flashcarduri · ${source.name.replace(/\.[^.]+$/, '')}`,
+        description: `${questions.length} flashcarduri AI generate din „${source.name}".`,
+        emoji: '🃏',
+        color: targetFolder?.color ?? 'purple',
+        category: targetFolder?.name ?? 'AI Flashcards',
+        kind: 'flashcard',
+        folderId: targetFolder?.id ?? null,
+        shuffleQuestions: true,
+        shuffleAnswers: false,
+        tags: ['flashcard', 'ai', 'chat'],
+        questions,
+        createdAt: Date.now(),
+      });
+
+      const folderNote = targetFolder ? ` în folderul „${targetFolder.name}"` : '';
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: `✅ Am creat **${questions.length} flashcarduri** din „${source.name}"${folderNote}. Apasă pentru a începe sesiunea.`,
+        mode: activeMode,
+        openRoute: { route: `/flashcards/session/${deckId}?mode=all`, label: 'Începe flashcardurile' },
+      }]);
+      addToast(`${questions.length} flashcarduri generate.`, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Generarea flashcardurilor a eșuat.';
+      setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${message}`, mode: activeMode }]);
+      addToast(message, 'error');
+    }
+    return true;
+  };
+
   const stopGeneration = () => {
+    // Abort the streaming chat if one is live…
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
+    // …and signal the non-streaming generators (flashcards / grile) to drop their
+    // result, then release the UI immediately so the button always does something.
+    generationAbortedRef.current = true;
+    setLoading(false);
+    setThinkingPhase(null);
+    setStudioGenerating(false);
+  };
+
+  // Background context compression: once the thread is long, fold all but the
+  // most recent turns into a running summary. Non-blocking — runs after a reply.
+  const maybeCompressConversation = async () => {
+    if (summarizingRef.current) return;
+    const current = messagesRef.current;
+    if (current.length < CONVERSATION_SUMMARY_THRESHOLD) return;
+    if (current.length - summaryCoveredCountRef.current < CONVERSATION_RECENT_KEEP) return;
+
+    const cutoff = current.length - CONVERSATION_RECENT_KEEP;
+    const olderSlice = current
+      .slice(0, cutoff)
+      .filter((m) => !m.agentJobId && m.content.trim())
+      .map(({ role, content }) => ({ role, content }));
+    if (olderSlice.length === 0) return;
+
+    summarizingRef.current = true;
+    try {
+      const { summarizeConversation } = await loadAIChatRuntime();
+      const summary = await summarizeConversation(olderSlice, conversationSummaryRef.current);
+      if (summary) {
+        conversationSummaryRef.current = summary;
+        summaryCoveredCountRef.current = cutoff;
+      }
+    } catch {
+      // best-effort — keep the previous summary
+    } finally {
+      summarizingRef.current = false;
+    }
   };
 
   const sendMessage = async (overrideText?: string, modeOverride?: ChatMode) => {
     const text = (overrideText || input).trim();
     if ((!text && !pastedImage) || loading) return;
+    generationAbortedRef.current = false;
 
-    const activeMode = modeOverride ?? mode;
+    // Auto-detect the conversational mode from the message unless the user has
+    // explicitly pinned one (manualMode) or an override is passed in. We apply it
+    // to this message's activeMode only (not the persistent `mode` chip) so it
+    // doesn't fight the default-mode effect; the chosen mode is surfaced as a
+    // badge on the assistant reply.
+    let activeMode = modeOverride ?? mode;
+    let autoDetectedMode = false;
+    if (!modeOverride && !manualMode && text) {
+      const intent = detectChatIntent(text);
+      if (shouldApplyIntent(intent)) {
+        activeMode = intent.mode;
+        autoDetectedMode = activeMode !== mode;
+      }
+    }
     const imageSnapshot = pastedImage;
     const userMsg: ChatMessage = { role: 'user', content: text || '📷 Imagine atașată', mode: activeMode };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setPastedImage(null);
     setLoading(true);
+    setThinkingPhase('Mă gândesc…');
     setActiveCitationKey(null);
     // recordAIInteraction is called after citations are available (below in the streaming path).
 
@@ -781,6 +1021,11 @@ export default function AIChatDrawer() {
     streamAbortRef.current = abortCtrl;
 
     try {
+      // Flashcard requests are handled deterministically first so they work even
+      // when the LLM planner is rate-limited, and never get misrouted to grile.
+      const flashcardHandled = !imageSnapshot && await tryHandleFlashcardCommand(text, activeMode);
+      if (flashcardHandled) return;
+
       const agentHandled = !imageSnapshot && await tryHandleAgentCommand(text, activeMode);
       if (agentHandled) return;
 
@@ -819,6 +1064,7 @@ export default function AIChatDrawer() {
       }
 
       // ── Regular streaming chat path ───────────────────────────────────────
+      setThinkingPhase(readySources.length > 0 ? 'Caut în biblioteca ta…' : 'Pregătesc răspunsul…');
       const { generateChatResponseStream } = await loadAIChatRuntime();
       const contextCacheKey = `${text.slice(0, 120)}::${scopedSource?.id ?? ''}`;
       const cachedChunks = contextCacheRef.current.get(contextCacheKey);
@@ -868,7 +1114,7 @@ export default function AIChatDrawer() {
       }
 
       // Add empty assistant message then fill it via streaming.
-      setMessages((prev) => [...prev, { role: 'assistant', content: '', citations, suggestions, mode: activeMode }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: '', citations, suggestions, mode: activeMode, autoMode: autoDetectedMode }]);
 
       await generateChatResponseStream(
         text,
@@ -891,6 +1137,7 @@ export default function AIChatDrawer() {
           scopedSourceName: scopedSource?.name,
           studyContext,
           focusTopics: weakTopics.map((topic) => topic.topic),
+          conversationSummary: conversationSummaryRef.current,
         },
         abortCtrl.signal,
       );
@@ -905,6 +1152,8 @@ export default function AIChatDrawer() {
           }
           return next;
         });
+        // Refresh the compressed conversation memory in the background.
+        void maybeCompressConversation();
       }
     } catch (err: unknown) {
       if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) return;
@@ -913,6 +1162,7 @@ export default function AIChatDrawer() {
     } finally {
       streamAbortRef.current = null;
       setLoading(false);
+      setThinkingPhase(null);
     }
   };
 
@@ -942,8 +1192,117 @@ export default function AIChatDrawer() {
     contextCacheRef.current.clear();
   };
 
+  // ── Per-response actions (hover) ───────────────────────────────────────────
+  const copyMessageToClipboard = async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      addToast('Răspuns copiat.', 'success');
+    } catch {
+      addToast('Nu am putut copia răspunsul.', 'error');
+    }
+  };
+
+  const saveAnswerAsFlashcard = (index: number) => {
+    const answer = messages[index];
+    const prev = messages[index - 1];
+    const front = (prev?.role === 'user' ? prev.content : '').trim() || 'Recapitulare din chat';
+    const back = answer.content.trim();
+    if (!back) return;
+    const card: Question = {
+      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+      text: front,
+      multipleCorrect: false,
+      difficulty: 'medium',
+      explanation: '',
+      options: [{ id: 'a', text: back, isCorrect: true }],
+    };
+    const deck: Quiz = {
+      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+      title: `Flashcard din chat · ${new Date().toLocaleDateString('ro-RO')}`,
+      description: 'Salvat din conversația cu StudyX AI.',
+      emoji: '🃏',
+      color: 'purple',
+      category: 'AI Flashcards',
+      kind: 'flashcard',
+      folderId: null,
+      shuffleQuestions: false,
+      shuffleAnswers: false,
+      tags: ['flashcard', 'ai', 'chat'],
+      questions: [card],
+      createdAt: Date.now(),
+    };
+    addQuiz(deck);
+    addToast('Am salvat un flashcard din răspuns.', 'success');
+  };
+
+  const regenerateAnswer = (index: number) => {
+    const prev = messages[index - 1];
+    if (prev?.role !== 'user') {
+      addToast('Nu găsesc întrebarea de regenerat.', 'warning');
+      return;
+    }
+    void sendMessage(prev.content, messages[index]?.mode);
+  };
+
+  const makeQuizFromAnswer = async (index: number) => {
+    if (loading) return;
+    const prev = messages[index - 1];
+    const topic = (prev?.role === 'user' ? prev.content : '').trim() || messages[index].content.slice(0, 140);
+    if (!hasKey) {
+      addToast('Pentru a genera un set ai nevoie de o cheie AI în Setări.', 'warning');
+      return;
+    }
+    setLoading(true);
+    setThinkingPhase('Generez un set din răspuns…');
+    try {
+      const { generateQuestions, getUserProfile } = await import('../ai/AIEngine');
+      const profile = activeProfileId ? getUserProfile(activeProfileId) : undefined;
+      const result = await generateQuestions({
+        context: topic,
+        count: 5,
+        weakTopics,
+        userProfile: profile,
+        mode: 'standard',
+      });
+      if (result.questions.length === 0) {
+        addToast('Nu am putut genera un set din acest subiect.', 'error');
+        return;
+      }
+      const quizId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+      addQuiz({
+        id: quizId,
+        title: `Test din chat · ${new Date().toLocaleDateString('ro-RO')}`,
+        description: `${result.questions.length} grile generate din conversația cu StudyX AI.`,
+        emoji: '🧪',
+        color: 'blue',
+        category: 'AI Studio',
+        kind: 'quiz',
+        folderId: null,
+        shuffleQuestions: true,
+        shuffleAnswers: true,
+        tags: ['ai', 'chat'],
+        questions: result.questions,
+        createdAt: Date.now(),
+      });
+      setMessages((prev2) => [...prev2, {
+        role: 'assistant',
+        content: `✅ Am creat **${result.questions.length} grile** pe baza acestui subiect. Le poți rezolva acum.`,
+        openRoute: { route: `/play/${quizId}`, label: 'Începe testul' },
+      }]);
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Generarea a eșuat.', 'error');
+    } finally {
+      setLoading(false);
+      setThinkingPhase(null);
+    }
+  };
+
   const renderMessageList = (compact = false) => {
     const threadMessages = messages;
+    const recentSourceName = scopedSource?.name
+      ?? [...readySources].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0))[0]?.name
+      ?? null;
+    const greeting = buildProactiveGreeting(weakTopics, performanceSummary.dueCount, recentSourceName);
 
     return (
     <div className={compact ? 'space-y-4' : 'space-y-5'}>
@@ -953,12 +1312,14 @@ export default function AIChatDrawer() {
             🧠
           </motion.div>
           <h4 className="mb-2 text-[1.25rem] font-black tracking-tight" style={{ color: theme.text }}>
-            Cu ce te pot ajuta?
+            {greeting.title}
           </h4>
           <p className="mb-6 text-sm font-medium leading-relaxed opacity-70" style={{ color: theme.text }}>
-            {mode === 'grounded'
-              ? 'Îți răspund pe baza bibliotecii tale, explic concepte medicale și păstrez contextul util pentru examen.'
-              : `Ești în modul „${activeModeConfig.label}”. Îți adaptez răspunsul la stilul de lucru ales, fără să pierd contextul util.`}
+            {greeting.proactive
+              ? greeting.subtitle
+              : mode === 'grounded'
+                ? 'Îți răspund pe baza bibliotecii tale, explic concepte medicale și păstrez contextul util pentru examen.'
+                : `Ești în modul „${activeModeConfig.label}”. Îți adaptez răspunsul la stilul de lucru ales, fără să pierd contextul util.`}
           </p>
 
           {(recommendedActions.length > 0 || weakTopics.length > 0 || performanceSummary.dueCount > 0) && (
@@ -1043,10 +1404,15 @@ export default function AIChatDrawer() {
                 key={`${message.role}-${index}`}
                 initial={{ opacity: 0, y: 10, scale: 0.985 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`group flex items-start gap-2.5 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
+                {message.role === 'assistant' && (
+                  <div className="mt-0.5">
+                    <AIOrb theme={theme} size={26} active={isLastAssistant && loading} calm={calmMotion} />
+                  </div>
+                )}
                 <div
-                  className={`max-w-[88%] rounded-[24px] p-4 text-sm leading-relaxed shadow-sm ${message.role === 'user' ? 'text-white' : ''}`}
+                  className={`max-w-[84%] rounded-[24px] p-4 text-sm leading-relaxed shadow-sm ${message.role === 'user' ? 'text-white' : ''}`}
                   style={{
                     background: message.role === 'user' ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
                     color: message.role === 'user' ? '#fff' : theme.text,
@@ -1055,6 +1421,16 @@ export default function AIChatDrawer() {
                     boxShadow: message.role === 'user' ? `0 10px 24px ${theme.accent}24` : '0 8px 18px rgba(0,0,0,0.04)',
                   }}
                 >
+                  {message.role === 'assistant' && message.autoMode && message.mode && (
+                    <div
+                      className="mb-2 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em]"
+                      style={{ background: `${theme.accent}14`, color: theme.accent }}
+                      title="Mod ales automat din mesajul tău"
+                    >
+                      ✨ {CHAT_MODES.find((m) => m.id === message.mode)?.label ?? message.mode}
+                    </div>
+                  )}
+
                   {isLastAssistant && loading ? (
                     <>
                       <span className="font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
@@ -1073,15 +1449,30 @@ export default function AIChatDrawer() {
                         onCancel={() => cancelAgentJob(message.agentJobId!)}
                         onUndo={() => undoAgentJob(message.agentJobId!)}
                       />
+                      {agentResults[message.agentJobId] && (
+                        <button
+                          onClick={() => {
+                            const target = agentResults[message.agentJobId!];
+                            setChatOpen(false);
+                            navigate(target.route);
+                          }}
+                          className="press-feedback mt-2.5 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
+                          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 20px ${theme.accent}33` }}
+                        >
+                          <ArrowRight size={14} /> {agentResults[message.agentJobId].label}
+                        </button>
+                      )}
                     </div>
                   )}
 
-                  {message.role === 'assistant' && message.mode && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <span className="citation-pill">
-                        Modul {CHAT_MODES.find((entry) => entry.id === message.mode)?.label ?? message.mode}
-                      </span>
-                    </div>
+                  {message.role === 'assistant' && message.openRoute && (
+                    <button
+                      onClick={() => { setChatOpen(false); navigate(message.openRoute!.route); }}
+                      className="press-feedback mt-3 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
+                      style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 20px ${theme.accent}33` }}
+                    >
+                      <ArrowRight size={14} /> {message.openRoute.label}
+                    </button>
                   )}
 
                   {message.role === 'assistant' && message.citations && message.citations.length > 0 && (
@@ -1135,6 +1526,27 @@ export default function AIChatDrawer() {
                     </div>
                   )}
 
+                  {message.role === 'assistant' && !message.agentJobId && message.content.trim() && !(isLastAssistant && loading) && (
+                    <div className={`mt-3 flex flex-wrap gap-1.5 transition-opacity duration-150 ${isLastAssistant ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+                      {([
+                        { key: 'copy', label: 'Copiază', icon: <Copy size={12} />, onClick: () => void copyMessageToClipboard(message.content) },
+                        { key: 'flashcard', label: 'Flashcard', icon: <CreditCard size={12} />, onClick: () => saveAnswerAsFlashcard(index) },
+                        { key: 'quiz', label: 'Fă quiz', icon: <ListChecks size={12} />, onClick: () => makeQuizFromAnswer(index) },
+                        { key: 'regen', label: 'Regenerează', icon: <RotateCcw size={12} />, onClick: () => regenerateAnswer(index) },
+                      ] as const).map((action) => (
+                        <button
+                          key={action.key}
+                          onClick={action.onClick}
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors hover:opacity-80"
+                          style={{ background: theme.surface, color: theme.text3, border: `1px solid ${theme.border}` }}
+                        >
+                          {action.icon}
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {isLastAssistant && message.suggestions && message.suggestions.length > 0 && !loading && (
                     <div className="mt-4 flex flex-wrap gap-2">
                       {message.suggestions.map((suggestion) => (
@@ -1155,12 +1567,18 @@ export default function AIChatDrawer() {
           })}
 
           {loading && threadMessages[threadMessages.length - 1]?.role === 'user' && (
-            <div className="flex justify-start">
+            <div className="flex items-start gap-2.5 justify-start">
+              <div className="mt-0.5">
+                <AIOrb theme={theme} size={26} active calm={calmMotion} />
+              </div>
               <div
-                className="rounded-[22px] border p-4"
+                className="flex items-center gap-2.5 rounded-[22px] border px-4 py-3"
                 style={{ background: theme.surface2, borderColor: theme.border }}
               >
-                <Loader2 size={18} className="animate-spin opacity-40" />
+                <Loader2 size={16} className="animate-spin" style={{ color: theme.accent }} />
+                <span className="text-[13px] font-semibold" style={{ color: theme.text2 }}>
+                  {thinkingPhase ?? 'Mă gândesc…'}
+                </span>
               </div>
             </div>
           )}
@@ -1236,17 +1654,7 @@ export default function AIChatDrawer() {
               <div className="sheet-handle" />
               <div className="relative z-10 flex h-full flex-col">
                 <div className="flex items-center gap-3 border-b px-5 py-4" style={{ borderColor: theme.border }}>
-                  <div
-                    className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[18px] shadow-xl"
-                    style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff' }}
-                  >
-                    <Bot size={22} />
-                    <motion.div
-                      animate={calmMotion ? undefined : { x: ['-100%', '200%'] }}
-                      transition={calmMotion ? undefined : { repeat: Infinity, duration: 2.4, ease: 'linear' }}
-                      className="absolute inset-0 bg-white/20 skew-x-[-20deg]"
-                    />
-                  </div>
+                  <AIOrb theme={theme} size={42} active={loading} calm={calmMotion} />
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -1596,29 +2004,57 @@ export default function AIChatDrawer() {
                     </div>
                     <div className="flex items-center justify-between gap-2 px-3 py-1.5">
                       <div className="flex items-center gap-1.5 overflow-x-auto min-w-0">
-                        {CHAT_MODES.map((entry) => {
-                          const active = entry.id === mode;
-                          return (
+                        {!modePickerOpen ? (
+                          <button
+                            onClick={() => setModePickerOpen(true)}
+                            className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all"
+                            style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}30` }}
+                            title="Modul răspunsului — apasă pentru a alege manual"
+                          >
+                            <Sparkles size={11} />
+                            {manualMode ? activeModeConfig.shortLabel : 'Auto'}
+                            <ChevronDown size={11} />
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-1 overflow-x-auto">
                             <button
-                              key={entry.id}
-                              onClick={() => { setMode(entry.id); setManualMode(true); }}
-                              className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all"
+                              onClick={() => { setManualMode(false); setModePickerOpen(false); }}
+                              className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all"
                               style={{
-                                background: active ? `${theme.accent}20` : 'transparent',
-                                color: active ? theme.accent : theme.text3,
-                                border: `1px solid ${active ? `${theme.accent}40` : 'transparent'}`,
+                                background: !manualMode ? `${theme.accent}20` : 'transparent',
+                                color: !manualMode ? theme.accent : theme.text3,
+                                border: `1px solid ${!manualMode ? `${theme.accent}40` : 'transparent'}`,
                               }}
                             >
-                              {entry.shortLabel}
+                              <Sparkles size={10} /> Auto
                             </button>
-                          );
-                        })}
+                            {CHAT_MODES.map((entry) => {
+                              const active = manualMode && entry.id === mode;
+                              return (
+                                <button
+                                  key={entry.id}
+                                  onClick={() => { setMode(entry.id); setManualMode(true); setModePickerOpen(false); }}
+                                  className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all"
+                                  style={{
+                                    background: active ? `${theme.accent}20` : 'transparent',
+                                    color: active ? theme.accent : theme.text3,
+                                    border: `1px solid ${active ? `${theme.accent}40` : 'transparent'}`,
+                                  }}
+                                >
+                                  {entry.shortLabel}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                       {messages.length > 0 && (
                         <button
                           onClick={() => {
                             setMessages([]);
                             setActiveCitationKey(null);
+                            conversationSummaryRef.current = '';
+                            summaryCoveredCountRef.current = 0;
                             try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* ignore */ }
                           }}
                           className="shrink-0 text-[10px] font-semibold transition-opacity hover:opacity-80"

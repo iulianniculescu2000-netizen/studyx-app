@@ -113,21 +113,38 @@ function splitIntoSentences(text: string) {
     .filter((entry) => entry.length >= 30);
 }
 
+/**
+ * Match a FACT_PATTERN ignoring Romanian diacritics, then return the clause that
+ * follows it — sliced from the ORIGINAL sentence so the answer keeps diacritics.
+ * Stripping NFD combining marks preserves 1:1 character offsets (each precomposed
+ * letter → one base letter), so the ASCII match index maps back exactly.
+ */
 function extractTail(sentence: string, pattern: RegExp) {
-  const match = sentence.match(pattern);
+  const ascii = stripDiacritics(sentence);
+  const match = ascii.match(pattern);
   if (!match || typeof match.index !== 'number') return '';
   return sentence.slice(match.index + match[0].length).replace(/^[:\s-]+/, '').replace(/[.]+$/, '').trim();
 }
 
-function fallbackPrompt(topic: string) {
-  return `Care afirmație este corectă despre ${topic}?`;
-}
-
-function summaryFromSentence(sentence: string) {
-  const cleaned = sentence.replace(/[.]+$/, '');
-  const parts = cleaned.split(/\s*[;:,]\s*/).map(trimDecorators).filter(Boolean);
-  const candidate = parts.find((part) => countWords(part) >= 3) ?? cleaned;
-  return shortenOption(candidate, 15, 110);
+/**
+ * Rejects sentence fragments that read as broken/unprofessional as a quiz
+ * option: unbalanced parentheses ("…gălbuie (ex"), a dangling opener, a trailing
+ * connector word (clause cut mid-thought), or trailing punctuation.
+ */
+function isCleanOptionText(text: string): boolean {
+  const t = normalizeText(text);
+  if (!t) return false;
+  const open = (t.match(/\(/g) ?? []).length;
+  const close = (t.match(/\)/g) ?? []).length;
+  if (open !== close) return false;
+  if (/\($/.test(t)) return false;
+  // Truncated abbreviation like "(ex", "(de ex", "(vezi …" with no closing paren.
+  if (/\(\s*(?:ex|de|cf|vezi|fig)\b[^)]*$/i.test(t)) return false;
+  // Clause cut mid-thought on a connector.
+  if (/\b(?:prin|cu|care|iar|unde|de|in|într|la|pe|si|și|sau|ca|spre|din|sub|fără|fara|după|dupa|pentru)\s*$/i.test(t)) return false;
+  // Must not end on dangling punctuation.
+  if (/[,;:\-–(]$/.test(t)) return false;
+  return true;
 }
 
 function extractFactCandidates(chunk: StudioChunk): FactCandidate[] {
@@ -136,10 +153,11 @@ function extractFactCandidates(chunk: StudioChunk): FactCandidate[] {
   const facts: FactCandidate[] = [];
 
   sentences.forEach((sentence) => {
+    const asciiSentence = stripDiacritics(sentence);
     FACT_PATTERNS.forEach(({ kind, pattern, buildPrompt }) => {
-      if (!pattern.test(sentence)) return;
+      if (!pattern.test(asciiSentence)) return;
       const tail = shortenOption(extractTail(sentence, pattern), 14, 100);
-      if (!tail || countWords(tail) < 2) return;
+      if (!tail || countWords(tail) < 2 || !isCleanOptionText(tail)) return;
       facts.push({
         topic,
         kind,
@@ -148,15 +166,10 @@ function extractFactCandidates(chunk: StudioChunk): FactCandidate[] {
       });
     });
 
-    const fallbackSummary = summaryFromSentence(sentence);
-    if (fallbackSummary && countWords(fallbackSummary) >= 3) {
-      facts.push({
-        topic,
-        kind: 'summary',
-        prompt: fallbackPrompt(topic),
-        answer: fallbackSummary,
-      });
-    }
+    // NOTE: the old generic "Care afirmație este corectă despre {topic}?" summary
+    // fallback was removed — it paired a vague prompt with a raw sentence
+    // fragment (often truncated mid-word, e.g. "…gălbuie (ex"), which produced
+    // unprofessional questions. We now only keep pattern-matched, clean facts.
   });
 
   return facts.filter((fact, index, all) =>
@@ -181,8 +194,8 @@ function buildOptionId(questionIndex: number, optionIndex: number) {
   return `studio-${questionIndex}-${optionIndex}-${crypto.randomUUID().replace(/-/g, '').slice(0, 6)}`;
 }
 
-function buildExplanation(topic: string, sourceName: string) {
-  return `Întrebarea este construită din fragmentul despre "${topic}" din documentul "${sourceName}". Varianta corectă urmărește exact ideea exprimată în curs, iar celelalte opțiuni provin din concepte apropiate, dar diferite.`;
+function buildExplanation(topic: string, _sourceName: string) {
+  return `Varianta corectă urmărește exact ideea-cheie despre „${topic}". Celelalte opțiuni provin din concepte apropiate, dar diferite — compară-le cu mecanismul central înainte să alegi.`;
 }
 
 function buildTags(topic: string, sourceName: string) {
@@ -264,16 +277,34 @@ export function buildStudioContextPayload({
 }
 
 export function isStudioQuestionQualityAcceptable(question: Question, sourceName: string) {
-  if (question.options.length !== 4) return false;
-  if (question.options.filter((option) => option.isCorrect).length !== 1) return false;
+  const correctCount = question.options.filter((option) => option.isCorrect).length;
+  if (question.multipleCorrect || correctCount > 1) {
+    // Complement multiplu: 4-6 opțiuni cu 2-3 răspunsuri corecte.
+    if (question.options.length < 4 || question.options.length > 6) return false;
+    if (correctCount < 2 || correctCount > 3) return false;
+  } else {
+    // Complement simplu: exact 4 opțiuni, exact 1 corect.
+    if (question.options.length !== 4) return false;
+    if (correctCount !== 1) return false;
+  }
   if (question.text.length < 18 || question.text.length > 180) return false;
   if (isBadStudioPrompt(question.text, sourceName)) return false;
+  if (!isCleanOptionText(question.text)) return false;
+
+  // The correct answer must not be copied verbatim into the question stem — that
+  // happened when a bad chunk topic ("Se disting două tipuri") became both the
+  // question subject and the correct option.
+  const correctText = normalizeText(question.options.find((option) => option.isCorrect)?.text ?? '');
+  if (correctText && normalizeText(question.text).toLowerCase().includes(correctText.toLowerCase())) {
+    return false;
+  }
 
   return question.options.every((option) => {
     const text = normalizeText(option.text);
     if (!text || text.length > 120) return false;
-    if (countWords(text) > 18) return false;
+    if (countWords(text) < 2 || countWords(text) > 18) return false;
     if (isBadStudioPrompt(text, sourceName)) return false;
+    if (!isCleanOptionText(text)) return false;
     return true;
   });
 }

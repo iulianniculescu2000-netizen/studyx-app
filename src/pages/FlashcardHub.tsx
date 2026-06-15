@@ -12,8 +12,10 @@ import { notesToFlashcards } from '../lib/groq';
 import { buildMistakeFlashcardQuiz } from '../lib/adaptiveStudy';
 import { extractCaptionedImagesFromPdf, renderPdfPagesAsImages, renderPdfPagesWithText, resizeImageFile, type CaptionedPdfImage, type PdfFlashcardPageSnapshot } from '../lib/imageProcessing';
 import { flashcardImageKey, flashcardImageRef, putFlashcardImage } from '../lib/flashcardImageStore';
+import { isFlashcardDeck } from '../lib/deckKind';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
-import type { Difficulty, Question, QuizColor } from '../types';
+import type { Difficulty, Question } from '../types';
+import { suggestFolderAppearance } from '../lib/folderAppearance';
 import { FlashcardDeckGrid, FlashcardHubActions } from './flashcard-hub/sections';
 
 function generateId() {
@@ -193,6 +195,7 @@ export default function FlashcardHub() {
   const [photoImporting, setPhotoImporting] = useState(false);
   const [photoError, setPhotoError] = useState('');
   const [aiProgress, setAiProgress] = useState('');
+  const [libraryGenerating, setLibraryGenerating] = useState(false);
   const [targetFolderId, setTargetFolderId] = useState<string>(() => {
     if (typeof localStorage === 'undefined') return '__uncategorized__';
     return localStorage.getItem(LAST_FOLDER_LS_KEY) ?? '__uncategorized__';
@@ -212,11 +215,11 @@ export default function FlashcardHub() {
     try { localStorage.setItem(LAST_FOLDER_LS_KEY, folderId); } catch { /* ignore */ }
   };
 
-  // Create a folder (or subfolder) inline from the flashcard hub.
+  // Create a folder (or subfolder) inline from the flashcard hub — with a
+  // name-aware icon/color so it looks intentional, not a generic 📚.
   const handleCreateFolder = (name: string, parentId: string | null): string => {
-    const palette: QuizColor[] = ['purple', 'blue', 'teal', 'green', 'pink', 'orange', 'red'];
-    const color = palette[folders.length % palette.length];
-    return addFolder(name, parentId ? '📁' : '📚', color, parentId);
+    const appearance = suggestFolderAppearance(name);
+    return addFolder(name, parentId ? '📁' : appearance.emoji, appearance.color, parentId);
   };
 
   // One card per captioned course photo (front = image, back = verbatim caption).
@@ -237,6 +240,7 @@ export default function FlashcardHub() {
       color: selectedFolder?.color ?? 'pink',
       category: selectedFolder?.name ?? 'Atlas vizual',
       folderId: selectedFolder?.id ?? null,
+      kind: 'flashcard',
       shuffleQuestions: true,
       shuffleAnswers: false,
       tags: ['ai', 'foto', 'atlas'],
@@ -277,7 +281,7 @@ export default function FlashcardHub() {
         source.name === sourceName && source.charCount === text.trim().length && source.indexStatus === 'ready'
       ));
       if (!sourceAlreadyIndexed && text.trim().length >= 300) {
-        void addKnowledgeSource(sourceName, text, sourceName.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt').catch(() => {});
+        void addKnowledgeSource(sourceName, text, sourceName.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt').catch((e) => console.error('[StudyX] KB indexing failed for', sourceName, e));
       }
 
       addQuiz({
@@ -288,6 +292,7 @@ export default function FlashcardHub() {
         color: selectedFolder?.color ?? 'purple',
         category: selectedFolder?.name ?? 'AI Flashcards',
         folderId: selectedFolder?.id ?? null,
+        kind: 'flashcard',
         shuffleQuestions: true,
         shuffleAnswers: true,
         tags: ['ai', 'pdf'],
@@ -300,6 +305,71 @@ export default function FlashcardHub() {
       setAiError(error instanceof Error ? error.message : 'Eroare la generare.');
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  // Already-indexed library courses, ready to turn into text flashcards with one
+  // click — no need to re-import the PDF. This is the practical "flashcarduri
+  // inteligente pe subpuncte" flow that previously only lived in the AI chat.
+  const readyLibrarySources = useMemo(
+    () => knowledgeSources.filter((source) => source.indexStatus === 'ready'),
+    [knowledgeSources],
+  );
+
+  const generateDeckFromLibrary = async (sourceId: string) => {
+    const source = readyLibrarySources.find((entry) => entry.id === sourceId);
+    if (!source || libraryGenerating || aiLoading) return;
+
+    setLibraryGenerating(true);
+    setAiError('');
+    setAiProgress(`Citesc „${source.name}" din bibliotecă...`);
+
+    try {
+      const { getVaultChunksBySource } = await import('../ai/vectorStore');
+      const chunks = await getVaultChunksBySource(sourceId);
+      let text = '';
+      for (const chunk of chunks) {
+        text += (text ? '\n\n' : '') + chunk.text;
+        if (text.length > 24000) break;
+      }
+      if (text.trim().length < 80) {
+        throw new Error('Cursul nu are destul text indexat pentru flashcarduri.');
+      }
+
+      setAiProgress('AI generează cardurile pe subpuncte...');
+      const generated = await notesToFlashcards(text, {
+        count: aiCount,
+        avoidFronts: existingFlashcardFronts,
+        sourceName: source.name,
+      });
+      const questions = generated.map((entry) => buildFlashcardQuestion(entry.front, entry.back));
+      if (questions.length === 0) {
+        throw new Error('AI nu a putut genera flashcarduri din acest curs.');
+      }
+
+      const id = generateId();
+      addQuiz({
+        id,
+        title: `Flashcarduri · ${source.name.replace(/\.[^.]+$/, '')}`,
+        description: `${questions.length} flashcarduri AI pe subpunctele cursului „${source.name}".`,
+        emoji: '🤖',
+        color: selectedFolder?.color ?? 'purple',
+        category: selectedFolder?.name ?? 'AI Flashcards',
+        kind: 'flashcard',
+        folderId: selectedFolder?.id ?? null,
+        shuffleQuestions: true,
+        shuffleAnswers: true,
+        tags: ['ai', 'flashcard', 'biblioteca'],
+        questions,
+        createdAt: Date.now(),
+      });
+
+      navigate(`/flashcards/session/${id}?mode=all`);
+    } catch (error: unknown) {
+      setAiError(error instanceof Error ? error.message : 'Eroare la generarea din bibliotecă.');
+    } finally {
+      setLibraryGenerating(false);
+      setAiProgress('');
     }
   };
 
@@ -375,6 +445,7 @@ export default function FlashcardHub() {
         color: selectedFolder?.color ?? 'teal',
         category: selectedFolder?.name ?? 'Import',
         folderId: selectedFolder?.id ?? null,
+        kind: 'flashcard',
         shuffleQuestions: true,
         shuffleAnswers: false,
         tags: ['anki', 'import'],
@@ -508,6 +579,7 @@ export default function FlashcardHub() {
         color: selectedFolder?.color ?? 'teal',
         category: selectedFolder?.name ?? category,
         folderId: selectedFolder?.id ?? null,
+        kind: 'flashcard',
         shuffleQuestions: false,
         shuffleAnswers: false,
         tags: ['flashcard', 'image', 'visual'],
@@ -586,6 +658,7 @@ export default function FlashcardHub() {
       color: selectedFolder?.color ?? 'green',
       category: selectedFolder?.name ?? 'Flashcards',
       folderId: selectedFolder?.id ?? null,
+      kind: 'flashcard',
       shuffleQuestions: false,
       shuffleAnswers: false,
       tags: ['flashcard', 'deck', 'manual', 'quick'],
@@ -602,22 +675,7 @@ export default function FlashcardHub() {
   const decks = useMemo(() => {
     return quizzes
       .filter((quiz) => !quiz.archived && quiz.questions.length > 0)
-      .filter((quiz) => {
-        const hasFlashcardTags = (quiz.tags ?? []).some((tag) => (
-          tag.toLowerCase().includes('flashcard')
-          || tag.toLowerCase().includes('ai')
-          || tag.toLowerCase().includes('anki')
-          || tag.toLowerCase().includes('deck')
-        ));
-
-        if (hasFlashcardTags) return true;
-
-        const flashcardQuestions = quiz.questions.filter((question) => (
-          question.options.length === 1 && !question.multipleCorrect
-        )).length;
-
-        return flashcardQuestions > quiz.questions.length * 0.7;
-      })
+      .filter((quiz) => isFlashcardDeck(quiz))
       .map((quiz) => {
         const total = quiz.questions.length;
         const stats = quiz.questions.map((question) => questionStats[`${quiz.id}:${question.id}`]);
@@ -774,9 +832,12 @@ export default function FlashcardHub() {
           totalDue={totalDue}
           totalMastered={totalMastered}
           targetFolderId={targetFolderId}
+          librarySources={readyLibrarySources.map((source) => ({ id: source.id, name: source.name }))}
+          libraryGenerating={libraryGenerating}
           onAiCountChange={setAiCount}
           onCreateFolder={handleCreateFolder}
           onCsvImport={handleCsvImport}
+          onLibraryGenerate={generateDeckFromLibrary}
           onMistakeDeckCreate={createMistakeDeck}
           onPhotoImport={handlePhotoImport}
           onPdfImport={handlePdfImport}

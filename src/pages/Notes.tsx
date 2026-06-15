@@ -92,12 +92,13 @@ export default function Notes() {
                       emoji: '🃏',
                       color: 'purple' as const,
                       category: 'Notițe',
+                      kind: 'flashcard' as const,
+                      tags: ['flashcard', 'notițe'],
                       questions: pairs.map((p, i) => ({
                         id: `fc-${i}-${Date.now()}`,
                         text: p.front,
                         options: [
                           { id: 'a', text: p.back, isCorrect: true },
-                          { id: 'b', text: 'Nu știu', isCorrect: false },
                         ],
                         explanation: p.back,
                         tags: ['flashcard', 'notițe'],
@@ -105,7 +106,7 @@ export default function Notes() {
                       createdAt: Date.now(),
                     };
                     addQuiz(newQuiz);
-                    navigate(`/quiz/${newQuiz.id}`);
+                    navigate(`/flashcards/session/${newQuiz.id}?mode=all`);
                   } catch (e: unknown) {
                     const error = e instanceof Error ? e : new Error('Eroare necunoscută.');
                     setAiError(error.message);

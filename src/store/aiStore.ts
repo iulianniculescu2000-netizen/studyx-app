@@ -7,10 +7,11 @@ export type AIModel =
   | 'llama-3.3-70b-versatile'
   | 'llama-3.1-8b-instant'
   | 'mixtral-8x7b-32768'
-  | 'deepseek-chat'
-  | 'deepseek-reasoner';
+  | 'gemini-2.5-flash'
+  | 'gemini-2.0-flash'
+  | 'gemini-2.5-pro';
 
-export type AIProvider = 'groq' | 'deepseek';
+export type AIProvider = 'groq' | 'google';
 
 export type AIKnowledgeSourceType = 'txt' | 'pdf' | 'docx' | 'image';
 export type AIKnowledgeSourceStatus = 'indexing' | 'ready' | 'error';
@@ -19,6 +20,8 @@ export interface AILibraryFolder {
   id: string;
   name: string;
   emoji: string;
+  /** null for a top-level folder; otherwise the id of the parent folder. */
+  parentId: string | null;
   createdAt: number;
 }
 
@@ -93,7 +96,10 @@ export interface AIState {
   currentRequest: string | null;
   lastResponse: AIResponse | null;
   error: string | null;
+  /** Active provider's key (kept in sync with providerKeys[provider]). */
   apiKey: string;
+  /** Per-provider keys so switching Groq↔Google keeps each key intact. */
+  providerKeys: Partial<Record<AIProvider, string>>;
   provider: AIProvider;
   model: AIModel;
   hasKey: boolean;
@@ -124,7 +130,7 @@ export interface AIActions {
     options?: AddKnowledgeSourceOptions,
   ) => Promise<AIKnowledgeSource>;
   removeKnowledgeSource: (sourceId: string) => Promise<void>;
-  addLibraryFolder: (name: string, emoji?: string) => string;
+  addLibraryFolder: (name: string, emoji?: string, parentId?: string | null) => string;
   renameLibraryFolder: (folderId: string, name: string) => void;
   deleteLibraryFolder: (folderId: string) => void;
   moveSourceToLibraryFolder: (sourceId: string, folderId: string | null) => void;
@@ -141,18 +147,21 @@ export interface AIActions {
 const DEFAULT_MODEL: AIModel = 'llama-3.3-70b-versatile';
 const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
   groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
-  deepseek: ['deepseek-reasoner', 'deepseek-chat'],
+  google: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
 };
 
 function isValidProviderKey(provider: AIProvider, apiKey: string) {
   const trimmed = apiKey.trim();
   if (!trimmed) return false;
+  // Groq keys are reliably prefixed with "gsk_".
   if (provider === 'groq') return trimmed.startsWith('gsk_') && trimmed.length > 20;
-  return trimmed.startsWith('sk-') && trimmed.length > 20;
+  // Google/Gemini keys vary in prefix (AIza, AQ., …), so don't gate on a prefix.
+  // Accept any substantial key that isn't a Groq key; the live API check decides.
+  return trimmed.length >= 20 && !trimmed.startsWith('gsk_');
 }
 
 function getDefaultModelForProvider(provider: AIProvider): AIModel {
-  return provider === 'deepseek' ? 'deepseek-reasoner' : DEFAULT_MODEL;
+  return provider === 'google' ? 'gemini-2.5-flash' : DEFAULT_MODEL;
 }
 
 function normalizeProviderModel(provider: AIProvider, model: AIModel | string | undefined): AIModel {
@@ -168,6 +177,7 @@ const createDefaultState = (): AIState => ({
   lastResponse: null,
   error: null,
   apiKey: '',
+  providerKeys: {},
   provider: 'groq',
   model: DEFAULT_MODEL,
   hasKey: false,
@@ -323,19 +333,23 @@ export const useAIStore = create<AIState & AIActions>()(
         setApiKey: (apiKey) => {
           const trimmed = apiKey.trim();
           const provider = get().provider;
-          set({
+          set((state) => ({
             apiKey: trimmed,
+            providerKeys: { ...state.providerKeys, [provider]: trimmed },
             hasKey: isValidProviderKey(provider, trimmed),
-          }, false, 'ai/setApiKey');
+          }), false, 'ai/setApiKey');
         },
 
         setProvider: (provider) => {
           const nextModel = getDefaultModelForProvider(provider);
-          const apiKey = get().apiKey;
+          // Load the key already saved for this provider so the user doesn't
+          // have to re-enter it every time they switch Groq↔Google.
+          const nextKey = get().providerKeys[provider] ?? '';
           set({
             provider,
             model: nextModel,
-            hasKey: isValidProviderKey(provider, apiKey),
+            apiKey: nextKey,
+            hasKey: isValidProviderKey(provider, nextKey),
           }, false, 'ai/setProvider');
         },
 
@@ -426,13 +440,13 @@ export const useAIStore = create<AIState & AIActions>()(
           get().updateCacheSize();
         },
 
-        addLibraryFolder: (name, emoji = '📚') => {
+        addLibraryFolder: (name, emoji = '📚', parentId = null) => {
           const trimmed = name.trim();
           const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
           if (!trimmed) return id;
           set((state) => ({
             libraryFolders: [
-              { id, name: trimmed, emoji, createdAt: Date.now() },
+              { id, name: trimmed, emoji, parentId: parentId ?? null, createdAt: Date.now() },
               ...state.libraryFolders,
             ],
           }), false, 'ai/addLibraryFolder');
@@ -450,12 +464,27 @@ export const useAIStore = create<AIState & AIActions>()(
         },
 
         deleteLibraryFolder: (folderId) => {
-          set((state) => ({
-            libraryFolders: state.libraryFolders.filter((folder) => folder.id !== folderId),
-            knowledgeSources: state.knowledgeSources.map((source) => (
-              source.folderId === folderId ? { ...source, folderId: null } : source
-            )),
-          }), false, 'ai/deleteLibraryFolder');
+          set((state) => {
+            // Collect the folder and all of its descendants so deleting a parent
+            // also removes its subfolders (their documents fall back to Neclasificate).
+            const toDelete = new Set<string>([folderId]);
+            let changed = true;
+            while (changed) {
+              changed = false;
+              for (const folder of state.libraryFolders) {
+                if (folder.parentId && toDelete.has(folder.parentId) && !toDelete.has(folder.id)) {
+                  toDelete.add(folder.id);
+                  changed = true;
+                }
+              }
+            }
+            return {
+              libraryFolders: state.libraryFolders.filter((folder) => !toDelete.has(folder.id)),
+              knowledgeSources: state.knowledgeSources.map((source) => (
+                source.folderId && toDelete.has(source.folderId) ? { ...source, folderId: null } : source
+              )),
+            };
+          }, false, 'ai/deleteLibraryFolder');
         },
 
         moveSourceToLibraryFolder: (sourceId, folderId) => {
@@ -593,6 +622,7 @@ export const useAIStore = create<AIState & AIActions>()(
         name: 'ai-store',
         partialize: (state) => ({
           apiKey: state.apiKey,
+          providerKeys: state.providerKeys,
           provider: state.provider,
           model: state.model,
           hasKey: state.hasKey,
@@ -603,11 +633,31 @@ export const useAIStore = create<AIState & AIActions>()(
         }),
         onRehydrateStorage: () => (state) => {
           if (!state) return;
+          // Migrate users from the removed DeepSeek provider to Groq; their old
+          // sk- key won't be a Google key, so drop it and require reconfig.
+          if ((state.provider as string) === 'deepseek') {
+            state.provider = 'groq';
+            state.apiKey = '';
+          }
           state.provider = state.provider ?? 'groq';
           state.model = normalizeProviderModel(state.provider, state.model);
+          // Migrate the old single-key storage into per-provider keys. Seed the
+          // active provider's slot from the legacy key (only if it's the right
+          // format for that provider), then make apiKey reflect the active slot.
+          const migratedKeys: Partial<Record<AIProvider, string>> = { ...(state.providerKeys ?? {}) };
+          if (state.apiKey && migratedKeys[state.provider] === undefined) {
+            if (isValidProviderKey(state.provider, state.apiKey)) {
+              migratedKeys[state.provider] = state.apiKey;
+            }
+          }
+          state.providerKeys = migratedKeys;
+          state.apiKey = migratedKeys[state.provider] ?? '';
           state.hasKey = isValidProviderKey(state.provider, state.apiKey);
           state.isHydrated = true;
-          state.libraryFolders = state.libraryFolders ?? [];
+          state.libraryFolders = (state.libraryFolders ?? []).map((folder) => ({
+            ...folder,
+            parentId: folder.parentId ?? null,
+          }));
           state.cache.size = state.knowledgeSources.reduce((sum, source) => sum + source.chunkCount, 0);
           state.studyMemory = state.studyMemory ?? {};
         },

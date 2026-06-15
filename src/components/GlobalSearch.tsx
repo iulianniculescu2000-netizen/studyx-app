@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useUIStore } from '../store/uiStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
+import { isFlashcardDeck } from '../lib/deckKind';
 import { type Theme } from '../theme/themes';
 
 interface SearchResult {
@@ -97,7 +98,7 @@ export default function GlobalSearch() {
         || normalizeSearchText(quiz.category).includes(normalizedQuery)
         || (quiz.tags ?? []).some((tag) => normalizeSearchText(tag).includes(normalizedQuery))
       ) {
-        const isFlashcard = (quiz.tags ?? []).includes('flashcard');
+        const isFlashcard = isFlashcardDeck(quiz);
         const quizHref = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
         out.push({
           type: 'quiz',
@@ -112,7 +113,7 @@ export default function GlobalSearch() {
       }
 
       for (const question of quiz.questions) {
-        const isFlashcard = (quiz.tags ?? []).includes('flashcard');
+        const isFlashcard = isFlashcardDeck(quiz);
         const quizHref = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
         if (normalizeSearchText(question.text).includes(normalizedQuery)) {
           out.push({

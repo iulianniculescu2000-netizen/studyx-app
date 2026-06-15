@@ -12,6 +12,8 @@ import { Brain, ChevronRight, Check, X, RotateCcw, Home, Sparkles, Trophy, LogOu
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
+import { cleanQuestionExplanation } from '../helpers/quizAi';
+import { isFlashcardDeck } from '../lib/deckKind';
 import type { Question } from '../types';
 
 interface DueItem {
@@ -30,7 +32,7 @@ function buildDueItems(
     .flatMap(s => {
       const quiz = quizzes.find(q => q.id === s.quizId);
       // Flashcard decks have their own spaced repetition in FlashcardSession — skip here
-      if (!quiz || quiz.tags?.includes('flashcard')) return [];
+      if (!quiz || isFlashcardDeck(quiz)) return [];
       const question = quiz.questions.find(q => q.id === s.questionId);
       if (!question) return [];
       return [{ quizId: quiz.id, quizTitle: quiz.title, question }];
@@ -398,7 +400,7 @@ export default function DailyReview() {
 
             {/* Explanation */}
             <AnimatePresence>
-              {revealed && current.question.explanation && (
+              {revealed && cleanQuestionExplanation(current.question.explanation) && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -406,7 +408,7 @@ export default function DailyReview() {
                   style={{ background: `${theme.accent}0C`, border: `1.5px solid ${theme.accent}25` }}>
                   <p className="text-sm" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
                     <span className="font-black uppercase tracking-widest text-[10px] block mb-2" style={{ color: theme.accent }}>💡 Explicație</span>
-                    {current.question.explanation}
+                    {cleanQuestionExplanation(current.question.explanation)}
                   </p>
                 </motion.div>
               )}

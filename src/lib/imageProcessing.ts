@@ -397,11 +397,75 @@ function collectImagePlacements(
   return placements;
 }
 
-interface PdfBox {
+export interface PdfBox {
   left: number;
   right: number;
   top: number;
   bottom: number;
+}
+
+/** True when two image rectangles are really the same photo, split across paint
+ *  ops: either they overlap, or they sit edge-to-edge as strips/tiles of one image. */
+function boxesShouldMerge(a: PdfBox, b: PdfBox, gap: number): boolean {
+  const hOverlap = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const vOverlap = Math.min(a.top, b.top) - Math.max(a.bottom, b.bottom);
+
+  // Overlap on both axes → duplicate paint (image + soft mask, re-paint, clip…).
+  if (hOverlap > 0 && vOverlap > 0) return true;
+
+  // Vertically stacked strips: share most of their width, ~zero vertical gap.
+  if (hOverlap > 0) {
+    const minWidth = Math.min(a.right - a.left, b.right - b.left);
+    const vGap = Math.max(a.bottom - b.top, b.bottom - a.top);
+    if (hOverlap >= 0.7 * minWidth && vGap <= gap) return true;
+  }
+
+  // Horizontally tiled pieces: share most of their height, ~zero horizontal gap.
+  if (vOverlap > 0) {
+    const minHeight = Math.min(a.top - a.bottom, b.top - b.bottom);
+    const hGap = Math.max(a.left - b.right, b.left - a.right);
+    if (vOverlap >= 0.7 * minHeight && hGap <= gap) return true;
+  }
+
+  return false;
+}
+
+function unionBox(a: PdfBox, b: PdfBox): PdfBox {
+  return {
+    left: Math.min(a.left, b.left),
+    right: Math.max(a.right, b.right),
+    top: Math.max(a.top, b.top),
+    bottom: Math.min(a.bottom, b.bottom),
+  };
+}
+
+/**
+ * Collapse raw image placements into one box per *visible* photo.
+ *
+ * A single clinical photo is frequently painted by several operators — the image
+ * plus its soft mask at the same spot, or a tall JPEG sliced into stacked strips.
+ * Without merging, every piece becomes its own crop, so the same photo is emitted
+ * more than once (the "dublat pozele" bug) and its caption is duplicated across
+ * the copies. Two genuinely distinct photos are separated by their "Fotografia N"
+ * label and whitespace, so the tiny gap threshold never merges them.
+ */
+export function mergeImageBoxes(boxes: PdfBox[], gap = 2): PdfBox[] {
+  const merged = boxes.map((box) => ({ ...box }));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < merged.length && !changed; i += 1) {
+      for (let j = i + 1; j < merged.length; j += 1) {
+        if (boxesShouldMerge(merged[i], merged[j], gap)) {
+          merged[i] = unionBox(merged[i], merged[j]);
+          merged.splice(j, 1);
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+  return merged;
 }
 
 /** The unit square [0,1]² transformed by the image CTM gives the placement rectangle in PDF space. */
@@ -437,6 +501,35 @@ function cleanCaption(value: string): string {
     .replace(/\s+/g, ' ')
     .replace(/\s+([,.;:!?])/g, '$1')
     .trim();
+}
+
+/**
+ * Captions extracted by vertical band often swallow text from the next
+ * paragraph (treatment, dosage…) and end mid-sentence ("…Dapsona este").
+ * Keep only the complete sentences that describe the photo and drop a trailing
+ * incomplete fragment, so the flashcard back is the clinical description alone.
+ */
+function trimToCompleteCaption(value: string, maxLen = 320): string {
+  const clean = cleanCaption(value);
+  if (!clean) return '';
+
+  // Split into sentences, keeping their terminators.
+  const sentences = clean.match(/[^.!?]+[.!?]+/g);
+  if (!sentences || sentences.length === 0) {
+    // No sentence terminator at all — cap length at a word boundary.
+    if (clean.length <= maxLen) return clean;
+    const cut = clean.lastIndexOf(' ', maxLen);
+    return `${clean.slice(0, cut > 40 ? cut : maxLen).trim()}…`;
+  }
+
+  let out = '';
+  for (const sentence of sentences) {
+    const candidate = `${out} ${sentence}`.trim();
+    if (out && candidate.length > maxLen) break;
+    out = candidate;
+    if (out.length >= maxLen) break;
+  }
+  return out.trim();
 }
 
 interface TextItemBox {
@@ -530,11 +623,12 @@ export async function extractCaptionedImagesFromPdf(
         .sort((a, b) => b.y - a.y);
 
       const opList = await page.getOperatorList();
-      const placements = collectImagePlacements(opList, ops)
-        .map((ctm) => placementToPdfBox(ctm))
-        // Ignore decorative slivers (rules, page-wide thin bands).
-        .filter((box) => (box.right - box.left) > 40 && (box.top - box.bottom) > 40)
-        .sort((a, b) => b.top - a.top);
+      const placements = mergeImageBoxes(
+        collectImagePlacements(opList, ops)
+          .map((ctm) => placementToPdfBox(ctm))
+          // Ignore decorative slivers (rules, page-wide thin bands).
+          .filter((box) => (box.right - box.left) > 40 && (box.top - box.bottom) > 40),
+      ).sort((a, b) => b.top - a.top);
 
       if (placements.length === 0) {
         page.cleanup();
@@ -570,13 +664,19 @@ export async function extractCaptionedImagesFromPdf(
           ? fotoLabels[labelIndex + 1].y
           : 0;
 
-        // Caption = right-column text within this photo's vertical band.
-        const caption = cleanCaption(
+        // Caption = right-column text beside this photo. Constrain the vertical
+        // range to the image's own span (plus a small margin below) so we don't
+        // swallow the following treatment/dosage paragraph that sits lower on
+        // the page — the source of garbled, merged captions.
+        const imageHeight = Math.max(1, box.top - box.bottom);
+        const captionTop = Math.min(bandTop - 1, box.top + imageHeight * 0.1);
+        const captionBottom = Math.max(bandBottom + 1, box.bottom - imageHeight * 0.3);
+        const caption = trimToCompleteCaption(
           items
             .filter((item) => (
               item.x > box.right - 4
-              && item.y < bandTop - 1
-              && item.y > bandBottom + 1
+              && item.y < captionTop
+              && item.y > captionBottom
             ))
             .sort((a, b) => b.y - a.y || a.x - b.x)
             .map((item) => item.str)
@@ -602,10 +702,10 @@ export async function extractCaptionedImagesFromPdf(
             const { useAIStore } = await import('../store/aiStore');
             if (supportsVision(useAIStore.getState().provider)) {
               const cropDataUrl = cropCanvasToDataUrl(canvas, cropBox, mimeType, quality);
-              finalCaption = await groqVisionRequest(
+              finalCaption = trimToCompleteCaption(await groqVisionRequest(
                 cropDataUrl,
                 'Ești asistent medical. Descrie pe scurt (1-3 propoziții) ce arată această imagine clinică/dermatologică. Fii specific și concis.',
-              );
+              ));
             }
           } catch {
             // Vision failed — skip image rather than produce empty caption.

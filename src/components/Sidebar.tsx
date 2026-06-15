@@ -22,6 +22,9 @@ import { useViewportProfile } from '../hooks/useViewportProfile';
 import ConfirmDialog from './ConfirmDialog';
 import Portal from './Portal';
 import Logo from './Logo';
+import ThemedSelect from './ThemedSelect';
+import { isFlashcardDeck } from '../lib/deckKind';
+import { suggestFolderAppearance } from '../lib/folderAppearance';
 import type { QuizColor } from '../types';
 
 const AISettings = lazy(() => import('./AISettings'));
@@ -195,6 +198,20 @@ function NewFolderModal({
   const [emoji, setEmoji] = useState('\u{1F4C1}');
   const [color, setColor] = useState<QuizColor>('blue');
   const [parentId, setParentId] = useState<string>(initialParentId ?? '__root__');
+  // Until the user picks an icon/color themselves, mirror a name-aware suggestion.
+  const [appearanceTouched, setAppearanceTouched] = useState(false);
+
+  const handleNameChange = (value: string) => {
+    setName(value);
+    if (!appearanceTouched && value.trim()) {
+      const suggestion = suggestFolderAppearance(value);
+      setEmoji(suggestion.emoji);
+      setColor(suggestion.color);
+    }
+  };
+
+  // Always show the active emoji in the grid so a smart suggestion (e.g. ❤️) is highlighted.
+  const emojiOptions = Array.from(new Set([emoji, ...FOLDER_EMOJIS]));
 
   const handleCreate = () => {
     if (!name.trim()) return;
@@ -257,8 +274,8 @@ function NewFolderModal({
           <div style={{ marginBottom: 22 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Pictograma</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {FOLDER_EMOJIS.map((e) => (
-                <button key={e} onClick={() => setEmoji(e)}
+              {emojiOptions.map((e) => (
+                <button key={e} onClick={() => { setEmoji(e); setAppearanceTouched(true); }}
                   aria-label={`Alege pictograma ${e}`}
                   style={{
                     width: 38, height: 38, borderRadius: 11, fontSize: 19,
@@ -278,7 +295,7 @@ function NewFolderModal({
             <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Culoare</div>
             <div style={{ display: 'flex', gap: 12, paddingLeft: 4 }}>
               {FOLDER_COLORS.map((c) => (
-                <button key={c.id} onClick={() => setColor(c.id)}
+                <button key={c.id} onClick={() => { setColor(c.id); setAppearanceTouched(true); }}
                   aria-label={`Alege culoarea ${c.id}`}
                   style={{
                     width: 28, height: 28, borderRadius: '50%',
@@ -295,7 +312,7 @@ function NewFolderModal({
 
           <div style={{ marginBottom: 28 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Nume folder</div>
-            <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+            <input autoFocus value={name} onChange={(e) => handleNameChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               placeholder="Ex: Anatomie, Cardiologie..."
               style={{
@@ -306,22 +323,17 @@ function NewFolderModal({
 
           <div style={{ marginBottom: 28 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>În interiorul</div>
-            <select
+            <ThemedSelect
               value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
-              style={{
-                width: '100%', padding: '13px 16px', borderRadius: 16, background: theme.surface2,
-                border: `1px solid ${theme.border}`, color: theme.text, outline: 'none',
-                fontSize: 13, fontWeight: 700,
-              }}
-            >
-              <option value="__root__">Folder principal</option>
-              {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.emoji} {buildFolderPath(folders, folder.id)}
-                </option>
-              ))}
-            </select>
+              onChange={setParentId}
+              options={[
+                { value: '__root__', label: 'Folder principal' },
+                ...folders.map((folder) => ({
+                  value: folder.id,
+                  label: `${folder.emoji} ${buildFolderPath(folders, folder.id)}`,
+                })),
+              ]}
+            />
           </div>
 
           <motion.button onClick={handleCreate} disabled={!canCreate}
@@ -441,7 +453,7 @@ export default function Sidebar() {
 
   const totalAnswered = Object.values(questionStats).reduce((a, s) => a + s.timesCorrect + s.timesWrong, 0);
   const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT LA MEDICINĂ';
-  const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived && !q.tags?.includes('flashcard')).length, [quizzes]);
+  const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived && !isFlashcardDeck(q)).length, [quizzes]);
   const newQuizCount = useMemo(() => quizzes.filter(q => now - q.createdAt < 86400000 * 2).length, [quizzes, now]);
   const uncategorizedCount = useMemo(() => quizzes.filter(q => !q.folderId).length, [quizzes]);
   const folderQuizCount = useMemo(() => {
@@ -458,7 +470,7 @@ export default function Sidebar() {
   useEffect(() => {
     window.electronAPI?.updaterGetVersion()
       .then((v) => { if (v) setLocalVersion(v); })
-      .catch(() => {});
+      .catch((e) => console.error('[StudyX] Failed to get app version', e));
   }, [setLocalVersion]);
 
   useEffect(() => {

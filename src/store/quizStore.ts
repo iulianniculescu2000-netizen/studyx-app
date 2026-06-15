@@ -40,7 +40,7 @@ export const useQuizStore = create<QuizStore>()(
       })),
 
     deleteQuiz: (id) => {
-      void import('../lib/flashcardImageStore').then((m) => m.deleteFlashcardImagesForQuiz(id)).catch(() => {});
+      void import('../lib/flashcardImageStore').then((m) => m.deleteFlashcardImagesForQuiz(id)).catch((e) => console.error('[StudyX] Failed to delete flashcard images for quiz', id, e));
       set((s) => ({ quizzes: s.quizzes.filter((q) => q.id !== id) }));
     },
 
@@ -104,7 +104,7 @@ export const useQuizStore = create<QuizStore>()(
     bulkDeleteQuizzes: (ids) => {
       void import('../lib/flashcardImageStore')
         .then((m) => Promise.all(ids.map((id) => m.deleteFlashcardImagesForQuiz(id))))
-        .catch(() => {});
+        .catch((e) => console.error('[StudyX] Failed to delete flashcard images for quizzes', ids, e));
       set((s) => ({ quizzes: s.quizzes.filter((q) => !ids.includes(q.id)) }));
     },
 

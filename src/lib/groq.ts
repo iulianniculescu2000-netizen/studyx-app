@@ -20,7 +20,8 @@ export const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 /** Returns true if the given provider supports multimodal (image) requests. */
 export function supportsVision(provider: string): boolean {
-  return provider !== 'deepseek';
+  // Vision uses Groq's Llama 4 Scout model specifically, so it's Groq-only.
+  return provider === 'groq';
 }
 
 export interface GeneratedQuestion {
@@ -65,11 +66,13 @@ function sanitizeKey(key: string): string {
 }
 
 function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['provider']) {
-  if (provider === 'deepseek') {
+  if (provider === 'google') {
     return {
-      name: 'DeepSeek',
-      endpoint: 'https://api.deepseek.com/chat/completions',
-      keyHint: 'Cheia API DeepSeek nu este configurata. Mergi la Setari AI.',
+      name: 'Google Gemini',
+      // Google exposes an OpenAI-compatible endpoint, so the same chat-completions
+      // request/response shape works with a Bearer API key.
+      endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      keyHint: 'Cheia API Google Gemini nu este configurata. Mergi la Setari AI.',
     };
   }
 
@@ -78,6 +81,57 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     keyHint: 'Cheia API Groq nu este configurata. Mergi la Setari AI.',
   };
+}
+
+/**
+ * Live check that an API key is actually accepted by the provider — beyond the
+ * format check (gsk_/AIza prefix). Sends a 1-token request so we can tell the
+ * user "cheie respinsă" instead of showing a misleading green check when the key
+ * is expired/invalid and generation will silently fall back to local templates.
+ */
+export async function validateApiKey(
+  provider: ReturnType<typeof useAIStore.getState>['provider'],
+  key: string,
+): Promise<{ ok: boolean; error?: string; warning?: string }> {
+  const cleanKey = sanitizeKey(key);
+  if (!cleanKey) return { ok: false, error: 'Cheia este goală.' };
+
+  const config = getProviderConfig(provider);
+  const testModel = provider === 'google' ? 'gemini-2.0-flash' : 'llama-3.1-8b-instant';
+
+  try {
+    const res = await fetch(config.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleanKey}` },
+      body: JSON.stringify({
+        model: testModel,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (res.ok) return { ok: true };
+
+    const data = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    const message = data?.error?.message ?? res.statusText;
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: `Cheie respinsă de ${config.name} (${res.status}). Verifică sau regenerează cheia.` };
+    }
+    if (res.status === 429) {
+      // A 429 only happens AFTER the key authenticates (an invalid key returns
+      // 401/403), so the key is valid — it just hit the rate limit during this
+      // test ping. Treat as success with a soft note, not a hard failure.
+      return { ok: true, warning: 'Cheie validă. Ai atins temporar limita de rate (free tier) — AI-ul merge, doar lasă câteva secunde între cereri.' };
+    }
+    return { ok: false, error: `Eroare ${config.name} (${res.status}): ${message}` };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      return { ok: false, error: 'Verificarea a expirat — verifică conexiunea la internet.' };
+    }
+    return { ok: false, error: error instanceof Error ? error.message : 'Nu am putut contacta serverul AI.' };
+  }
 }
 
 function extractJsonArray(raw: string): string | null {
@@ -363,13 +417,23 @@ export async function groqRequest({
   });
 }
 
-export async function groqChat(messages: GroqMessage[], temperature = 0.7): Promise<string> {
-  return groqRequest({ task: 'chat', messages, temperature, maxTokens: 4096 });
+export async function groqChat(
+  messages: GroqMessage[],
+  temperature = 0.7,
+  options: { skipLibraryContext?: boolean; task?: AIRequestTask; maxTokens?: number } = {},
+): Promise<string> {
+  return groqRequest({
+    task: options.task ?? 'chat',
+    messages,
+    temperature,
+    maxTokens: options.maxTokens ?? 4096,
+    skipLibraryContext: options.skipLibraryContext,
+  });
 }
 
 /**
  * Single-turn vision request — sends an image (data URL) + text prompt to
- * Llama 4 Scout on Groq. Only available when provider !== 'deepseek'.
+ * Llama 4 Scout on Groq. Groq-only (see supportsVision).
  */
 export async function groqVisionRequest(
   imageDataUrl: string,
@@ -576,7 +640,7 @@ Format (${needed} obiecte):
         msgs.push({ role: 'user', content: `Eroare JSON: ${lastError}. Returnează DOAR array JSON valid.` });
       }
       try {
-        raw = await groqChat(msgs, 0.2);
+        raw = await groqChat(msgs, 0.2, { skipLibraryContext: true, task: 'questions' });
         if (raw.includes('[') && raw.includes(']')) break;
         lastError = 'Nu conține array JSON';
       } catch (e: unknown) {
@@ -622,7 +686,7 @@ Format: [{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCo
       const regenRaw = await groqChat([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: regenPrompt },
-      ], 0.35);
+      ], 0.35, { skipLibraryContext: true, task: 'questions' });
       const regenJson = extractJsonArray(regenRaw);
       if (regenJson) {
         const regenParsed = JSON.parse(regenJson) as GeneratedQuestion[];
@@ -674,7 +738,7 @@ Format JSON pur (${count} cazuri):
     raw = await groqChat([
       { role: 'system', content: getMedicalSystemPrompt('examiner') + '\nGenerează cazuri clinice EXCLUSIV din textul primit.' },
       { role: 'user', content: userPrompt },
-    ], 0.3);
+    ], 0.3, { skipLibraryContext: true, task: 'questions' });
     if (raw.includes('[') && raw.includes(']')) break;
   }
 
@@ -761,7 +825,7 @@ Format: [{"front":"?","back":"..."}]`;
       raw = await groqChat([
         { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEsti expert in transformarea cursurilor medicale dense in flashcarduri de tip Active Recall, fara repetitii si fara umplutura.' },
         { role: 'user', content: userPrompt },
-      ], attempt === 0 ? 0.32 : 0.45);
+      ], attempt === 0 ? 0.32 : 0.45, { skipLibraryContext: true, task: 'questions' });
       if (raw.includes('[') && raw.includes(']')) break;
     }
 
@@ -810,7 +874,9 @@ export async function explainWrongAnswer(
       role: 'user',
       content: `Explică SCURT și DIRECT. Maxim 4-5 propoziții totale, fără eseuri.
 
-FORMAT:
+Întâi verifică medical dacă "${correctAnswer}" este chiar răspunsul corect (grila poate fi generată automat și greșită). Dacă e greșit, începe cu „⚠️ Grila pare greșită — corect este de fapt «...»" și explică; nu apăra o cheie eronată.
+
+Dacă e corect, FORMAT:
 1. De ce "${correctAnswer}" e corect — 1-2 propoziții cu mecanismul cheie.
 2. De ce răspunsul ales cade — 1 propoziție, direct.
 3. Regula scurtă de reținut pentru examen — 1 propoziție memorabilă.
@@ -819,7 +885,7 @@ Nu repeta întrebarea. Nu enumera toate variantele. Răspunde în română.
 
 Întrebare: ${questionText}
 ${studentAnswerLine}
-Răspuns corect: "${correctAnswer}"`,
+Răspuns marcat ca corect în grilă: "${correctAnswer}"`,
     },
   ], 0.3);
 }
@@ -846,11 +912,15 @@ export async function explainAnswerInline(
     {
       role: 'user',
       content: `Intrebare: "${questionText}"
-Corect: "${correct}"
-Gresite: ${wrong}
+Raspuns marcat ca CORECT in grila: "${correct}"
+Variante marcate ca gresite: ${wrong}
 
-Explica raspunsul ca pentru un student la medicina:
-- incepe direct cu: "${correct}" este raspunsul corect deoarece...
+Aceasta grila a putut fi generata automat, deci cheia poate contine erori.
+PASUL 0 — VERIFICA medical daca "${correct}" este chiar raspunsul corect:
+- Daca este corect: explica normal.
+- Daca este GRESIT (alta varianta e corecta sau enuntul/cheia au o eroare): spune RASPICAT din prima propozitie, ex: "⚠️ Atentie: grila pare gresita — raspunsul corect real este «...», nu «${correct}»", apoi explica de ce. NU justifica o cheie gresita.
+
+Daca cheia este corecta, explica pentru un student la medicina:
 - de ce varianta corecta este buna,
 - de ce fiecare varianta gresita pica si cand ar putea deveni corecta,
 - mecanismul fiziologic/fiziopatologic,

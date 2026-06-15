@@ -240,6 +240,7 @@ export default function QuizCreate() {
         title: title.trim(),
         description: description.trim(),
         emoji, color, category,
+        kind: 'quiz',
         folderId: selectedFolderId === '__uncategorized__' ? null : selectedFolderId,
         shuffleQuestions, shuffleAnswers, penaltyMode,
         tags: finalTags,

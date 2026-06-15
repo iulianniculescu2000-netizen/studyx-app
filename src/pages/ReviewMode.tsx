@@ -7,6 +7,7 @@ import QuizImage from '../components/QuizImage';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useUserStore } from '../store/userStore';
+import { cleanQuestionExplanation } from '../helpers/quizAi';
 import { buildAdaptiveExamQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
 import ReviewActionCard from './review-mode/ReviewActionCard';
 import type { Question, QuestionStat } from '../types';
@@ -420,13 +421,13 @@ export default function ReviewMode() {
             )}
 
             <AnimatePresence>
-              {revealed && current.question.explanation && (
+              {revealed && cleanQuestionExplanation(current.question.explanation) && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
                   className="mb-3 p-4 rounded-xl overflow-hidden"
                   style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}>
                   <p className="text-sm" style={{ color: theme.text2 }}>
                     <span className="font-semibold" style={{ color: theme.accent }}>💡 </span>
-                    {current.question.explanation}
+                    {cleanQuestionExplanation(current.question.explanation)}
                   </p>
                 </motion.div>
               )}

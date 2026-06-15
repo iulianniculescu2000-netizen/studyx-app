@@ -36,21 +36,23 @@ describe('AI store integration', () => {
     expect(useAIStore.getState().hasKey).toBe(true);
   });
 
-  it('switches provider and validates DeepSeek keys independently from Groq keys', () => {
+  it('switches provider and validates Google keys independently from Groq keys', () => {
     useAIStore.getState().setApiKey('gsk_1234567890123456789012345');
     expect(useAIStore.getState().provider).toBe('groq');
     expect(useAIStore.getState().hasKey).toBe(true);
 
-    useAIStore.getState().setProvider('deepseek');
+    useAIStore.getState().setProvider('google');
 
-    expect(useAIStore.getState().provider).toBe('deepseek');
-    expect(useAIStore.getState().model).toBe('deepseek-reasoner');
+    expect(useAIStore.getState().provider).toBe('google');
+    expect(useAIStore.getState().model).toBe('gemini-2.5-flash');
     expect(useAIStore.getState().hasKey).toBe(false);
 
-    useAIStore.getState().setApiKey('sk_1234567890123456789012345');
+    // Wrong prefix for Google → invalid.
+    useAIStore.getState().setApiKey('gsk_1234567890123456789012345');
     expect(useAIStore.getState().hasKey).toBe(false);
 
-    useAIStore.getState().setApiKey('sk-1234567890123456789012345');
+    // Valid Google (Gemini) key format.
+    useAIStore.getState().setApiKey('AIzaSy1234567890123456789012345678901');
     expect(useAIStore.getState().hasKey).toBe(true);
   });
 

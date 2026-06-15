@@ -30,12 +30,25 @@ import { validateJson } from './validator';
 type ContextChunk = ChunkRecord | RetrievedChunk;
 export type ChatMode = 'grounded' | 'explain' | 'summarize' | 'diagram' | 'test' | 'mnemonic';
 
+// Per-mode sampling temperature. Creative modes (mnemonic) need more freedom or
+// the model just echoes the source text; factual modes stay low for precision.
+const CHAT_MODE_TEMPERATURE: Record<ChatMode, number> = {
+  grounded: 0.5,
+  explain: 0.45,
+  summarize: 0.4,
+  diagram: 0.5,
+  test: 0.6,
+  mnemonic: 0.85,
+};
+
 interface ChatResponseOptions {
   mode?: ChatMode;
   hasContext?: boolean;
   scopedSourceName?: string;
   studyContext?: string;
   focusTopics?: string[];
+  /** Compressed summary of earlier turns, injected when the thread grows long. */
+  conversationSummary?: string;
 }
 
 async function buildRelevantContext(query: string, limit: number, userProfile?: UserProfileData | null) {
@@ -66,14 +79,17 @@ function clampConfidence(value: number | undefined, fallback = 0.72) {
 }
 
 function normalizeQuestion(question: QuestionGenerationResponse['questions'][number], index: number): Question {
+  const options = question.options.map((option, optionIndex) => ({
+    id: `${index}-${optionIndex}-${crypto.randomUUID().replace(/-/g, '').slice(0, 6)}`,
+    text: option.text,
+    isCorrect: option.isCorrect,
+  }));
+  const correctCount = options.filter((option) => option.isCorrect).length;
   return {
     id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
     text: question.text,
-    options: question.options.map((option, optionIndex) => ({
-      id: `${index}-${optionIndex}-${crypto.randomUUID().replace(/-/g, '').slice(0, 6)}`,
-      text: option.text,
-      isCorrect: option.isCorrect,
-    })),
+    options,
+    multipleCorrect: correctCount > 1,
     explanation: question.explanation,
     tags: question.tags,
     difficulty: (question.difficulty as Difficulty) ?? 'medium',
@@ -133,13 +149,16 @@ export class QuestionGenerator {
     const parsed = await runAIPipeline<QuestionGenerationResponse>({
       retrieve: () => context.summary,
       generate: async () => {
-        const prompt = buildQuestionPrompt(profile, weakTopics, difficulty, context);
+        const prompt = buildQuestionPrompt(profile, weakTopics, difficulty, context, request.questionType ?? 'single');
         return groqRequest({
           task: 'questions',
           messages: [
             { role: 'system', content: prompt },
             { role: 'user', content: `Generează ${request.count ?? 1} întrebări în JSON strict, exclusiv în limba română, pe baza contextului furnizat.` },
           ],
+          // Context is already embedded in the prompt above; skip the duplicate
+          // library injection to avoid burning Groq's daily token quota.
+          skipLibraryContext: true,
         });
       },
       validate: (raw) => {
@@ -153,6 +172,7 @@ export class QuestionGenerator {
             { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Păstrează conținutul în română.' },
             { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}` },
           ],
+          skipLibraryContext: true,
         })
       ),
     });
@@ -222,6 +242,7 @@ export async function analyzeAnswer(
           { role: 'system', content: buildExplanationPrompt(payload.userAnswer, payload.correctAnswer, payload.question, context) },
           { role: 'user', content: 'Analizează răspunsul și returnează JSON-ul solicitat, exclusiv în limba română.' },
         ],
+        skipLibraryContext: true,
       })
     ),
     validate: (raw) => {
@@ -235,6 +256,7 @@ export async function analyzeAnswer(
           { role: 'system', content: 'Repară JSON-ul invalid și păstrează exact aceeași schemă. Nu adăuga text în afara JSON-ului. Păstrează valorile în română.' },
           { role: 'user', content: `JSON invalid: ${error}` },
         ],
+        skipLibraryContext: true,
       })
     ),
   });
@@ -273,6 +295,7 @@ export async function generateHint(question: Question) {
           { role: 'system', content: buildHintPrompt(question, context) },
           { role: 'user', content: 'Returnează indicii progresive în JSON, integral în română.' },
         ],
+        skipLibraryContext: true,
       })
     ),
     validate: (raw) => {
@@ -298,6 +321,7 @@ export async function generateMnemonicForConcept(concept: string, correctAnswer:
       { role: 'system', content: buildMnemonicPrompt(concept, context) },
       { role: 'user', content: `Creează un mnemonic creativ în JSON, integral în română, pentru a reține răspunsul "${correctAnswer}" la conceptul "${concept}".` },
     ],
+    skipLibraryContext: true,
   });
 
   const parsed = validateJson<{ mnemonic: string }>(raw);
@@ -320,6 +344,7 @@ export async function explainWrongOptions(question: Question) {
       { role: 'system', content: buildWrongOptionsPrompt(question, context) },
       { role: 'user', content: 'Analizează opțiunile și returnează JSON, integral în română.' },
     ],
+    skipLibraryContext: true,
   });
 
   const parsed = validateJson<ExplainWrongOptionsResult>(raw);
@@ -373,6 +398,7 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
   const mode = options.mode ?? 'grounded';
   const hasContext = options.hasContext ?? Boolean(contextSummary.trim());
   const studyContext = deepCleanText(options.studyContext ?? '');
+  const conversationSummary = deepCleanText(options.conversationSummary ?? '');
   const focusTopics = (options.focusTopics ?? []).map((topic) => deepCleanText(topic)).filter(Boolean);
 
   const modeInstructions: Record<ChatMode, string[]> = {
@@ -403,9 +429,14 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
       'Adaptează dificultatea la topicurile vulnerabile dacă apar în profil.',
     ],
     mnemonic: [
-      'Rol: coach de memorie medicală. Creează 2-3 mnemonice scurte, memorabile și corecte medical.',
-      'Leagă mnemonic-ul de mecanism sau diferențial, nu doar de primele litere.',
-      'Spune pe scurt când se folosește și ce confuzie previne.',
+      'Rol: coach de memorie medicală. Creează 2-3 mnemonice DISTINCTE, corecte medical, pentru a fixa exact informația cerută.',
+      'Pentru FIECARE mnemonic respectă structura, pe rânduri separate:',
+      '**🧠 Mnemonic:** acronimul, fraza-cheie sau imaginea (scurtă, memorabilă)',
+      '**🔓 Se desface:** ce reprezintă fiecare literă/element — câte un cuvânt-cheie pe element',
+      '**🎯 Când ajută:** ce listă fixează sau ce confuzie previne (o propoziție)',
+      'Dacă faci un ACRONIM, fiecare literă trebuie să corespundă unui element real și corect; nu inventa litere, nu lăsa acronime incomplete sau fără sens.',
+      'INTERZIS: să copiezi propoziții întregi din context sau să repeți același text de două ori. Extrage doar termenii-cheie și construiește mnemonicul în jurul lor.',
+      'Nu începe răspunsul cu „Leagă..."; mergi direct pe structura de mai sus.',
     ],
   };
 
@@ -416,10 +447,12 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
     '- răspunde exclusiv în limba română',
     '- folosește paragrafe scurte și liste doar când clarifică; evită blocuri dense de text',
     '- dacă utilizatorul cere ceva practic, oferă pași concreți numerotați',
-    '- folosește formatare curată: titluri scurte cu emoji relevant (ex: 🔑 Mecanism, ⚠️ Capcană, 📋 Regulă), bullets cu liniuță sau săgeți, enumerări clare',
-    '- evită steluțele markdown (* **) vizibile — folosește titluri cu emoji în loc',
+    '- folosește formatare Markdown bogată: titluri scurte cu emoji relevant (ex: ## 🔑 Mecanism, ## ⚠️ Capcană), **bold** pentru termeni-cheie, liste cu - sau numerotate, și TABELE Markdown (| col | col |) pentru diferențiale, clasificări sau comparații',
+    '- pentru mecanisme folosește lanțuri cu săgeți (cauză → efect → consecință); pentru comparații folosește un tabel; pentru pași folosește liste numerotate',
     '- când o schemă, un algoritm sau un tabel ar scurta înțelegerea cu 50%+, include-l fără să aștepți să fie cerut explicit',
     '- dimensiunea răspunsului trebuie să fie proporțională cu complexitatea întrebării: simplu → scurt și direct, complex → structurat și complet',
+    '- NU copia propoziții întregi din context — reformulează cu cuvintele tale; NU repeta același conținut de două ori în răspuns',
+    '- dacă contextul e prea subțire pentru cerere, spune-o pe scurt și răspunde din cunoștințe medicale generale, în loc să umpli cu text copiat',
     '',
     'INTELIGENȚĂ DE EXAMEN:',
     '- estimează probabilitatea de întrebare pe baza structurii cursului: definiții, clasificări, criterii, diferențiale, indicații, complicații și excepții sunt de obicei mai testabile',
@@ -438,6 +471,7 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
     `MOD ACTIV: ${mode.toUpperCase()}`,
     ...modeInstructions[mode],
     '',
+    conversationSummary ? `REZUMATUL CONVERSAȚIEI PÂNĂ ACUM (memorie de context — folosește-l ca să păstrezi continuitatea, nu îl repeta):\n${conversationSummary}\n` : '',
     studyContext ? `PROFIL DE STUDIU ȘI ADAPTARE:\n${studyContext}\n` : '',
     hasContext
       ? `CONTEXT DIN BIBLIOTECA UTILIZATORULUI:\n${deepCleanText(contextSummary)}`
@@ -456,6 +490,7 @@ export async function generateChatResponse(
 
   return groqRequest({
     task: 'chat',
+    temperature: CHAT_MODE_TEMPERATURE[options.mode ?? 'grounded'],
     messages: [
       { role: 'system', content: systemPrompt },
       ...recentHistory,
@@ -483,10 +518,54 @@ export async function generateChatResponseStream(
       { role: 'user', content: message },
     ],
     onChunk,
-    0.5,
+    CHAT_MODE_TEMPERATURE[options.mode ?? 'grounded'],
     abortSignal,
     true, // context already injected via systemPrompt — skip internal library search
   );
+}
+
+/**
+ * Compress an older slice of the conversation into a short memory note, so long
+ * threads keep continuity without sending every message back to the model.
+ * Returns '' if there is too little to summarize or on failure (non-blocking).
+ */
+export async function summarizeConversation(
+  history: { role: 'user' | 'assistant'; content: string }[],
+  previousSummary = '',
+): Promise<string> {
+  const transcript = history
+    .filter((turn) => turn.content.trim())
+    .map((turn) => `${turn.role === 'user' ? 'Student' : 'Asistent'}: ${deepCleanText(turn.content).slice(0, 600)}`)
+    .join('\n');
+  if (transcript.length < 200) return previousSummary;
+
+  try {
+    return await groqRequest({
+      task: 'analysis',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'Comprimi o conversație de studiu medical într-o notă de memorie scurtă (max 8 bullets).',
+            'Reține: subiectele discutate, ce a înțeles greu studentul, concepte cheie atinse, întrebări deschise.',
+            'Răspunde în română, doar bullets concise, fără introducere.',
+          ].join('\n'),
+        },
+        {
+          role: 'user',
+          content: [
+            previousSummary ? `Rezumat anterior:\n${previousSummary}\n` : '',
+            `Conversație de comprimat:\n${transcript}`,
+          ].filter(Boolean).join('\n'),
+        },
+      ],
+      temperature: 0.2,
+      maxTokens: 500,
+      skipLibraryContext: true,
+    });
+  } catch {
+    return previousSummary;
+  }
 }
 
 export function getUserProfile(profileId: string) {

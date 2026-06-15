@@ -86,14 +86,30 @@ export function useKeyboardShortcuts() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       const modifiers: ('ctrl' | 'shift' | 'alt' | 'meta')[] = [];
-      
+
       if (event.ctrlKey) modifiers.push('ctrl');
       if (event.shiftKey) modifiers.push('shift');
       if (event.altKey) modifiers.push('alt');
       if (event.metaKey) modifiers.push('meta');
 
+      // When the user is typing in a field, never let a bare key (Space, "t",
+      // "n", …) be hijacked as a shortcut — that swallowed the space bar and
+      // toggled theme mid-typing. Only Ctrl/Meta combos stay active so global
+      // navigation (Ctrl+G, Ctrl+C…) still works from inside inputs.
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget = !!target && (
+        target.tagName === 'INPUT'
+        || target.tagName === 'TEXTAREA'
+        || target.isContentEditable
+      );
+      const hasCommandModifier = event.ctrlKey || event.metaKey;
+      // Escape must still close modals/drawers even while a field is focused.
+      if (isTypingTarget && !hasCommandModifier && key !== 'escape') {
+        return;
+      }
+
       const shortcutKey = `${modifiers.join('+')}+${key}`;
-      
+
       // Check for exact match
       if (shortcutsRef.current.has(shortcutKey)) {
         event.preventDefault();

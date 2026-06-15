@@ -9,8 +9,43 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+// Internal/meta tags that must never surface as a study "topic" to the user.
+const META_TAGS = new Set([
+  'ai-studio', 'document-pack', 'ai', 'pdf', 'docx', 'pptx', 'txt', 'image', 'visual',
+  'flashcard', 'deck', 'manual', 'quick', 'document', 'curs', 'cursul',
+]);
+
+function isMetaTag(tag: string) {
+  const t = tag.trim().toLowerCase();
+  if (!t || META_TAGS.has(t)) return true;
+  if (/^\d+$/.test(t)) return true;                 // pure numbers ("1")
+  if (/\.(pdf|docx|pptx|txt)\b/.test(t)) return true; // filename-ish ("cursul 1.pdf")
+  if (/^curs(ul)?\b/.test(t)) return true;           // source-name artifacts
+  return false;
+}
+
+/** True when an explanation is the baked meta-text that leaks document/fragment names. */
+function isMetaExplanation(text?: string | null) {
+  const t = normalizeInlineText(text).toLowerCase();
+  if (!t) return true;
+  return /din documentul|fragmentul despre|intrebarea este construita|întrebarea este construită|\.pdf\b|\.docx\b|cursul incarcat|cursul încărcat/.test(t);
+}
+
+/**
+ * Explanation safe to render under a question. Hides the legacy baked meta-text
+ * ("Întrebarea este construită din fragmentul ... din documentul X.pdf") that
+ * leaked into older AI-generated sets, so the UI shows nothing instead of junk.
+ */
+export function cleanQuestionExplanation(text?: string | null): string {
+  return isMetaExplanation(text) ? '' : normalizeInlineText(text);
+}
+
 function pickQuestionTopic(question: Question) {
-  return question.tags?.find(Boolean)?.trim() || question.difficulty || 'conceptul-cheie';
+  const realTag = question.tags?.find((tag) => tag && !isMetaTag(tag))?.trim();
+  if (realTag) return realTag;
+  // No usable tag — derive a topic anchor from the question text itself.
+  const keyword = pickLeadKeywords(question.text, 1)[0];
+  return keyword || question.difficulty || 'conceptul-cheie';
 }
 
 function pickLeadKeywords(text: string, limit = 3) {
@@ -18,16 +53,6 @@ function pickLeadKeywords(text: string, limit = 3) {
     .split(/[^A-Za-z0-9]+/)
     .filter((word) => word.length >= 4);
   return uniqueStrings(words).slice(0, limit);
-}
-
-function buildAcronym(text: string) {
-  const words = normalizeInlineText(text)
-    .split(/\s+/)
-    .filter((word) => word.length >= 3)
-    .slice(0, 5);
-
-  if (words.length === 0) return '';
-  return words.map((word) => word[0]?.toUpperCase() ?? '').join('');
 }
 
 function summarizeExplanation(explanation?: string, maxLength = 220) {
@@ -67,7 +92,9 @@ export function getAnswerTextForOptionIds(
 export function buildHintFallback(question: Question): HintResult {
   const topic = pickQuestionTopic(question);
   const correctAnswer = getCorrectAnswerText(question) || 'varianta corecta';
-  const explanationSummary = summarizeExplanation(question.explanation, 200);
+  const explanationSummary = isMetaExplanation(question.explanation)
+    ? ''
+    : summarizeExplanation(question.explanation, 200);
   const anchorWords = pickLeadKeywords(correctAnswer, 2);
   const keywordHint = anchorWords.length > 0
     ? `Cauta varianta care se leaga direct de ${anchorWords.join(' si ')}.`
@@ -94,8 +121,10 @@ export function buildAnalysisFallback({
   isCorrect: boolean;
 }): AIAnalysisResult {
   const topic = pickQuestionTopic(question);
-  const explanationSummary = summarizeExplanation(question.explanation, 240);
-  const relatedConcepts = uniqueStrings([topic, ...(question.tags ?? [])]).slice(0, 5);
+  const explanationSummary = isMetaExplanation(question.explanation)
+    ? ''
+    : summarizeExplanation(question.explanation, 240);
+  const relatedConcepts = uniqueStrings([topic, ...(question.tags ?? []).filter((tag) => !isMetaTag(tag))]).slice(0, 5);
   const rule = explanationSummary || `Compara fiecare varianta doar cu criteriul principal din intrebare si revino la ${topic} cand ai dubii.`;
   const answerLabel = normalizeInlineText(userAnswer);
   const answerPrefix = answerLabel && answerLabel !== 'niciun raspuns'
@@ -144,10 +173,21 @@ export function buildAnalysisFallback({
 export function buildMnemonicFallback(concept: string, correctAnswer: string) {
   const cleanConcept = normalizeInlineText(concept) || 'conceptul';
   const cleanAnswer = normalizeInlineText(correctAnswer) || 'raspunsul corect';
-  const acronym = buildAcronym(cleanAnswer);
-  const anchor = acronym || pickLeadKeywords(cleanAnswer, 2).join('-') || cleanAnswer.split(/\s+/).slice(0, 2).join(' ');
+  // Long inputs are usually copied sentences — compress to keywords so the
+  // mnemonic stays short instead of echoing the whole phrase twice.
+  const conceptLabel = cleanConcept.length > 70
+    ? (pickLeadKeywords(cleanConcept, 4).join(' ') || cleanConcept.slice(0, 60))
+    : cleanConcept;
+  const keywords = pickLeadKeywords(cleanAnswer, 5);
+  const isSentence = cleanAnswer.split(/\s+/).filter(Boolean).length > 2;
 
-  return `Leaga ${cleanConcept} de ancora "${anchor}". Cand vezi tema aceasta, repeta imediat: ${cleanAnswer}.`;
+  if (isSentence && keywords.length >= 2) {
+    const acronym = keywords.map((word) => word[0]?.toUpperCase() ?? '').join('');
+    return `Pentru „${conceptLabel}", reține acronimul **${acronym}** din cuvintele-cheie: ${keywords.join(', ')}. Repetă-l de câteva ori până se fixează.`;
+  }
+
+  // Short, single-term answer — anchor directly on the term.
+  return `Pentru „${conceptLabel}", ancorează în minte termenul-cheie **${cleanAnswer}**. Asociază-l cu o imagine clară ca să-l reții mai ușor.`;
 }
 
 export function buildClarificationFallback(

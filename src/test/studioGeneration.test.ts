@@ -37,7 +37,9 @@ describe('studioGeneration helpers', () => {
   it('clamps pack and question counts to safe studio limits', () => {
     expect(clampStudioPackCount(0)).toBe(1);
     expect(clampStudioPackCount(999)).toBe(36);
-    expect(clampStudioQuestionCount(1)).toBe(3);
+    // Minimum is 1 since v1.0.4 so short requests like "2 grile" stay literal.
+    expect(clampStudioQuestionCount(0)).toBe(1);
+    expect(clampStudioQuestionCount(2)).toBe(2);
     expect(clampStudioQuestionCount(999)).toBe(60);
   });
 
@@ -54,7 +56,10 @@ describe('studioGeneration helpers', () => {
     questions.forEach((question) => {
       expect(question.options).toHaveLength(4);
       expect(question.options.filter((option) => option.isCorrect)).toHaveLength(1);
-      expect(question.explanation).toContain('Curs cardio');
+      // Explanation must stay grounded in the topic WITHOUT leaking the document name.
+      expect(question.explanation?.length ?? 0).toBeGreaterThan(0);
+      expect(question.explanation).not.toContain('Curs cardio');
+      expect(question.explanation?.toLowerCase()).not.toContain('documentul');
       expect(question.tags?.length).toBeGreaterThan(0);
       expect(question.text.toLowerCase()).not.toContain('cursul încărcat');
       expect(question.text.toLowerCase()).not.toContain('.pdf');

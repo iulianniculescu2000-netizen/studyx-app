@@ -7,19 +7,56 @@
  * organizing the library, etc. The LLM only *plans*; execution is deterministic
  * local code, so there is no risk of the model "hallucinating" a destructive op.
  */
-import { groqRequest } from '../groq';
+import { groqRequest, notesToFlashcards } from '../groq';
 import { generateQuizPackagesFromSource } from './batchQuizGeneration';
 import { clampStudioPackCount, clampStudioQuestionCount } from './studioGeneration';
+import { getVaultChunksBySource } from '../../ai/vectorStore';
+import { generateQuestions, getUserProfile } from '../../ai/AIEngine';
+import { generateFromMistakes, getWeakTopicsForProfile } from '../../ai/UserProfile';
 import { useQuizStore } from '../../store/quizStore';
 import { useFolderStore } from '../../store/folderStore';
 import { useAIStore } from '../../store/aiStore';
 import { useUserStore } from '../../store/userStore';
-import type { Difficulty, Folder, Quiz, QuizColor } from '../../types';
+import { suggestFolderAppearance } from '../folderAppearance';
+import type { Difficulty, Folder, Question, Quiz } from '../../types';
+
+function shortId() {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+}
+
+/** Reconstruct a source document's text from its indexed vault chunks (capped). */
+async function loadSourceText(sourceId: string, maxChars = 24000): Promise<string> {
+  const chunks = await getVaultChunksBySource(sourceId);
+  if (chunks.length === 0) return '';
+  let out = '';
+  for (const chunk of chunks) {
+    if (out.length + chunk.text.length > maxChars) {
+      out += chunk.text.slice(0, Math.max(0, maxChars - out.length));
+      break;
+    }
+    out += (out ? '\n\n' : '') + chunk.text;
+  }
+  return out;
+}
+
+function buildAgentFlashcard(front: string, back: string): Question {
+  return {
+    id: shortId(),
+    text: front.trim(),
+    multipleCorrect: false,
+    difficulty: 'medium',
+    explanation: '',
+    options: [{ id: 'a', text: back.trim(), isCorrect: true }],
+  };
+}
 
 export type AgentActionType =
   | 'create_folder'
   | 'create_library_folder'
   | 'generate_quiz_pack'
+  | 'generate_from_mistakes'
+  | 'create_flashcards'
+  | 'summarize_document'
   | 'create_study_plan'
   | 'move_quiz'
   | 'rename_quiz'
@@ -37,6 +74,10 @@ export interface AgentStep {
   quiz?: string;
   packCount?: number;
   questionsPerPack?: number;
+  /** For create_flashcards: number of cards to generate. */
+  count?: number;
+  /** For generate_quiz_pack: single-answer (complement simplu) vs multi-answer. */
+  questionType?: 'single' | 'multiple';
   difficulty?: 'auto' | 'easy' | 'medium' | 'hard';
   /** For create_study_plan: exam name, number of study days, hours per day. */
   examName?: string;
@@ -66,7 +107,68 @@ export interface AgentRunResult {
 
 const QUESTION_CONFIRM_THRESHOLD = 80;
 const DESTRUCTIVE_ACTIONS: AgentActionType[] = ['delete_quiz', 'delete_folder'];
-const FOLDER_PALETTE: QuizColor[] = ['purple', 'blue', 'teal', 'green', 'pink', 'orange', 'red'];
+
+/**
+ * Deterministic extraction of quiz counts + question type straight from the
+ * user's wording. The LLM planner is unreliable at counting ("3 grile" became
+ * "3×10"), so we override its numbers whenever the phrasing is unambiguous.
+ *
+ * Rules:
+ *  - "N grile/întrebări" with NO pack word  → questionsPerPack=N, packCount=1
+ *  - "N seturi/pachete"                     → packCount=N
+ *  - "N seturi a câte M (grile)"            → packCount=N, questionsPerPack=M
+ *  - numbers attached to a name ("Cursul 1") are ignored (not before a keyword)
+ */
+export interface QuizIntentOverride {
+  packCount?: number;
+  questionsPerPack?: number;
+  questionType?: 'single' | 'multiple';
+}
+
+export function extractQuizIntent(command: string): QuizIntentOverride {
+  const norm = command
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
+  const result: QuizIntentOverride = {};
+
+  const questionWord = '(?:grile|grila|intrebari|intrebare|quiz)';
+  const packWord = '(?:seturi|set|pachete|pachet|batch)';
+
+  const packMatch = norm.match(new RegExp(`(\\d+)\\s+(?:de\\s+)?${packWord}`));
+  const perPackMatch = norm.match(/a\s+c(?:a|i)?te\s+(\d+)/);
+  const questionMatch = norm.match(new RegExp(`(\\d+)\\s+(?:de\\s+)?${questionWord}`));
+
+  const packCount = packMatch ? Number(packMatch[1]) : null;
+  const perPack = perPackMatch ? Number(perPackMatch[1]) : null;
+  const questionCount = questionMatch ? Number(questionMatch[1]) : null;
+
+  if (packCount && perPack) {
+    result.packCount = packCount;
+    result.questionsPerPack = perPack;
+  } else if (packCount && questionCount) {
+    result.packCount = packCount;
+    result.questionsPerPack = questionCount;
+  } else if (packCount) {
+    result.packCount = packCount;
+  } else if (questionCount) {
+    // "N grile" with no pack word → exactly N questions in a single set.
+    result.packCount = 1;
+    result.questionsPerPack = questionCount;
+  } else if (perPack) {
+    result.questionsPerPack = perPack;
+  }
+
+  if (/complement\s+multipl|raspuns(?:uri)?\s+multipl|mai multe raspunsuri (?:corecte)?|multiple? (?:corecte|raspunsuri)/.test(norm)) {
+    result.questionType = 'multiple';
+  } else if (/complement\s+simpl|un singur raspuns|raspuns unic/.test(norm)) {
+    result.questionType = 'single';
+  }
+
+  return result;
+}
 
 function normalizeName(value: string) {
   return value
@@ -112,7 +214,7 @@ function findByName<T extends { name: string }>(items: T[], query: string | unde
   return bestScore > 0 ? best : null;
 }
 
-const COMMAND_HINTS = /\b(cre(e|ea)z|creaz|adaug|genere|fa(-| )?mi|fa(ce)?|mut(a|ă)|redenume|sterg|șterg|organiz|pune|baga|bag(ă)?|fol?der|subfolder|grile|grila|set(ul|uri)?|pachet|atlas|biblioteca)\b/i;
+const COMMAND_HINTS = /\b(cre(e|ea)z|creaz|adaug|genere|fa(-| )?mi|fa(ce)?|mut(a|ă)|redenume|sterg|șterg|organiz|pune|baga|bag(ă)?|fol?der|subfolder|grile|grila|set(ul|uri)?|pachet|atlas|biblioteca|gre(ș|s)el|gre(ș|s)esc|recapitul)\b/i;
 
 /** Cheap pre-filter so normal chat questions never pay for a planning round-trip. */
 export function looksLikeAgentCommand(text: string): boolean {
@@ -120,6 +222,30 @@ export function looksLikeAgentCommand(text: string): boolean {
   if (value.length < 4) return false;
   if (value.endsWith('?') && !COMMAND_HINTS.test(value)) return false;
   return COMMAND_HINTS.test(value);
+}
+
+/**
+ * Short "do it again" follow-ups ("mai încearcă", "încă o dată", "reia").
+ * These carry no course/count of their own, so when the previous command failed
+ * the caller must RE-RUN the last real command instead of planning from these
+ * words — otherwise the model invents a brand-new (wrong) request.
+ */
+export function isRetryPhrase(text: string): boolean {
+  const norm = text
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?]+$/, '');
+  if (!norm || norm.length > 48) return false;
+  const RETRY_PATTERNS = [
+    /\bmai incearca\b/, /\bincearca din nou\b/, /\bincearca iar\b/, /\breincearca\b/,
+    /\binca o data\b/, /\binca odata\b/, /\bmai fa o data\b/, /\bfa din nou\b/,
+    /\bmai fa\b/, /\breia\b/, /\brepeta\b/, /\bmai incearca o data\b/,
+    /^din nou\b/, /^iar(asi)?\b/, /\btry again\b/, /\bretry\b/,
+  ];
+  return RETRY_PATTERNS.some((pattern) => pattern.test(norm));
 }
 
 function extractJsonObject(raw: string): string | null {
@@ -130,14 +256,31 @@ function extractJsonObject(raw: string): string | null {
   return stripped.slice(start, end + 1);
 }
 
+/** Render each folder as its full "Parent / Child" path so the planner can see
+ *  the subfolder hierarchy and target a nested folder by name. */
+function folderPaths(items: Array<{ id: string; name: string; parentId?: string | null }>): string[] {
+  const byId = new Map(items.map((folder) => [folder.id, folder]));
+  return items.map((folder) => {
+    const names = [folder.name];
+    const guard = new Set<string>([folder.id]);
+    let parent = folder.parentId ? byId.get(folder.parentId) : undefined;
+    while (parent && !guard.has(parent.id)) {
+      guard.add(parent.id);
+      names.unshift(parent.name);
+      parent = parent.parentId ? byId.get(parent.parentId) : undefined;
+    }
+    return names.join(' / ');
+  });
+}
+
 function buildPlannerPrompt() {
   const { knowledgeSources, libraryFolders } = useAIStore.getState();
   const folders = useFolderStore.getState().folders;
   const quizzes = useQuizStore.getState().quizzes;
 
   const sources = knowledgeSources.filter((s) => s.indexStatus === 'ready').slice(0, 40).map((s) => s.name);
-  const quizFolderNames = folders.slice(0, 60).map((f) => f.name);
-  const libFolderNames = libraryFolders.slice(0, 60).map((f) => f.name);
+  const quizFolderNames = folderPaths(folders).slice(0, 60);
+  const libFolderNames = folderPaths(libraryFolders).slice(0, 60);
   const quizTitles = quizzes.slice(0, 60).map((q) => q.title);
 
   return [
@@ -151,8 +294,11 @@ function buildPlannerPrompt() {
     '',
     'Acțiuni disponibile (folosește exact aceste nume):',
     '- create_folder: {"action":"create_folder","name":"Nume","parent":"NumeFolderParinte (optional, pt subfolder)"}',
-    '- create_library_folder: {"action":"create_library_folder","name":"Nume"}  // folder pt cursuri în Bibliotecă',
-    '- generate_quiz_pack: {"action":"generate_quiz_pack","source":"nume curs din bibliotecă","folder":"nume folder destinatie (optional)","packCount":N,"questionsPerPack":N,"difficulty":"auto|easy|medium|hard"}',
+    '- create_library_folder: {"action":"create_library_folder","name":"Nume","parent":"NumeFolderParinte (optional, pt subfolder de bibliotecă)"}  // folder pt cursuri în Bibliotecă',
+    '- generate_quiz_pack: {"action":"generate_quiz_pack","source":"nume curs din bibliotecă","folder":"nume folder destinatie (optional)","packCount":N,"questionsPerPack":N,"questionType":"single|multiple","difficulty":"auto|easy|medium|hard"}',
+    '- generate_from_mistakes: {"action":"generate_from_mistakes","count":N,"folder":"nume folder destinatie (optional)","questionType":"single|multiple"}  // grile de recapitulare țintite pe greșelile salvate ale studentului (NU are nevoie de sursă)',
+    '- create_flashcards: {"action":"create_flashcards","source":"nume curs din bibliotecă","folder":"nume folder destinatie (optional)","count":N}  // deck de flashcarduri (active recall) dintr-un curs',
+    '- summarize_document: {"action":"summarize_document","source":"nume curs din bibliotecă"}  // rezumat structurat pentru examen al unui curs din bibliotecă',
     '- create_study_plan: {"action":"create_study_plan","examName":"Numele examenului","studyDays":N,"hoursPerDay":N}  // plan de studiu personalizat bazat pe biblioteca curentă și SM-2',
     '- move_quiz: {"action":"move_quiz","quiz":"titlu set","folder":"nume folder"}',
     '- rename_quiz: {"action":"rename_quiz","quiz":"titlu actual","newName":"titlu nou"}',
@@ -161,7 +307,12 @@ function buildPlannerPrompt() {
     '- delete_folder: {"action":"delete_folder","name":"nume folder"}',
     '',
     'Reguli:',
+    '- Folderele de mai jos pot fi imbricate: un folder scris ca „Parinte / Copil" înseamnă că „Copil" e subfolder al lui „Parinte". Ca să pui ceva într-un subfolder, folosește exact numele subfolderului (ex. „Copil") la câmpul "folder". Ca să creezi un subfolder nou, folosește create_folder cu "parent" = numele folderului părinte.',
     '- Dacă userul cere generare într-un folder care nu există, adaugă întâi un pas create_folder, apoi generate_quiz_pack cu același "folder".',
+    '- "flashcard"/"flashcarduri"/"carduri"/"fișe" cerute explicit → create_flashcards cu "count" = numărul cerut (implicit 15). NU confunda cu grile.',
+    '- "greșeli"/"greșesc"/"unde greșesc"/"recapitulare greșeli"/"din ce am greșit" → generate_from_mistakes (NU cere sursă; folosește banca de greșeli).',
+    '- "rezumă"/"rezumat"/"sinteză" pentru un curs din bibliotecă → summarize_document.',
+    '- "complement multiplu"/"răspunsuri multiple"/"mai multe răspunsuri corecte" → questionType:"multiple". "complement simplu"/"un singur răspuns" → questionType:"single". Implicit "single".',
     '- "grilă"/"grile"/"întrebări"/"întrebare" = NUMĂRUL DE ÎNTREBĂRI (questionsPerPack). "set"/"seturi"/"pachet"/"pachete" = NUMĂRUL DE PACHETE (packCount).',
     '- IMPLICIT packCount = 1. Pune packCount > 1 DOAR dacă userul cere explicit mai multe "seturi"/"pachete", SAU dacă numărul de întrebări depășește 60 (abia atunci împarte în pachete de maxim 60 fiecare).',
     '- NU inventa numere și NU exagera. Exemple: "2 grile" → packCount:1, questionsPerPack:2. "10 întrebări" → packCount:1, questionsPerPack:10. "3 seturi a câte 20" → packCount:3, questionsPerPack:20. "150 de grile" → packCount:3, questionsPerPack:50.',
@@ -178,7 +329,8 @@ function buildPlannerPrompt() {
 function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
   const action = String(raw.action ?? '') as AgentActionType;
   const valid: AgentActionType[] = [
-    'create_folder', 'create_library_folder', 'generate_quiz_pack', 'create_study_plan',
+    'create_folder', 'create_library_folder', 'generate_quiz_pack', 'generate_from_mistakes',
+    'create_flashcards', 'summarize_document', 'create_study_plan',
     'move_quiz', 'rename_quiz', 'delete_quiz', 'rename_folder', 'delete_folder',
   ];
   if (!valid.includes(action)) return null;
@@ -197,6 +349,8 @@ function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
     quiz: str('quiz'),
     packCount: num('packCount') ?? num('packcount'),
     questionsPerPack: num('questionsPerPack') ?? num('questions') ?? num('questionsperpack'),
+    count: num('count') ?? num('cards') ?? num('cardCount'),
+    questionType: (['single', 'multiple'].includes(str('questionType') ?? str('question_type') ?? '') ? (str('questionType') ?? str('question_type')) : undefined) as AgentStep['questionType'],
     difficulty: (['auto', 'easy', 'medium', 'hard'].includes(diff ?? '') ? diff : undefined) as AgentStep['difficulty'],
     examName: str('examName') ?? str('exam'),
     studyDays: num('studyDays') ?? num('days'),
@@ -204,12 +358,22 @@ function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
   };
 }
 
-export async function planAgentCommand(command: string): Promise<AgentPlan> {
+export async function planAgentCommand(
+  command: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+): Promise<AgentPlan> {
   const system = buildPlannerPrompt();
+  // Feed the recent turns so follow-ups ("mai încearcă", "acum în Hematologie")
+  // resolve against the previous request instead of being planned in isolation.
+  const recentTurns = history
+    .filter((turn) => turn.content && turn.content.trim())
+    .slice(-6)
+    .map((turn) => ({ role: turn.role, content: turn.content.slice(0, 600) }));
   const raw = await groqRequest({
     task: 'analysis',
     messages: [
       { role: 'system', content: system },
+      ...recentTurns,
       { role: 'user', content: command },
     ],
     temperature: 0.1,
@@ -230,11 +394,33 @@ export async function planAgentCommand(command: string): Promise<AgentPlan> {
         .filter((step): step is AgentStep => Boolean(step))
     : [];
 
+  // Deterministic correction: the planner often miscounts ("3 grile" → 3×10)
+  // and drops the question type, so override generate_quiz_pack steps with what
+  // the user literally wrote whenever the wording is unambiguous.
+  const intent = extractQuizIntent(command);
+  if (intent.packCount || intent.questionsPerPack || intent.questionType) {
+    for (const step of steps) {
+      if (step.action === 'generate_from_mistakes') {
+        if (intent.questionsPerPack !== undefined) step.count = intent.questionsPerPack;
+        if (intent.questionType !== undefined) step.questionType = intent.questionType;
+        continue;
+      }
+      if (step.action !== 'generate_quiz_pack') continue;
+      if (intent.questionsPerPack !== undefined) step.questionsPerPack = intent.questionsPerPack;
+      if (intent.packCount !== undefined) step.packCount = intent.packCount;
+      if (intent.questionType !== undefined) step.questionType = intent.questionType;
+    }
+  }
+
   const isCommand = Boolean(parsed.isCommand) && steps.length > 0;
 
   const totalQuestions = steps
-    .filter((step) => step.action === 'generate_quiz_pack')
-    .reduce((sum, step) => sum + (step.packCount ?? 1) * (step.questionsPerPack ?? 10), 0);
+    .reduce((sum, step) => {
+      if (step.action === 'generate_quiz_pack') return sum + (step.packCount ?? 1) * (step.questionsPerPack ?? 10);
+      if (step.action === 'create_flashcards') return sum + (step.count ?? 15);
+      if (step.action === 'generate_from_mistakes') return sum + (step.count ?? 10);
+      return sum;
+    }, 0);
   const hasDestructive = steps.some((step) => DESTRUCTIVE_ACTIONS.includes(step.action));
   const needsConfirm = isCommand && (hasDestructive || totalQuestions > QUESTION_CONFIRM_THRESHOLD);
   const confirmReason = hasDestructive
@@ -257,13 +443,30 @@ export function describeStep(step: AgentStep): string {
     case 'create_folder':
       return step.parent ? `Creez subfolderul „${step.name}" în „${step.parent}"` : `Creez folderul „${step.name}"`;
     case 'create_library_folder':
-      return `Creez folderul de bibliotecă „${step.name}"`;
+      return step.parent
+        ? `Creez subfolderul de bibliotecă „${step.name}" în „${step.parent}"`
+        : `Creez folderul de bibliotecă „${step.name}"`;
     case 'generate_quiz_pack': {
       const packs = clampStudioPackCount(step.packCount ?? 1);
       const perPack = clampStudioQuestionCount(step.questionsPerPack ?? 10);
       const dest = step.folder ? ` în „${step.folder}"` : '';
-      return `Generez ${packs}×${perPack} grile din „${step.source}"${dest}`;
+      const typeLabel = step.questionType === 'multiple' ? ' (complement multiplu)' : '';
+      const countLabel = packs === 1 ? `${perPack} grile` : `${packs}×${perPack} grile`;
+      return `Generez ${countLabel}${typeLabel} din „${step.source}"${dest}`;
     }
+    case 'generate_from_mistakes': {
+      const n = clampStudioQuestionCount(step.count ?? 10);
+      const typeLabel = step.questionType === 'multiple' ? ' (complement multiplu)' : '';
+      const dest = step.folder ? ` în „${step.folder}"` : '';
+      return `Creez ${n} grile de recapitulare${typeLabel} din greșelile tale${dest}`;
+    }
+    case 'create_flashcards': {
+      const cards = Math.max(1, Math.min(100, step.count ?? 15));
+      const dest = step.folder ? ` în „${step.folder}"` : '';
+      return `Creez ${cards} flashcarduri din „${step.source}"${dest}`;
+    }
+    case 'summarize_document':
+      return `Rezum cursul „${step.source}"`;
     case 'move_quiz':
       return `Mut setul „${step.quiz}" în „${step.folder}"`;
     case 'rename_quiz':
@@ -319,9 +522,11 @@ export async function executeAgentPlan(
         case 'create_folder': {
           if (!step.name) throw new Error('Lipsește numele folderului.');
           const parent = resolveQuizFolder(step.parent);
-          const color = FOLDER_PALETTE[useFolderStore.getState().folders.length % FOLDER_PALETTE.length];
-          const id = folderStore.addFolder(step.name, parent ? '📁' : '📚', color, parent?.id ?? null);
-          const folder: Folder = { id, name: step.name, emoji: parent ? '📁' : '📚', color, parentId: parent?.id ?? null, createdAt: Date.now() };
+          const appearance = suggestFolderAppearance(step.name);
+          const emoji = parent ? '📁' : appearance.emoji;
+          const color = appearance.color;
+          const id = folderStore.addFolder(step.name, emoji, color, parent?.id ?? null);
+          const folder: Folder = { id, name: step.name, emoji, color, parentId: parent?.id ?? null, createdAt: Date.now() };
           createdFolderByName.set(normalizeName(step.name), folder);
           undoOps.push(() => useFolderStore.getState().deleteFolder(id));
           summaryParts.push(`folder „${step.name}"`);
@@ -331,9 +536,10 @@ export async function executeAgentPlan(
 
         case 'create_library_folder': {
           if (!step.name) throw new Error('Lipsește numele folderului.');
-          const id = aiStore.addLibraryFolder(step.name);
+          const parent = step.parent ? findByName(useAIStore.getState().libraryFolders, step.parent) : null;
+          const id = aiStore.addLibraryFolder(step.name, parent ? '📁' : '📚', parent?.id ?? null);
           undoOps.push(() => useAIStore.getState().deleteLibraryFolder(id));
-          summaryParts.push(`folder bibliotecă „${step.name}"`);
+          summaryParts.push(parent ? `subfolder bibliotecă „${step.name}" în „${parent.name}"` : `folder bibliotecă „${step.name}"`);
           callbacks.onStep(index, 'done');
           break;
         }
@@ -356,6 +562,7 @@ export async function executeAgentPlan(
             packCount,
             questionsPerPack,
             difficulty: (step.difficulty ?? 'auto') as Difficulty | 'auto',
+            questionType: step.questionType ?? 'single',
             activeProfileId,
             existingQuizzes: useQuizStore.getState().quizzes,
           });
@@ -365,8 +572,143 @@ export async function executeAgentPlan(
             createdQuizIds.push(quiz.id);
             undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
           });
+          // Warn when the AI failed and questions came from the local fallback —
+          // otherwise the user silently gets low-quality, copied-sentence questions.
+          const totalGenerated = result.aiQuestionCount + result.fallbackQuestionCount;
+          const mostlyFallback = totalGenerated > 0 && result.fallbackQuestionCount >= totalGenerated / 2;
+          if (mostlyFallback) {
+            errors.push(`„${source.name}": AI-ul nu a răspuns, am folosit generare locală de rezervă (calitate redusă). Verifică cheia AI în Setări.`);
+          }
           summaryParts.push(`${result.quizzes.length} seturi din „${source.name}"`);
-          callbacks.onStep(index, 'done', `${result.quizzes.length} seturi`);
+          callbacks.onStep(
+            index,
+            mostlyFallback ? 'error' : 'done',
+            mostlyFallback ? `${result.quizzes.length} seturi (rezervă locală — verifică cheia AI)` : `${result.quizzes.length} seturi`,
+          );
+          break;
+        }
+
+        case 'generate_from_mistakes': {
+          if (!activeProfileId) throw new Error('Nu există profil activ pentru banca de greșeli.');
+          const mistakes = generateFromMistakes(activeProfileId);
+          if (mistakes.length === 0) {
+            throw new Error('Nu am găsit greșeli salvate. Rezolvă întâi câteva grile ca să le pot ținti.');
+          }
+          const profile = getUserProfile(activeProfileId);
+          const weakTopics = getWeakTopicsForProfile(activeProfileId);
+          const count = clampStudioQuestionCount(step.count ?? 10);
+          const focus = Array.from(new Set(
+            mistakes.map((m) => m.missingConcept?.trim() || m.topic?.trim()).filter((t): t is string => Boolean(t)),
+          )).slice(0, 8);
+          const difficulty = (step.difficulty && step.difficulty !== 'auto'
+            ? step.difficulty
+            : profile.currentDifficulty) as Difficulty;
+
+          const result = await generateQuestions({
+            context: `Recapitulare țintită pe greșelile recurente ale studentului: ${focus.join(', ')}`,
+            count,
+            difficulty,
+            weakTopics,
+            userProfile: profile,
+            mode: 'standard',
+            questionType: step.questionType ?? 'single',
+          });
+          if (result.questions.length === 0) throw new Error('Nu am putut genera grile din greșeli.');
+
+          const folder = resolveQuizFolder(step.folder);
+          const quiz: Quiz = {
+            id: shortId(),
+            title: `Recapitulare greșeli · ${new Date().toLocaleDateString('ro-RO')}`,
+            description: `${result.questions.length} grile țintite pe conceptele unde greșești des: ${focus.slice(0, 4).join(', ')}.`,
+            emoji: '🎯',
+            color: folder?.color ?? 'red',
+            category: folder?.name ?? 'Recapitulare',
+            kind: 'quiz',
+            folderId: folder?.id ?? null,
+            shuffleQuestions: true,
+            shuffleAnswers: true,
+            tags: ['ai', 'remediere', 'greseli'],
+            questions: result.questions,
+            createdAt: Date.now(),
+          };
+          useQuizStore.getState().addQuiz(quiz);
+          createdQuizIds.push(quiz.id);
+          undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
+          summaryParts.push(`${result.questions.length} grile de recapitulare din greșeli`);
+          callbacks.onStep(index, 'done', `${result.questions.length} grile țintite`);
+          break;
+        }
+
+        case 'create_flashcards': {
+          const source = findByName(
+            useAIStore.getState().knowledgeSources.filter((s) => s.indexStatus === 'ready'),
+            step.source,
+          );
+          if (!source) throw new Error(`Nu am găsit cursul „${step.source ?? '?'}" în bibliotecă.`);
+          const text = await loadSourceText(source.id);
+          if (text.trim().length < 100) throw new Error(`Cursul „${source.name}" nu are destul text indexat pentru flashcarduri.`);
+
+          const count = Math.max(1, Math.min(100, step.count ?? 15));
+          const cards = await notesToFlashcards(text, { count, sourceName: source.name });
+          if (cards.length === 0) throw new Error(`Nu am putut genera flashcarduri din „${source.name}".`);
+
+          const folder = resolveQuizFolder(step.folder);
+          const deck: Quiz = {
+            id: shortId(),
+            title: `Flashcarduri · ${source.name}`,
+            description: `Deck de ${cards.length} flashcarduri generate din „${source.name}".`,
+            emoji: '🃏',
+            color: folder?.color ?? 'purple',
+            category: folder?.name ?? 'AI Flashcards',
+            kind: 'flashcard',
+            folderId: folder?.id ?? null,
+            shuffleQuestions: true,
+            shuffleAnswers: false,
+            tags: ['flashcard', 'ai'],
+            questions: cards.map((card) => buildAgentFlashcard(card.front, card.back)),
+            createdAt: Date.now(),
+          };
+          useQuizStore.getState().addQuiz(deck);
+          createdQuizIds.push(deck.id);
+          undoOps.push(() => useQuizStore.getState().deleteQuiz(deck.id));
+          summaryParts.push(`${cards.length} flashcarduri din „${source.name}"`);
+          callbacks.onStep(index, 'done', `${cards.length} carduri`);
+          break;
+        }
+
+        case 'summarize_document': {
+          const source = findByName(
+            useAIStore.getState().knowledgeSources.filter((s) => s.indexStatus === 'ready'),
+            step.source,
+          );
+          if (!source) throw new Error(`Nu am găsit cursul „${step.source ?? '?'}" în bibliotecă.`);
+          const text = await loadSourceText(source.id, 16000);
+          if (text.trim().length < 100) throw new Error(`Cursul „${source.name}" nu are destul text indexat pentru rezumat.`);
+
+          const summaryText = await groqRequest({
+            task: 'analysis',
+            messages: [
+              {
+                role: 'system',
+                content: [
+                  'Ești un editor de curs pentru examen. Rezumi materialul în idei-cheie esențiale.',
+                  'Răspunde în română, cu Markdown: titluri scurte, bullet points și un tabel când ajută.',
+                  'Marchează „foarte probabil / posibil / puțin probabil" la examen și include capcanele frecvente.',
+                ].join('\n'),
+              },
+              {
+                role: 'user',
+                content: `Rezumă pentru examen cursul „${source.name}":\n\n${text}`,
+              },
+            ],
+            temperature: 0.3,
+            maxTokens: 1600,
+            skipLibraryContext: true,
+          });
+
+          summaryParts.push(`rezumat „${source.name}"`);
+          callbacks.onStep(index, 'done', 'rezumat generat');
+          plan.reply = summaryText;
           break;
         }
 
@@ -403,10 +745,70 @@ export async function executeAgentPlan(
             skipLibraryContext: true,
           });
 
-          summaryParts.push(`plan ${studyDays} zile pentru „${examLabel}"`);
-          callbacks.onStep(index, 'done', `${studyDays} zile · ${hoursPerDay}h/zi`);
-          // Store the plan text as the step detail so AgentJobCard can surface it.
           plan.reply = planText;
+
+          // Make the plan actionable: generate ONE bounded "kickoff" set so the
+          // user can start day 1 immediately (not just read text). Best-effort.
+          let starterCreated = false;
+          try {
+            const primarySource = sources[0];
+            let starter: Quiz | null = null;
+            if (primarySource) {
+              const packRes = await generateQuizPackagesFromSource({
+                sourceId: primarySource.id,
+                sourceName: primarySource.name,
+                folder: null,
+                folderId: null,
+                packCount: 1,
+                questionsPerPack: 8,
+                difficulty: 'auto',
+                questionType: 'single',
+                activeProfileId,
+                existingQuizzes: useQuizStore.getState().quizzes,
+              });
+              starter = packRes.quizzes[0] ?? null;
+              if (starter) starter.title = `Start „${examLabel}"`;
+            } else if (activeProfileId) {
+              const qRes = await generateQuestions({
+                context: examLabel,
+                count: 8,
+                weakTopics: getWeakTopicsForProfile(activeProfileId),
+                userProfile: getUserProfile(activeProfileId),
+                mode: 'standard',
+              });
+              if (qRes.questions.length > 0) {
+                starter = {
+                  id: shortId(),
+                  title: `Start „${examLabel}"`,
+                  description: 'Set de pornire pentru planul tău de studiu.',
+                  emoji: '🚀',
+                  color: 'green',
+                  category: 'Plan studiu',
+                  kind: 'quiz',
+                  folderId: null,
+                  shuffleQuestions: true,
+                  shuffleAnswers: true,
+                  tags: ['ai', 'plan'],
+                  questions: qRes.questions,
+                  createdAt: Date.now(),
+                };
+              }
+            }
+            if (starter) {
+              const created = starter;
+              useQuizStore.getState().addQuiz(created);
+              createdQuizIds.push(created.id);
+              undoOps.push(() => useQuizStore.getState().deleteQuiz(created.id));
+              starterCreated = true;
+            }
+          } catch {
+            // Plan text is the main deliverable — a failed starter set is non-fatal.
+          }
+
+          summaryParts.push(starterCreated
+            ? `plan ${studyDays} zile + set de pornire pentru „${examLabel}"`
+            : `plan ${studyDays} zile pentru „${examLabel}"`);
+          callbacks.onStep(index, 'done', starterCreated ? `${studyDays} zile · set de pornire` : `${studyDays} zile · ${hoursPerDay}h/zi`);
           break;
         }
 

@@ -20,6 +20,7 @@ import {
   buildAnalysisFallback,
   buildHintFallback,
   buildMnemonicFallback,
+  cleanQuestionExplanation,
   getAnswerTextForOptionIds,
   getCorrectAnswerText,
 } from '../helpers/quizAi';
@@ -981,7 +982,7 @@ export default function QuizPlay() {
 
             {/* Explanation */}
             <AnimatePresence>
-              {revealed && !examMode && question.explanation && (
+              {revealed && !examMode && cleanQuestionExplanation(question.explanation) && (
                 <motion.div
                   initial={{ opacity: 0, y: 10, height: 0 }}
                   animate={{ opacity: 1, y: 0, height: 'auto' }}
@@ -991,7 +992,7 @@ export default function QuizPlay() {
                 >
                   <p className="text-sm" style={{ color: theme.text2 }}>
                     <span className="font-semibold" style={{ color: theme.accent }}>Explicație: </span>
-                    {question.explanation}
+                    {cleanQuestionExplanation(question.explanation)}
                   </p>
                   {autoAdvance && (
                     <div className="mt-3 h-0.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>

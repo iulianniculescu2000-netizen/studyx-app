@@ -11,7 +11,7 @@ import { useAIStore } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
 import { useUIStore } from '../store/uiStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
-import { buildClarificationFallback, getAnswerTextForOptionIds, getCorrectAnswerText } from '../helpers/quizAi';
+import { buildClarificationFallback, cleanQuestionExplanation, getAnswerTextForOptionIds, getCorrectAnswerText } from '../helpers/quizAi';
 import { explainWrongAnswer } from '../lib/groq';
 import { buildAdaptiveExamQuiz, buildMistakeFlashcardQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
 import { syncProfileFromStats } from '../ai/UserProfile';
@@ -428,9 +428,9 @@ export default function QuizResults() {
                     {isCorrect && (
                       <p className="text-xs" style={{ color: theme.success }}>✓ {userAnswerTexts}</p>
                     )}
-                    {q.explanation && (
+                    {cleanQuestionExplanation(q.explanation) && (
                       <p className="text-xs mt-1" style={{ color: theme.text3 }}>
-                        💡 {q.explanation}
+                        💡 {cleanQuestionExplanation(q.explanation)}
                       </p>
                     )}
                     {/* AI Explainer — only for wrong answers */}

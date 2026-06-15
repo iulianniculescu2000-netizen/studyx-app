@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, Key, Cpu, Eye, EyeOff, ExternalLink, Check, 
+import {
+  X, Key, Cpu, Eye, EyeOff, Check,
   Library, Trash2, Upload, FileText, Image,
-  Loader2
+  Loader2, Gift, ChevronDown, ArrowUpRight
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIModel, type AIProvider } from '../store/aiStore';
@@ -18,11 +18,11 @@ const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; 
     docs: 'https://console.groq.com/keys',
   },
   {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    desc: 'Rationament puternic pentru explicatii si sinteze',
-    keyHint: 'sk-...',
-    docs: 'https://platform.deepseek.com/api_keys',
+    id: 'google',
+    name: 'Google Gemini',
+    desc: 'Context mare si rationament puternic pentru explicatii',
+    keyHint: 'AIza...',
+    docs: 'https://aistudio.google.com/apikey',
   },
 ];
 
@@ -32,10 +32,36 @@ const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; spee
     { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B', desc: 'Ultra rapid', speed: 'Instant' },
     { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', desc: 'Echilibrat, context mare', speed: 'Rapid' },
   ],
-  deepseek: [
-    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', desc: 'Cel mai bun pentru raționament', speed: 'Smart' },
-    { id: 'deepseek-chat', name: 'DeepSeek Chat', desc: 'Rapid pentru chat și sinteze', speed: 'Rapid' },
+  google: [
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: 'Echilibrat, rapid și inteligent', speed: 'Rapid' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', desc: 'Ultra rapid pentru chat', speed: 'Instant' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', desc: 'Cel mai bun pentru raționament', speed: 'Smart' },
   ],
+};
+
+// Step-by-step guide for getting a FREE API key, per provider. Shown inline so
+// users (especially on the free Google tier) know exactly where to go.
+const KEY_GUIDE: Record<AIProvider, { intro: string; steps: string[] }> = {
+  google: {
+    intro: 'Gratuit, fără card bancar. Durează ~1 minut.',
+    steps: [
+      'Apasă butonul de mai jos — se deschide Google AI Studio.',
+      'Conectează-te cu un cont Google (Gmail).',
+      'Apasă „Create API key" (sau „Get API key").',
+      'Copiază cheia generată — începe cu „AIza…".',
+      'Lipește-o în câmpul de mai sus și apasă „Salvează".',
+    ],
+  },
+  groq: {
+    intro: 'Gratuit. Necesită doar un cont Groq.',
+    steps: [
+      'Apasă butonul de mai jos — se deschide Groq Console.',
+      'Creează un cont sau conectează-te.',
+      'Apasă „Create API Key".',
+      'Copiază cheia generată — începe cu „gsk_…".',
+      'Lipește-o în câmpul de mai sus și apasă „Salvează".',
+    ],
+  },
 };
 
 interface AISettingsProps {
@@ -46,13 +72,16 @@ interface AISettingsProps {
 export default function AISettings({ open, onClose }: AISettingsProps) {
   const theme = useTheme();
   const {
-    apiKey, provider, model, setApiKey, setProvider, setModel,
+    apiKey, provider, model, hasKey, setApiKey, setProvider, setModel,
     knowledgeSources, addKnowledgeSource, removeKnowledgeSource
   } = useAIStore();
-  
+
   const [draft, setDraft] = useState(apiKey);
   const [showKey, setShowKey] = useState(false);
+  const [showGuide, setShowGuide] = useState(!hasKey);
   const [saved, setSaved] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{ ok: boolean; error?: string; warning?: string } | null>(null);
   const [libraryError, setLibraryError] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -87,20 +116,35 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
 
   const activeProvider = PROVIDERS.find((entry) => entry.id === provider) ?? PROVIDERS[0];
   const modelOptions = MODELS[provider] ?? MODELS.groq;
-  const isValidKey = (k: string) => {
+  // A key's provider is unambiguous from its prefix (gsk_ = Groq, AIza = Google),
+  // so we never block a valid key just because the selector points elsewhere — we
+  // switch the provider automatically on save instead.
+  const detectProviderFromKey = (k: string): AIProvider | null => {
     const trimmed = k.trim();
-    if (!trimmed) return true;
-    return provider === 'groq'
-      ? trimmed.startsWith('gsk_') && trimmed.length > 20
-      : trimmed.startsWith('sk-') && trimmed.length > 20;
+    if (trimmed.startsWith('gsk_') && trimmed.length > 20) return 'groq';
+    // Groq keys are always "gsk_"; any other substantial key is a Google/Gemini
+    // key (AIza, AQ., …) — we don't gate on the Google prefix.
+    if (trimmed.length >= 20) return 'google';
+    return null;
   };
-  const keyInvalid = draft.trim().length > 0 && !isValidKey(draft);
+  const detectedProvider = detectProviderFromKey(draft);
+  // Invalid only if it matches NEITHER provider's format.
+  const keyInvalid = draft.trim().length > 0 && detectedProvider === null;
+  // Valid key, but belongs to the other provider than the one selected.
+  const keyForOtherProvider = detectedProvider !== null && detectedProvider !== provider;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmed = draft.trim();
-    if (trimmed && !isValidKey(trimmed)) {
+    if (trimmed && keyInvalid) {
       setSaved(false);
       return;
+    }
+
+    // Auto-switch to the provider the key actually belongs to, so pasting a
+    // ready-made key just works without first changing the selector.
+    const targetProvider = detectProviderFromKey(trimmed) ?? provider;
+    if (trimmed && targetProvider !== provider) {
+      setProvider(targetProvider);
     }
     setApiKey(trimmed);
     setSaved(true);
@@ -108,6 +152,21 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
       clearTimeout(savedTimerRef.current);
     }
     savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
+
+    // Live-verify the key against the provider so a green check actually means
+    // "works" — not just "right format". An invalid key silently degrades the app.
+    setVerifyResult(null);
+    if (!trimmed) return;
+    setVerifying(true);
+    try {
+      const { validateApiKey } = await import('../lib/groq');
+      const result = await validateApiKey(targetProvider, trimmed);
+      setVerifyResult(result);
+    } catch (error) {
+      setVerifyResult({ ok: false, error: error instanceof Error ? error.message : 'Verificare eșuată.' });
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const handleKnowledgeFile = async (file: File) => {
@@ -243,7 +302,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                     <input
                       type={showKey ? 'text' : 'password'}
                       value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
+                      onChange={(e) => { setDraft(e.target.value); setVerifyResult(null); }}
                       onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                       placeholder={activeProvider.keyHint}
                       className="w-full px-4 py-3 rounded-2xl text-sm pr-10 font-medium"
@@ -253,14 +312,81 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                       {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
-                  <a href={activeProvider.docs} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-bold mt-2.5 hover:underline" style={{ color: theme.accent }}>
-                    <ExternalLink size={11} /> Deschide pagina pentru cheie
-                  </a>
+                  <button
+                    onClick={() => setShowGuide((v) => !v)}
+                    className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-black hover:opacity-80 transition-opacity"
+                    style={{ color: theme.accent }}
+                  >
+                    <Gift size={12} /> Cum obțin o cheie gratuită?
+                    <ChevronDown size={12} style={{ transform: showGuide ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                  </button>
+                  {showGuide && (
+                    <div className="mt-3 rounded-2xl p-4" style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}>
+                      <p className="mb-3 text-[11px] font-bold" style={{ color: theme.accent }}>
+                        {KEY_GUIDE[provider].intro}
+                      </p>
+                      <ol className="space-y-2">
+                        {KEY_GUIDE[provider].steps.map((step, i) => (
+                          <li key={i} className="flex items-start gap-2.5 text-[12px] leading-5" style={{ color: theme.text2 }}>
+                            <span
+                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white"
+                              style={{ background: theme.accent }}
+                            >
+                              {i + 1}
+                            </span>
+                            <span>{step}</span>
+                          </li>
+                        ))}
+                      </ol>
+                      <a
+                        href={activeProvider.docs}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3.5 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-black text-white shadow-lg"
+                        style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                      >
+                        <ArrowUpRight size={13} /> Deschide {activeProvider.name}
+                      </a>
+                    </div>
+                  )}
                   {keyInvalid && (
-                    <p className="mt-2 text-[11px] font-bold" style={{ color: theme.danger }}>
-                      Cheia nu se potrivește cu providerul selectat.
+                    <div
+                      className="mt-2 rounded-xl px-3 py-2 text-[11px] font-bold leading-relaxed"
+                      style={{ color: theme.text, background: `${theme.danger}1A`, border: `1px solid ${theme.danger}40` }}
+                    >
+                      Cheia pare incompletă — copiaz-o din nou întreagă (cheia Groq începe cu „gsk_"; cheia Google e mai lungă).
+                    </div>
+                  )}
+                  {!keyInvalid && keyForOtherProvider && detectedProvider && (
+                    <div
+                      className="mt-2 rounded-xl px-3 py-2 text-[11px] font-bold leading-relaxed"
+                      style={{ color: theme.text, background: `${theme.accent}1A`, border: `1px solid ${theme.accent}40` }}
+                    >
+                      Cheie {PROVIDERS.find((p) => p.id === detectedProvider)?.name ?? detectedProvider} detectată — la „Salvează" comut automat pe acest provider.
+                    </div>
+                  )}
+                  {verifying && (
+                    <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold" style={{ color: theme.accent }}>
+                      <Loader2 size={12} className="animate-spin" /> Verific cheia cu {activeProvider.name}…
                     </p>
                   )}
+                  {!verifying && verifyResult && (() => {
+                    const tone = !verifyResult.ok
+                      ? theme.danger
+                      : verifyResult.warning
+                        ? theme.warning
+                        : theme.success;
+                    return (
+                      <div
+                        className="mt-2 flex items-start gap-2 rounded-xl px-3 py-2 text-[11px] font-bold leading-relaxed"
+                        style={{ color: theme.text, background: `${tone}1A`, border: `1px solid ${tone}40` }}
+                      >
+                        {verifyResult.ok
+                          ? <><Check size={14} strokeWidth={3} className="mt-px shrink-0" style={{ color: tone }} /> <span>{verifyResult.warning ?? 'Cheie validă și funcțională.'}</span></>
+                          : <><X size={14} strokeWidth={3} className="mt-px shrink-0" style={{ color: tone }} /> <span>{verifyResult.error}</span></>}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="mb-6">
@@ -276,6 +402,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                           onClick={() => {
                             setProvider(entry.id);
                             setSaved(false);
+                            setVerifyResult(null);
                           }}
                           className="flex min-h-[82px] items-start gap-3 rounded-2xl px-4 py-3 text-left transition-all"
                           style={{

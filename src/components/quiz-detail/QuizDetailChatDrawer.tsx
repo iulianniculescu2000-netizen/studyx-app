@@ -56,6 +56,7 @@ Comportament:
 - Răspunde concis și clar în română
 - Explică conceptele medicale cu exemple practice când e util
 - Dacă ești întrebat despre o întrebare specifică, explică conceptul medical din spatele ei
+- Cheia ("Corect") poate proveni dintr-o grilă generată automat, deci poate fi greșită. Verifică medical: dacă răspunsul marcat corect este de fapt greșit, spune-o explicit ("⚠️ grila pare greșită — corect este de fapt «...»") și dă răspunsul corect real, în loc să aperi o cheie eronată.
 - Nu vorbi despre structura tehnică a grilei`;
 
     const history = [...chatMessages, userMsg].map((message) => ({ role: message.role, content: message.content }));

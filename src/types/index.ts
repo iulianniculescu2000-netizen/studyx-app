@@ -24,6 +24,13 @@ export interface Quiz {
   description: string;
   emoji: string;
   category: string;
+  /**
+   * How this set was created and should always be studied:
+   * 'flashcard' = active-recall deck (flip cards), 'quiz' = multiple-choice grilă.
+   * Set explicitly at creation so a flashcard never opens as a quiz (and vice
+   * versa). When absent (legacy sets), fall back to isFlashcardDeck() heuristics.
+   */
+  kind?: 'quiz' | 'flashcard';
   folderId?: string | null;
   questions: Question[];
   createdAt: number;

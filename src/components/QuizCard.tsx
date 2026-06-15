@@ -7,6 +7,7 @@ import type { Quiz } from '../types';
 import { useQuizStore } from '../store/quizStore';
 import { useTheme } from '../theme/ThemeContext';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
+import { isFlashcardDeck } from '../lib/deckKind';
 
 interface Props {
   quiz: Quiz;
@@ -59,7 +60,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const isFlashcard = quiz.tags?.includes('flashcard') ?? false;
+  const isFlashcard = isFlashcardDeck(quiz);
   const quizPath = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
   const playPath = isFlashcard ? `/flashcards/session/${quiz.id}` : `/play/${quiz.id}`;
 

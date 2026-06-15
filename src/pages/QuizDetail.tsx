@@ -29,6 +29,7 @@ import { useUIStore } from '../store/uiStore';
 import { HERO_COLOR_MAP } from '../theme/colorMaps';
 import { useTheme } from '../theme/ThemeContext';
 import { type Theme } from '../theme/themes';
+import { isFlashcardDeck } from '../lib/deckKind';
 import type { QuizImportData } from '../types';
 
 const QuizDetailChatDrawer = lazy(() => import('../components/quiz-detail/QuizDetailChatDrawer'));
@@ -68,6 +69,14 @@ export default function QuizDetail() {
   const unlockFloatingUI = useUIStore((state) => state.unlockFloatingUI);
 
   const quiz = quizzes.find((candidate) => candidate.id === id);
+
+  // A flashcard deck must always study as flashcards — if one is opened via the
+  // quiz-detail route (old links, search), send it to its real session.
+  useEffect(() => {
+    if (quiz && isFlashcardDeck(quiz)) {
+      navigate(`/flashcards/session/${quiz.id}?mode=all`, { replace: true });
+    }
+  }, [quiz, navigate]);
 
   useEffect(() => {
     if (!showChat) return;

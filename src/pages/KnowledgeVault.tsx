@@ -4,10 +4,12 @@ import {
   ArrowLeft,
   ArrowRight,
   Brain,
+  ChevronRight,
   Database,
   FileText,
   FileType,
   FolderOpen,
+  FolderPlus,
   Image,
   Layers3,
   Library,
@@ -19,10 +21,12 @@ import {
   X,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
-import { useAIStore, type AIKnowledgeSource, type AIKnowledgeSourceType } from '../store/aiStore';
+import { useAIStore, type AILibraryFolder, type AIKnowledgeSource, type AIKnowledgeSourceType } from '../store/aiStore';
 import { useToastStore } from '../store/toastStore';
 import { useUIStore } from '../store/uiStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
+import ThemedSelect from '../components/ThemedSelect';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 function SourceStatusBadge({
   source,
@@ -65,6 +69,73 @@ function SourceStatusBadge({
 
 const FOLDER_EMOJIS = ['📚', '🧠', '🫀', '🩸', '🦷', '🔬', '📋', '🩻', '🧬', '💊'];
 
+/**
+ * A single folder card. The delete action and the open arrow live in one flex
+ * cluster on the right, so they never overlap — the trash fades in on hover to
+ * the left of the arrow instead of stacking on top of it.
+ */
+function FolderTile({
+  folder,
+  docCount,
+  subCount,
+  theme,
+  index,
+  onOpen,
+  onDelete,
+}: {
+  folder: AILibraryFolder;
+  docCount: number;
+  subCount: number;
+  theme: ReturnType<typeof useTheme>;
+  index: number;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.04 + index * 0.04 }}
+      className="group relative flex cursor-pointer flex-col gap-3 rounded-[24px] p-5 transition-all hover:-translate-y-0.5"
+      style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+      onClick={onOpen}
+    >
+      <div className="flex items-center justify-between">
+        <div
+          className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl"
+          style={{ background: `${theme.accent}15` }}
+        >
+          {folder.emoji ?? '📚'}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="flex h-7 w-7 items-center justify-center rounded-xl opacity-0 transition-all hover:bg-red-500/15 group-hover:opacity-100"
+            style={{ color: theme.danger }}
+            aria-label={`Șterge folderul ${folder.name}`}
+            title="Șterge folderul"
+          >
+            <Trash2 size={13} />
+          </button>
+          <ArrowRight
+            size={16}
+            style={{ color: theme.text3 }}
+            className="opacity-40 transition-opacity group-hover:opacity-100"
+          />
+        </div>
+      </div>
+      <div>
+        <div className="text-sm font-black" style={{ color: theme.text }}>{folder.name}</div>
+        <div className="mt-0.5 text-[11px] font-medium" style={{ color: theme.text3 }}>
+          {docCount} {docCount === 1 ? 'document' : 'documente'}
+          {docCount > 0 && <span style={{ color: theme.accent }}> · indexate</span>}
+          {subCount > 0 && <span> · {subCount} {subCount === 1 ? 'subfolder' : 'subfoldere'}</span>}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function KnowledgeVault() {
   const theme = useTheme();
   const { calmMotion, performanceLite } = useAdaptiveMotion();
@@ -90,6 +161,9 @@ export default function KnowledgeVault() {
   const [readerContent, setReaderContent] = useState('');
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [movingSourceId, setMovingSourceId] = useState<string | null>(null);
+  const [creatingSubfolder, setCreatingSubfolder] = useState(false);
+  const [newSubfolderName, setNewSubfolderName] = useState('');
+  const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -107,6 +181,58 @@ export default function KnowledgeVault() {
     }
     return { counts, unfiled };
   }, [knowledgeSources]);
+
+  const rootFolders = useMemo(
+    () => libraryFolders.filter((folder) => !folder.parentId),
+    [libraryFolders],
+  );
+
+  const subfoldersByParent = useMemo(() => {
+    const map = new Map<string, AILibraryFolder[]>();
+    for (const folder of libraryFolders) {
+      if (!folder.parentId) continue;
+      map.set(folder.parentId, [...(map.get(folder.parentId) ?? []), folder]);
+    }
+    return map;
+  }, [libraryFolders]);
+
+  const activeSubfolders = useMemo(
+    () => (activeFolder ? subfoldersByParent.get(activeFolder.id) ?? [] : []),
+    [activeFolder, subfoldersByParent],
+  );
+
+  // Flat "move to folder" options, labelled with their full path so a subfolder
+  // like "Hematologie / Cursuri" is distinguishable from a sibling root folder.
+  const libraryFolderOptions = useMemo(() => {
+    const byId = new Map(libraryFolders.map((folder) => [folder.id, folder]));
+    const pathLabel = (folder: AILibraryFolder) => {
+      const names = [folder.name];
+      const guard = new Set<string>([folder.id]);
+      let parent = folder.parentId ? byId.get(folder.parentId) : undefined;
+      while (parent && !guard.has(parent.id)) {
+        guard.add(parent.id);
+        names.unshift(parent.name);
+        parent = parent.parentId ? byId.get(parent.parentId) : undefined;
+      }
+      return names.join(' / ');
+    };
+    return libraryFolders.map((folder) => ({ value: folder.id, label: `${folder.emoji} ${pathLabel(folder)}` }));
+  }, [libraryFolders]);
+
+  // Breadcrumb chain from the root down to the active folder (inclusive).
+  const folderPath = useMemo(() => {
+    if (!activeFolder) return [] as AILibraryFolder[];
+    const byId = new Map(libraryFolders.map((folder) => [folder.id, folder]));
+    const chain: AILibraryFolder[] = [];
+    const guard = new Set<string>();
+    let current: AILibraryFolder | undefined = activeFolder;
+    while (current && !guard.has(current.id)) {
+      guard.add(current.id);
+      chain.unshift(current);
+      current = current.parentId ? byId.get(current.parentId) : undefined;
+    }
+    return chain;
+  }, [activeFolder, libraryFolders]);
 
   const visibleSources = useMemo(() => {
     let list = knowledgeSources;
@@ -147,6 +273,27 @@ export default function KnowledgeVault() {
     setCreatingFolder(false);
     setActiveFolderId(id);
     addToast(`Folderul „${name}" a fost creat.`, 'success');
+  };
+
+  const submitNewSubfolder = () => {
+    const name = newSubfolderName.trim();
+    if (!name || !activeFolder) { setCreatingSubfolder(false); setNewSubfolderName(''); return; }
+    const id = addLibraryFolder(name, '📁', activeFolder.id);
+    setNewSubfolderName('');
+    setCreatingSubfolder(false);
+    setActiveFolderId(id);
+    addToast(`Subfolderul „${name}" a fost creat.`, 'success');
+  };
+
+  const confirmDeleteFolder = () => {
+    if (!folderToDelete) return;
+    const deletedId = folderToDelete.id;
+    const parentOfDeleted = libraryFolders.find((folder) => folder.id === deletedId)?.parentId ?? null;
+    deleteLibraryFolder(deletedId);
+    addToast(`Folderul „${folderToDelete.name}" șters.`, 'info');
+    // If we were viewing the folder we just deleted, step back to its parent.
+    if (activeFolderId === deletedId) setActiveFolderId(parentOfDeleted);
+    setFolderToDelete(null);
   };
 
   const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string) => {
@@ -322,10 +469,13 @@ export default function KnowledgeVault() {
               <div className="mb-2 flex items-center gap-3">
                 {!isTopLevel && (
                   <button
-                    onClick={() => { setActiveFolderId(null); setSearch(''); }}
+                    onClick={() => {
+                      setActiveFolderId(activeFolderId === '__unfiled__' ? null : (activeFolder?.parentId ?? null));
+                      setSearch('');
+                    }}
                     className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:scale-105"
                     style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
-                    aria-label="Înapoi la foldere"
+                    aria-label="Înapoi"
                   >
                     <ArrowLeft size={16} />
                   </button>
@@ -345,13 +495,27 @@ export default function KnowledgeVault() {
                         : (activeFolder ? `${activeFolder.emoji} ${activeFolder.name}` : 'Bibliotecă')}
                   </h1>
                   {!isTopLevel && (
-                    <button
-                      onClick={() => { setActiveFolderId(null); setSearch(''); }}
-                      className="text-[11px] font-medium opacity-50 transition-opacity hover:opacity-80"
-                      style={{ color: theme.text }}
-                    >
-                      ← Toate folderele
-                    </button>
+                    <div className="flex flex-wrap items-center gap-1 text-[11px] font-medium" style={{ color: theme.text3 }}>
+                      <button
+                        onClick={() => { setActiveFolderId(null); setSearch(''); }}
+                        className="transition-opacity hover:opacity-80"
+                        style={{ color: theme.accent }}
+                      >
+                        Toate folderele
+                      </button>
+                      {folderPath.slice(0, -1).map((ancestor) => (
+                        <span key={ancestor.id} className="flex items-center gap-1">
+                          <ChevronRight size={11} />
+                          <button
+                            onClick={() => { setActiveFolderId(ancestor.id); setSearch(''); }}
+                            className="transition-opacity hover:opacity-80"
+                            style={{ color: theme.accent }}
+                          >
+                            {ancestor.name}
+                          </button>
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
@@ -476,54 +640,19 @@ export default function KnowledgeVault() {
                 </div>
               </motion.button>
 
-              {/* Folder tiles */}
-              {libraryFolders.map((folder, i) => {
-                const count = folderCounts.counts.get(folder.id) ?? 0;
-                return (
-                  <motion.div
-                    key={folder.id}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.04 + i * 0.04 }}
-                    className="group relative flex flex-col gap-3 rounded-[24px] p-5 transition-all hover:-translate-y-0.5 cursor-pointer"
-                    style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
-                    onClick={() => setActiveFolderId(folder.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div
-                        className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl"
-                        style={{ background: `${theme.accent}15` }}
-                      >
-                        {folder.emoji ?? '📚'}
-                      </div>
-                      <ArrowRight size={16} style={{ color: theme.text3 }} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-black" style={{ color: theme.text }}>{folder.name}</div>
-                      <div className="mt-0.5 text-[11px] font-medium" style={{ color: theme.text3 }}>
-                        {count} {count === 1 ? 'document' : 'documente'}
-                        {count > 0 && <span style={{ color: theme.accent }}> · indexate</span>}
-                      </div>
-                    </div>
-
-                    {/* Delete folder button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm(`Ștergi folderul „${folder.name}"? Documentele din el vor rămâne în Neclasificate.`)) {
-                          deleteLibraryFolder(folder.id);
-                          addToast(`Folderul „${folder.name}" șters.`, 'info');
-                        }
-                      }}
-                      className="absolute right-4 top-4 flex h-7 w-7 items-center justify-center rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500/15"
-                      style={{ color: theme.danger }}
-                      title="Șterge folderul"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </motion.div>
-                );
-              })}
+              {/* Folder tiles (root level only — subfolders live inside them) */}
+              {rootFolders.map((folder, i) => (
+                <FolderTile
+                  key={folder.id}
+                  folder={folder}
+                  docCount={folderCounts.counts.get(folder.id) ?? 0}
+                  subCount={subfoldersByParent.get(folder.id)?.length ?? 0}
+                  theme={theme}
+                  index={i}
+                  onOpen={() => setActiveFolderId(folder.id)}
+                  onDelete={() => setFolderToDelete({ id: folder.id, name: folder.name })}
+                />
+              ))}
 
               {/* New folder tile */}
               {creatingFolder ? (
@@ -567,9 +696,73 @@ export default function KnowledgeVault() {
           </div>
         )}
 
-        {/* ── FOLDER LEVEL: documents inside folder ── */}
+        {/* ── FOLDER LEVEL: subfolders + documents inside folder ── */}
         {!isTopLevel && (
           <div className="space-y-6">
+            {/* Subfolders of the current folder (Neclasificate has none) */}
+            {activeFolder && (activeSubfolders.length > 0 || creatingSubfolder) && (
+              <div>
+                <div className="mb-2.5 flex items-center gap-2 px-1">
+                  <FolderOpen size={14} style={{ color: theme.text3 }} />
+                  <h2 className="text-[13px] font-black tracking-tight" style={{ color: theme.text }}>Subfoldere</h2>
+                  <span className="text-[11px] font-bold opacity-45" style={{ color: theme.text }}>
+                    {activeSubfolders.length}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {activeSubfolders.map((folder, i) => (
+                    <FolderTile
+                      key={folder.id}
+                      folder={folder}
+                      docCount={folderCounts.counts.get(folder.id) ?? 0}
+                      subCount={subfoldersByParent.get(folder.id)?.length ?? 0}
+                      theme={theme}
+                      index={i}
+                      onOpen={() => { setActiveFolderId(folder.id); setSearch(''); }}
+                      onDelete={() => setFolderToDelete({ id: folder.id, name: folder.name })}
+                    />
+                  ))}
+
+                  {creatingSubfolder && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex flex-col gap-3 rounded-[24px] p-5"
+                      style={{ background: theme.surface2, border: `1.5px dashed ${theme.accent}55` }}
+                    >
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl" style={{ background: `${theme.accent}15` }}>
+                        📁
+                      </div>
+                      <input
+                        autoFocus
+                        value={newSubfolderName}
+                        onChange={(e) => setNewSubfolderName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') submitNewSubfolder();
+                          if (e.key === 'Escape') { setCreatingSubfolder(false); setNewSubfolderName(''); }
+                        }}
+                        onBlur={submitNewSubfolder}
+                        placeholder="Nume subfolder..."
+                        className="rounded-[12px] border px-3 py-2 text-sm font-bold outline-none"
+                        style={{ background: theme.surface, border: `1px solid ${theme.accent}55`, color: theme.text }}
+                      />
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeFolder && !creatingSubfolder && (
+              <button
+                onClick={() => setCreatingSubfolder(true)}
+                className="flex items-center gap-2 rounded-[14px] border px-3.5 py-2 text-[11px] font-black uppercase tracking-wider transition-all hover:-translate-y-0.5"
+                style={{ background: 'transparent', borderColor: `${theme.accent}40`, borderStyle: 'dashed', color: theme.accent }}
+              >
+                <FolderPlus size={14} />
+                Subfolder nou
+              </button>
+            )}
+
             <div className="relative">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-40">
                 <Search size={18} style={{ color: theme.text }} />
@@ -667,23 +860,21 @@ export default function KnowledgeVault() {
 
                             {/* Move to folder — inline */}
                             {movingSourceId === source.id ? (
-                              <div className="flex items-center gap-1">
-                                <select
-                                  autoFocus
+                              <div className="flex items-center gap-1" style={{ minWidth: 160 }}>
+                                <ThemedSelect
+                                  size="sm"
+                                  defaultOpen
                                   value={source.folderId ?? ''}
-                                  onChange={(e) => {
-                                    moveSourceToLibraryFolder(source.id, e.target.value || null);
+                                  onChange={(folderId) => {
+                                    moveSourceToLibraryFolder(source.id, folderId || null);
                                     setMovingSourceId(null);
                                   }}
-                                  onBlur={() => setMovingSourceId(null)}
-                                  className="rounded-lg px-2 py-1 text-[10px] font-bold normal-case tracking-normal outline-none"
-                                  style={{ background: theme.surface2, border: `1px solid ${theme.accent}55`, color: theme.text }}
-                                >
-                                  <option value="">📂 Neclasificate</option>
-                                  {libraryFolders.map((f) => (
-                                    <option key={f.id} value={f.id}>{f.emoji} {f.name}</option>
-                                  ))}
-                                </select>
+                                  onRequestClose={() => setMovingSourceId(null)}
+                                  options={[
+                                    { value: '', label: '📂 Neclasificate' },
+                                    ...libraryFolderOptions,
+                                  ]}
+                                />
                                 <button onClick={() => setMovingSourceId(null)} style={{ color: theme.text3 }}><X size={12} /></button>
                               </div>
                             ) : (
@@ -836,6 +1027,17 @@ export default function KnowledgeVault() {
           </>
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={folderToDelete !== null}
+        title={`Ștergi folderul „${folderToDelete?.name}"?`}
+        description="Documentele rămân în Neclasificate, dar subfolderele acestui folder vor fi șterse. Acțiunea nu poate fi anulată."
+        confirmLabel="Șterge folderul"
+        cancelLabel="Anulează"
+        variant="danger"
+        onConfirm={confirmDeleteFolder}
+        onCancel={() => setFolderToDelete(null)}
+      />
     </div>
   );
 }

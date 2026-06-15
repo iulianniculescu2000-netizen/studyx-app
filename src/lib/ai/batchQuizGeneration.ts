@@ -23,6 +23,7 @@ interface BatchGenerationOptions {
   packCount: number;
   questionsPerPack: number;
   difficulty: BatchDifficulty;
+  questionType?: 'single' | 'multiple';
   activeProfileId: string | null;
   existingQuizzes?: Quiz[];
 }
@@ -63,6 +64,7 @@ export async function generateQuizPackagesFromSource({
   packCount,
   questionsPerPack,
   difficulty,
+  questionType = 'single',
   activeProfileId,
   existingQuizzes = [],
 }: BatchGenerationOptions) {
@@ -118,6 +120,7 @@ export async function generateQuizPackagesFromSource({
           weakTopics,
           userProfile: profile ?? undefined,
           mode: 'standard',
+          questionType,
         });
 
         result.questions
@@ -190,6 +193,7 @@ export async function generateQuizPackagesFromSource({
         description: `Generat de AI Studio din documentul "${sourceName}" cu ${dedupedQuestions.length} întrebări și dificultate ${targetDifficulty}.`,
         emoji: folder?.emoji ?? '\u{1F9E0}',
         category: folder?.name ?? 'AI Studio',
+        kind: 'quiz',
         folderId,
         color: folder?.color ?? 'blue',
         questions: dedupedQuestions,
