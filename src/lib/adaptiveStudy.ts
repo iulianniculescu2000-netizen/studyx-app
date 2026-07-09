@@ -28,6 +28,23 @@ function getQuestionStatMap(stats: Record<string, QuestionStat>) {
   return new Map(Object.values(stats).map((stat) => [`${stat.quizId}:${stat.questionId}`, stat] as const));
 }
 
+/**
+ * Keeps the first (highest-scored, since callers sort by score beforehand) occurrence of each
+ * fingerprint. Replaces an O(n^2) `findIndex` scan that recomputed the fingerprint on every
+ * comparison with a single pass over a Set.
+ */
+function dedupeByFingerprint<T extends { question: Question }>(entries: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const entry of entries) {
+    const fingerprint = questionFingerprint(entry.question);
+    if (seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
+    out.push(entry);
+  }
+  return out;
+}
+
 export function buildMistakeFlashcardQuiz(
   profileId: string,
   quizzes: Quiz[],
@@ -120,10 +137,7 @@ export function buildWeaknessRecoveryQuiz(
     .filter((entry) => entry.score > 0.18)
     .sort((left, right) => right.score - left.score);
 
-  const questions = scoredQuestions
-    .filter((entry, index, all) =>
-      all.findIndex((candidate) => questionFingerprint(candidate.question) === questionFingerprint(entry.question)) === index,
-    )
+  const questions = dedupeByFingerprint(scoredQuestions)
     .slice(0, 12)
     .map((entry) => cloneQuestion(entry.question));
 
@@ -168,10 +182,7 @@ export function buildAdaptiveExamQuiz(
   }));
 
   const sorted = [...pool].sort((left, right) => right.score - left.score);
-  const selected = sorted
-    .filter((entry, index, all) =>
-      all.findIndex((candidate) => questionFingerprint(candidate.question) === questionFingerprint(entry.question)) === index,
-    )
+  const selected = dedupeByFingerprint(sorted)
     .slice(0, 18)
     .map((entry) => cloneQuestion(entry.question));
   if (selected.length === 0) return null;

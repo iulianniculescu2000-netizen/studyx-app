@@ -10,11 +10,19 @@ export type TutorialStepId =
   | 'play_modes'
   | 'flashcards'
   | 'flashcard_session'
+  | 'quiz_management'
   | 'review'
+  | 'daily_review'
+  | 'vault'
+  | 'ai_chat'
+  | 'ai_setup'
   | 'stats'
+  | 'analytics_gamification'
   | 'notes'
   | 'search'
-  | 'ai_setup'
+  | 'focus_pomodoro'
+  | 'profiles'
+  | 'backup'
   | 'shortcuts';
 
 interface TutorialStore {
@@ -31,7 +39,7 @@ interface TutorialStore {
   isCompleted: (profileId: string) => boolean;
 }
 
-export const TOTAL_STEPS = 14;
+export const TOTAL_STEPS = 22;
 
 export const useTutorialStore = create<TutorialStore>()(
   persist(

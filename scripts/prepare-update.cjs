@@ -85,6 +85,21 @@ const manifest = {
     : {}),
 };
 
+// Keep the local root version.json in lockstep with package.json so the
+// updater metadata never drifts from the actual app version (single source of
+// truth = package.json). This is the local mirror; the release scripts push
+// the same shape to the update repo.
+const localVersionJson = {
+  version: PKG.version,
+  manifestUrl: `${RAW_BASE_URL}/manifests/${PKG.version}.json`,
+};
+fs.writeFileSync(
+  path.join(ROOT, 'version.json'),
+  `${JSON.stringify(localVersionJson, null, 4)}\n`,
+  'utf-8',
+);
+console.log(`✓ version.json sincronizat cu package.json (${PKG.version})`);
+
 console.log('\n==============================================================');
 console.log(` StudyX update manifest v${PKG.version}`);
 console.log('==============================================================\n');

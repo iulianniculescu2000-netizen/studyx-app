@@ -16,6 +16,12 @@ export interface StudyCoachPlan {
   actions: StudyCoachAction[];
 }
 
+// Single source of truth for the "good enough" bar — the label and the cleanup-action
+// decision below used to disagree (label said "bună" for 60-64% while the action still
+// suggested cleaning it up), which contradicted itself in the same plan.
+const SOURCE_QUALITY_EXCELLENT = 78;
+const SOURCE_QUALITY_GOOD = 65;
+
 export function buildStudyCoachPlan(
   summary: PerformanceSummary,
   sources: AIKnowledgeSource[],
@@ -27,9 +33,9 @@ export function buildStudyCoachPlan(
 
   const sourceQualityLabel = sources.length === 0
     ? 'Fără surse AI încărcate'
-    : avgSourceQuality >= 78
+    : avgSourceQuality >= SOURCE_QUALITY_EXCELLENT
       ? `Biblioteca AI excelentă (${avgSourceQuality}%)`
-      : avgSourceQuality >= 60
+      : avgSourceQuality >= SOURCE_QUALITY_GOOD
         ? `Biblioteca AI bună (${avgSourceQuality}%)`
         : `Biblioteca AI cere curățare (${avgSourceQuality}%)`;
 
@@ -60,7 +66,7 @@ export function buildStudyCoachPlan(
       tone: 'success',
       route: '/vault',
     });
-  } else if (avgSourceQuality < 65) {
+  } else if (avgSourceQuality < SOURCE_QUALITY_GOOD) {
     actions.push({
       title: 'Curăță documentele slab extrase',
       detail: 'Unele importuri par scanate prost. Refă OCR-ul pentru context AI mai clar și răspunsuri mai bune.',

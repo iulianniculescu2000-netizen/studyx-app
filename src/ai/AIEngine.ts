@@ -93,6 +93,7 @@ function normalizeQuestion(question: QuestionGenerationResponse['questions'][num
     explanation: question.explanation,
     tags: question.tags,
     difficulty: (question.difficulty as Difficulty) ?? 'medium',
+    ...(question.type ? { type: question.type } : {}),
   };
 }
 
@@ -149,7 +150,17 @@ export class QuestionGenerator {
     const parsed = await runAIPipeline<QuestionGenerationResponse>({
       retrieve: () => context.summary,
       generate: async () => {
-        const prompt = buildQuestionPrompt(profile, weakTopics, difficulty, context, request.questionType ?? 'single');
+        const prompt = buildQuestionPrompt(
+          profile,
+          weakTopics,
+          difficulty,
+          context,
+          request.questionType ?? 'single',
+          request.questionTypes,
+          request.count ?? 1,
+        );
+        // Self-gated by the localStorage "studyx-ai-debug" flag (see debug.ts).
+        logAIDebug('buildQuestionPrompt', { questionTypes: request.questionTypes, count: request.count, prompt });
         return groqRequest({
           task: 'questions',
           messages: [

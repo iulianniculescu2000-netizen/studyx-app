@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { QuestionStat, StudyStreak } from '../types';
+import type { Confidence, QuestionStat, StudyStreak } from '../types';
 
 const EMPTY_STREAK: StudyStreak = {
   currentStreak: 0,
@@ -12,7 +12,7 @@ interface StatsStore {
   questionStats: Record<string, QuestionStat>;
   streak: StudyStreak;
   totalStudyTime: number;
-  recordAnswer: (quizId: string, questionId: string, correct: boolean) => void;
+  recordAnswer: (quizId: string, questionId: string, correct: boolean, confidence?: Confidence) => void;
   recordStudySession: (durationSeconds: number) => void;
   getDueQuestions: () => QuestionStat[];
   getWeakQuestions: (limit?: number) => QuestionStat[];
@@ -27,19 +27,43 @@ function getToday(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-/**
- * SuperMemo-2 (SM-2) Pro Algorithm
- * Used by Anki and professional SRS systems.
- */
-function calcNextReview(stat: QuestionStat, correct: boolean): { nextReview: number; interval: number; eFactor: number; consecutiveCorrect: number } {
-  let eFactor = stat.eFactor ?? 2.5;
-  let interval = stat.interval ?? 0;
-  // consecutiveCorrect se resetează la 0 la greșeală (SM-2 corect)
-  let n = stat.consecutiveCorrect ?? 0;
+type SM2Quality = 0 | 1 | 2 | 3 | 4 | 5;
 
-  if (!correct) {
-    // Lapse: Re-learning phase — resetăm n și reducem eFactor
-    eFactor = Math.max(1.3, eFactor - 0.2);
+/**
+ * Map the answer outcome + self-assessed confidence to an SM-2 quality grade.
+ *
+ *   blackout            → 0  (always a lapse, even if the answer was correct)
+ *   guess     + wrong   → 1
+ *   confident + wrong   → 2
+ *   guess     + correct → 3
+ *   (no rating)+ correct → 4
+ *   confident + correct → 5
+ *   (no rating)+ wrong  → 1
+ */
+function qualityFromOutcome(correct: boolean, confidence?: Confidence): SM2Quality {
+  if (confidence === 'blackout') return 0;
+  if (!correct) return confidence === 'confident' ? 2 : 1;
+  if (confidence === 'confident') return 5;
+  if (confidence === 'guess') return 3;
+  return 4; // correct, no explicit rating
+}
+
+/**
+ * SuperMemo-2 (SM-2) algorithm, quality-driven (Anki/professional SRS).
+ * `consecutiveCorrect` plays the role of SM-2 "repetitions".
+ */
+function calcNextReview(
+  stat: QuestionStat,
+  correct: boolean,
+  confidence?: Confidence,
+): { nextReview: number; interval: number; eFactor: number; consecutiveCorrect: number } {
+  const quality = qualityFromOutcome(correct, confidence);
+  const eFactor = stat.eFactor ?? 2.5;
+  const interval = stat.interval ?? 0;
+  const n = stat.consecutiveCorrect ?? 0;
+
+  if (quality < 3) {
+    // Lapse: restart the learning phase. SM-2 leaves EF untouched on failure.
     return {
       nextReview: Date.now() + 86400000, // 1 zi
       interval: 1,
@@ -48,28 +72,22 @@ function calcNextReview(stat: QuestionStat, correct: boolean): { nextReview: num
     };
   }
 
-  // Răspuns corect: incrementăm n și calculăm intervalul
-  n += 1;
+  // Standard SM-2 ease-factor update from the quality grade.
+  const newEF = Math.max(1.3, eFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)));
 
-  if (n === 1) {
-    interval = 1;
-  } else if (n === 2) {
-    interval = 4; // Standard SM-2 leap
-  } else {
-    interval = Math.round(interval * eFactor);
-  }
+  let newInterval: number;
+  if (n === 0) newInterval = 1;
+  else if (n === 1) newInterval = 6;
+  else newInterval = Math.round(interval * newEF);
 
   // Cap la 1 an pentru studenți la medicină (memorie pe termen lung)
-  interval = Math.min(interval, 365);
-
-  // Ușor crește eFactor pentru răspunsuri corecte consecutive
-  eFactor = Math.min(3.0, eFactor + 0.1);
+  newInterval = Math.min(newInterval, 365);
 
   return {
-    nextReview: Date.now() + interval * 86400000,
-    interval,
-    eFactor,
-    consecutiveCorrect: n,
+    nextReview: Date.now() + newInterval * 86400000,
+    interval: newInterval,
+    eFactor: newEF,
+    consecutiveCorrect: n + 1,
   };
 }
 
@@ -79,7 +97,7 @@ export const useStatsStore = create<StatsStore>()(
     streak: { ...EMPTY_STREAK },
     totalStudyTime: 0,
 
-    recordAnswer: (quizId, questionId, correct) => {
+    recordAnswer: (quizId, questionId, correct, confidence) => {
       const key = `${quizId}:${questionId}`;
       set((s) => {
         const existing: QuestionStat = s.questionStats[key] ?? {
@@ -89,7 +107,7 @@ export const useStatsStore = create<StatsStore>()(
           consecutiveCorrect: 0,
         };
 
-        const review = calcNextReview(existing, correct);
+        const review = calcNextReview(existing, correct, confidence);
 
         const updated: QuestionStat = {
           ...existing,
@@ -100,8 +118,9 @@ export const useStatsStore = create<StatsStore>()(
           interval: review.interval,
           eFactor: review.eFactor,
           consecutiveCorrect: review.consecutiveCorrect,
+          ...(confidence ? { lastConfidence: confidence } : {}),
         };
-        
+
         return { questionStats: { ...s.questionStats, [key]: updated } };
       });
     },
@@ -148,10 +167,16 @@ export const useStatsStore = create<StatsStore>()(
       );
     },
 
-    getWeakQuestions: (limit = 10) =>
-      Object.values(get().questionStats)
-        .filter((s) => s.timesCorrect + s.timesWrong > 0)
+    getWeakQuestions: (limit = 10) => {
+      const seen = Object.values(get().questionStats).filter((s) => s.timesCorrect + s.timesWrong > 0);
+      // SM-2 weakness: low ease factor or not yet stabilized (repetitions < 2).
+      const weak = seen.filter((s) => (s.eFactor ?? 2.5) < 2.0 || (s.consecutiveCorrect ?? 0) < 2);
+      const pool = weak.length > 0 ? weak : seen;
+      return pool
         .sort((a, b) => {
+          const efA = a.eFactor ?? 2.5;
+          const efB = b.eFactor ?? 2.5;
+          if (efA !== efB) return efA - efB; // weakest ease factor first
           const totalA = a.timesCorrect + a.timesWrong;
           const totalB = b.timesCorrect + b.timesWrong;
           const accA = a.timesCorrect / totalA;
@@ -159,7 +184,8 @@ export const useStatsStore = create<StatsStore>()(
           if (accA !== accB) return accA - accB;
           return totalB - totalA;
         })
-        .slice(0, limit),
+        .slice(0, limit);
+    },
 
     getAccuracy: (quizId) => {
       const stats = Object.values(get().questionStats).filter(
@@ -180,7 +206,12 @@ export const useStatsStore = create<StatsStore>()(
           const key = `${quiz.id}:${q.id}`;
           const s = stats[key];
           if (!s) return;
-          quizTags.forEach(tag => {
+          // Per-question tags are the real topic granularity (that's what every other
+          // weak-topic calculation in the app uses) — quiz-level tags were shadowing them
+          // entirely, so a quiz without its own `tags` counted for nothing here even when
+          // every question inside it was properly tagged.
+          const tags = q.tags?.length ? q.tags : quizTags;
+          tags.forEach(tag => {
             if (!result[tag]) result[tag] = { correct: 0, total: 0 };
             result[tag].correct += s.timesCorrect;
             result[tag].total += s.timesCorrect + s.timesWrong;

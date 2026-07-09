@@ -9,6 +9,7 @@ import { useFolderStore } from '../store/folderStore';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore } from '../store/aiStore';
 import type { Question, Option, Difficulty, QuizColor } from '../types';
+import { ALL_QUESTION_TYPES, type QuestionType } from '../lib/ai/questionTypes';
 import { OPTION_IDS, compressImage, generateId, newQuestion } from './quiz-create/helpers';
 import {
   QuestionPreviewModal,
@@ -163,6 +164,7 @@ export default function QuizCreate() {
   const [aiCount, setAiCount] = useState(10);
   const [aiDifficulty, setAiDifficulty] = useState(3);
   const [aiMode, setAiMode] = useState<'standard' | 'clinical'>('standard');
+  const [aiQuestionTypes, setAiQuestionTypes] = useState<QuestionType[]>([...ALL_QUESTION_TYPES]);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [aiProgress, setAiProgress] = useState<{ generated: number; total: number } | null>(null);
@@ -178,13 +180,21 @@ export default function QuizCreate() {
       const existingTexts = quizzes.flatMap((quiz) => quiz.questions.map((question) => question.text));
       const generated = aiMode === 'clinical'
         ? await generateClinicalCase(aiText, aiCount)
-        : await generateQuestionsFromText(aiText, aiCount, aiDifficulty, existingTexts, (g, t) => setAiProgress({ generated: g, total: t }));
+        : await generateQuestionsFromText(
+            aiText,
+            aiCount,
+            aiDifficulty,
+            existingTexts,
+            (g, t) => setAiProgress({ generated: g, total: t }),
+            aiQuestionTypes.length > 0 ? aiQuestionTypes : undefined,
+          );
       const newQs: Question[] = generated.map((g) => ({
         id: generateId(),
         text: g.text,
         multipleCorrect: false,
         difficulty: 'easy' as Difficulty,
         explanation: g.explanation ?? '',
+        ...(g.type ? { type: g.type } : {}),
         options: g.options.map((o, i) => ({
           id: OPTION_IDS[i] ?? generateId(),
           text: o.text,
@@ -355,6 +365,7 @@ export default function QuizCreate() {
                 aiError={aiError}
                 aiLoading={aiLoading}
                 aiMode={aiMode}
+                aiQuestionTypes={aiQuestionTypes}
                 aiProgress={aiProgress}
                 aiText={aiText}
                 hasKey={hasKey}
@@ -362,6 +373,7 @@ export default function QuizCreate() {
                 visible={questionsTab === 'ai'}
                 onCountChange={setAiCount}
                 onDifficultyChange={setAiDifficulty}
+                onQuestionTypesChange={setAiQuestionTypes}
                 onGenerate={handleAIGenerate}
                 onImportPdf={async () => {
                   const text = await window.electronAPI?.openPdfFile?.();

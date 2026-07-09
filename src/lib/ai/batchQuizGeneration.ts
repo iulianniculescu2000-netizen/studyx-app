@@ -2,6 +2,7 @@ import { generateQuestions, getAdaptiveDifficulty, getUserProfile } from '../../
 import { getWeakTopicsForProfile } from '../../ai/UserProfile';
 import { getVaultChunksBySource } from '../../ai/vectorStore';
 import type { Difficulty, Folder, Quiz } from '../../types';
+import type { QuestionType } from './questionTypes';
 import {
   STUDIO_AI_BATCH_SIZE,
   STUDIO_MAX_PACK_COUNT,
@@ -24,6 +25,7 @@ interface BatchGenerationOptions {
   questionsPerPack: number;
   difficulty: BatchDifficulty;
   questionType?: 'single' | 'multiple';
+  questionTypes?: QuestionType[];
   activeProfileId: string | null;
   existingQuizzes?: Quiz[];
 }
@@ -65,6 +67,7 @@ export async function generateQuizPackagesFromSource({
   questionsPerPack,
   difficulty,
   questionType = 'single',
+  questionTypes,
   activeProfileId,
   existingQuizzes = [],
 }: BatchGenerationOptions) {
@@ -121,6 +124,7 @@ export async function generateQuizPackagesFromSource({
           userProfile: profile ?? undefined,
           mode: 'standard',
           questionType,
+          questionTypes,
         });
 
         result.questions

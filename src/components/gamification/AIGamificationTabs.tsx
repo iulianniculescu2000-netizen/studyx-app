@@ -9,7 +9,7 @@ export default function AIGamificationTabs({ activeTab, setActiveTab }: AIGamifi
   const tabs = [
     { id: 'achievements', label: 'Realizări', icon: '🏆' },
     { id: 'challenges', label: 'Provocări', icon: '🎯' },
-    { id: 'leaderboard', label: 'Clasament', icon: '👑' }
+    { id: 'leaderboard', label: 'Tu vs. Tine', icon: '👑' }
   ] as const;
 
   return (

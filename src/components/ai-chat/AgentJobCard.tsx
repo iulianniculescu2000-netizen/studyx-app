@@ -1,5 +1,5 @@
-import { Check, Loader2, X, AlertTriangle, RotateCcw, Sparkles } from 'lucide-react';
-import { useAgentJobsStore, type AgentJobStep } from '../../store/agentJobsStore';
+import { Check, Loader2, X, AlertTriangle, RotateCcw, Sparkles, Minus, Plus } from 'lucide-react';
+import { useAgentJobsStore, type AgentJobStep, type AgentJobStepParams } from '../../store/agentJobsStore';
 import type { Theme } from '../../theme/themes';
 
 function StepIcon({ status, color }: { status: AgentJobStep['status']; color: string }) {
@@ -10,18 +10,119 @@ function StepIcon({ status, color }: { status: AgentJobStep['status']; color: st
   return <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ border: `1.5px solid ${color}` }} />;
 }
 
+const DIFFICULTY_OPTIONS = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'easy', label: 'Ușor' },
+  { id: 'medium', label: 'Mediu' },
+  { id: 'hard', label: 'Dificil' },
+] as const;
+
+const QUESTION_TYPE_OPTIONS = [
+  { id: 'single', label: 'Simplu' },
+  { id: 'multiple', label: 'Multiplu' },
+] as const;
+
+/** Inline controls so the user can fix a misread count/difficulty/type instead of cancelling and retyping the whole command. */
+function StepParamEditor({
+  theme,
+  action,
+  params,
+  onChange,
+}: {
+  theme: Theme;
+  action: string;
+  params: AgentJobStepParams;
+  onChange: (patch: Partial<AgentJobStepParams>) => void;
+}) {
+  const isQuizPack = action === 'generate_quiz_pack';
+  const isMistakes = action === 'generate_from_mistakes';
+  const isFlashcards = action === 'create_flashcards';
+  if (!isQuizPack && !isMistakes && !isFlashcards) return null;
+
+  const countKey: keyof AgentJobStepParams = isQuizPack ? 'questionsPerPack' : 'count';
+  const countValue = isQuizPack ? params.questionsPerPack ?? 10 : params.count ?? (isFlashcards ? 15 : 10);
+  const countStep = isQuizPack ? 5 : isFlashcards ? 5 : 5;
+  const countMax = isQuizPack ? 60 : isFlashcards ? 100 : 100;
+
+  const chipStyle = (active: boolean) => ({
+    background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
+    color: active ? '#fff' : theme.text3,
+    border: `1px solid ${active ? `${theme.accent}50` : theme.border}`,
+  });
+
+  return (
+    <div className="ml-[26px] mt-1.5 flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1 rounded-lg px-1 py-0.5" style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+        <button
+          type="button"
+          onClick={() => onChange({ [countKey]: Math.max(countStep, countValue - countStep) } as Partial<AgentJobStepParams>)}
+          className="flex h-5 w-5 items-center justify-center rounded"
+          style={{ color: theme.text3 }}
+        >
+          <Minus size={11} />
+        </button>
+        <span className="min-w-[2.5rem] text-center text-[11px] font-bold tabular-nums" style={{ color: theme.text2 }}>
+          {countValue} {isFlashcards ? 'carduri' : 'întrebări'}
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange({ [countKey]: Math.min(countMax, countValue + countStep) } as Partial<AgentJobStepParams>)}
+          className="flex h-5 w-5 items-center justify-center rounded"
+          style={{ color: theme.text3 }}
+        >
+          <Plus size={11} />
+        </button>
+      </div>
+
+      {(isQuizPack || isMistakes) && (
+        <div className="flex gap-1">
+          {QUESTION_TYPE_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onChange({ questionType: opt.id })}
+              className="rounded-lg px-2 py-1 text-[10px] font-bold"
+              style={chipStyle((params.questionType ?? 'single') === opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isQuizPack && (
+        <div className="flex gap-1">
+          {DIFFICULTY_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onChange({ difficulty: opt.id })}
+              className="rounded-lg px-2 py-1 text-[10px] font-bold"
+              style={chipStyle((params.difficulty ?? 'auto') === opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AgentJobCard({
   jobId,
   theme,
   onConfirm,
   onCancel,
   onUndo,
+  onEditParams,
 }: {
   jobId: string;
   theme: Theme;
   onConfirm: () => void;
   onCancel: () => void;
   onUndo: () => void;
+  onEditParams?: (stepId: string, patch: Partial<AgentJobStepParams>) => void;
 }) {
   const job = useAgentJobsStore((state) => state.jobs.find((entry) => entry.id === jobId));
   if (!job) return null;
@@ -57,12 +158,20 @@ export default function AgentJobCard({
               <span className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center">
                 <StepIcon status={step.status} color={color} />
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <span className="text-[12px] font-semibold" style={{ color: theme.text2 }}>{step.label}</span>
                 {step.detail && (
                   <span className="ml-1.5 text-[11px]" style={{ color: step.status === 'error' ? theme.danger : theme.text3 }}>
                     · {step.detail}
                   </span>
+                )}
+                {awaiting && step.action && onEditParams && (
+                  <StepParamEditor
+                    theme={theme}
+                    action={step.action}
+                    params={step.params ?? {}}
+                    onChange={(patch) => onEditParams(step.id, patch)}
+                  />
                 )}
               </div>
             </div>

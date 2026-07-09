@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -148,6 +149,8 @@ export default function KnowledgeVault() {
   const moveSourceToLibraryFolder = useAIStore((state) => state.moveSourceToLibraryFolder);
   const addToast = useToastStore((state) => state.addToast);
   const setChatOpen = useUIStore((state) => state.setChatOpen);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkedSourceRef = useRef<string | null>(null);
 
   // Navigation: null = top level (folders view), folderId = inside a folder
   const [activeFolderId, setActiveFolderId] = useState<string | null | '__unfiled__'>(null);
@@ -423,6 +426,21 @@ export default function KnowledgeVault() {
       setReaderLoading(false);
     }
   };
+
+  // Deep-link from the proactive RAG toast (Task 7): /vault?source=<id> opens
+  // that document's reader once, then clears the param.
+  useEffect(() => {
+    const sourceId = searchParams.get('source');
+    if (!sourceId || deepLinkedSourceRef.current === sourceId) return;
+    const source = knowledgeSources.find((s) => s.id === sourceId);
+    if (!source) return;
+    deepLinkedSourceRef.current = sourceId;
+    void openReader(source);
+    const next = new URLSearchParams(searchParams);
+    next.delete('source');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, knowledgeSources]);
 
   const askAIAboutSource = (source: AIKnowledgeSource) => {
     setChatOpen(true);

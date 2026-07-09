@@ -82,7 +82,9 @@ export default function QuizResults() {
     if (!activeProfileId) return;
     // Citim direct din store (fără a crea array nou la fiecare render)
     // pentru a evita re-declanșarea useEffect la fiecare re-render
-    const allQuestions = useQuizStore.getState().quizzes.flatMap((item) => item.questions);
+    const allQuestions = useQuizStore.getState().quizzes.flatMap((item) =>
+      item.questions.map((question) => ({ ...question, category: item.category })),
+    );
     const currentStreak = useStatsStore.getState().streak.currentStreak;
     syncProfileFromStats(activeProfileId, questionStats, allQuestions, currentStreak);
   // eslint-disable-next-line react-hooks/exhaustive-deps

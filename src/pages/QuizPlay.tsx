@@ -6,6 +6,7 @@ import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
 import { useAIStore } from '../store/aiStore';
+import { useToastStore } from '../store/toastStore';
 import { useUserStore } from '../store/userStore';
 import { useFocusModeStore } from '../store/focusModeStore';
 import { useUIStore } from '../store/uiStore';
@@ -14,8 +15,10 @@ import { HERO_COLOR_MAP } from '../theme/colorMaps';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import QuizImage from '../components/QuizImage';
-import type { QuizSession, Question, Option } from '../types';
+import type { QuizSession, Question, Option, Confidence } from '../types';
 import type { AIAnalysisResult, HintResult } from '../ai/types';
+import ConfidenceButtons from './quiz-play/ConfidenceButtons';
+import { updateUserMemory } from '../lib/ai/userMemory';
 import {
   buildAnalysisFallback,
   buildHintFallback,
@@ -40,6 +43,7 @@ export default function QuizPlay() {
   const { recordAnswer, recordStudySession } = useStatsStore();
   const setNote = useNotesStore((s) => s.setNote);
   const { hasKey } = useAIStore();
+  const addToast = useToastStore((s) => s.addToast);
   const activeProfileId = useUserStore((s) => s.activeProfileId);
   const quiz = quizzes.find((q) => q.id === id);
   const state = location.state as { mode?: string; wrongQuestionsOnly?: string[]; practiceCount?: number; blockStart?: number } | null;
@@ -92,6 +96,12 @@ export default function QuizPlay() {
   const [hintData, setHintData] = useState<HintResult | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [showSmartNudge, setShowSmartNudge] = useState(false);
+  // Self-assessment captured after reveal (Task 2). Kept in a ref so finishQuiz
+  // reads the latest rating synchronously when grading the last card.
+  const confidenceRef = useRef<Record<string, Confidence>>({});
+  // Tracks which questions already triggered a proactive vault lookup (Task 7),
+  // so a wrong answer surfaces the relevant-document toast at most once.
+  const vaultCheckedRef = useRef<Set<string>>(new Set());
 
   const question = questionQueue[currentIdx];
   const isLast = currentIdx === questionQueue.length - 1;
@@ -151,6 +161,8 @@ export default function QuizPlay() {
     setCurrentIdx(0);
     setAnswers({});
     setSelectedNow([]);
+    confidenceRef.current = {};
+    vaultCheckedRef.current.clear();
     setRevealed(false);
     setAiText(null);
     setAiLoading(false);
@@ -211,10 +223,27 @@ export default function QuizPlay() {
       const correctIds = getCorrectOptionIds(q.options);
       const result = evaluateSelection(userAnswers, correctIds);
       // Partial counts as wrong for spaced-repetition tracking
-      recordAnswer(quiz!.id, q.id, result === 'correct');
+      recordAnswer(quiz!.id, q.id, result === 'correct', confidenceRef.current[q.id]);
     });
     const duration = Math.floor((Date.now() - startedAt) / 1000);
     recordStudySession(duration);
+
+    // Feed the session into the AI's long-term memory (Task 4). Fire-and-forget.
+    if (activeProfileId) {
+      const finishedAt = Date.now();
+      const memoryItems = questionQueue.map((q) => {
+        const userAnswers = finalAnswers[q.id] ?? [];
+        const correctIds = getCorrectOptionIds(q.options);
+        return {
+          questionId: q.id,
+          questionText: q.text,
+          topic: q.tags?.[0] ?? quiz!.tags?.[0] ?? q.difficulty ?? 'general',
+          correct: evaluateSelection(userAnswers, correctIds) === 'correct',
+          confidence: confidenceRef.current[q.id],
+        };
+      });
+      void updateUserMemory(activeProfileId, { items: memoryItems, durationSeconds: duration, finishedAt });
+    }
 
     // -- Rezidențiat penalty scoring ------------------------------------------
     // +1 per fully correct answer, -0.25 per wrong option selected.
@@ -253,7 +282,7 @@ export default function QuizPlay() {
     };
     addSession(session);
     navigate(`/results/${quiz!.id}`, { state: { session, orderedQuestions: questionQueue } });
-  }, [questionQueue, quiz, startedAt, addSession, navigate, recordAnswer, recordStudySession, examMode, timedMode]);
+  }, [questionQueue, quiz, startedAt, addSession, navigate, recordAnswer, recordStudySession, examMode, timedMode, activeProfileId]);
 
   const resetAssistiveState = useCallback(() => {
     aiAbortRef.current?.abort();
@@ -345,6 +374,14 @@ export default function QuizPlay() {
     }
   }, [isLast, answers, finishQuiz, resetAssistiveState]);
 
+  // Record the self-assessment for the current question, then advance. The ref
+  // is updated synchronously so finishQuiz sees the rating of the last card.
+  const handleConfidence = useCallback((level: Confidence) => {
+    if (!revealed || !question) return;
+    confidenceRef.current = { ...confidenceRef.current, [question.id]: level };
+    handleNext();
+  }, [revealed, question, handleNext]);
+
   const handleAIExplain = useCallback(async () => {
     if (!question || aiLoading) return;
     if (analysisResult?.explanation && analysisQuestionId === question.id) {
@@ -395,6 +432,43 @@ export default function QuizPlay() {
     }
   }, [revealed, examMode, question, analysisQuestionId, answers, selectedNow]);
 
+  // Proactive RAG (Task 7): when a study-mode answer is wrong, quietly check the
+  // Knowledge Vault for a relevant document and offer to open it via a toast.
+  // Stays silent when the vault is empty, the match is weak, or on any error.
+  useEffect(() => {
+    if (!revealed || examMode || !question) return;
+    if (vaultCheckedRef.current.has(question.id)) return;
+    const currentAnswers = answers[question.id] ?? selectedNow;
+    if (currentAnswers.length === 0) return;
+    const correctIdsForQuestion = getCorrectOptionIds(question.options);
+    if (isCorrectSelection(currentAnswers, correctIdsForQuestion)) return;
+
+    vaultCheckedRef.current.add(question.id);
+    const questionText = question.text;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { retrieveRelevantChunks } = await import('../ai/retriever');
+        const hits = await retrieveRelevantChunks(questionText, null, 1);
+        if (cancelled) return;
+        const top = hits[0];
+        // Hybrid score (no profile boosts here); require a confident match so we
+        // never surface an irrelevant document.
+        if (!top || top.score < 0.35 || !top.sourceId) return;
+        const sourceId = top.sourceId;
+        addToast(
+          `📚 Ai un document relevant: "${top.source}"`,
+          'info',
+          7000,
+          { label: 'Deschide', onClick: () => navigate(`/vault?source=${encodeURIComponent(sourceId)}`) },
+        );
+      } catch {
+        // Proactive nicety — never disrupt the session on failure.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [revealed, examMode, question, answers, selectedNow, navigate, addToast]);
+
   // Auto-advance after reveal
   // Dacă AI-ul a fost activ, așteptăm 5s după ce finalizează (nu 2s) pentru a citi explicația.
   // Timer-ul pornește NUMAI dacă nu s-a cerut explicație AI (aiText null = nu a fost apăsat).
@@ -421,9 +495,9 @@ export default function QuizPlay() {
   }, [questionTimer, timedMode, revealed, question, isLast, finishQuiz, answers, selectedNow]);
 
   // Maintain latest state for keyboard handler without re-binding listener
-  const kbStateRef = useRef({ question, handleSelect, confirmSelection, handleNext, handleGetHint, isMultiple, revealed, examMode });
+  const kbStateRef = useRef({ question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, isMultiple, revealed, examMode });
   useEffect(() => {
-    kbStateRef.current = { question, handleSelect, confirmSelection, handleNext, handleGetHint, isMultiple, revealed, examMode };
+    kbStateRef.current = { question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, isMultiple, revealed, examMode };
   });
 
   // Keyboard shortcuts
@@ -435,6 +509,17 @@ export default function QuizPlay() {
         document.activeElement instanceof HTMLTextAreaElement ||
         document.activeElement?.hasAttribute('contenteditable')
       ) return;
+
+      // After reveal (study modes): 1/2/3 rate confidence and advance.
+      if (state.revealed && !state.examMode) {
+        const confMap: Record<string, Confidence> = { '1': 'blackout', '2': 'guess', '3': 'confident' };
+        const level = confMap[e.key];
+        if (level) {
+          e.preventDefault();
+          state.handleConfidence(level);
+          return;
+        }
+      }
 
       // 1-4 or A-D to select option
       const keyMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
@@ -1168,20 +1253,16 @@ export default function QuizPlay() {
               )}
             </AnimatePresence>
 
-            {/* Next button */}
+            {/* Confidence rating (replaces the plain Next button in study modes) */}
             <AnimatePresence>
               {revealed && !showActionDock && (
-                <motion.button
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  onClick={handleNext}
-                  className={`w-full rounded-2xl font-semibold text-white flex items-center justify-center gap-2 ${denseLayout ? 'py-3.5 text-sm' : 'py-4'}`}
-                  style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
-                  whileHover={calmMotion ? undefined : { scale: 1.01 }}
-                  whileTap={calmMotion ? undefined : { scale: 0.98 }}
-                >
-                  {isLast ? 'Vezi rezultatele' : (<>Următor <ChevronRight size={16} /></>)}
-                </motion.button>
+                <ConfidenceButtons
+                  onRate={handleConfidence}
+                  theme={theme}
+                  calmMotion={calmMotion}
+                  isLast={isLast}
+                  denseLayout={denseLayout}
+                />
               )}
             </AnimatePresence>
 
@@ -1194,41 +1275,51 @@ export default function QuizPlay() {
                   className="sticky bottom-3 z-20 mt-4"
                 >
                   <div className={`glass-panel premium-shadow rounded-[24px] border ${denseLayout ? 'px-3 py-3' : 'px-4 py-4'}`}>
-                    <div className={`flex items-start justify-between gap-3 ${mobile ? 'flex-col' : ''}`}>
-                      <div className="min-w-0">
-                        <p className={`font-semibold leading-relaxed ${denseLayout ? 'text-[13px] sm:text-sm' : 'text-sm'}`} style={{ color: theme.text }}>
-                          {selectionSummary}
-                        </p>
-                      </div>
+                    {revealed && !examMode ? (
+                      <ConfidenceButtons
+                        onRate={handleConfidence}
+                        theme={theme}
+                        calmMotion={calmMotion}
+                        isLast={isLast}
+                        denseLayout={denseLayout}
+                      />
+                    ) : (
+                      <div className={`flex items-start justify-between gap-3 ${mobile ? 'flex-col' : ''}`}>
+                        <div className="min-w-0">
+                          <p className={`font-semibold leading-relaxed ${denseLayout ? 'text-[13px] sm:text-sm' : 'text-sm'}`} style={{ color: theme.text }}>
+                            {selectionSummary}
+                          </p>
+                        </div>
 
-                      <div className={`flex items-center gap-2 ${mobile ? 'w-full flex-col' : 'shrink-0'}`}>
-                        {!revealed && (
-                          <div
-                            className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] ${mobile ? 'w-full text-center' : ''}`}
-                            style={{ background: theme.surface2, borderColor: theme.border, color: timedMode ? timerTone : theme.text3 }}
+                        <div className={`flex items-center gap-2 ${mobile ? 'w-full flex-col' : 'shrink-0'}`}>
+                          {!revealed && (
+                            <div
+                              className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] ${mobile ? 'w-full text-center' : ''}`}
+                              style={{ background: theme.surface2, borderColor: theme.border, color: timedMode ? timerTone : theme.text3 }}
+                            >
+                              {timedMode ? `Timer ${questionTimer}s` : `Întrebarea ${currentIdx + 1}/${questionQueue.length}`}
+                            </div>
+                          )}
+
+                          <motion.button
+                            onClick={revealed ? handleNext : confirmSelection}
+                            disabled={!revealed && selectedNow.length === 0}
+                            className={`press-feedback rounded-[20px] text-sm font-black text-white disabled:opacity-35 ${denseLayout ? 'px-4 py-2.5' : 'px-5 py-3'} ${mobile ? 'w-full' : 'min-w-[220px]'}`}
+                            style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 18px 36px ${theme.accent}22` }}
+                            whileHover={calmMotion ? undefined : { scale: 1.01 }}
+                            whileTap={calmMotion ? undefined : { scale: 0.98 }}
                           >
-                            {timedMode ? `Timer ${questionTimer}s` : `Întrebarea ${currentIdx + 1}/${questionQueue.length}`}
-                          </div>
-                        )}
-
-                        <motion.button
-                          onClick={revealed ? handleNext : confirmSelection}
-                          disabled={!revealed && selectedNow.length === 0}
-                          className={`press-feedback rounded-[20px] text-sm font-black text-white disabled:opacity-35 ${denseLayout ? 'px-4 py-2.5' : 'px-5 py-3'} ${mobile ? 'w-full' : 'min-w-[220px]'}`}
-                          style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 18px 36px ${theme.accent}22` }}
-                          whileHover={calmMotion ? undefined : { scale: 1.01 }}
-                          whileTap={calmMotion ? undefined : { scale: 0.98 }}
-                        >
-                          {revealed
-                            ? (isLast ? 'Vezi rezultatele' : 'Următor')
-                            : examMode
-                              ? `Confirmă (${selectedNow.length})`
-                              : isMultiple
-                                ? `Verifică selecția (${selectedNow.length})`
-                                : 'Verifică răspunsul'}
-                        </motion.button>
+                            {revealed
+                              ? (isLast ? 'Vezi rezultatele' : 'Următor')
+                              : examMode
+                                ? `Confirmă (${selectedNow.length})`
+                                : isMultiple
+                                  ? `Verifică selecția (${selectedNow.length})`
+                                  : 'Verifică răspunsul'}
+                          </motion.button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </motion.div>
               )}

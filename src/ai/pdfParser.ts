@@ -1,3 +1,35 @@
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+// Browser fallback: extract text with pdf.js (same worker the rest of the app uses).
+// Runs when there's no Electron bridge (web / PWA build).
+async function extractPdfTextInBrowser(file: File): Promise<string> {
+  const pdfjs = await import('pdfjs-dist');
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const parts: string[] = [];
+
+  try {
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const textContent = await page.getTextContent().catch(() => null);
+      if (textContent) {
+        parts.push(
+          textContent.items
+            .map((item) => ('str' in item ? String(item.str) : ''))
+            .join(' '),
+        );
+      }
+      page.cleanup();
+    }
+  } finally {
+    await pdf.destroy();
+  }
+
+  return parts.join('\n');
+}
+
 function cleanText(input: string) {
   return input
     .replace(/\r\n/g, '\n')
@@ -83,6 +115,18 @@ export async function parsePDF(file: File | string) {
       if (text && text.trim().length > 5) {
         extractedText = text;
       }
+    }
+  }
+
+  // Web / PWA build: no Electron bridge, extract with pdf.js in the browser.
+  if (!extractedText && file instanceof File) {
+    try {
+      const text = await extractPdfTextInBrowser(file);
+      if (text && text.trim().length > 5) {
+        extractedText = text;
+      }
+    } catch (error) {
+      console.error('Browser PDF extraction failed:', error);
     }
   }
 

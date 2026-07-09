@@ -5,6 +5,7 @@ import { logAIDebug } from '../ai/debug';
 import type { AIRequestTask } from '../ai/types';
 import { createRequestGovernor } from './aiRequestGovernor';
 import { logDiagnosticEvent } from '../store/diagnosticsStore';
+import { buildQuestionTypeInstruction, type QuestionType } from './ai/questionTypes';
 
 export type GroqMessagePart =
   | { type: 'text'; text: string }
@@ -30,6 +31,7 @@ export interface GeneratedQuestion {
   explanation?: string;
   tags?: string[];
   reference?: string;
+  type?: QuestionType;
 }
 
 function buildKnowledgeQuery(messages: GroqMessage[]): string {
@@ -578,6 +580,7 @@ export async function generateQuestionsFromText(
   difficulty = 3,
   existingQuestionTexts: string[] = [],
   onProgress?: (generated: number, total: number) => void,
+  questionTypes?: QuestionType[],
 ): Promise<GeneratedQuestion[]> {
   const cleanText = text
     .replace(/\f/g, '\n').replace(/^\s*\d{1,4}\s*$/gm, '')
@@ -608,6 +611,10 @@ export async function generateQuestionsFromText(
   for (const chunk of chunks) {
     if (allQuestions.length >= count) break;
     const needed = Math.min(perChunk, count - allQuestions.length);
+    const typeInstruction = questionTypes && questionTypes.length > 0
+      ? `\n${buildQuestionTypeInstruction(needed, questionTypes)}`
+      : '';
+    const typeFormatField = questionTypes && questionTypes.length > 0 ? ',"type":""' : '';
 
     const userPrompt = `Creează exact ${needed} întrebări grilă bazate EXCLUSIV pe textul de mai jos.
 
@@ -618,7 +625,7 @@ REGULI:
 - Câmp "tags": 3-5 cuvinte cheie ex: ["cardiologie","fibrilație"]
 - Câmp "reference": referință Harrison/Gomella sau "" dacă nu există
 - NU genera întrebări despre JSON/format
-- Răspunde DOAR cu JSON pur, fără markdown
+- Răspunde DOAR cu JSON pur, fără markdown${typeInstruction}
 
 TEXT:
 ---
@@ -626,7 +633,8 @@ ${chunk.slice(0, 5000)}
 ---
 
 Format (${needed} obiecte):
-[{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""}]`;
+[{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""${typeFormatField}}]`;
+    logAIDebug('generateQuestionsFromText.prompt', { questionTypes, needed, userPrompt });
 
     let raw = '';
     let lastError = '';

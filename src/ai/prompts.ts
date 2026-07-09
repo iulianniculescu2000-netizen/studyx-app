@@ -1,5 +1,6 @@
 import type { Question } from '../types';
 import type { AIContextPayload, MistakeBankEntry, UserProfileData, WeakTopic } from './types';
+import { buildQuestionTypeInstruction, type QuestionType } from '../lib/ai/questionTypes';
 
 export const AI_PERSONALITY =
   'Ești un profesor de medicină cu experiență clinică vastă, exigent și foarte clar, ' +
@@ -79,7 +80,12 @@ export function buildQuestionPrompt(
   difficulty: 'easy' | 'medium' | 'hard',
   contextPayload?: AIContextPayload,
   questionType: 'single' | 'multiple' = 'single',
+  questionTypes?: QuestionType[],
+  count = 1,
 ) {
+  const typeInstruction = questionTypes && questionTypes.length > 0
+    ? buildQuestionTypeInstruction(count, questionTypes)
+    : '';
   const safeContext = contextPayload?.summary ?? '';
   const mistakeSection = profile?.mistakeBank?.length ? mistakeBankText(profile.mistakeBank) : '';
 
@@ -115,6 +121,7 @@ export function buildQuestionPrompt(
     vignetteInstruction,
     distractorInstruction,
     answerQualityInstruction,
+    typeInstruction,
     safeContext
       ? `CONTEXT DIN BIBLIOTECA STUDENTULUI:\n${safeContext}`
       : 'Nu există context în bibliotecă. Folosește doar cunoștințe medicale generale.',

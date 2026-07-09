@@ -8,6 +8,7 @@ import AIPredictiveTabs from './AIPredictiveTabs';
 import AIPredictiveTimeframe from './AIPredictiveTimeframe';
 import { useQuizStore } from '../../store/quizStore';
 import { useStatsStore } from '../../store/statsStore';
+import { loadUserProfile } from '../../ai/UserProfile';
 
 interface ExamPrediction {
   id: string;
@@ -73,12 +74,44 @@ interface AIPredictiveAnalyticsProps {
 
 const PREDICTION_BASE_TIME = Date.now();
 
+interface TrackedTopic {
+  topic: string;
+  accuracy: number;
+  total: number;
+}
+
+// Turns a slice of real weak-topic stats into concrete study-plan items instead of the
+// fixed "Sistemul nervos central" placeholders that used to show up regardless of subject.
+function buildStudyPlan(topics: TrackedTopic[]): StudyPlanItem[] {
+  if (topics.length === 0) {
+    return [{
+      id: 'sp-onboarding',
+      topic: 'Fă câteva grile ca să primești un plan personalizat',
+      priority: 'medium',
+      estimatedTime: 10,
+      resources: ['Creează sau importă o grilă și răspunde câteva runde'],
+      difficulty: 'easy',
+      completed: false,
+      aiRecommended: false,
+    }];
+  }
+  return topics.map((entry, index) => ({
+    id: `sp-${entry.topic}-${index}`,
+    topic: entry.topic,
+    priority: entry.accuracy < 50 ? 'high' : entry.accuracy < 75 ? 'medium' : 'low',
+    estimatedTime: Math.max(10, Math.round((85 - entry.accuracy) / 3)),
+    resources: ['Sesiune de recuperare focusată', 'Întreabă AI-ul din Biblioteca AI despre acest topic'],
+    difficulty: entry.accuracy < 50 ? 'hard' : entry.accuracy < 75 ? 'medium' : 'easy',
+    completed: false,
+    aiRecommended: true,
+  }));
+}
+
 export default function AIPredictiveAnalyticsRefactored({
   userId,
   currentLevel,
   subjects,
 }: AIPredictiveAnalyticsProps) {
-  void userId;
   const [activeTab, setActiveTab] = useState<'predictions' | 'gaps' | 'paths'>('predictions');
   const [selectedPrediction, setSelectedPrediction] = useState<ExamPrediction | null>(null);
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'semester'>('semester');
@@ -121,28 +154,7 @@ export default function AIPredictiveAnalyticsRefactored({
         recommendedStudyTime: Math.max(45, dueCount * 6 + studyHours * 4),
         weakAreas: trackedTopics.slice(0, 3).map((entry) => entry.topic),
         strongAreas: trackedTopics.filter((entry) => entry.accuracy >= 80).slice(0, 3).map((entry) => entry.topic),
-        studyPlan: [
-          {
-            id: 'sp1',
-            topic: 'Sistemul nervos central',
-            priority: 'high',
-            estimatedTime: 25,
-            resources: ['Atlas de anatomie', 'Video-uri explicative'],
-            difficulty: 'hard',
-            completed: false,
-            aiRecommended: true,
-          },
-          {
-            id: 'sp2',
-            topic: 'Vascularizatia cerebrala',
-            priority: 'high',
-            estimatedTime: 20,
-            resources: ['Diagrame vasculare', 'Modele 3D'],
-            difficulty: 'medium',
-            completed: false,
-            aiRecommended: true,
-          },
-        ],
+        studyPlan: buildStudyPlan(trackedTopics.slice(0, 2)),
         aiGenerated: true,
       },
       {
@@ -155,82 +167,66 @@ export default function AIPredictiveAnalyticsRefactored({
         recommendedStudyTime: Math.max(30, dueCount * 4 + 30),
         weakAreas: trackedTopics.slice(1, 3).map((entry) => entry.topic),
         strongAreas: trackedTopics.filter((entry) => entry.accuracy >= 75).slice(0, 2).map((entry) => entry.topic),
-        studyPlan: [
-          {
-            id: 'sp3',
-            topic: 'Sistemul endocrin',
-            priority: 'medium',
-            estimatedTime: 15,
-            resources: ['Textbook fiziologie', 'Lectii video'],
-            difficulty: 'medium',
-            completed: false,
-            aiRecommended: true,
-          },
-        ],
+        studyPlan: buildStudyPlan(trackedTopics.slice(2, 3)),
         aiGenerated: true,
       },
     ],
     [accuracy, activeSubjects, dueCount, quizzes.length, sessions.length, studyHours, trackedTopics],
   );
 
-  const knowledgeGaps = useMemo<KnowledgeGap[]>(
-    () => [
-      {
-        id: '1',
-        topic: 'Sistemul nervos central',
-        subject: 'Anatomie',
-        currentMastery: 45,
-        targetMastery: 85,
-        gap: 40,
-        priority: 'high',
-        estimatedTimeToClose: 25,
-        recommendedResources: ['Atlas de anatomie', 'Video-uri explicative', 'Modele 3D'],
-        aiGenerated: true,
-        trends: { improving: true, rate: 2.5 },
-      },
-      {
-        id: '2',
-        topic: 'Vascularizatia cerebrala',
-        subject: 'Anatomie',
-        currentMastery: 60,
-        targetMastery: 80,
-        gap: 20,
-        priority: 'medium',
-        estimatedTimeToClose: 15,
-        recommendedResources: ['Diagrame vasculare', 'Anatomie clinica'],
-        aiGenerated: true,
-        trends: { improving: false, rate: -0.5 },
-      },
-      {
-        id: '3',
-        topic: 'Sistemul endocrin',
-        subject: 'Fiziologie',
-        currentMastery: 70,
-        targetMastery: 90,
-        gap: 20,
-        priority: 'low',
-        estimatedTimeToClose: 10,
-        recommendedResources: ['Textbook fiziologie', 'Articole stiintifice'],
-        aiGenerated: false,
-        trends: { improving: true, rate: 1.2 },
-      },
-    ],
-    [],
-  );
+  const knowledgeGaps = useMemo<KnowledgeGap[]>(() => {
+    const TARGET_MASTERY = 85;
+    const profile = loadUserProfile(userId);
+    const recentTopicMisses = new Map<string, number>();
+    for (const mistake of profile.recentMistakes) {
+      recentTopicMisses.set(mistake.topic, (recentTopicMisses.get(mistake.topic) ?? 0) + 1);
+    }
 
-  const studyPaths = useMemo<StudyPathRecommendation[]>(
+    return trackedTopics
+      .filter((entry) => entry.total >= 2 && entry.accuracy < TARGET_MASTERY)
+      .slice(0, 5)
+      .map((entry, index) => {
+        const gap = TARGET_MASTERY - entry.accuracy;
+        const recentMisses = recentTopicMisses.get(entry.topic) ?? 0;
+        // No per-topic time series is stored, so a real weekly rate can't be measured —
+        // this treats "no recent mistakes despite a real history of attempts" as the
+        // closest honest proxy for "improving" instead of a fabricated percentage.
+        const improving = recentMisses === 0 && entry.total > 2;
+        return {
+          id: `gap-${entry.topic}-${index}`,
+          topic: entry.topic,
+          subject: activeSubjects[Math.min(index, activeSubjects.length - 1)] ?? 'Recapitulare',
+          currentMastery: entry.accuracy,
+          targetMastery: TARGET_MASTERY,
+          gap,
+          priority: gap >= 35 ? 'high' : gap >= 15 ? 'medium' : 'low',
+          estimatedTimeToClose: Math.max(2, Math.round(gap / 4)),
+          recommendedResources: ['Sesiune de recuperare focusată', 'Întreabă AI-ul din Biblioteca AI despre acest topic'],
+          aiGenerated: true,
+          trends: {
+            improving,
+            rate: improving ? Math.min(3, 1 + entry.total * 0.1) : -Math.min(3, 1 + recentMisses * 0.5),
+          },
+        };
+      });
+  }, [trackedTopics, activeSubjects, userId]);
+
+  // Static curriculum catalog (duration/topics/prerequisites are real course structure, not
+  // per-user analytics). Only `successRate` used to be fabricated per-path (94/87/82% —
+  // impossible to know honestly in a single-user app with no cohort to measure against), so
+  // it's replaced with a relevance score: how much this path overlaps the student's own real
+  // weak topics, which is something we can actually compute.
+  const rawStudyPaths = useMemo(
     () => [
       {
         id: '1',
         title: 'Calea Expert in Anatomie',
         description: 'Program intensiv pentru stapanirea completa a anatomiei umane cu focus pe aplicatii clinice.',
         duration: 12,
-        difficulty: 'advanced',
+        difficulty: 'advanced' as const,
         topics: ['Anatomie sistemica', 'Anatomie topografica', 'Anatomie clinica', 'Neuroanatomie'],
         prerequisites: ['Biologie fundamentala', 'Chimie organica'],
         outcomes: ['Certificare anatomie avansata', 'Pregatire pentru rezidentiat', 'Portofoliu clinic'],
-        aiOptimized: true,
-        successRate: 94,
         timeCommitment: 20,
       },
       {
@@ -238,12 +234,10 @@ export default function AIPredictiveAnalyticsRefactored({
         title: 'Calea Intermediara Fiziologie',
         description: 'Program echilibrat pentru intelegerea profunda a proceselor fiziologice umane.',
         duration: 8,
-        difficulty: 'intermediate',
+        difficulty: 'intermediate' as const,
         topics: ['Fiziologie celulara', 'Sistemul nervos', 'Sistemul cardiovascular', 'Homeostazie'],
         prerequisites: ['Biologie fundamentala'],
         outcomes: ['Certificare fiziologie', 'Baze pentru medicina', 'Laborator practic'],
-        aiOptimized: true,
-        successRate: 87,
         timeCommitment: 15,
       },
       {
@@ -251,17 +245,35 @@ export default function AIPredictiveAnalyticsRefactored({
         title: 'Calea Incepator Biochimie',
         description: 'Introducere completa in biochimie cu aplicatii practice in laborator.',
         duration: 6,
-        difficulty: 'beginner',
+        difficulty: 'beginner' as const,
         topics: ['Structura moleculara', 'Enzime', 'Metabolism', 'Biochimie clinica'],
         prerequisites: ['Chimie generala'],
         outcomes: ['Certificare biochimie', 'Competente de laborator', 'Baze pentru cercetare'],
-        aiOptimized: false,
-        successRate: 82,
         timeCommitment: 10,
       },
     ],
     [],
   );
+
+  const studyPaths = useMemo<StudyPathRecommendation[]>(() => {
+    const normalize = (value: string) => value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const relevanceFor = (pathTopics: string[]) => {
+      if (trackedTopics.length === 0) return 50; // no data yet — neutral baseline
+      const normalizedPathTopics = pathTopics.map(normalize);
+      const matches = trackedTopics.filter((entry) => {
+        const topic = normalize(entry.topic);
+        return normalizedPathTopics.some((pt) => pt.includes(topic) || topic.includes(pt));
+      });
+      if (matches.length === 0) return 50;
+      const avgGap = matches.reduce((sum, m) => sum + Math.max(0, 85 - m.accuracy), 0) / matches.length;
+      return Math.round(Math.min(97, 55 + avgGap * 0.5));
+    };
+
+    return rawStudyPaths.map((path) => {
+      const successRate = relevanceFor(path.topics);
+      return { ...path, successRate, aiOptimized: successRate >= 65 };
+    });
+  }, [rawStudyPaths, trackedTopics]);
 
   return (
     <div className="max-w-7xl mx-auto p-6">

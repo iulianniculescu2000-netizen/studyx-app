@@ -2,26 +2,33 @@ import { create } from 'zustand';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface Toast {
   id: string;
   message: string;
   type: ToastType;
   duration?: number;
+  /** Optional inline action button (e.g. "Deschide" a relevant document). */
+  action?: ToastAction;
 }
 
 interface ToastStore {
   toasts: Toast[];
-  addToast: (message: string, type?: ToastType, duration?: number) => void;
+  addToast: (message: string, type?: ToastType, duration?: number, action?: ToastAction) => void;
   removeToast: (id: string) => void;
   upsertToast: (id: string, message: string, type?: ToastType, duration?: number) => void;
 }
 
 export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
-  addToast: (message, type = 'success', duration = 4000) => {
+  addToast: (message, type = 'success', duration = 4000, action) => {
     const id = crypto.randomUUID();
     set((state) => ({
-      toasts: [...state.toasts, { id, message, type, duration }],
+      toasts: [...state.toasts, { id, message, type, duration, action }],
     }));
     setTimeout(() => {
       set((state) => ({

@@ -58,6 +58,7 @@ export interface UserProfileData {
 
 export interface RetrievedChunk {
   id: string;
+  sourceId?: string;
   text: string;
   topic: string;
   source: string;
@@ -99,6 +100,8 @@ export interface AIQuestionRequest {
   mode?: 'standard' | 'exam' | 'tutor';
   /** 'multiple' = complement multiplu (2-3 răspunsuri corecte). Default 'single'. */
   questionType?: 'single' | 'multiple';
+  /** Optional mix of question shapes to spread across the batch (Task 3). */
+  questionTypes?: import('../lib/ai/questionTypes').QuestionType[];
   prefetchedContext?: AIContextPayload;
 }
 
@@ -156,6 +159,7 @@ export interface QuestionGenerationResponse {
     tags?: string[];
     difficulty?: Difficulty;
     sources?: string[];
+    type?: import('../lib/ai/questionTypes').QuestionType;
   }>;
 }
 
@@ -180,5 +184,6 @@ export type TopicStatsMap = Record<string, { correct: number; total: number; wro
 
 export interface WeakTopicInput {
   stats: Record<string, QuestionStat>;
-  questions: Array<Pick<Question, 'id' | 'tags' | 'text'>>;
+  /** `category` is the parent quiz's category — used as a fallback grouping when a question has no tags. */
+  questions: Array<Pick<Question, 'id' | 'tags' | 'text'> & { category?: string }>;
 }

@@ -53,13 +53,27 @@ function difficultyFromAccuracy(accuracy: number): 'easy' | 'medium' | 'hard' {
   return 'medium';
 }
 
+/**
+ * Shrinks a topic's raw accuracy toward a neutral prior before ranking "weak topics", so a
+ * single wrong answer (0% on n=1) doesn't outrank a topic with a real pattern of mistakes
+ * (e.g. 60% on n=20). Only used for sorting — the displayed accuracy stays the true percentage.
+ */
+function weaknessRank(correct: number, total: number, priorMean = 65, priorWeight = 4): number {
+  if (total <= 0) return priorMean;
+  return ((correct + (priorWeight * priorMean) / 100) / (total + priorWeight)) * 100;
+}
+
 export function extractWeakTopics({ stats, questions }: WeakTopicInput): WeakTopic[] {
   const byId = new Map(questions.map((question) => [question.id, question]));
   const topicStats: TopicStatsMap = {};
 
   for (const stat of Object.values(stats)) {
     const question = byId.get(stat.questionId);
-    const tags = question?.tags?.length ? question.tags : [question?.text?.split(' ').slice(0, 3).join(' ') || 'Topic general'];
+    // Untagged questions used to fall back to their first 3 words as a pseudo-topic (e.g.
+    // "Care este mecanismul"), which fragments stats into one-off buckets that never
+    // accumulate enough samples to mean anything and read like garbage in the UI/AI prompt.
+    // The quiz's own category is a real, already-curated grouping — a much better fallback.
+    const tags = question?.tags?.length ? question.tags : [question?.category || 'Topic general'];
     for (const tag of tags) {
       if (!topicStats[tag]) {
         topicStats[tag] = { correct: 0, total: 0, wrong: 0, lastWrongAt: 0 };
@@ -83,7 +97,9 @@ export function extractWeakTopics({ stats, questions }: WeakTopicInput): WeakTop
     }))
     .filter((topic) => topic.total > 0)
     .sort((a, b) => {
-      if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy;
+      const rankA = weaknessRank(a.total - a.wrongCount, a.total);
+      const rankB = weaknessRank(b.total - b.wrongCount, b.total);
+      if (rankA !== rankB) return rankA - rankB;
       if (a.wrongCount !== b.wrongCount) return b.wrongCount - a.wrongCount;
       return b.recencyScore - a.recencyScore;
     })
@@ -223,7 +239,11 @@ export function getWeakTopicsForProfile(profileId: string): WeakTopic[] {
       total: stats.total,
       recencyScore: profile.recentMistakes.find((mistake) => mistake.topic === topic)?.timestamp ?? 0,
     }))
-    .sort((a, b) => a.accuracy - b.accuracy || b.wrongCount - a.wrongCount)
+    .sort((a, b) => {
+      const rankA = weaknessRank(a.total - a.wrongCount, a.total);
+      const rankB = weaknessRank(b.total - b.wrongCount, b.total);
+      return rankA - rankB || b.wrongCount - a.wrongCount;
+    })
     .slice(0, 5);
 }
 

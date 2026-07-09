@@ -3,11 +3,23 @@ import { create } from 'zustand';
 export type AgentStepStatus = 'pending' | 'running' | 'done' | 'error' | 'skipped';
 export type AgentJobStatus = 'planning' | 'awaiting-confirm' | 'running' | 'done' | 'error' | 'cancelled';
 
+export interface AgentJobStepParams {
+  packCount?: number;
+  questionsPerPack?: number;
+  count?: number;
+  difficulty?: 'auto' | 'easy' | 'medium' | 'hard';
+  questionType?: 'single' | 'multiple';
+}
+
 export interface AgentJobStep {
   id: string;
   label: string;
   status: AgentStepStatus;
   detail?: string;
+  /** Action type, present so the confirm UI knows which controls to offer for editing. */
+  action?: string;
+  /** Editable generation params, only meaningful while status is 'pending' and the job awaits confirm. */
+  params?: AgentJobStepParams;
 }
 
 export interface AgentJob {
@@ -26,6 +38,7 @@ interface AgentJobsStore {
   setJobStatus: (jobId: string, status: AgentJobStatus, summary?: string) => void;
   setStepStatus: (jobId: string, stepId: string, status: AgentStepStatus, detail?: string) => void;
   setSteps: (jobId: string, steps: AgentJobStep[]) => void;
+  updateStep: (jobId: string, stepId: string, patch: Partial<AgentJobStep>) => void;
   clearFinished: () => void;
 }
 
@@ -62,6 +75,13 @@ export const useAgentJobsStore = create<AgentJobsStore>((set) => ({
 
   setSteps: (jobId, steps) => set((state) => ({
     jobs: patchJob(state.jobs, jobId, (job) => ({ ...job, steps })),
+  })),
+
+  updateStep: (jobId, stepId, patch) => set((state) => ({
+    jobs: patchJob(state.jobs, jobId, (job) => ({
+      ...job,
+      steps: job.steps.map((step) => (step.id === stepId ? { ...step, ...patch } : step)),
+    })),
   })),
 
   clearFinished: () => set((state) => ({

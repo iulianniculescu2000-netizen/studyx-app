@@ -56,6 +56,7 @@ import {
   looksLikeAgentCommand,
   planAgentCommand,
   type AgentPlan,
+  type AgentStep,
 } from '../lib/ai/agent';
 import { detectChatIntent, shouldApplyIntent } from '../lib/ai/intentRouter';
 import { isFlashcardDeck } from '../lib/deckKind';
@@ -63,6 +64,7 @@ import { suggestFolderAppearance } from '../lib/folderAppearance';
 import { useAgentJobsStore } from '../store/agentJobsStore';
 import { desktopNotify } from '../lib/desktopNotify';
 import { getWeakTopicsForProfile } from '../ai/UserProfile';
+import { getUserMemorySummary } from '../lib/ai/userMemory';
 import type { Folder, Question, Quiz } from '../types';
 import AgentJobCard from './ai-chat/AgentJobCard';
 import AIOrb from './ai-chat/AIOrb';
@@ -323,6 +325,17 @@ export default function AIChatDrawer() {
   const memoryInteractions = useAIStore((state) =>
     activeProfileId ? (state.studyMemory[activeProfileId]?.interactions ?? 0) : 0
   );
+  // Long-term, IndexedDB-backed memory summary (Task 4). Refreshed when the
+  // drawer opens so it reflects sessions completed since it was last open.
+  const [longTermMemory, setLongTermMemory] = useState('');
+  useEffect(() => {
+    if (!open || !activeProfileId) return;
+    let cancelled = false;
+    void getUserMemorySummary(activeProfileId).then((summary) => {
+      if (!cancelled) setLongTermMemory(summary);
+    });
+    return () => { cancelled = true; };
+  }, [open, activeProfileId]);
   const folders = useFolderStore((state) => state.folders);
   const addFolder = useFolderStore((state) => state.addFolder);
   const addToast = useToastStore((state) => state.addToast);
@@ -411,8 +424,9 @@ export default function AIChatDrawer() {
     const focusText = weakTopics.length > 0
       ? `Focus recomandat acum: ${weakTopics.map((topic) => `${topic.topic} ${topic.accuracy}%`).join(', ')}.`
       : '';
-    return [baseContext, focusText, memoryContext].filter(Boolean).join(' ');
-  }, [memoryContext, performanceSummary, weakTopics]);
+    const longTermText = longTermMemory ? `Memorie pe termen lung: ${longTermMemory}` : '';
+    return [baseContext, focusText, memoryContext, longTermText].filter(Boolean).join(' ');
+  }, [memoryContext, performanceSummary, weakTopics, longTermMemory]);
 
   const recommendedActions = useMemo(
     () => buildRecommendedActions(weakTopics, performanceSummary.dueCount, scopedSource?.name),
@@ -734,6 +748,14 @@ export default function AIChatDrawer() {
       id: `s${index}`,
       label: describeStep(step),
       status: 'pending' as const,
+      action: step.action,
+      params: {
+        packCount: step.packCount,
+        questionsPerPack: step.questionsPerPack,
+        count: step.count,
+        difficulty: step.difficulty,
+        questionType: step.questionType,
+      },
     }));
     const jobId = useAgentJobsStore.getState().createJob(
       text,
@@ -761,6 +783,28 @@ export default function AIChatDrawer() {
   const cancelAgentJob = (jobId: string) => {
     pendingAgentPlansRef.current.delete(jobId);
     useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Anulat de utilizator.');
+  };
+
+  // Lets the confirm card tweak count/difficulty/type before execution instead of
+  // forcing a cancel + retype when the planner guessed a parameter wrong.
+  const editAgentStepParams = (jobId: string, stepId: string, patch: Partial<AgentStep>) => {
+    const plan = pendingAgentPlansRef.current.get(jobId);
+    if (!plan) return;
+    const index = Number(stepId.slice(1));
+    const step = plan.steps[index];
+    if (!step) return;
+    const updated = { ...step, ...patch };
+    plan.steps[index] = updated;
+    useAgentJobsStore.getState().updateStep(jobId, stepId, {
+      label: describeStep(updated),
+      params: {
+        packCount: updated.packCount,
+        questionsPerPack: updated.questionsPerPack,
+        count: updated.count,
+        difficulty: updated.difficulty,
+        questionType: updated.questionType,
+      },
+    });
   };
 
   const undoAgentJob = (jobId: string) => {
@@ -1448,6 +1492,7 @@ export default function AIChatDrawer() {
                         onConfirm={() => void runAgentJob(message.agentJobId!)}
                         onCancel={() => cancelAgentJob(message.agentJobId!)}
                         onUndo={() => undoAgentJob(message.agentJobId!)}
+                        onEditParams={(stepId, patch) => editAgentStepParams(message.agentJobId!, stepId, patch)}
                       />
                       {agentResults[message.agentJobId] && (
                         <button
@@ -1608,8 +1653,11 @@ export default function AIChatDrawer() {
           whileTap={calmMotion ? undefined : { scale: 0.92 }}
           onClick={() => setChatOpen(true)}
           aria-label="Deschide chatul AI"
-          className="fixed bottom-6 right-6 z-[9998] flex h-14 w-14 items-center justify-center rounded-[22px] text-white shadow-2xl press-feedback"
+          data-tutorial="ai-chat-button"
+          className="fixed right-6 z-[9998] flex h-14 w-14 items-center justify-center rounded-[22px] text-white shadow-2xl press-feedback"
           style={{
+            // Sit above the mobile bottom-nav so it doesn't cover the last tab.
+            bottom: mobile ? 'calc(74px + env(safe-area-inset-bottom, 0px))' : '24px',
             background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
             boxShadow: `0 10px 30px ${theme.accent}45, 0 2px 8px rgba(0,0,0,0.12)`,
             backdropFilter: performanceLite ? 'blur(8px)' : 'blur(14px)',

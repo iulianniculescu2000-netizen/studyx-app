@@ -143,6 +143,14 @@ export function detectChatIntent(text: string): IntentResult {
   const [topMode, top] = ranked[0];
   const runnerUpScore = ranked[1]?.[1].score ?? 0;
 
+  // An exact tie means two modes matched equally strongly — genuinely ambiguous, not a
+  // confident pick. Without this, ties used to land at confidence 0.5 (right at the
+  // auto-switch threshold) and silently resolve to whichever mode happened to be declared
+  // first in MODE_RULES, instead of admitting "I don't know" and staying grounded.
+  if (runnerUpScore === top.score) {
+    return { mode: 'grounded', confidence: 0, signals: [] };
+  }
+
   // Confidence = dominance of winner over runner-up, capped at 1.
   const confidence = Math.min(1, (top.score - runnerUpScore + 1) / (top.score + 1));
 

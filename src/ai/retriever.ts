@@ -137,6 +137,7 @@ export async function retrieveRelevantChunks(
 
     return {
       id: chunk.id,
+      sourceId: chunk.sourceId,
       text: chunk.text,
       topic: chunk.topic,
       source: chunk.source,

@@ -98,7 +98,7 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
             <div className="flex items-center gap-2">
               <Target className="w-4 h-4 text-green-500" />
               <div>
-                <p className="text-xs text-gray-500">Rată succes</p>
+                <p className="text-xs text-gray-500">Relevanță pentru tine</p>
                 <p className={`text-sm font-medium ${getSuccessRateColor(path.successRate)}`}>
                   {path.successRate}%
                 </p>

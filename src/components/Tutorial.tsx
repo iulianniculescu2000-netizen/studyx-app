@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, X, Sparkles, BookOpen, FolderOpen,
   Play, CreditCard, RefreshCw, BarChart3, StickyNote, Search,
-  Keyboard, Check, ArrowRight, Bot } from 'lucide-react';
+  Keyboard, Check, ArrowRight, Bot, Database, Brain,
+  TrendingUp, Timer } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore, TOTAL_STEPS } from '../store/tutorialStore';
 import { useNavigate } from 'react-router-dom';
@@ -23,7 +24,7 @@ const STEPS: TutorialStep[] = [
   {
     id: 'welcome',
     title: 'Bun venit în StudyX! 🎓',
-    description: 'StudyX este platforma ta de studiu inteligent. Grile interactive, flashcarduri cu repetare spațiată, statistici detaliate și mult mai mult. Hai să explorăm împreună!',
+    description: 'StudyX este platforma ta de studiu inteligent pentru Medicină: grile interactive, flashcarduri cu repetare spațiată, o bibliotecă AI care citește cursurile tale și un agent care execută comenzi. Tur complet — durează 2 minute.',
     icon: <Sparkles size={22} />,
     tooltipPosition: 'center',
     accentColor: '#0A84FF',
@@ -31,7 +32,7 @@ const STEPS: TutorialStep[] = [
   {
     id: 'sidebar',
     title: 'Navigarea principală',
-    description: 'Bara laterală îți dă acces la toate secțiunile: Dashboard, Grile, Recapitulare, Statistici, Flashcarduri și Notițe. O poți restrânge pentru mai mult spațiu.',
+    description: 'Bara laterală îți dă acces la toate secțiunile: Dashboard, Grile, Recapitulare, Bibliotecă AI, Statistici, Flashcarduri și Notițe. O poți restrânge pentru mai mult spațiu.',
     icon: <FolderOpen size={22} />,
     target: '[data-tutorial="sidebar"]',
     targetPadding: 8,
@@ -41,7 +42,7 @@ const STEPS: TutorialStep[] = [
   {
     id: 'create_quiz',
     title: 'Creează prima ta grilă',
-    description: 'Apasă "Grilă nouă" pentru a crea o grilă de la zero. Adaugă un titlu, descriere, emoji și culoare. Poți adăuga oricâte întrebări vrei, cu răspunsuri multiple sau unice.',
+    description: 'Apasă "Grilă nouă" pentru a crea o grilă de la zero. Adaugă un titlu, descriere, emoji și culoare. Poți adăuga oricâte întrebări vrei, cu răspunsuri multiple sau unice — sau lași AI-ul să le genereze din text.',
     icon: <BookOpen size={22} />,
     target: '[data-tutorial="btn-new-quiz"]',
     targetPadding: 6,
@@ -51,8 +52,8 @@ const STEPS: TutorialStep[] = [
   },
   {
     id: 'import_quiz',
-    title: 'Import rapid din JSON',
-    description: 'Ai deja grile pregătite? Importă-le instant din fișiere JSON. Găsești șabloanele în folderul SABLON/ din aplicație — simplu și rapid.',
+    title: 'Import de grile — trei căi',
+    description: 'Ai deja grile? Trei opțiuni: 📄 fișier JSON gata pregătit, sau 🤖 „AI extern" — copiezi un prompt, îl lipești în ChatGPT/Gemini gratuit, apoi lipești răspunsul înapoi aici. Fără cotă internă, fără să atingi vreun fișier.',
     icon: <ArrowRight size={22} />,
     target: '[data-tutorial="btn-import"]',
     targetPadding: 6,
@@ -63,7 +64,7 @@ const STEPS: TutorialStep[] = [
   {
     id: 'folders',
     title: 'Organizează în foldere',
-    description: 'Creează foldere pentru fiecare materie (Anatomie, Fiziologie etc.). Fiecare folder are emoji și culoare proprie. Click pe "+" din sidebar pentru a adăuga un folder nou.',
+    description: 'Creează foldere (și subfoldere) pentru fiecare materie: Anatomie, Fiziologie etc. Fiecare folder are emoji și culoare proprie. Click pe "+" din sidebar pentru a adăuga un folder nou.',
     icon: <FolderOpen size={22} />,
     target: '[data-tutorial="sidebar-folders"]',
     targetPadding: 8,
@@ -72,9 +73,18 @@ const STEPS: TutorialStep[] = [
     accentColor: '#FF9F0A',
   },
   {
+    id: 'quiz_management',
+    title: 'Organizare rapidă a grilelor',
+    description: 'Din lista de grile poți: 📌 fixa sus grilele importante, 🗄️ arhiva ce nu mai folosești, 📋 duplica o grilă ca punct de plecare pentru una nouă, sau selecta mai multe grile odată pentru mutare/ștergere în masă.',
+    icon: <BookOpen size={22} />,
+    tooltipPosition: 'center',
+    navigateTo: '/quizzes',
+    accentColor: '#30D158',
+  },
+  {
     id: 'play_modes',
     title: 'Moduri de studiu',
-    description: 'Fiecare grilă poate fi jucată în 3 moduri:\n🎓 Studiu — cu feedback imediat și explicații\n📝 Examen — fără feedback, la final afli scorul\n⏱ Cronometrat — 30 secunde per întrebare',
+    description: 'Fiecare grilă poate fi jucată în mai multe moduri:\n🎓 Studiu — cu feedback imediat și explicații\n📝 Examen — fără feedback, la final afli scorul\n⏱ Cronometrat — timp limitat per întrebare\n⚕️ Mod Rezidențiat — penalizare pentru răspuns greșit, ca la examen',
     icon: <Play size={22} />,
     tooltipPosition: 'center',
     navigateTo: '/',
@@ -105,13 +115,57 @@ const STEPS: TutorialStep[] = [
   {
     id: 'review',
     title: 'Repetare spațiată (SM-2)',
-    description: 'Algoritmul SM-2 urmărește ce întrebări știi și ce nu știi, și le programează la intervale optime: 1zi → 3zile → 7zile → 14zile → 30zile. Memorezi pe termen lung!',
+    description: 'Algoritmul SM-2 urmărește ce întrebări știi și ce nu știi, și le programează la intervale optime: 1zi → 3zile → 7zile → 14zile → 30zile. Memorezi pe termen lung, nu doar pentru mâine!',
     icon: <RefreshCw size={22} />,
     target: '[data-tutorial="nav-review"]',
     targetPadding: 6,
     tooltipPosition: 'right',
     navigateTo: '/',
     accentColor: '#FF9F0A',
+  },
+  {
+    id: 'daily_review',
+    title: 'Sesiunea zilnică',
+    description: 'Un singur click grupează tot ce ai de recapitulat azi — din toate grilele — într-o singură sesiune scurtă. E cel mai rapid mod de a rămâne la zi, în fiecare zi.',
+    icon: <Brain size={22} />,
+    target: '[data-tutorial="nav-daily-review"]',
+    targetPadding: 6,
+    tooltipPosition: 'right',
+    navigateTo: '/',
+    accentColor: '#0A84FF',
+  },
+  {
+    id: 'vault',
+    title: 'Biblioteca AI — creierul din spate',
+    description: 'Încarci cursuri (PDF, DOCX, poze cu OCR) și AI-ul le indexează automat. De acolo, orice răspuns al AI-ului e ancorat exact în cursurile tale — nu inventează, citează sursa și procentul de relevanță.',
+    icon: <Database size={22} />,
+    target: '[data-tutorial="nav-vault"]',
+    targetPadding: 6,
+    tooltipPosition: 'right',
+    navigateTo: '/',
+    accentColor: '#64D2FF',
+  },
+  {
+    id: 'ai_chat',
+    title: 'Chat AI + Agent — spune-i ce vrei',
+    description: 'Scrie „fă-mi 3 pachete din cursul 4 și pune-le în folderul Mielom" — agentul planifică, execută fiecare pas vizibil și poate fi anulat oricând. Iar dacă a înțeles greșit un detaliu (nr. de întrebări, dificultate), îl corectezi direct din cardul de confirmare, înainte să apeși Confirmă.',
+    icon: <Bot size={22} />,
+    target: '[data-tutorial="ai-chat-button"]',
+    targetPadding: 8,
+    tooltipPosition: 'left',
+    navigateTo: '/',
+    accentColor: '#BF6FFF',
+  },
+  {
+    id: 'ai_setup',
+    title: 'Activează AI-ul — gratuit',
+    description: 'StudyX suportă doi provideri gratuiți: Groq (Llama, foarte rapid) și Google Gemini. Din Setări → AI, lipești o cheie API gratuită de la console.groq.com sau Google AI Studio și AI-ul e activ — generare grile, chat, explicații, tot.',
+    icon: <Bot size={22} />,
+    target: '[data-tutorial="nav-settings"]',
+    targetPadding: 6,
+    tooltipPosition: 'right',
+    navigateTo: '/',
+    accentColor: '#BF6FFF',
   },
   {
     id: 'stats',
@@ -122,6 +176,15 @@ const STEPS: TutorialStep[] = [
     targetPadding: 6,
     tooltipPosition: 'right',
     navigateTo: '/stats',
+    accentColor: '#32D74B',
+  },
+  {
+    id: 'analytics_gamification',
+    title: 'Predicții reale + progres vs. tine',
+    description: 'Analiza predictivă îți arată lacunele calculate din statisticile tale reale, nu exemple fixe. Iar în Gamification, competiția e cu tine din trecut — azi vs. ieri, media săptămânii, cel mai bun scor — nu cu useri ficțiuni.',
+    icon: <TrendingUp size={22} />,
+    tooltipPosition: 'center',
+    navigateTo: '/',
     accentColor: '#32D74B',
   },
   {
@@ -138,7 +201,7 @@ const STEPS: TutorialStep[] = [
   {
     id: 'search',
     title: 'Căutare globală',
-    description: 'Apasă Ctrl+K oricând pentru a căuta instantaneu în toate grilele și întrebările tale. Rezultatele apar în timp real — navighezi rapid oriunde.',
+    description: 'Apasă Ctrl+K oricând pentru a căuta instantaneu în toate grilele și întrebările tale. Rezultatele sunt ordonate după relevanță — cele mai bune potriviri apar primele.',
     icon: <Search size={22} />,
     target: '[data-tutorial="global-search"]',
     targetPadding: 8,
@@ -147,15 +210,33 @@ const STEPS: TutorialStep[] = [
     accentColor: '#64D2FF',
   },
   {
-    id: 'ai_setup',
-    title: 'AI integrat — Groq gratuit 🤖',
-    description: 'StudyX are AI integrat! Poți:\n🧠 Genera grile automat din text/PDF\n💬 Chatea cu AI despre orice grilă\n🔍 Explica greșelile cu AI\n\nPentru a activa: click pe butonul "AI (Groq)" din sidebar → obține o cheie gratuită la console.groq.com → lipiți cheia → Salvează. 14.400 req/zi gratuit!',
-    icon: <Bot size={22} />,
+    id: 'focus_pomodoro',
+    title: 'Pomodoro & Mod Focus',
+    description: 'Timer Pomodoro integrat pentru sesiuni cronometrate, plus Mod Focus care ascunde tot ce distrage (sidebar, notificări) când chiar trebuie să te concentrezi.',
+    icon: <Timer size={22} />,
+    tooltipPosition: 'center',
+    navigateTo: '/',
+    accentColor: '#FF9F0A',
+  },
+  {
+    id: 'profiles',
+    title: 'Profiluri multiple',
+    description: 'Studiezi cu un coleg pe același calculator? Fiecare persoană își poate crea propriul profil — grile, statistici, streak și progres complet separate, fără să se amestece.',
+    icon: <Sparkles size={22} />,
+    tooltipPosition: 'center',
+    navigateTo: '/',
+    accentColor: '#5E5CE6',
+  },
+  {
+    id: 'backup',
+    title: 'Backup — datele tale sunt în siguranță',
+    description: 'Din Setări poți exporta oricând un backup complet (grile, statistici, progres) și îl poți importa înapoi pe alt calculator. Aplicația face și auto-backup periodic, ca să nu pierzi nimic.',
+    icon: <Database size={22} />,
     target: '[data-tutorial="nav-settings"]',
     targetPadding: 6,
     tooltipPosition: 'right',
     navigateTo: '/',
-    accentColor: '#BF6FFF',
+    accentColor: '#64D2FF',
   },
   {
     id: 'shortcuts',
@@ -179,6 +260,8 @@ function useSpotlight(selector: string | undefined, padding = 8) {
     let ro: ResizeObserver | null = null;
     let mo: MutationObserver | null = null;
 
+    // Center steps (no selector) never read `rect` — the hook's return coerces it to null —
+    // so there's nothing to reset here.
     if (!selector) return;
 
     const detach = () => {
@@ -193,6 +276,46 @@ function useSpotlight(selector: string | undefined, padding = 8) {
       mo = null;
     };
 
+    // Remember the last committed rect so snap() only calls setRect when the geometry actually
+    // moved. Without this guard, every re-measure pushed a new object and re-rendered.
+    let lastRect: SpotlightRect | null = null;
+    const nearlyEqual = (a: SpotlightRect | null, b: SpotlightRect | null) => {
+      if (a === b) return true;
+      if (!a || !b) return false;
+      return (
+        Math.abs(a.top - b.top) < 0.5 &&
+        Math.abs(a.left - b.left) < 0.5 &&
+        Math.abs(a.width - b.width) < 0.5 &&
+        Math.abs(a.height - b.height) < 0.5
+      );
+    };
+
+    const commit = (next: SpotlightRect | null) => {
+      if (nearlyEqual(next, lastRect)) return;
+      lastRect = next;
+      setRect(next);
+    };
+
+    const snap = () => {
+      if (!current) return;
+      const r = current.getBoundingClientRect();
+      // A found-but-scrolled-off-screen target (e.g. a button below the fold) would put the
+      // spotlight and tooltip outside the viewport, leaving only the dark overlay visible.
+      // Treat that as "no anchor" so the tooltip falls back to a centered, always-visible card.
+      const fullyOffscreen =
+        r.bottom <= 0 || r.top >= window.innerHeight || r.right <= 0 || r.left >= window.innerWidth;
+      if (fullyOffscreen || (r.width === 0 && r.height === 0)) {
+        commit(null);
+        return;
+      }
+      commit({
+        top: r.top - padding,
+        left: r.left - padding,
+        width: r.width + padding * 2,
+        height: r.height + padding * 2,
+      });
+    };
+
     const attach = (el: HTMLElement) => {
       detach();
       current = el;
@@ -201,27 +324,27 @@ function useSpotlight(selector: string | undefined, padding = 8) {
       el.style.filter = 'brightness(1.5) saturate(1.1)';
       ro = new ResizeObserver(snap);
       ro.observe(el);
+      // Only scroll if the target isn't already comfortably in view — and do it instantly, so
+      // the spotlight doesn't have to chase a smooth-scrolling target (that chase was the jitter).
+      const r = el.getBoundingClientRect();
+      const partlyOffscreen = r.top < 0 || r.bottom > window.innerHeight;
+      if (partlyOffscreen) {
+        try {
+          el.scrollIntoView({ block: 'center', inline: 'nearest' });
+        } catch {
+          /* scrollIntoView options unsupported — ignore */
+        }
+      }
       snap();
-    };
-
-    const snap = () => {
-      if (!current) return;
-      const r = current.getBoundingClientRect();
-      setRect({
-        top: r.top - padding,
-        left: r.left - padding,
-        width: r.width + padding * 2,
-        height: r.height + padding * 2,
-      });
     };
 
     const resolveTarget = () => {
       const found = document.querySelector(selector) as HTMLElement | null;
       if (found && found !== current) {
         attach(found);
-      } else if (!found && current) {
+      } else if (!found) {
         detach();
-        setRect(null);
+        commit(null);
       } else {
         snap();
       }
@@ -230,8 +353,11 @@ function useSpotlight(selector: string | undefined, padding = 8) {
     resolveTarget();
     requestAnimationFrame(resolveTarget);
     setTimeout(resolveTarget, 180);
+    // Watch only for elements being added/removed (so a target appears after navigation).
+    // NOT attributes: framer-motion mutates inline styles every animation frame, which turned
+    // this observer into a per-frame re-render loop — the "trembling" the user saw.
     mo = new MutationObserver(resolveTarget);
-    mo.observe(document.body, { childList: true, subtree: true, attributes: true });
+    mo.observe(document.body, { childList: true, subtree: true });
     window.addEventListener('resize', snap);
     window.addEventListener('scroll', snap, true);
 
@@ -259,22 +385,36 @@ function TooltipArrow({ position }: { position: string }) {
 
 function getTooltipStyle(position: string, rect: SpotlightRect | null): React.CSSProperties {
   const GAP = 16;
-  const TW = 340; // tooltip width
-  const TH = 300; // max estimated tooltip height
+  const PAD = 12; // min distance from viewport edges
   const VW = window.innerWidth;
   const VH = window.innerHeight;
-  const PAD = 12; // min distance from viewport edges
+  // Fixed 340/380px widths overflowed narrow windows (the tooltip got clipped off-screen
+  // instead of shrinking). Cap both to whatever actually fits the current viewport.
+  const TW = Math.max(240, Math.min(340, VW - PAD * 2));
+  const CENTER_W = Math.max(240, Math.min(380, VW - PAD * 2));
+  const TH = Math.min(300, VH - PAD * 2); // max estimated tooltip height
 
   if (!rect || position === 'center') {
-    return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 380 };
+    return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: CENTER_W, maxHeight: VH - PAD * 2, overflowY: 'auto' };
   }
 
   // Clamp horizontal center position
   const clampLeft = (rawLeft: number) =>
     Math.max(PAD, Math.min(rawLeft, VW - TW - PAD));
 
+  // Side placements (left/right of target) need enough leftover width for the tooltip itself;
+  // below a certain window width there just isn't room beside the target, so fall back to
+  // stacking it under/over the target instead of letting it overflow the viewport edge.
+  const sideRoomAvailable = VW - rect.width - GAP * 2 - PAD * 2 >= TW;
+
   switch (position) {
     case 'right': {
+      if (!sideRoomAvailable) {
+        const rawTop = rect.top + rect.height + GAP;
+        const rawLeft = clampLeft(rect.left + rect.width / 2 - TW / 2);
+        const top = rawTop + TH > VH - PAD ? Math.max(PAD, rect.top - GAP - TH) : rawTop;
+        return { position: 'fixed', top, left: rawLeft, width: TW, maxHeight: TH, overflowY: 'auto' };
+      }
       const left = rect.left + rect.width + GAP;
       const top = Math.max(PAD, Math.min(rect.top + rect.height / 2, VH - TH - PAD));
       // Flip to left if not enough room on right
@@ -284,6 +424,12 @@ function getTooltipStyle(position: string, rect: SpotlightRect | null): React.CS
       return { position: 'fixed', left, top, transform: 'translateY(-50%)', width: TW };
     }
     case 'left': {
+      if (!sideRoomAvailable) {
+        const rawTop = rect.top + rect.height + GAP;
+        const rawLeft = clampLeft(rect.left + rect.width / 2 - TW / 2);
+        const top = rawTop + TH > VH - PAD ? Math.max(PAD, rect.top - GAP - TH) : rawTop;
+        return { position: 'fixed', top, left: rawLeft, width: TW, maxHeight: TH, overflowY: 'auto' };
+      }
       const right = VW - (rect.left - GAP);
       const top = Math.max(PAD, Math.min(rect.top + rect.height / 2, VH - TH - PAD));
       return { position: 'fixed', right, top, transform: 'translateY(-50%)', width: TW };
@@ -294,21 +440,21 @@ function getTooltipStyle(position: string, rect: SpotlightRect | null): React.CS
       // Flip to top if tooltip would go off the bottom
       if (rawTop + TH > VH - PAD) {
         const topPos = Math.max(PAD, rect.top - GAP - TH);
-        return { position: 'fixed', top: topPos, left: rawLeft, width: TW };
+        return { position: 'fixed', top: topPos, left: rawLeft, width: TW, maxHeight: TH, overflowY: 'auto' };
       }
-      return { position: 'fixed', top: rawTop, left: rawLeft, width: TW };
+      return { position: 'fixed', top: rawTop, left: rawLeft, width: TW, maxHeight: TH, overflowY: 'auto' };
     }
     case 'top': {
       const rawBottom = VH - (rect.top - GAP);
       const rawLeft = clampLeft(rect.left + rect.width / 2 - TW / 2);
       // Flip to bottom if tooltip would go off the top
       if (rect.top - GAP - TH < PAD) {
-        return { position: 'fixed', top: rect.top + rect.height + GAP, left: rawLeft, width: TW };
+        return { position: 'fixed', top: rect.top + rect.height + GAP, left: rawLeft, width: TW, maxHeight: TH, overflowY: 'auto' };
       }
-      return { position: 'fixed', bottom: rawBottom, left: rawLeft, width: TW };
+      return { position: 'fixed', bottom: rawBottom, left: rawLeft, width: TW, maxHeight: TH, overflowY: 'auto' };
     }
     default:
-      return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 380 };
+      return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: CENTER_W };
   }
 }
 
@@ -324,6 +470,17 @@ export default function Tutorial({ profileId }: { profileId: string }) {
   const accentColor = step?.accentColor ?? theme.accent;
   const isLast = currentStep === TOTAL_STEPS - 1;
   const isFirst = currentStep === 0;
+
+  // Re-render on window resize so the tooltip's responsive width/position (getTooltipStyle
+  // reads window.innerWidth/innerHeight directly) stays correct — without this, resizing the
+  // window while on a step with no spotlight target left the tooltip sized for the old window.
+  const [, forceResize] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const handler = () => forceResize((n) => n + 1);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, [active]);
 
   // Navigate when step changes
   useEffect(() => {
@@ -467,17 +624,19 @@ export default function Tutorial({ profileId }: { profileId: string }) {
               {step.description}
             </p>
 
-            {/* Step dots */}
-            <div className="flex items-center justify-center gap-2 mb-8">
+            {/* Step dots — wraps instead of overflowing. With 22 steps a single unwrapped row
+                no longer fit the card width and was getting silently clipped by the card's
+                overflow-hidden, so this always reflows to as many lines as needed. */}
+            <div className="flex flex-wrap items-center justify-center gap-1.5 mb-8">
               {STEPS.map((_, i) => (
                 <motion.div
                   key={i}
                   animate={{
-                    width: i === currentStep ? 24 : 6,
+                    width: i === currentStep ? 20 : 5,
                     opacity: i === currentStep ? 1 : i < currentStep ? 0.6 : 0.2,
                   }}
                   transition={{ duration: 0.3, ease: 'circOut' }}
-                  className="h-1.5 rounded-full"
+                  className="h-1.5 rounded-full flex-shrink-0"
                   style={{ background: i <= currentStep ? accentColor : theme.text3 }}
                 />
               ))}

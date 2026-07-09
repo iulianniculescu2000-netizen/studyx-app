@@ -18,6 +18,12 @@ import {
 } from 'lucide-react';
 import type { Folder, Question, QuizColor } from '../../types';
 import type { Theme } from '../../theme/themes';
+import {
+  ALL_QUESTION_TYPES,
+  QUESTION_TYPE_LABELS,
+  previewDistribution,
+  type QuestionType,
+} from '../../lib/ai/questionTypes';
 import { CATEGORIES, COLORS, DIFFICULTIES, EMOJIS, OPTION_IDS } from './helpers';
 import { Label, Panel, Toggle } from './ui';
 
@@ -418,6 +424,7 @@ interface QuizAIGenerationPanelProps {
   aiError: string;
   aiLoading: boolean;
   aiMode: 'standard' | 'clinical';
+  aiQuestionTypes: QuestionType[];
   aiProgress: { generated: number; total: number } | null;
   aiText: string;
   hasKey: boolean;
@@ -425,6 +432,7 @@ interface QuizAIGenerationPanelProps {
   visible: boolean;
   onCountChange: (count: number) => void;
   onDifficultyChange: (d: number) => void;
+  onQuestionTypesChange: (types: QuestionType[]) => void;
   onGenerate: () => void;
   onImportPdf: () => void;
   onModeChange: (mode: 'standard' | 'clinical') => void;
@@ -437,6 +445,7 @@ export function QuizAIGenerationPanel({
   aiError,
   aiLoading,
   aiMode,
+  aiQuestionTypes,
   aiProgress,
   aiText,
   hasKey,
@@ -444,11 +453,20 @@ export function QuizAIGenerationPanel({
   visible,
   onCountChange,
   onDifficultyChange,
+  onQuestionTypesChange,
   onGenerate,
   onImportPdf,
   onModeChange,
   onTextChange,
 }: QuizAIGenerationPanelProps) {
+  const toggleQuestionType = (type: QuestionType) => {
+    const has = aiQuestionTypes.includes(type);
+    // Keep at least one type selected.
+    if (has && aiQuestionTypes.length === 1) return;
+    onQuestionTypesChange(
+      has ? aiQuestionTypes.filter((t) => t !== type) : [...aiQuestionTypes, type],
+    );
+  };
   return (
     <AnimatePresence mode="wait">
       {visible && (
@@ -574,6 +592,38 @@ export function QuizAIGenerationPanel({
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Question type router (standard mode only) */}
+          {aiMode === 'standard' && (
+            <div>
+              <label className="text-xs font-medium mb-2 block" style={{ color: theme.text2 }}>
+                Tipuri de întrebări
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {ALL_QUESTION_TYPES.map((type) => {
+                  const active = aiQuestionTypes.includes(type);
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => toggleQuestionType(type)}
+                      className="flex items-center gap-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all"
+                      style={{
+                        background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                        color: active ? '#fff' : theme.text3,
+                        border: `1px solid ${active ? `${theme.accent}50` : 'transparent'}`,
+                      }}
+                    >
+                      {active && <Check size={11} />}
+                      {QUESTION_TYPE_LABELS[type]}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs mt-1.5 px-1" style={{ color: theme.text3 }}>
+                Distribuție: {previewDistribution(aiCount, aiQuestionTypes)}
+              </p>
             </div>
           )}
 

@@ -167,6 +167,8 @@ export default function PomodoroTimer() {
 
   const dockMetrics = useMemo(() => {
     const margin = 24;
+    // Clear the mobile bottom-nav bar (~58px) so the launcher isn't hidden behind it.
+    const bottomMargin = viewport.width < 640 ? margin + 60 : margin;
     const gap = 18;
     const launcherHeight = 48;
     const openHeight = minimized ? 74 : 328;
@@ -175,14 +177,14 @@ export default function PomodoroTimer() {
     if (!chatOpen) {
       return {
         right: margin,
-        bottom: margin,
+        bottom: bottomMargin,
       };
     }
 
     if (hasSideDockSpace) {
       return {
         right: chatSheetWidth + margin + gap,
-        bottom: margin,
+        bottom: bottomMargin,
       };
     }
 

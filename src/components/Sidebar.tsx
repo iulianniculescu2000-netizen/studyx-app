@@ -774,20 +774,22 @@ export default function Sidebar() {
               </div>
             </Tip>
             <Tip label={`Sesiune zilnică${dueCount > 0 ? ` - ${dueCount} de recapitulat` : ""}`}>
-              <NavItem
-                to="/daily-review"
-                icon={
-                  <div className="relative">
-                    <Brain size={17} />
-                    {dueCount > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[8px] font-bold flex items-center justify-center text-white"
-                        style={{ background: theme.accent }}>{dueCount}</span>
-                    )}
-                  </div>
-                }
-                label="Sesiune zilnică"
-                collapsed
-              />
+              <div data-tutorial="nav-daily-review">
+                <NavItem
+                  to="/daily-review"
+                  icon={
+                    <div className="relative">
+                      <Brain size={17} />
+                      {dueCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[8px] font-bold flex items-center justify-center text-white"
+                          style={{ background: theme.accent }}>{dueCount}</span>
+                      )}
+                    </div>
+                  }
+                  label="Sesiune zilnică"
+                  collapsed
+                />
+              </div>
             </Tip>
             <Tip label="Statistici">
               <div data-tutorial="nav-stats">
@@ -800,7 +802,9 @@ export default function Sidebar() {
               </div>
             </Tip>
             <Tip label="Biblioteca AI">
-              <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} />
+              <div data-tutorial="nav-vault">
+                <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} />
+              </div>
             </Tip>
             <Tip label="Flashcarduri">
               <div data-tutorial="nav-flashcards">
@@ -847,24 +851,28 @@ export default function Sidebar() {
                 ) : undefined}
               />
             </div>
-            <NavItem
-              to="/daily-review"
-              icon={<Brain size={16} />}
-              label="Sesiune zilnică"
-              collapsed={false}
-              badge={dueCount > 0 ? (
-                <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
-                  style={{ background: `${theme.accent}28`, color: theme.accent }}>
-                  {dueCount}
-                </span>
-              ) : undefined}
-            />
+            <div data-tutorial="nav-daily-review">
+              <NavItem
+                to="/daily-review"
+                icon={<Brain size={16} />}
+                label="Sesiune zilnică"
+                collapsed={false}
+                badge={dueCount > 0 ? (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
+                    style={{ background: `${theme.accent}28`, color: theme.accent }}>
+                    {dueCount}
+                  </span>
+                ) : undefined}
+              />
+            </div>
             <div data-tutorial="nav-stats"><NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} /></div>
             <div data-tutorial="nav-notes">
               <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notițe" collapsed={false} />
             </div>
 
-            <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} />
+            <div data-tutorial="nav-vault">
+              <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} />
+            </div>
             <div data-tutorial="nav-flashcards">
               <NavItem
                 to="/flashcards"

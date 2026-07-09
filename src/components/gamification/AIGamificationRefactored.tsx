@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import AIGamificationAchievements from './AIGamificationAchievements';
 import AIGamificationChallenges from './AIGamificationChallenges';
 import AIGamificationHeader from './AIGamificationHeader';
-import AIGamificationLeaderboard from './AIGamificationLeaderboard';
+import AIGamificationSelfComparison, { type SelfComparisonEntry } from './AIGamificationSelfComparison';
 import AIGamificationStats from './AIGamificationStats';
 import AIGamificationTabs from './AIGamificationTabs';
 import { useQuizStore } from '../../store/quizStore';
@@ -49,21 +49,6 @@ interface Challenge {
   };
 }
 
-interface LeaderboardEntry {
-  id: string;
-  userId: string;
-  username: string;
-  avatar?: string;
-  points: number;
-  rank: number;
-  level: number;
-  achievements: number;
-  studyStreak: number;
-  aiScore: number;
-  weeklyChange: number;
-  badges: string[];
-}
-
 interface UserStats {
   points: number;
   level: number;
@@ -78,9 +63,11 @@ interface AIGamificationProps {
   username: string;
 }
 
-export default function AIGamificationRefactored({ userId, username }: AIGamificationProps) {
+export default function AIGamificationRefactored({ username }: AIGamificationProps) {
   const [activeTab, setActiveTab] = useState<'achievements' | 'challenges' | 'leaderboard'>('achievements');
   const [selectedAchievement, setSelectedAchievement] = useState<Achievement | null>(null);
+  // Captured once so the day-bucketed self-comparison stays pure across renders.
+  const [nowTs] = useState(() => Date.now());
   const quizzes = useQuizStore((state) => state.quizzes);
   const sessions = useQuizStore((state) => state.sessions);
   const streak = useStatsStore((state) => state.streak);
@@ -237,76 +224,62 @@ export default function AIGamificationRefactored({ userId, username }: AIGamific
     [sessions.length, streak.currentStreak, totalStudyTime],
   );
 
-  const leaderboard = useMemo<LeaderboardEntry[]>(
-    () => [
-      {
-        id: '1',
-        userId: 'user1',
-        username: 'Alexandru P.',
-        points: 5420,
-        rank: 1,
-        level: 23,
-        achievements: 45,
-        studyStreak: 28,
-        aiScore: 94,
-        weeklyChange: 3,
-        badges: ['🏆', '🥇', '🔥', '🤖', '⚡'],
-      },
-      {
-        id: '2',
-        userId: 'user2',
-        username: 'Maria I.',
-        points: 4890,
-        rank: 2,
-        level: 21,
-        achievements: 38,
-        studyStreak: 15,
-        aiScore: 91,
-        weeklyChange: -1,
-        badges: ['🥈', '🏆', '🤖', '⭐'],
-      },
-      {
-        id: '3',
-        userId,
-        username,
-        points: userStats.points,
-        rank: userStats.weeklyRank,
-        level: userStats.level,
-        achievements: userStats.achievements,
-        studyStreak: userStats.studyStreak,
-        aiScore: userStats.aiScore,
-        weeklyChange: 2,
-        badges: ['🥉', '🔥', '🤖'],
-      },
-      {
-        id: '4',
-        userId: 'user4',
-        username: 'Radu S.',
-        points: 2150,
-        rank: 4,
-        level: 12,
-        achievements: 18,
-        studyStreak: 8,
-        aiScore: 85,
-        weeklyChange: 0,
-        badges: ['⭐', '🎯'],
-      },
-      {
-        id: '5',
-        userId: 'user5',
-        username: 'Elena D.',
-        points: 1890,
-        rank: 5,
-        level: 11,
-        achievements: 15,
-        studyStreak: 6,
-        aiScore: 82,
-        weeklyChange: -2,
-        badges: ['🎯', '💡'],
-      },
-    ],
-    [userId, username, userStats],
-  );
+  // Single-user app → there are no real competitors. Compare the user against
+  // their own past performance instead of fabricated rivals. Accuracy is
+  // aggregated per calendar day from real sessions.
+  const { selfComparison, todayVsYesterday } = useMemo(() => {
+    const dayKey = (ts: number) => new Date(ts).toISOString().split('T')[0];
+    const byDay = new Map<string, { correct: number; total: number }>();
+    for (const session of sessions) {
+      const ts = session.finishedAt ?? session.startedAt;
+      if (!ts || session.total <= 0) continue;
+      const key = dayKey(ts);
+      const agg = byDay.get(key) ?? { correct: 0, total: 0 };
+      agg.correct += session.score;
+      agg.total += session.total;
+      byDay.set(key, agg);
+    }
+
+    const pct = (d?: { correct: number; total: number }) =>
+      d && d.total > 0 ? Math.round((d.correct / d.total) * 100) : 0;
+    const questions = (d?: { correct: number; total: number }) => d?.total ?? 0;
+
+    const now = nowTs;
+    const todayData = byDay.get(dayKey(now));
+    const yesterdayData = byDay.get(dayKey(now - 86400000));
+
+    let weekSum = 0;
+    let weekCount = 0;
+    let weekQuestions = 0;
+    for (let i = 0; i < 7; i++) {
+      const data = byDay.get(dayKey(now - i * 86400000));
+      if (data && data.total > 0) {
+        weekSum += pct(data);
+        weekQuestions += data.total;
+        weekCount++;
+      }
+    }
+    const weekAvg = weekCount > 0 ? Math.round(weekSum / weekCount) : 0;
+
+    let bestValue = 0;
+    let bestQuestions = 0;
+    for (const data of byDay.values()) {
+      const value = pct(data);
+      if (value > bestValue) {
+        bestValue = value;
+        bestQuestions = data.total;
+      }
+    }
+
+    const entries: SelfComparisonEntry[] = [
+      { label: 'Tu azi', value: pct(todayData), questions: questions(todayData), highlight: true },
+      { label: 'Tu ieri', value: pct(yesterdayData), questions: questions(yesterdayData) },
+      { label: 'Media săptămânii', value: weekAvg, questions: weekQuestions },
+      { label: 'Cel mai bun', value: bestValue, questions: bestQuestions, isBest: true },
+    ];
+
+    return { selfComparison: entries, todayVsYesterday: pct(todayData) - pct(yesterdayData) };
+  }, [sessions, nowTs]);
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -325,7 +298,7 @@ export default function AIGamificationRefactored({ userId, username }: AIGamific
       {activeTab === 'challenges' && <AIGamificationChallenges challenges={challenges} />}
 
       {activeTab === 'leaderboard' && (
-        <AIGamificationLeaderboard leaderboard={leaderboard} currentUserId={userId} />
+        <AIGamificationSelfComparison entries={selfComparison} todayVsYesterday={todayVsYesterday} />
       )}
     </div>
   );

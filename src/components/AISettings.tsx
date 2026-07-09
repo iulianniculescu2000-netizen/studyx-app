@@ -3,10 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Key, Cpu, Eye, EyeOff, Check,
   Library, Trash2, Upload, FileText, Image,
-  Loader2, Gift, ChevronDown, ArrowUpRight
+  Loader2, Gift, ChevronDown, ArrowUpRight, Brain
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIModel, type AIProvider } from '../store/aiStore';
+import { useUserStore } from '../store/userStore';
+import { getUserMemorySummary, resetUserMemory } from '../lib/ai/userMemory';
 import Portal from './Portal';
 
 const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; docs: string }[] = [
@@ -84,6 +86,9 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
   const [verifyResult, setVerifyResult] = useState<{ ok: boolean; error?: string; warning?: string } | null>(null);
   const [libraryError, setLibraryError] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const activeProfileId = useUserStore((s) => s.activeProfileId);
+  const [memorySummary, setMemorySummary] = useState('');
+  const [memoryLoading, setMemoryLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processStep, setProcessProcessingStep] = useState('');
   
@@ -93,6 +98,22 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
   useEffect(() => {
     if (open) setDraft(apiKey);
   }, [open, apiKey]);
+
+  useEffect(() => {
+    if (!open || !activeProfileId) return;
+    let cancelled = false;
+    setMemoryLoading(true);
+    void getUserMemorySummary(activeProfileId)
+      .then((summary) => { if (!cancelled) setMemorySummary(summary); })
+      .finally(() => { if (!cancelled) setMemoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, activeProfileId]);
+
+  const handleResetMemory = async () => {
+    if (!activeProfileId) return;
+    await resetUserMemory(activeProfileId);
+    setMemorySummary('');
+  };
 
   useEffect(() => () => {
     if (savedTimerRef.current) {
@@ -447,6 +468,36 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                   style={{ background: saved ? theme.success : keyInvalid ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: keyInvalid ? theme.text3 : '#fff' }}>
                   {saved ? 'Salvat!' : 'Salvează Configurarea'}
                 </motion.button>
+
+                {/* What the assistant knows about you (Task 4) */}
+                <div className="mb-6 rounded-[28px] p-4 border" style={{ borderColor: theme.border, background: theme.isDark ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.03)' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2" style={{ color: theme.text }}>
+                      <Brain size={14} />
+                      <span className="text-[11px] font-black uppercase tracking-[0.12em]">Ce știe asistentul despre tine</span>
+                    </div>
+                    {memorySummary && (
+                      <button
+                        onClick={handleResetMemory}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase"
+                        style={{ color: theme.danger, background: `${theme.danger}12`, border: `1px solid ${theme.danger}30` }}
+                      >
+                        <Trash2 size={11} /> Resetează
+                      </button>
+                    )}
+                  </div>
+                  {memoryLoading ? (
+                    <p className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: theme.text3 }}>
+                      <Loader2 size={12} className="animate-spin" /> Se încarcă…
+                    </p>
+                  ) : memorySummary ? (
+                    <p className="text-[12px] leading-relaxed" style={{ color: theme.text2 }}>{memorySummary}</p>
+                  ) : (
+                    <p className="text-[12px] leading-relaxed" style={{ color: theme.text3 }}>
+                      Încă nu am suficiente date. Pe măsură ce rezolvi sesiuni, asistentul învață ce topicuri îți sunt grele, unde ești bun și cum studiezi.
+                    </p>
+                  )}
+                </div>
 
                 {/* Knowledge Library */}
                 <div className="rounded-[28px] p-1 border" style={{ borderColor: theme.border, background: theme.isDark ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.03)' }}>

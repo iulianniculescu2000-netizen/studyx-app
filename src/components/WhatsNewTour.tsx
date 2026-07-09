@@ -6,13 +6,17 @@ import {
   Bot,
   Check,
   CheckCircle2,
-  FileImage,
+  ClipboardPaste,
+  Copy,
   ImageIcon,
-  Loader2,
+  MessageCircle,
+  Minus,
   Pencil,
+  Plus,
   Quote,
   Rocket,
   Sparkles,
+  TrendingUp,
   Wand2,
   X,
   Zap,
@@ -21,7 +25,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
 import { useUserStore } from '../store/userStore';
 
-const WHATS_NEW_VERSION = '1.0.5';
+const WHATS_NEW_VERSION = '1.0.6';
 const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}:seen`;
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
@@ -50,317 +54,169 @@ function DemoFrame({ theme, children }: { theme: Theme; children: React.ReactNod
   );
 }
 
-function AgentDemo({ theme }: { theme: Theme }) {
-  const steps = ['Caut „Cursul 4” în bibliotecă', 'Generez 3 pachete de grile', 'Le salvez în folderul „Mielom”'];
+function ExternalAiImportDemo({ theme }: { theme: Theme }) {
   const [phase, setPhase] = useState(0);
-
   useEffect(() => {
-    const id = window.setInterval(() => setPhase((p) => (p + 1) % (steps.length + 3)), 1100);
-    return () => window.clearInterval(id);
-  }, [steps.length]);
-
-  return (
-    <DemoFrame theme={theme}>
-      <div className="w-full px-6">
-        <motion.div
-          initial={{ opacity: 0, x: 18 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="mb-3 ml-auto w-fit max-w-[88%] rounded-[16px] rounded-br-[5px] px-3.5 py-2 text-[12px] font-semibold text-white"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
-        >
-          fă-mi 3 pachete din cursul 4 de la mielom
-        </motion.div>
-        <div
-          className="rounded-[16px] rounded-bl-[5px] border px-3.5 py-2.5"
-          style={{ background: theme.surface2, borderColor: theme.border }}
-        >
-          <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.accent }}>
-            <Bot size={11} /> Agent · plan în execuție
-          </div>
-          {steps.map((step, i) => {
-            const done = phase > i;
-            const running = phase === i;
-            return (
-              <div key={step} className="flex items-center gap-2 py-[3px] text-[11.5px] font-medium" style={{ color: done ? theme.text : theme.text3 }}>
-                <AnimatePresence mode="wait" initial={false}>
-                  {done ? (
-                    <motion.span key="done" initial={{ scale: 0 }} animate={{ scale: 1 }} style={{ color: theme.success }}>
-                      <CheckCircle2 size={13} />
-                    </motion.span>
-                  ) : running ? (
-                    <motion.span key="run" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: theme.accent }}>
-                      <Loader2 size={13} className="animate-spin" />
-                    </motion.span>
-                  ) : (
-                    <span key="wait" className="inline-block h-[13px] w-[13px] rounded-full border" style={{ borderColor: theme.border }} />
-                  )}
-                </AnimatePresence>
-                {step}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </DemoFrame>
-  );
-}
-
-function ImageExtractDemo({ theme }: { theme: Theme }) {
-  return (
-    <DemoFrame theme={theme}>
-      <div className="flex items-center gap-7">
-        {/* PDF source */}
-        <div
-          className="relative flex h-[120px] w-[92px] flex-col gap-1.5 rounded-[12px] border p-2.5"
-          style={{ background: theme.surface, borderColor: theme.border }}
-        >
-          <div className="text-[8px] font-black uppercase tracking-wider" style={{ color: theme.danger }}>PDF · Curs</div>
-          {[64, 52, 58].map((w, i) => (
-            <div key={i} className="h-[5px] rounded-full" style={{ width: w, background: `${theme.text3}30` }} />
-          ))}
-          <motion.div
-            animate={{ scale: [1, 1.06, 1], boxShadow: [`0 0 0 0px ${theme.accent}00`, `0 0 0 4px ${theme.accent}28`, `0 0 0 0px ${theme.accent}00`] }}
-            transition={{ repeat: Infinity, duration: 2.4 }}
-            className="flex h-[36px] items-center justify-center rounded-[8px]"
-            style={{ background: `${theme.accent}1c`, border: `1px dashed ${theme.accent}66` }}
-          >
-            <ImageIcon size={15} style={{ color: theme.accent }} />
-          </motion.div>
-          <div className="h-[5px] w-[48px] rounded-full" style={{ background: `${theme.text3}30` }} />
-        </div>
-
-        {/* flying image */}
-        <motion.div
-          animate={{ x: [-46, 46], opacity: [0, 1, 1, 0], scale: [0.65, 1.05, 1.05, 0.85] }}
-          transition={{ repeat: Infinity, duration: 2.4, times: [0, 0.35, 0.75, 1], ease: 'easeInOut' }}
-          className="absolute left-1/2 top-1/2 z-10 -ml-[17px] -mt-[14px] flex h-[28px] w-[34px] items-center justify-center rounded-[7px]"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 18px ${theme.accent}50` }}
-        >
-          <FileImage size={14} color="#fff" />
-        </motion.div>
-
-        {/* flashcard target */}
-        <motion.div
-          animate={{ y: [0, -4, 0] }}
-          transition={{ repeat: Infinity, duration: 2.4 }}
-          className="flex h-[120px] w-[100px] flex-col gap-1.5 rounded-[14px] border p-2.5"
-          style={{ background: theme.surface2, borderColor: `${theme.accent}44`, boxShadow: `0 14px 30px ${theme.accent}18` }}
-        >
-          <div className="text-[8px] font-black uppercase tracking-wider" style={{ color: theme.accent }}>Flashcard</div>
-          <motion.div
-            animate={{ opacity: [0.25, 1, 1, 0.25] }}
-            transition={{ repeat: Infinity, duration: 2.4, times: [0, 0.4, 0.8, 1] }}
-            className="flex h-[44px] items-center justify-center rounded-[8px]"
-            style={{ background: `${theme.accent}22` }}
-          >
-            <ImageIcon size={16} style={{ color: theme.accent }} />
-          </motion.div>
-          <div className="h-[5px] w-[64px] rounded-full" style={{ background: `${theme.text3}38` }} />
-          <div className="h-[5px] w-[50px] rounded-full" style={{ background: `${theme.text3}26` }} />
-        </motion.div>
-      </div>
-    </DemoFrame>
-  );
-}
-
-function EditDeckDemo({ theme }: { theme: Theme }) {
-  const [editing, setEditing] = useState(false);
-  useEffect(() => {
-    const id = window.setInterval(() => setEditing((e) => !e), 1900);
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % 4), 1300);
     return () => window.clearInterval(id);
   }, []);
 
   return (
     <DemoFrame theme={theme}>
-      <motion.div
-        animate={{ rotateY: editing ? 6 : 0, scale: editing ? 1.02 : 1 }}
-        transition={{ type: 'spring', stiffness: 200, damping: 18 }}
-        className="relative w-[280px] rounded-[18px] border p-4"
-        style={{
-          background: theme.surface2,
-          borderColor: editing ? `${theme.accent}60` : theme.border,
-          boxShadow: editing ? `0 0 0 3px ${theme.accent}1f, 0 16px 36px ${theme.accent}20` : '0 10px 26px rgba(0,0,0,0.10)',
-        }}
-      >
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-            {editing ? 'Mod editare' : 'Pachet flashcard'}
-          </span>
-          <motion.span
-            animate={{ scale: editing ? [1, 1.25, 1] : 1, rotate: editing ? [0, -12, 0] : 0 }}
-            transition={{ duration: 0.5 }}
-            className="flex h-6 w-6 items-center justify-center rounded-[8px]"
-            style={{ background: editing ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : `${theme.accent}18`, color: editing ? '#fff' : theme.accent }}
-          >
-            <Pencil size={11} />
-          </motion.span>
-        </div>
-        <div className="text-[13px] font-bold" style={{ color: theme.text }}>
-          Care este criteriul CRAB în mielomul multiplu?
-        </div>
-        <AnimatePresence mode="wait" initial={false}>
+      <div className="flex w-full max-w-[360px] items-center justify-center gap-5 px-4">
+        <div
+          className="flex w-[110px] flex-col items-center gap-2 rounded-[16px] border p-3"
+          style={{ background: theme.surface2, borderColor: theme.border }}
+        >
+          <span className="text-[8px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>StudyX</span>
           <motion.div
-            key={editing ? 'edit' : 'view'}
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -5 }}
-            className="mt-2 rounded-[10px] border px-3 py-2 text-[11.5px] font-medium"
-            style={{
-              background: editing ? `${theme.accent}0e` : theme.surface,
-              borderColor: editing ? `${theme.accent}45` : theme.border,
-              color: theme.text2,
+            animate={{
+              scale: phase === 0 ? [1, 1.08, 1] : 1,
+              background: [`${theme.accent}18`],
             }}
+            transition={{ duration: 0.5 }}
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-[10px] text-[9.5px] font-bold"
+            style={{ background: `${theme.accent}18`, color: theme.accent }}
           >
-            {editing
-              ? 'HiperCalcemie · insuf. Renală · Anemie · leziuni osoase (Bone)▌'
-              : 'Calciu ↑, Rinichi, Anemie, leziuni osoase'}
+            {phase === 0 ? <Check size={12} /> : <Copy size={11} />}
+            {phase === 0 ? 'Copiat!' : 'Copiază prompt'}
           </motion.div>
-        </AnimatePresence>
-      </motion.div>
+        </div>
+
+        <motion.div
+          animate={{ x: phase >= 1 ? [0, 6, 0] : 0, opacity: phase >= 1 ? 1 : 0.35 }}
+          transition={{ duration: 1, repeat: phase >= 1 ? Infinity : 0 }}
+        >
+          <ArrowRight size={16} style={{ color: theme.text3 }} />
+        </motion.div>
+
+        <div
+          className="flex w-[130px] flex-col gap-1.5 rounded-[16px] border p-3"
+          style={{
+            background: phase >= 1 ? `${theme.accent}0c` : theme.surface2,
+            borderColor: phase >= 2 ? `${theme.success}45` : theme.border,
+          }}
+        >
+          <div className="flex items-center gap-1.5 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
+            <MessageCircle size={10} /> ChatGPT / Gemini
+          </div>
+          <AnimatePresence mode="wait">
+            {phase < 2 ? (
+              <motion.div key="wait" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-1">
+                {[70, 55, 40].map((w, i) => (
+                  <div key={i} className="h-[5px] rounded-full" style={{ width: w, background: `${theme.text3}30` }} />
+                ))}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="json"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-[9px] font-bold"
+                style={{ background: `${theme.success}16`, color: theme.success }}
+              >
+                {phase === 3 ? <CheckCircle2 size={12} /> : <ClipboardPaste size={12} />}
+                {phase === 3 ? 'Grilă importată' : '{ questions: [...] }'}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
     </DemoFrame>
   );
 }
 
-function CitationsDemo({ theme }: { theme: Theme }) {
-  const pills = [
-    { label: 'Cursul 4 — Mielom.pdf', pct: 92 },
-    { label: 'Hematologie LP.pdf', pct: 71 },
-    { label: 'Curs 7 — Leucemii.pdf', pct: 58 },
+function EditableAgentParamsDemo({ theme }: { theme: Theme }) {
+  const [count, setCount] = useState(15);
+  const [difficulty, setDifficulty] = useState(0);
+  const difficulties = ['Auto', 'Mediu', 'Dificil'];
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setCount((c) => (c >= 25 ? 15 : c + 5));
+      setDifficulty((d) => (d + 1) % difficulties.length);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [difficulties.length]);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div
+        className="w-[300px] rounded-[18px] border p-4"
+        style={{ background: theme.surface2, borderColor: `${theme.accent}30` }}
+      >
+        <div className="mb-2.5 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider" style={{ color: theme.accent }}>
+          <Sparkles size={12} /> Plan agent · confirmă
+        </div>
+        <div className="mb-2 text-[11.5px] font-semibold" style={{ color: theme.text2 }}>
+          Generez grile din &bdquo;Cursul 4&rdquo;
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-[10px] border px-2 py-1" style={{ borderColor: theme.border, background: theme.surface }}>
+            <Minus size={11} style={{ color: theme.text3 }} />
+            <motion.span
+              key={count}
+              initial={{ scale: 1.3, color: theme.accent }}
+              animate={{ scale: 1, color: theme.text2 }}
+              className="min-w-[3.2rem] text-center text-[11px] font-bold tabular-nums"
+            >
+              {count} întrebări
+            </motion.span>
+            <Plus size={11} style={{ color: theme.text3 }} />
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={difficulty}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 4 }}
+              className="rounded-[10px] px-2.5 py-1 text-[10.5px] font-bold text-white"
+              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+            >
+              {difficulties[difficulty]}
+            </motion.span>
+          </AnimatePresence>
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+function RealPredictionsDemo({ theme }: { theme: Theme }) {
+  const topics = [
+    { name: 'Cardiologie', value: 38 },
+    { name: 'Hematologie', value: 61 },
+    { name: 'Neurologie', value: 74 },
   ];
   const [cycle, setCycle] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setCycle((c) => c + 1), 3400);
+    const id = window.setInterval(() => setCycle((c) => c + 1), 3200);
     return () => window.clearInterval(id);
   }, []);
 
   return (
     <DemoFrame theme={theme}>
-      <div key={cycle} className="w-full max-w-[330px] px-4">
-        <div
-          className="rounded-[16px] rounded-bl-[5px] border px-4 py-3"
-          style={{ background: theme.surface2, borderColor: theme.border }}
-        >
-          <div className="text-[12px] font-medium leading-relaxed" style={{ color: theme.text }}>
-            Criteriile CRAB definesc afectarea de organ în mielomul multiplu…
-          </div>
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="mt-2.5 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em]"
-            style={{ background: `${theme.success}14`, borderColor: `${theme.success}35`, color: theme.success }}
-          >
-            <Check size={10} /> Ancorat în bibliotecă
-          </motion.div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {pills.map((pill, i) => (
-              <motion.span
-                key={pill.label}
-                initial={{ opacity: 0, scale: 0.7 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.7 + i * 0.35, type: 'spring', stiffness: 320, damping: 20 }}
-                className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold"
-                style={{ background: `${theme.accent}10`, borderColor: `${theme.accent}30`, color: theme.text2 }}
-              >
-                <Quote size={9} style={{ color: theme.accent }} />
-                {pill.label} · <span style={{ color: theme.accent }}>{pill.pct}%</span>
-              </motion.span>
-            ))}
-          </div>
+      <div key={cycle} className="w-full max-w-[300px] px-4">
+        <div className="mb-2.5 flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
+          <TrendingUp size={11} style={{ color: theme.success }} /> Calculat din statisticile tale reale
         </div>
-      </div>
-    </DemoFrame>
-  );
-}
-
-function StreamingDemo({ theme }: { theme: Theme }) {
-  const fullText = 'Anemia din mielom apare prin infiltrarea măduvei și supresia eritropoiezei…';
-  const [len, setLen] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setLen((l) => (l >= fullText.length ? 0 : l + 2));
-    }, 55);
-    return () => window.clearInterval(id);
-  }, [fullText.length]);
-
-  return (
-    <DemoFrame theme={theme}>
-      <div className="w-full max-w-[330px] px-4">
-        <div
-          className="min-h-[96px] rounded-[16px] rounded-bl-[5px] border px-4 py-3 text-[12.5px] font-medium leading-relaxed"
-          style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
-        >
-          {fullText.slice(0, len)}
-          <span className="streaming-cursor" style={{ color: theme.accent }}>▌</span>
-        </div>
-        <motion.div
-          animate={{ opacity: [0, 1, 1, 0], y: [8, 0, 0, -4] }}
-          transition={{ repeat: Infinity, duration: 4.5, times: [0, 0.15, 0.8, 1], delay: 1 }}
-          className="mt-3 flex items-center gap-2 rounded-[12px] border px-3 py-2"
-          style={{ background: theme.surface, borderColor: theme.border }}
-        >
-          <span className="flex h-6 w-6 items-center justify-center rounded-[7px]" style={{ background: `${theme.success}18`, color: theme.success }}>
-            <Check size={12} />
-          </span>
-          <div>
-            <div className="text-[10px] font-black" style={{ color: theme.text }}>StudyX — agent</div>
-            <div className="text-[9.5px]" style={{ color: theme.text3 }}>3 pachete generate cu succes ✓</div>
-          </div>
-        </motion.div>
-      </div>
-    </DemoFrame>
-  );
-}
-
-function FoldersDemo({ theme }: { theme: Theme }) {
-  const tiles = [
-    { emoji: '🩸', name: 'Hematologie', count: 4 },
-    { emoji: '🫀', name: 'Cardiologie', count: 2 },
-    { emoji: '🧠', name: 'Neurologie', count: 3 },
-  ];
-  const [active, setActive] = useState<number | null>(null);
-
-  useEffect(() => {
-    const steps = [null, 0, null, 1, null, 2, null];
-    let i = 0;
-    const id = window.setInterval(() => {
-      setActive(steps[i % steps.length] ?? null);
-      i += 1;
-    }, 1200);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <DemoFrame theme={theme}>
-      <div className="flex w-full max-w-[340px] flex-wrap justify-center gap-2 px-4">
-        {tiles.map((tile, i) => {
-          const isActive = active === i;
-          return (
-            <motion.div
-              key={tile.name}
-              initial={{ opacity: 0, scale: 0.85 }}
-              animate={{
-                opacity: 1,
-                scale: isActive ? 1.07 : 1,
-                y: isActive ? -4 : 0,
-                borderColor: isActive ? `${theme.accent}66` : theme.border,
-                boxShadow: isActive ? `0 12px 28px ${theme.accent}28` : 'none',
-              }}
-              transition={{ delay: 0.15 + i * 0.12, type: 'spring', stiffness: 260, damping: 20 }}
-              className="flex w-[88px] flex-col gap-1.5 rounded-[16px] border p-3 text-left"
-              style={{
-                background: isActive ? `${theme.accent}0e` : theme.surface2,
-                borderColor: isActive ? `${theme.accent}55` : theme.border,
-              }}
-            >
-              <span className="text-[20px] leading-none">{tile.emoji}</span>
-              <div className="text-[11px] font-bold leading-tight" style={{ color: theme.text }}>{tile.name}</div>
-              <div className="text-[9px] font-semibold" style={{ color: isActive ? theme.accent : theme.text3 }}>
-                {tile.count} doc.
+        <div className="space-y-2">
+          {topics.map((topic, i) => (
+            <div key={topic.name} className="flex items-center gap-2">
+              <span className="w-[76px] flex-shrink-0 text-[10px] font-semibold" style={{ color: theme.text2 }}>{topic.name}</span>
+              <div className="h-[9px] flex-1 overflow-hidden rounded-full" style={{ background: theme.surface2 }}>
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${topic.value}%` }}
+                  transition={{ duration: 0.9, delay: 0.2 + i * 0.15, ease: 'easeOut' }}
+                />
               </div>
-            </motion.div>
-          );
-        })}
+              <span className="w-[28px] text-right text-[10px] font-bold tabular-nums" style={{ color: theme.text3 }}>{topic.value}%</span>
+            </div>
+          ))}
+        </div>
       </div>
     </DemoFrame>
   );
@@ -423,55 +279,32 @@ const SLIDES: Slide[] = [
   {
     id: 'hero',
     badge: `Update ${WHATS_NEW_VERSION}`,
-    title: 'StudyX v1.0.5 — bibliotecă pe subfoldere, AI mai deștept',
-    description: 'Subfoldere reale în Bibliotecă, provider Google Gemini pe lângă Groq, un agent care ține minte firul conversației și extragere de poze fără dubluri. Plus zeci de fix-uri de fundal. Totul în 60 de secunde.',
+    title: 'StudyX v1.0.6 — generezi grile fără JSON, AI mai onest',
+    description: 'Import de grile din orice AI extern fără fișiere JSON, control fin asupra a ce generează agentul înainte să apeși Confirmă, și predicții care se calculează din statisticile tale reale, nu din cifre fixe. Totul în 60 de secunde.',
     Demo: HeroDemo,
   },
   {
-    id: 'agent',
-    badge: 'AI Agent',
-    title: 'Spune-i ce vrei. El face tot.',
-    description: 'Scrie în chat „fă-mi 3 pachete din cursul 4 și pune-le în folderul Mielom”. Agentul planifică, execută fiecare pas vizibil și poate fi anulat oricând. Nu mai navighezi manual prin meniuri.',
-    Demo: AgentDemo,
-    tip: 'Dacă folderul nu există încă, agentul îl creează singur înainte să salveze.',
+    id: 'external-ai-import',
+    badge: 'Import grile',
+    title: 'Generezi grile cu orice AI, fără fișiere JSON',
+    description: 'Copiezi un prompt gata făcut, îl lipești în ChatGPT sau Gemini gratuit, copiezi răspunsul înapoi în StudyX și apeși Importă. Fără cotă internă epuizată, fără să atingi vreun fișier .json.',
+    Demo: ExternalAiImportDemo,
+    tip: 'Găsești opțiunea în butonul „Import grile” → tab-ul „AI extern”.',
   },
   {
-    id: 'images',
-    badge: 'Imagini HD în grile',
-    title: 'Pozele din cursuri ajung în grile',
-    description: 'StudyX extrage automat imaginile relevante din PDF-urile tale — scheme, frotiuri, imagini clinice — și le atașează la flashcarduri cu rezoluție mai mare ca niciodată. Calitate PNG, nu JPEG.',
-    Demo: ImageExtractDemo,
-    tip: 'Calitatea imaginilor extrase a crescut semnificativ față de versiunile anterioare.',
+    id: 'editable-agent',
+    badge: 'Chat AI mai controlabil',
+    title: 'Ajustezi planul agentului înainte să-l confirmi',
+    description: 'Dacă agentul a înțeles greșit câte întrebări vrei sau ce dificultate, acum poți corecta direct din cardul de confirmare — fără să anulezi și să retastezi toată comanda.',
+    Demo: EditableAgentParamsDemo,
   },
   {
-    id: 'edit',
-    badge: 'Editare flashcarduri',
-    title: 'Corectezi orice card, pe loc',
-    description: 'Fiecare pachet are un buton de editare. Modifici fața și spatele cardului, adaugi carduri noi sau ștergi ce nu mai e necesar — fără să regenerezi tot pachetul de la zero.',
-    Demo: EditDeckDemo,
-  },
-  {
-    id: 'citations',
-    badge: 'Răspunsuri ancorate',
-    title: 'Vezi exact de unde știe AI-ul',
-    description: 'Fiecare răspuns vine cu sursele lui: documentul din bibliotecă și procentul de relevanță. Zero răspunsuri „din burtă” — totul e tras din cursurile tale.',
-    Demo: CitationsDemo,
-    tip: 'AI-ul combină mai multe cursuri când întrebarea atinge mai multe teme.',
-  },
-  {
-    id: 'streaming',
-    badge: 'Live + notificări',
-    title: 'Răspunsuri live, notificări native',
-    description: 'Răspunsurile apar în timp real cu cursor live și pot fi oprite oricând. Când agentul termină un job lung și tu ești în altă fereastră, primești notificare direct în Windows — fără să stai să aștepți.',
-    Demo: StreamingDemo,
-  },
-  {
-    id: 'folders',
-    badge: 'Bibliotecă pe foldere',
-    title: 'Navighezi direct în materie — acum cu subfoldere',
-    description: 'Biblioteca AI e pe foldere și acum pe subfoldere: intri în Hematologie › Cursuri, organizezi în adâncime și muți documentele direct în subfolderul potrivit. Agentul știe ierarhia și pune ce-i ceri exact unde trebuie.',
-    Demo: FoldersDemo,
-    tip: 'Ștergi un folder? Confirmare elegantă în aplicație, iar documentele rămân în „Neclasificate”.',
+    id: 'real-predictions',
+    badge: 'Analiză predictivă',
+    title: 'Predicțiile se calculează din statisticile tale',
+    description: 'Lacunele de cunoștințe și planul de recuperare nu mai sunt exemple fixe identice pentru toată lumea — se calculează din topicurile la care chiar greșești, cu prioritate reală pe ce contează.',
+    Demo: RealPredictionsDemo,
+    tip: 'Căutarea globală (Cmd/Ctrl+K) e și ea mai precisă: rezultatele exacte apar primele.',
   },
 ];
 

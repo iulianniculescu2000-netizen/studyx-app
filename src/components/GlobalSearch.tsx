@@ -37,6 +37,20 @@ function normalizeSearchText(value: string) {
     .toLowerCase();
 }
 
+/**
+ * Ranks a candidate string against the query instead of a flat include() check, so an exact
+ * title hit outranks a coincidental substring buried in a description. Returns -1 for no match.
+ */
+function matchScore(normalizedQuery: string, normalizedCandidate: string): number {
+  if (!normalizedCandidate) return -1;
+  if (normalizedCandidate === normalizedQuery) return 100;
+  if (normalizedCandidate.startsWith(normalizedQuery)) return 80;
+  const wordBoundaryHit = new RegExp(`\\b${normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(normalizedCandidate);
+  if (wordBoundaryHit) return 60;
+  if (normalizedCandidate.includes(normalizedQuery)) return 40;
+  return -1;
+}
+
 function toQuestionCountLabel(count: number) {
   return `${count} ${count === 1 ? 'întrebare' : 'întrebări'}`;
 }
@@ -89,48 +103,43 @@ export default function GlobalSearch() {
     if (query.trim().length < 1) return [];
 
     const normalizedQuery = normalizeSearchText(query);
-    const out: SearchResult[] = [];
+    const scored: { result: SearchResult; score: number }[] = [];
 
     for (const quiz of quizzes) {
-      if (
-        normalizeSearchText(quiz.title).includes(normalizedQuery)
-        || normalizeSearchText(quiz.description).includes(normalizedQuery)
-        || normalizeSearchText(quiz.category).includes(normalizedQuery)
-        || (quiz.tags ?? []).some((tag) => normalizeSearchText(tag).includes(normalizedQuery))
-      ) {
-        const isFlashcard = isFlashcardDeck(quiz);
-        const quizHref = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
-        out.push({
-          type: 'quiz',
-          quizId: quiz.id,
-          quizTitle: quiz.title,
-          quizEmoji: quiz.emoji,
-          quizColor: quiz.color,
-          label: quiz.title,
-          sub: `${isFlashcard ? `${quiz.questions.length} ${quiz.questions.length === 1 ? 'card' : 'carduri'}` : toQuestionCountLabel(quiz.questions.length)} · ${quiz.category}`,
-          href: quizHref,
+      const isFlashcard = isFlashcardDeck(quiz);
+      const quizHref = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
+
+      const quizScore = Math.max(
+        matchScore(normalizedQuery, normalizeSearchText(quiz.title)),
+        matchScore(normalizedQuery, normalizeSearchText(quiz.description)) - 20,
+        matchScore(normalizedQuery, normalizeSearchText(quiz.category)) - 10,
+        ...(quiz.tags ?? []).map((tag) => matchScore(normalizedQuery, normalizeSearchText(tag)) - 10),
+      );
+      if (quizScore >= 0) {
+        scored.push({
+          score: quizScore,
+          result: {
+            type: 'quiz',
+            quizId: quiz.id,
+            quizTitle: quiz.title,
+            quizEmoji: quiz.emoji,
+            quizColor: quiz.color,
+            label: quiz.title,
+            sub: `${isFlashcard ? `${quiz.questions.length} ${quiz.questions.length === 1 ? 'card' : 'carduri'}` : toQuestionCountLabel(quiz.questions.length)} · ${quiz.category}`,
+            href: quizHref,
+          },
         });
       }
 
       for (const question of quiz.questions) {
-        const isFlashcard = isFlashcardDeck(quiz);
-        const quizHref = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
-        if (normalizeSearchText(question.text).includes(normalizedQuery)) {
-          out.push({
-            type: 'question',
-            quizId: quiz.id,
-            questionId: question.id,
-            quizTitle: quiz.title,
-            quizEmoji: quiz.emoji,
-            quizColor: quiz.color,
-            label: question.text,
-            sub: quiz.title,
-            href: quizHref,
-          });
-        }
+        const tagScore = Math.max(-1, ...(question.tags ?? []).map((tag) => matchScore(normalizedQuery, normalizeSearchText(tag))));
+        const textScore = matchScore(normalizedQuery, normalizeSearchText(question.text));
+        const questionScore = Math.max(textScore, tagScore - 10);
+        if (questionScore < 0) continue;
 
-        if ((question.tags ?? []).some((tag) => normalizeSearchText(tag).includes(normalizedQuery))) {
-          out.push({
+        scored.push({
+          score: questionScore,
+          result: {
             type: 'question',
             quizId: quiz.id,
             questionId: question.id,
@@ -138,16 +147,17 @@ export default function GlobalSearch() {
             quizEmoji: quiz.emoji,
             quizColor: quiz.color,
             label: question.text,
-            sub: `${quiz.title} · ${(question.tags ?? []).join(', ')}`,
+            sub: tagScore > textScore ? `${quiz.title} · ${(question.tags ?? []).join(', ')}` : quiz.title,
             href: quizHref,
-          });
-        }
+          },
+        });
       }
-
-      if (out.length >= 20) break;
     }
 
-    return out;
+    return scored
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20)
+      .map((entry) => entry.result);
   }, [query, quizzes]);
 
   const quickActionResults = useMemo<SearchResult[]>(

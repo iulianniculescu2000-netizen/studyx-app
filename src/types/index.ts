@@ -16,6 +16,8 @@ export interface Question {
   multipleCorrect?: boolean;
   difficulty?: Difficulty;
   tags?: string[];
+  /** Shape of the question (definition, clinical_case, ...) when AI-generated. */
+  type?: import('../lib/ai/questionTypes').QuestionType;
 }
 
 export interface Quiz {
@@ -70,6 +72,13 @@ export interface QuizSession {
   partialAnswers?: string[];
 }
 
+/**
+ * Self-assessment of how the user knew an answer, captured after reveal in quiz
+ * play. Feeds the SM-2 quality score so spaced repetition reflects genuine
+ * recall, not lucky guesses.
+ */
+export type Confidence = 'blackout' | 'guess' | 'confident';
+
 // Spaced repetition per question
 export interface QuestionStat {
   questionId: string;
@@ -81,6 +90,7 @@ export interface QuestionStat {
   interval: number; // days until next review
   eFactor?: number; // SM-2 ease factor (default 2.5)
   consecutiveCorrect?: number; // SM-2: resetat la 0 la greșeală, folosit pentru faza de repetare
+  lastConfidence?: Confidence; // ultima auto-evaluare (Task 2 → quality SM-2)
 }
 
 export interface StudyStreak {

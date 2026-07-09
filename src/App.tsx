@@ -11,6 +11,8 @@ import { useSaveStatusStore } from './store/saveStatusStore';
 import TitleBar from './components/TitleBar';
 import WindowControls from './components/WindowControls';
 import Sidebar from './components/Sidebar';
+import MobileNav from './components/MobileNav';
+import { useViewportProfile } from './hooks/useViewportProfile';
 import AnimatedBackground from './components/AnimatedBackground';
 import ToastContainer from './components/ToastContainer';
 import DropzoneOverlay from './components/DropzoneOverlay';
@@ -24,6 +26,7 @@ import TitleManager from './components/app/TitleManager';
 import { AppErrorBoundary, RouteView } from './components/app/RouteShell';
 import { useProfileLifecycle } from './hooks/useProfileLifecycle';
 import { useTutorialBootstrap } from './hooks/useTutorialBootstrap';
+import { useAdaptiveMotion } from './hooks/useAdaptiveMotion';
 import { cancelIdleTask, scheduleIdleTask } from './lib/idleTaskScheduler';
 import { runStartupHealthCheck } from './lib/startupHealthCheck';
 import { useDiagnosticsStore } from './store/diagnosticsStore';
@@ -183,7 +186,9 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
 
   const focusMode = useFocusModeStore((state) => state.focusMode);
   const theme = useTheme();
+  const { mobile } = useViewportProfile();
   const location = useRouterLocation();
+  const { calmMotion } = useAdaptiveMotion();
 
   useEffect(() => {
     const scrollHost = document.querySelector('.route-scroll-host');
@@ -241,15 +246,15 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
         <Suspense fallback={null}>
           <GlobalSearch />
         </Suspense>
-        <main style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        <main style={{ flex: 1, overflow: 'hidden', position: 'relative', paddingBottom: mobile && !focusMode ? 'calc(58px + env(safe-area-inset-bottom, 0px))' : undefined }}>
           <AppErrorBoundary>
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
-                initial={{ opacity: 0, y: 10, scale: 0.995 }}
+                initial={calmMotion ? false : { opacity: 0, y: 10, scale: 0.995 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.998 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                exit={calmMotion ? undefined : { opacity: 0, y: -8, scale: 0.998 }}
+                transition={calmMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
                 style={{ height: '100%' }}
               >
                 <Routes location={location}>
@@ -282,6 +287,7 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
           <AIChatDrawer />
         </Suspense>
       )}
+      {mobile && !focusMode && !splashVisible && <MobileNav />}
       <ToastContainer />
       <KeyboardShortcuts />
       {activeProfileId && !splashVisible && (
