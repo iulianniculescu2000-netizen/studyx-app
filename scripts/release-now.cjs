@@ -38,9 +38,17 @@ function findInstaller() {
   if (!fs.existsSync(releaseDir)) return null;
   const files = fs.readdirSync(releaseDir)
     .filter(f => f.endsWith('.exe') && /studyx/i.test(f) && !/unins/i.test(f))
-    .map(f => ({ name: f, abs: path.join(releaseDir, f), size: fs.statSync(path.join(releaseDir, f)).size }))
-    .sort((a, b) => b.size - a.size);
-  return files[0] ?? null;
+    .map(f => ({ name: f, abs: path.join(releaseDir, f), size: fs.statSync(path.join(releaseDir, f)).size }));
+
+  // Prefer the installer whose filename matches the CURRENT package.json version.
+  // Old builds left in release/ (from previous releases) can be LARGER than a
+  // newer, better-optimized build — sorting by size alone silently picked a
+  // stale installer and published it under the wrong version tag.
+  const exact = files.find(f => f.name.includes(VERSION));
+  if (exact) return exact;
+
+  // Fallback (no exact-version match found): largest, as before.
+  return files.sort((a, b) => b.size - a.size)[0] ?? null;
 }
 
 function sha256file(fp) {
