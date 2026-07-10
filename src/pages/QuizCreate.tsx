@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState, useRef, useMemo, useDeferredValue } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, ChevronLeft, Pencil, Plus, Bot } from 'lucide-react';
+import { Check, ChevronLeft, Pencil, Plus, Bot, FileText, X } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { useQuizStore } from '../store/quizStore';
@@ -18,6 +18,9 @@ import {
   QuizQuestionEditor,
 } from './quiz-create/sections';
 import { SortableQuestionTab } from './quiz-create/ui';
+import ImportFromDocument from '../components/ImportFromDocument';
+import Portal from '../components/Portal';
+import type { ParsedQuestion } from '../lib/ai/grileParser';
 
 let quizCreateAIPromise: Promise<typeof import('../lib/groq')> | null = null;
 
@@ -58,7 +61,32 @@ export default function QuizCreate() {
   const [tags, setTags] = useState<string[]>(existingQuiz?.tags ?? []);
   const [tagInput, setTagInput] = useState('');
   const [previewQ, setPreviewQ] = useState<Question | null>(null);
+  const [showImportDoc, setShowImportDoc] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Absorb questions extracted from a document straight into the wizard.
+  const handleImportedQuestions = (imported: ParsedQuestion[]) => {
+    const converted: Question[] = imported.map((q) => ({
+      id: generateId(),
+      text: q.text,
+      multipleCorrect: q.multipleCorrect,
+      difficulty: 'easy',
+      options: q.options.slice(0, OPTION_IDS.length).map((o, i) => ({
+        id: OPTION_IDS[i],
+        text: o.text,
+        isCorrect: o.isCorrect,
+      })),
+      explanation: '',
+    }));
+    if (converted.length === 0) return;
+    // Drop the initial blank question if the wizard is still empty.
+    setQuestions((prev) => {
+      const base = prev.length === 1 && !prev[0].text.trim() ? [] : prev;
+      return [...base, ...converted];
+    });
+    setStep('questions');
+    setActiveQ((prev) => (questions.length === 1 && !questions[0].text.trim() ? 0 : prev));
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -282,11 +310,20 @@ export default function QuizCreate() {
               {step === 'info' ? 'Pas 1: Informații generale' : `Pas 2: Întrebări (${questions.length})`}
             </p>
           </div>
-          <div className="ml-auto flex gap-1">
-            {[0, 1].map((i) => (
-              <div key={i} className="w-8 h-1 rounded-full transition-all"
-                style={{ background: (step === 'info' && i === 0) || (step === 'questions' && i <= 1) ? theme.accent : theme.surface2 }} />
-            ))}
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              onClick={() => setShowImportDoc(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
+              style={{ background: theme.surface, color: theme.text2, border: `1px solid ${theme.border2}` }}
+            >
+              <FileText size={13} /> Import din document
+            </button>
+            <div className="flex gap-1">
+              {[0, 1].map((i) => (
+                <div key={i} className="w-8 h-1 rounded-full transition-all"
+                  style={{ background: (step === 'info' && i === 0) || (step === 'questions' && i <= 1) ? theme.accent : theme.surface2 }} />
+              ))}
+            </div>
           </div>
         </motion.div>
 
@@ -466,6 +503,25 @@ export default function QuizCreate() {
       </div>
 
       <QuestionPreviewModal previewQ={previewQ} theme={theme} onClose={() => setPreviewQ(null)} />
+
+      {showImportDoc && (
+        <Portal>
+          <div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }} onClick={() => setShowImportDoc(false)} />
+          <div className="fixed top-[6%] left-1/2 z-50 w-full max-w-lg -translate-x-1/2 px-4">
+            <div className="rounded-3xl p-6 shadow-2xl max-h-[86vh] overflow-y-auto"
+              style={{ background: theme.isDark ? 'rgba(22,22,26,0.98)' : 'rgba(255,255,255,0.98)', border: `1px solid ${theme.border}` }}>
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-sm font-bold" style={{ color: theme.text }}>Import grile din document</span>
+                <button onClick={() => setShowImportDoc(false)} style={{ color: theme.text3 }}><X size={16} /></button>
+              </div>
+              <ImportFromDocument
+                onDone={() => setShowImportDoc(false)}
+                onImportQuestions={handleImportedQuestions}
+              />
+            </div>
+          </div>
+        </Portal>
+      )}
     </div>
   );
 }

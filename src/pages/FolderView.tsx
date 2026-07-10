@@ -1,12 +1,14 @@
 import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Check, FolderPlus, Plus, X } from 'lucide-react';
+import { Check, CalendarDays, FolderPlus, Plus, X } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useFolderStore } from '../store/folderStore';
 import { useQuizStore } from '../store/quizStore';
 import QuizCard from '../components/QuizCard';
 import ImportQuizButton from '../components/ImportQuizButton';
+import ExamSplitModal from '../components/ExamSplitModal';
+import { isFlashcardDeck } from '../lib/deckKind';
 import type { QuizColor } from '../types';
 
 const COLOR_HEX: Record<string, string> = {
@@ -24,10 +26,12 @@ export default function FolderView() {
   const [subfolderName, setSubfolderName] = useState('');
   const [subfolderEmoji, setSubfolderEmoji] = useState('📁');
   const [subfolderColor, setSubfolderColor] = useState<QuizColor>('blue');
+  const [showExamSplit, setShowExamSplit] = useState(false);
 
   const isNull = id === 'null';
   const folder = isNull ? null : folders.find(f => f.id === id);
   const folderQuizzes = getQuizzesByFolder(isNull ? null : id ?? null);
+  const realQuizzes = folderQuizzes.filter((q) => !isFlashcardDeck(q));
   const childFolders = isNull ? [] : folders.filter((candidate) => candidate.parentId === id);
 
   const title = isNull ? '📋 Neclasificate' : folder ? `${folder.emoji} ${folder.name}` : 'Folder';
@@ -82,6 +86,17 @@ export default function FolderView() {
                 </button>
               )}
               <ImportQuizButton targetFolderId={id === 'null' ? null : id} />
+              {realQuizzes.reduce((n, q) => n + q.questions.length, 0) >= 2 && (
+                <button
+                  type="button"
+                  data-tutorial="btn-exam-split"
+                  onClick={() => setShowExamSplit(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-medium transition-all"
+                  style={{ background: theme.surface2, border: `1px solid ${theme.border2}`, color: theme.text2 }}
+                >
+                  <CalendarDays size={15} />Distribuie pe zile
+                </button>
+              )}
               <Link to={`/create?folder=${id}`}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-medium text-white"
                 style={{ background: `linear-gradient(135deg, ${accentColor}, ${theme.accent2})` }}>
@@ -227,6 +242,17 @@ export default function FolderView() {
           </div>
         )}
       </div>
+
+      {showExamSplit && (
+        <ExamSplitModal
+          folderName={folder?.name ?? 'Neclasificate'}
+          folderId={isNull ? null : (id ?? null)}
+          color={folder?.color ?? 'blue'}
+          category={folder?.name ?? 'Altele'}
+          quizzes={realQuizzes}
+          onClose={() => setShowExamSplit(false)}
+        />
+      )}
     </div>
   );
 }

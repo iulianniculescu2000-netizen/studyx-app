@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, X, Sparkles, BookOpen, FolderOpen,
 import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore, TOTAL_STEPS } from '../store/tutorialStore';
 import { useNavigate } from 'react-router-dom';
+import { useViewportProfile } from '../hooks/useViewportProfile';
 
 interface TutorialStep {
   id: string;
@@ -265,11 +266,7 @@ function useSpotlight(selector: string | undefined, padding = 8) {
     if (!selector) return;
 
     const detach = () => {
-      if (current) {
-        current.style.filter = '';
-        current.style.transition = '';
-        current = null;
-      }
+      current = null;
       ro?.disconnect();
       ro = null;
       mo?.disconnect();
@@ -319,9 +316,10 @@ function useSpotlight(selector: string | undefined, padding = 8) {
     const attach = (el: HTMLElement) => {
       detach();
       current = el;
-      // Boost brightness so the element pops through the overlay
-      el.style.transition = 'filter 0.3s ease';
-      el.style.filter = 'brightness(1.5) saturate(1.1)';
+      // The SVG mask already cuts a fully-undimmed hole around the target, and the
+      // pulsing ring border (rendered separately) signals focus — an extra CSS
+      // brightness/saturate boost on top of that was pushing already-colorful
+      // elements (gradient nav pills) into a garish, oversaturated look.
       ro = new ResizeObserver(snap);
       ro.observe(el);
       // Only scroll if the target isn't already comfortably in view — and do it instantly, so
@@ -383,7 +381,12 @@ function TooltipArrow({ position }: { position: string }) {
   return <div style={{ position: 'absolute', width: 0, height: 0, ...styles[position] }} />;
 }
 
-function getTooltipStyle(position: string, rect: SpotlightRect | null): React.CSSProperties {
+/**
+ * `forceCenter` is set on narrow/short viewports: side-anchored placement assumes
+ * desktop layout (room beside a target), which phones/small windows don't have —
+ * so we always fall back to a single robust bottom-sheet-style placement there.
+ */
+function getTooltipStyle(position: string, rect: SpotlightRect | null, forceCenter: boolean): React.CSSProperties {
   const GAP = 16;
   const PAD = 12; // min distance from viewport edges
   const VW = window.innerWidth;
@@ -392,9 +395,11 @@ function getTooltipStyle(position: string, rect: SpotlightRect | null): React.CS
   // instead of shrinking). Cap both to whatever actually fits the current viewport.
   const TW = Math.max(240, Math.min(340, VW - PAD * 2));
   const CENTER_W = Math.max(240, Math.min(380, VW - PAD * 2));
-  const TH = Math.min(300, VH - PAD * 2); // max estimated tooltip height
+  // Every branch below clamps to this — a card taller than its slot scrolls
+  // internally instead of running off the edge of the screen.
+  const TH = Math.min(460, VH - PAD * 2);
 
-  if (!rect || position === 'center') {
+  if (!rect || position === 'center' || forceCenter) {
     return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: CENTER_W, maxHeight: VH - PAD * 2, overflowY: 'auto' };
   }
 
@@ -419,9 +424,9 @@ function getTooltipStyle(position: string, rect: SpotlightRect | null): React.CS
       const top = Math.max(PAD, Math.min(rect.top + rect.height / 2, VH - TH - PAD));
       // Flip to left if not enough room on right
       if (left + TW > VW - PAD) {
-        return { position: 'fixed', right: VW - (rect.left - GAP), top, transform: 'translateY(-50%)', width: TW };
+        return { position: 'fixed', right: VW - (rect.left - GAP), top, transform: 'translateY(-50%)', width: TW, maxHeight: TH, overflowY: 'auto' };
       }
-      return { position: 'fixed', left, top, transform: 'translateY(-50%)', width: TW };
+      return { position: 'fixed', left, top, transform: 'translateY(-50%)', width: TW, maxHeight: TH, overflowY: 'auto' };
     }
     case 'left': {
       if (!sideRoomAvailable) {
@@ -432,7 +437,7 @@ function getTooltipStyle(position: string, rect: SpotlightRect | null): React.CS
       }
       const right = VW - (rect.left - GAP);
       const top = Math.max(PAD, Math.min(rect.top + rect.height / 2, VH - TH - PAD));
-      return { position: 'fixed', right, top, transform: 'translateY(-50%)', width: TW };
+      return { position: 'fixed', right, top, transform: 'translateY(-50%)', width: TW, maxHeight: TH, overflowY: 'auto' };
     }
     case 'bottom': {
       const rawTop = rect.top + rect.height + GAP;
@@ -454,7 +459,7 @@ function getTooltipStyle(position: string, rect: SpotlightRect | null): React.CS
       return { position: 'fixed', bottom: rawBottom, left: rawLeft, width: TW, maxHeight: TH, overflowY: 'auto' };
     }
     default:
-      return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: CENTER_W };
+      return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: CENTER_W, maxHeight: VH - PAD * 2, overflowY: 'auto' };
   }
 }
 
@@ -471,16 +476,9 @@ export default function Tutorial({ profileId }: { profileId: string }) {
   const isLast = currentStep === TOTAL_STEPS - 1;
   const isFirst = currentStep === 0;
 
-  // Re-render on window resize so the tooltip's responsive width/position (getTooltipStyle
-  // reads window.innerWidth/innerHeight directly) stays correct — without this, resizing the
-  // window while on a step with no spotlight target left the tooltip sized for the old window.
-  const [, forceResize] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    const handler = () => forceResize((n) => n + 1);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, [active]);
+  // useViewportProfile (below) already re-renders this component on resize, which
+  // keeps getTooltipStyle's window.innerWidth/innerHeight reads in sync — no
+  // separate resize listener needed here.
 
   // Navigate when step changes
   useEffect(() => {
@@ -488,10 +486,16 @@ export default function Tutorial({ profileId }: { profileId: string }) {
     navigate(step.navigateTo);
   }, [active, currentStep, navigate, step?.navigateTo]);
 
+  const { mobile, crampedHeight } = useViewportProfile();
+  const compact = mobile || crampedHeight;
+
   if (!active || !step) return null;
 
   const tooltipPos = step.tooltipPosition ?? 'right';
-  const tooltipStyle = getTooltipStyle(tooltipPos, rect);
+  // Side-anchored placement assumes a desktop layout with room beside the target;
+  // on phones/small windows there usually isn't any, so always use the robust
+  // centered layout there instead of a cramped, possibly-clipped side card.
+  const tooltipStyle = getTooltipStyle(tooltipPos, rect, compact);
 
   return (
     <AnimatePresence>
@@ -560,54 +564,74 @@ export default function Tutorial({ profileId }: { profileId: string }) {
           </motion.div>
         )}
 
-        {/* Tooltip card */}
-        <motion.div
-          key={`tooltip-${step.id}`}
-          initial={{ opacity: 0, scale: 0.92, y: 12 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.92 }}
-          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+        {/* Tooltip card.
+            IMPORTANT: positioning lives on this plain div, not on the motion.div
+            below. Framer Motion manages `transform` itself for any animated x/y/
+            scale value — a static `transform: translate(-50%,-50%)` (needed to
+            actually center the box, since top:50%/left:50% alone only aligns its
+            top-left corner) gets silently overwritten by Framer's own transform
+            once the enter/exit animation runs. Keeping position+transform here,
+            and the enter/exit animation on a plain inner element, avoids that. */}
+        <div
+          key={`tooltip-pos-${step.id}`}
           style={{
             ...tooltipStyle,
-            background: theme.modalBg,
-            border: `1px solid ${accentColor}30`,
-            borderRadius: 28,
+            // Frosted glass card (same recipe as the rest of the app's modals/panels)
+            // instead of a flat opaque rectangle — it reads as part of the same
+            // design language rather than a sticker slapped over the dimmed scene.
+            background: 'var(--glass-panel-strong)',
+            backdropFilter: 'blur(24px) saturate(150%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+            border: `1px solid ${accentColor}35`,
+            borderRadius: compact ? 22 : 28,
             boxShadow: `0 32px 80px rgba(0,0,0,0.4), 0 0 0 1px ${accentColor}15, 0 8px 32px ${accentColor}15`,
             zIndex: 501,
             pointerEvents: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
           }}
           className="overflow-hidden"
         >
+          <motion.div
+            key={`tooltip-${step.id}`}
+            initial={{ opacity: 0, scale: 0.92, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92 }}
+            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            style={{ display: 'flex', flexDirection: 'column', width: '100%' }}
+          >
           <TooltipArrow position={tooltipPos} />
 
           {/* Accent top bar */}
-          <div style={{ height: 4, background: `linear-gradient(90deg, ${accentColor}, ${accentColor}44)` }} />
+          <div style={{ height: 4, flexShrink: 0, background: `linear-gradient(90deg, ${accentColor}, ${accentColor}44)` }} />
 
-          <div className="p-7">
+          <div className={compact ? 'p-5' : 'p-7'}>
             {/* Step counter */}
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg"
+            <div className={`flex items-center justify-between ${compact ? 'mb-3.5' : 'mb-5'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`${compact ? 'w-8 h-8' : 'w-10 h-10'} flex-shrink-0 rounded-2xl flex items-center justify-center shadow-lg`}
                   style={{ background: `linear-gradient(135deg, ${accentColor}25, ${accentColor}10)`, color: accentColor, border: `1px solid ${accentColor}20` }}>
                   {step.icon}
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70"
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70 truncate"
                   style={{ color: accentColor }}>
                   Pas {currentStep + 1} / {TOTAL_STEPS}
                 </span>
               </div>
-              <motion.button 
+              <motion.button
                 whileHover={{ scale: 1.1, rotate: 90 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={skip}
-                className="p-2 rounded-xl transition-all"
+                className="p-2 rounded-xl transition-all flex-shrink-0"
                 style={{ color: theme.text3, background: theme.surface2, cursor: 'pointer' }}>
                 <X size={14} />
               </motion.button>
             </div>
 
-            {/* Progress bar */}
-            <div className="w-full h-1.5 rounded-full mb-6" style={{ background: theme.surface2 }}>
+            {/* Progress bar — this + the "Pas X/Y" counter above already convey position,
+                so a second dot-per-step indicator (unreadable at 22 steps anyway) was dropped. */}
+            <div className={`w-full h-1.5 rounded-full ${compact ? 'mb-4' : 'mb-6'}`} style={{ background: theme.surface2 }}>
               <motion.div
                 className="h-full rounded-full"
                 animate={{ width: `${((currentStep + 1) / TOTAL_STEPS) * 100}%` }}
@@ -617,30 +641,12 @@ export default function Tutorial({ profileId }: { profileId: string }) {
             </div>
 
             {/* Content */}
-            <h3 className="text-lg font-black mb-2.5 leading-tight tracking-tight" style={{ color: theme.text }}>
+            <h3 className={`${compact ? 'text-base' : 'text-lg'} font-black mb-2.5 leading-tight tracking-tight`} style={{ color: theme.text }}>
               {step.title}
             </h3>
-            <p className="text-sm font-medium leading-relaxed opacity-70 mb-6" style={{ color: theme.text }}>
+            <p className={`${compact ? 'text-[12.5px]' : 'text-sm'} font-medium leading-relaxed opacity-75 ${compact ? 'mb-4' : 'mb-6'}`} style={{ color: theme.text }}>
               {step.description}
             </p>
-
-            {/* Step dots — wraps instead of overflowing. With 22 steps a single unwrapped row
-                no longer fit the card width and was getting silently clipped by the card's
-                overflow-hidden, so this always reflows to as many lines as needed. */}
-            <div className="flex flex-wrap items-center justify-center gap-1.5 mb-8">
-              {STEPS.map((_, i) => (
-                <motion.div
-                  key={i}
-                  animate={{
-                    width: i === currentStep ? 20 : 5,
-                    opacity: i === currentStep ? 1 : i < currentStep ? 0.6 : 0.2,
-                  }}
-                  transition={{ duration: 0.3, ease: 'circOut' }}
-                  className="h-1.5 rounded-full flex-shrink-0"
-                  style={{ background: i <= currentStep ? accentColor : theme.text3 }}
-                />
-              ))}
-            </div>
 
             {/* Actions */}
             <div className="flex items-center gap-2">
@@ -674,7 +680,8 @@ export default function Tutorial({ profileId }: { profileId: string }) {
               </button>
             )}
           </div>
-        </motion.div>
+          </motion.div>
+        </div>
       </div>
     </AnimatePresence>
   );

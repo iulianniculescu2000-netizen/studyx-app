@@ -508,7 +508,7 @@ export default function Settings() {
         <Section title="Inteligență Artificială" delay={0.3}>
           <ActionRow
             icon={<Bot size={16} />}
-            label="Groq AI"
+            label="Asistent AI"
             description="Analiză inteligentă și explicații medicale automate."
             buttonLabel={hasKey ? 'Gestionează' : 'Configurează'}
             onClick={() => setShowAISettings(true)}

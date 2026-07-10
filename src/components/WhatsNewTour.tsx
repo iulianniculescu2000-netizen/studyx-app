@@ -4,10 +4,13 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
+  Camera,
   Check,
   CheckCircle2,
   ClipboardPaste,
   Copy,
+  FileText,
+  FolderOpen,
   ImageIcon,
   MessageCircle,
   Minus,
@@ -26,7 +29,9 @@ import { useTutorialStore } from '../store/tutorialStore';
 import { useUserStore } from '../store/userStore';
 
 const WHATS_NEW_VERSION = '1.0.6';
-const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}:seen`;
+// Bump the suffix when the tour content changes within the same app version, so
+// users who already dismissed the previous tour see the new highlights once more.
+const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-examsplit:seen`;
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
 export const WHATS_NEW_OPEN_EVENT = 'studyx:whats-new:open';
@@ -262,6 +267,128 @@ function HeroDemo({ theme }: { theme: Theme }) {
   );
 }
 
+function DocScanDemo({ theme }: { theme: Theme }) {
+  // 0: page/photo shown · 1: scanning · 2: recognized grilă
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % 3), 1500);
+    return () => window.clearInterval(id);
+  }, []);
+  const rows = [0, 1, 2, 3];
+  const correctRow = 1;
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="flex w-full max-w-[380px] items-center justify-center gap-4 px-4">
+        {/* source: a photographed page */}
+        <div className="relative" style={{ transform: 'rotate(-4deg)' }}>
+          <div
+            className="relative w-[112px] overflow-hidden rounded-[14px] border p-2.5"
+            style={{ background: theme.surface2, borderColor: theme.border }}
+          >
+            <div className="mb-1.5 flex items-center gap-1 text-[7px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
+              <Camera size={9} style={{ color: theme.accent }} /> Poză
+            </div>
+            {rows.map((r) => (
+              <div key={r} className="mb-1.5 flex items-center gap-1">
+                <div className="h-[4px] w-[4px] rounded-full" style={{ background: `${theme.text3}55` }} />
+                <div className="h-[4px] rounded-full" style={{ width: 62 - r * 6, background: `${theme.text3}40` }} />
+              </div>
+            ))}
+            {/* sweeping scan line */}
+            <motion.div
+              className="absolute left-0 right-0 h-[3px]"
+              style={{ background: `linear-gradient(90deg, transparent, ${theme.accent}, transparent)`, boxShadow: `0 0 10px ${theme.accent}` }}
+              animate={{ top: ['12%', '88%', '12%'] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </div>
+        </div>
+
+        <motion.div animate={{ x: phase >= 1 ? [0, 5, 0] : 0, opacity: phase >= 1 ? 1 : 0.4 }} transition={{ duration: 0.9, repeat: Infinity }}>
+          <ArrowRight size={16} style={{ color: theme.text3 }} />
+        </motion.div>
+
+        {/* result: recognized grilă */}
+        <div
+          className="w-[150px] rounded-[14px] border p-2.5 transition-colors"
+          style={{ background: phase >= 2 ? `${theme.success}0e` : theme.surface2, borderColor: phase >= 2 ? `${theme.success}50` : theme.border }}
+        >
+          <div className="mb-1.5 flex items-center gap-1 text-[7px] font-black uppercase tracking-wider" style={{ color: phase >= 2 ? theme.success : theme.text3 }}>
+            <FileText size={9} /> {phase >= 2 ? 'Grilă recunoscută' : 'Analizez…'}
+          </div>
+          {rows.map((r) => {
+            const isCorrect = r === correctRow;
+            return (
+              <div key={r} className="mb-1.5 flex items-center gap-1.5 rounded-[5px] px-1 py-0.5"
+                style={{ background: phase >= 2 && isCorrect ? `${theme.success}20` : 'transparent' }}>
+                <motion.div
+                  className="flex items-center justify-center rounded-full"
+                  style={{ width: 9, height: 9, border: `1.4px solid ${phase >= 2 && isCorrect ? theme.success : `${theme.text3}55`}`, background: phase >= 2 && isCorrect ? theme.success : 'transparent' }}
+                  animate={phase >= 2 && isCorrect ? { scale: [0.5, 1.2, 1] } : { scale: 1 }}
+                  transition={{ duration: 0.4 }}
+                >
+                  {phase >= 2 && isCorrect && <Check size={6} color="#fff" strokeWidth={3.5} />}
+                </motion.div>
+                <div className="h-[4px] rounded-full" style={{ width: 58 - r * 5, background: phase >= 2 && isCorrect ? theme.success : `${theme.text3}40` }} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+function ExamSplitDemo({ theme }: { theme: Theme }) {
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % 3), 1600);
+    return () => window.clearInterval(id);
+  }, []);
+  const sessions = [
+    { label: 'Ses. 1', date: '12 iul', q: 75 },
+    { label: 'Ses. 2', date: '19 iul', q: 75 },
+    { label: 'Ses. 3', date: '26 iul', q: 75 },
+    { label: 'Ses. 4', date: '2 aug', q: 75 },
+  ];
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-full max-w-[340px] px-4">
+        <div className="mb-2.5 flex items-center justify-between text-[9px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
+          <span className="flex items-center gap-1"><FolderOpen size={11} /> 300 grile</span>
+          <motion.span
+            animate={{ opacity: phase >= 1 ? 1 : 0.4 }}
+            style={{ color: phase >= 1 ? theme.success : theme.text3 }}
+          >
+            {phase >= 1 ? '4 sesiuni create' : 'analizez zilele rămase…'}
+          </motion.span>
+        </div>
+        <div className="flex gap-1.5">
+          {sessions.map((s, i) => (
+            <motion.div
+              key={s.label}
+              initial={{ scaleY: 0.3, opacity: 0.3 }}
+              animate={phase >= 1 ? { scaleY: 1, opacity: 1 } : { scaleY: 0.3, opacity: 0.3 }}
+              transition={{ delay: i * 0.12, duration: 0.4, ease: 'backOut' }}
+              style={{ transformOrigin: 'bottom' }}
+              className="flex-1 rounded-[10px] border p-2 text-center"
+            >
+              <div
+                className="mb-1.5 h-8 w-full rounded-[6px]"
+                style={{ background: `linear-gradient(180deg, ${theme.accent}, ${theme.accent2})`, opacity: 0.85 }}
+              />
+              <div className="text-[8px] font-black" style={{ color: theme.text2 }}>{s.label}</div>
+              <div className="text-[7px]" style={{ color: theme.text3 }}>{s.date}</div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Slides
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,9 +406,17 @@ const SLIDES: Slide[] = [
   {
     id: 'hero',
     badge: `Update ${WHATS_NEW_VERSION}`,
-    title: 'StudyX v1.0.6 — generezi grile fără JSON, AI mai onest',
-    description: 'Import de grile din orice AI extern fără fișiere JSON, control fin asupra a ce generează agentul înainte să apeși Confirmă, și predicții care se calculează din statisticile tale reale, nu din cifre fixe. Totul în 60 de secunde.',
+    title: 'StudyX v1.0.6 — fă o poză, primești grile',
+    description: 'Cea mai tare noutate: bagi un PDF, un Word sau doar o poză cu grile și ți le recunosc automat — întrebări, variante și răspunsul corect. Plus import fără JSON, agent AI mai controlabil și predicții din statisticile tale reale.',
     Demo: HeroDemo,
+  },
+  {
+    id: 'grile-scan',
+    badge: 'Grile din poză / document',
+    title: 'Fă o poză. Primești grile.',
+    description: 'Fotografiezi o pagină de grile, arunci un PDF, Word sau un scan — StudyX recunoaște întrebările, variantele și răspunsul corect (din bold, culoare sau cheie), iar unde e nevoie completează cu AI. Verifici rapid și le ai gata de învățat.',
+    Demo: DocScanDemo,
+    tip: 'Găsești butonul „Fă o poză. Primești grile." pe Dashboard sau în „Import grile” → „Din document”.',
   },
   {
     id: 'external-ai-import',
@@ -305,6 +440,14 @@ const SLIDES: Slide[] = [
     description: 'Lacunele de cunoștințe și planul de recuperare nu mai sunt exemple fixe identice pentru toată lumea — se calculează din topicurile la care chiar greșești, cu prioritate reală pe ce contează.',
     Demo: RealPredictionsDemo,
     tip: 'Căutarea globală (Cmd/Ctrl+K) e și ea mai precisă: rezultatele exacte apar primele.',
+  },
+  {
+    id: 'exam-split',
+    badge: 'Plan de examen',
+    title: 'Distribui un folder întreg pe zilele rămase',
+    description: 'Ai 300 de grile într-un folder și un examen în 3 săptămâni? Alegi data examenului, iar StudyX le împarte automat în câteva sesiuni egale, spațiate până în ziua examenului — grilele originale rămân neatinse.',
+    Demo: ExamSplitDemo,
+    tip: 'Găsești butonul „Distribuie pe zile” în orice folder cu grile.',
   },
 ];
 

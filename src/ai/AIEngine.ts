@@ -196,6 +196,63 @@ export class QuestionGenerator {
   }
 }
 
+/**
+ * Generate questions for a freeform TOPIC with NO library grounding — deliberately
+ * skips `buildRelevantContext` (the RAG lookup `QuestionGenerator.generate` always
+ * does). That lookup returns the closest chunks it can find in the user's library
+ * even when nothing relevant exists, and the prompt's "use library context first"
+ * rule then makes the model dutifully ground an unrelated topic in whatever got
+ * retrieved — e.g. asking for "mielom multiplu" (hematology) with a dermatology-only
+ * library silently produced dermatology questions. Passing no context at all means
+ * there's nothing to (wrongly) ground in, so the model falls back to its own
+ * general medical knowledge, as the prompt's rules already allow.
+ */
+export async function generateQuestionsFromTopic(
+  topic: string,
+  count: number,
+  difficulty: Difficulty,
+  questionType: 'single' | 'multiple',
+  profile: UserProfileData | null,
+): Promise<AIQuestionResult> {
+  const parsed = await runAIPipeline<QuestionGenerationResponse>({
+    retrieve: () => topic,
+    generate: async () => {
+      const prompt = buildQuestionPrompt(profile, [], difficulty, undefined, questionType, undefined, count);
+      return groqRequest({
+        task: 'questions',
+        messages: [
+          { role: 'system', content: prompt },
+          {
+            role: 'user',
+            content: `Generează ${count} întrebări în JSON strict, exclusiv în limba română, despre subiectul: ${topic}. Folosește cunoștințe medicale generale — nu ai context din bibliotecă pentru acest subiect.`,
+          },
+        ],
+        skipLibraryContext: true,
+      });
+    },
+    validate: (raw) => {
+      const result = validateJson<QuestionGenerationResponse>(raw);
+      return result.ok && result.value?.questions?.length ? result.value : null;
+    },
+    fix: async (_raw, error) => (
+      groqRequest({
+        task: 'questions',
+        messages: [
+          { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Păstrează conținutul în română.' },
+          { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}` },
+        ],
+        skipLibraryContext: true,
+      })
+    ),
+  });
+
+  return {
+    questions: parsed.questions.map(normalizeQuestion),
+    sources: [],
+    mode: 'standard',
+  };
+}
+
 export class WeaknessAnalyzer {
   static getWeakTopics(profileId: string) {
     return getWeakTopicsForProfile(profileId);

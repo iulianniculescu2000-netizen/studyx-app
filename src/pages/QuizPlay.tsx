@@ -10,6 +10,7 @@ import { useToastStore } from '../store/toastStore';
 import { useUserStore } from '../store/userStore';
 import { useFocusModeStore } from '../store/focusModeStore';
 import { useUIStore } from '../store/uiStore';
+import { useQuizChatContextStore } from '../store/quizChatContextStore';
 import { useTheme } from '../theme/ThemeContext';
 import { HERO_COLOR_MAP } from '../theme/colorMaps';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
@@ -133,6 +134,16 @@ export default function QuizPlay() {
     const timer = setTimeout(() => setShowSmartNudge(true), 12000);
     return () => clearTimeout(timer);
   }, [currentIdx, revealed, examMode, hintLevel]);
+
+  // Let the general AI chat know "which question we're on" once the answer is
+  // revealed, so a message like "cred că e corect și varianta C" resolves to
+  // this exact question without the user re-typing it. Cleared on unmount so a
+  // stray chat message sent from outside a quiz never targets a stale question.
+  useEffect(() => {
+    if (!quiz || !question || !revealed) return;
+    useQuizChatContextStore.getState().setContext(quiz, question);
+    return () => useQuizChatContextStore.getState().clearContext();
+  }, [quiz, question, revealed]);
 
   const handleGetHint = useCallback(async () => {
     if (!question || hintLoading || hintLevel >= 3) return;

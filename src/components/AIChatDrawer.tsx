@@ -54,7 +54,10 @@ import {
   executeAgentPlan,
   isRetryPhrase,
   looksLikeAgentCommand,
+  looksLikeAnswerDispute,
+  grantsGeneralKnowledgePermission,
   planAgentCommand,
+  proposeAnswerCorrection,
   type AgentPlan,
   type AgentStep,
 } from '../lib/ai/agent';
@@ -62,6 +65,7 @@ import { detectChatIntent, shouldApplyIntent } from '../lib/ai/intentRouter';
 import { isFlashcardDeck } from '../lib/deckKind';
 import { suggestFolderAppearance } from '../lib/folderAppearance';
 import { useAgentJobsStore } from '../store/agentJobsStore';
+import { useQuizChatContextStore } from '../store/quizChatContextStore';
 import { desktopNotify } from '../lib/desktopNotify';
 import { getWeakTopicsForProfile } from '../ai/UserProfile';
 import { getUserMemorySummary } from '../lib/ai/userMemory';
@@ -712,6 +716,54 @@ export default function AIChatDrawer() {
     }
   };
 
+  /**
+   * Turns an AgentPlan into a chat message: a confirm-card job when it proposes
+   * steps, or just the plain reply when it doesn't (e.g. "no course found, want
+   * me to guess?"). Shared by the folder/generation planner and the in-quiz
+   * answer-dispute flow so both render through the same AgentJobCard UI.
+   * Returns the created job id, or null when no job was created.
+   */
+  const presentAgentPlan = (plan: AgentPlan, originalText: string, activeMode: ChatMode): string | null => {
+    if (plan.steps.length === 0) {
+      if (plan.reply) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: plan.reply, mode: activeMode }]);
+      }
+      return null;
+    }
+
+    const steps = plan.steps.map((step, index) => ({
+      id: `s${index}`,
+      label: describeStep(step),
+      status: 'pending' as const,
+      action: step.action,
+      params: {
+        packCount: step.packCount,
+        questionsPerPack: step.questionsPerPack,
+        count: step.count,
+        difficulty: step.difficulty,
+        questionType: step.questionType,
+      },
+    }));
+    const jobId = useAgentJobsStore.getState().createJob(
+      originalText,
+      steps,
+      plan.needsConfirm ? 'awaiting-confirm' : 'running',
+    );
+    if (plan.needsConfirm) {
+      useAgentJobsStore.getState().setJobStatus(jobId, 'awaiting-confirm', plan.confirmReason);
+    }
+    pendingAgentPlansRef.current.set(jobId, plan);
+
+    setMessages((prev) => [...prev, {
+      role: 'assistant',
+      content: plan.reply || (plan.needsConfirm ? 'Am pregătit un plan. Confirmă ca să îl execut.' : 'Execut planul...'),
+      mode: activeMode,
+      agentJobId: jobId,
+    }]);
+
+    return jobId;
+  };
+
   const tryHandleAgentCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
     if (!hasKey) return false;
 
@@ -744,37 +796,35 @@ export default function AIChatDrawer() {
     }
     if (!plan.isCommand || plan.steps.length === 0) return false;
 
-    const steps = plan.steps.map((step, index) => ({
-      id: `s${index}`,
-      label: describeStep(step),
-      status: 'pending' as const,
-      action: step.action,
-      params: {
-        packCount: step.packCount,
-        questionsPerPack: step.questionsPerPack,
-        count: step.count,
-        difficulty: step.difficulty,
-        questionType: step.questionType,
-      },
-    }));
-    const jobId = useAgentJobsStore.getState().createJob(
-      text,
-      steps,
-      plan.needsConfirm ? 'awaiting-confirm' : 'running',
-    );
-    if (plan.needsConfirm) {
-      useAgentJobsStore.getState().setJobStatus(jobId, 'awaiting-confirm', plan.confirmReason);
+    const jobId = presentAgentPlan(plan, text, activeMode);
+    if (jobId && !plan.needsConfirm) {
+      await runAgentJob(jobId);
     }
-    pendingAgentPlansRef.current.set(jobId, plan);
+    return true;
+  };
 
-    setMessages((prev) => [...prev, {
-      role: 'assistant',
-      content: plan.reply || (plan.needsConfirm ? 'Am pregătit un plan. Confirmă ca să îl execut.' : 'Execut planul...'),
-      mode: activeMode,
-      agentJobId: jobId,
-    }]);
+  /**
+   * "Cred că e corect și varianta C" while looking at a quiz question — checks
+   * the library first, proposes a correction (confirm-card) if warranted, and
+   * NEVER falls back to general medical knowledge unless the student explicitly
+   * allowed it in this same message (grantsGeneralKnowledgePermission).
+   */
+  const tryHandleAnswerDispute = async (text: string, activeMode: ChatMode): Promise<boolean> => {
+    if (!hasKey) return false;
+    if (!useQuizChatContextStore.getState().context) return false;
+    if (!looksLikeAnswerDispute(text)) return false;
 
-    if (!plan.needsConfirm) {
+    setThinkingPhase('Verific afirmația ta…');
+    let plan: AgentPlan;
+    try {
+      plan = await proposeAnswerCorrection(text, grantsGeneralKnowledgePermission(text));
+    } catch {
+      return false;
+    }
+    if (!plan.isCommand) return false;
+
+    const jobId = presentAgentPlan(plan, text, activeMode);
+    if (jobId && !plan.needsConfirm) {
       await runAgentJob(jobId);
     }
     return true;
@@ -1065,6 +1115,12 @@ export default function AIChatDrawer() {
     streamAbortRef.current = abortCtrl;
 
     try {
+      // In-quiz answer disputes take priority over everything else, but only
+      // fire when useQuizChatContextStore actually has an active question —
+      // otherwise this never intercepts normal conversation.
+      const disputeHandled = !imageSnapshot && await tryHandleAnswerDispute(text, activeMode);
+      if (disputeHandled) return;
+
       // Flashcard requests are handled deterministically first so they work even
       // when the LLM planner is rate-limited, and never get misrouted to grile.
       const flashcardHandled = !imageSnapshot && await tryHandleFlashcardCommand(text, activeMode);

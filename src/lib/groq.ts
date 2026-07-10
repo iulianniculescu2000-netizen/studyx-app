@@ -7,6 +7,32 @@ import { createRequestGovernor } from './aiRequestGovernor';
 import { logDiagnosticEvent } from '../store/diagnosticsStore';
 import { buildQuestionTypeInstruction, type QuestionType } from './ai/questionTypes';
 
+/**
+ * Providers don't agree on an error shape: Groq/Google follow the OpenAI
+ * `{error:{message}}` convention, but Cerebras returns FastAPI-style
+ * `{detail: "..."}` (confirmed live: a 403 came back as `{"detail":"Not
+ * authenticated"}`, not `{error:{message}}`) — sometimes `detail` is even an
+ * array of validation objects. Reading only `.error.message` silently found
+ * nothing for Cerebras and fell through to `res.statusText`, which some
+ * fetch implementations leave empty, producing a blank "Eroare ... API:" with
+ * no explanation at all. This checks every shape API providers actually use.
+ */
+async function extractApiErrorMessage(res: Response): Promise<string> {
+  const body = await res.json().catch(() => null) as
+    | { error?: { message?: string } | string; detail?: string | Array<{ msg?: string }>; message?: string }
+    | null;
+  if (body) {
+    if (typeof body.error === 'string') return body.error;
+    if (body.error?.message) return body.error.message;
+    if (typeof body.detail === 'string') return body.detail;
+    if (Array.isArray(body.detail) && body.detail.length > 0) {
+      return body.detail.map((d) => d.msg).filter(Boolean).join('; ') || JSON.stringify(body.detail);
+    }
+    if (body.message) return body.message;
+  }
+  return res.statusText || `HTTP ${res.status}`;
+}
+
 export type GroqMessagePart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } };
@@ -78,11 +104,104 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
     };
   }
 
+  if (provider === 'cerebras') {
+    return {
+      name: 'Cerebras',
+      // Cerebras is OpenAI-compatible — 1M free tokens/day, very fast.
+      endpoint: 'https://api.cerebras.ai/v1/chat/completions',
+      keyHint: 'Cheia API Cerebras nu este configurata. Mergi la Setari AI.',
+    };
+  }
+
   return {
     name: 'Groq',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     keyHint: 'Cheia API Groq nu este configurata. Mergi la Setari AI.',
   };
+}
+
+/** Default model to use when we fall back to another provider mid-request. */
+const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras', string> = {
+  groq: 'llama-3.3-70b-versatile',
+  google: 'gemini-2.5-flash',
+  cerebras: 'gpt-oss-120b',
+};
+
+type ProviderId = 'groq' | 'google' | 'cerebras';
+
+/**
+ * Provider chain: the active provider first, then any OTHER provider that has a
+ * saved key. When one hits its free-tier limit (or errors), callers transparently
+ * continue on the next — so the three free tiers act like one big pool.
+ */
+function buildProviderChain(
+  primaryProvider: ProviderId,
+  primaryKey: string,
+  primaryModel: string,
+  providerKeys: Partial<Record<ProviderId, string>> | undefined,
+): Array<{ provider: ProviderId; key: string; model: string }> {
+  const chain: Array<{ provider: ProviderId; key: string; model: string }> = [
+    { provider: primaryProvider, key: primaryKey, model: primaryModel },
+  ];
+  for (const p of ['groq', 'google', 'cerebras'] as const) {
+    if (p === primaryProvider) continue;
+    const k = sanitizeKey(providerKeys?.[p] ?? '');
+    if (k) chain.push({ provider: p, key: k, model: FALLBACK_MODEL[p] });
+  }
+  return chain;
+}
+
+/**
+ * Run a chat-completions request against ONE provider, with in-provider retries
+ * on 429. When a fallback provider is available we retry less (fail fast → switch);
+ * on the last provider we ride out per-minute rate limits with more attempts.
+ */
+async function attemptOnProvider(
+  cfg: { name: string; endpoint: string },
+  link: { key: string; model: string },
+  finalMessages: GroqMessage[],
+  temperature: number,
+  maxTokens: number,
+  task: AIRequestTask,
+  hasFallback: boolean,
+  abortSignal?: AbortSignal,
+): Promise<string> {
+  const maxAttempts = hasFallback ? 2 : 4;
+  let lastError = 'Eroare necunoscuta';
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const response = await fetch(cfg.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${link.key}` },
+        body: JSON.stringify({ model: link.model, messages: finalMessages, temperature, max_tokens: maxTokens }),
+        signal: abortSignal,
+      });
+
+      if (!response.ok) {
+        const msg = await extractApiErrorMessage(response);
+        if (response.status === 429 && attempt < maxAttempts - 1) {
+          const retryAfter = response.headers.get('retry-after');
+          const delayMs = getRetryDelayMs(attempt, retryAfter);
+          logAIDebug('groq:ratelimit', { task, provider: cfg.name, retryAfter, delayMs });
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      const data = await response.json();
+      const output = (data.choices?.[0]?.message?.content ?? '').trim();
+      logAIDebug('groq:response', { task, provider: cfg.name, output });
+      return output;
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error.message : String(error);
+      logAIDebug('groq:error', { task, provider: cfg.name, attempt, error: lastError });
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(attempt, null)));
+      }
+    }
+  }
+  throw new Error(lastError);
 }
 
 /**
@@ -99,7 +218,8 @@ export async function validateApiKey(
   if (!cleanKey) return { ok: false, error: 'Cheia este goală.' };
 
   const config = getProviderConfig(provider);
-  const testModel = provider === 'google' ? 'gemini-2.0-flash' : 'llama-3.1-8b-instant';
+  const testModel =
+    provider === 'google' ? 'gemini-2.0-flash' : provider === 'cerebras' ? 'gpt-oss-120b' : 'llama-3.1-8b-instant';
 
   try {
     const res = await fetch(config.endpoint, {
@@ -116,8 +236,7 @@ export async function validateApiKey(
 
     if (res.ok) return { ok: true };
 
-    const data = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-    const message = data?.error?.message ?? res.statusText;
+    const message = await extractApiErrorMessage(res);
     if (res.status === 401 || res.status === 403) {
       return { ok: false, error: `Cheie respinsă de ${config.name} (${res.status}). Verifică sau regenerează cheia.` };
     }
@@ -324,11 +443,12 @@ export async function groqRequest({
 }): Promise<string> {
   const governor = task === 'questions' ? generationGovernor : groqGovernor;
   return governor.run(task, async () => {
-    const { apiKey, provider, model, getKnowledgeContext } = useAIStore.getState();
-    const providerConfig = getProviderConfig(provider);
-    const key = sanitizeKey(apiKey);
-    if (!key) throw new Error(providerConfig.keyHint);
-    const kb = skipLibraryContext ? '' : await getKnowledgeContext(buildKnowledgeQuery(messages), 6000);
+    const state = useAIStore.getState();
+    const primaryProvider = state.provider;
+    const primaryKey = sanitizeKey(state.apiKey);
+    if (!primaryKey) throw new Error(getProviderConfig(primaryProvider).keyHint);
+
+    const kb = skipLibraryContext ? '' : await state.getKnowledgeContext(buildKnowledgeQuery(messages), 6000);
     const finalMessages: GroqMessage[] = kb
       ? [
           {
@@ -345,77 +465,41 @@ export async function groqRequest({
     const finalTemperature = temperature ?? TASK_TEMPERATURE[task] ?? 0.5;
     const finalMaxTokens = maxTokens ?? TASK_MAX_TOKENS[task] ?? 1200;
 
-    logAIDebug('groq:request', {
-      task,
-      provider,
-      model,
-      temperature: finalTemperature,
-      maxTokens: finalMaxTokens,
-      messagesCount: messages.length,
-    });
+    if (abortSignal?.aborted) throw new Error('Request aborted before start');
 
-    if (abortSignal?.aborted) {
-      throw new Error('Request aborted before start');
-    }
+    const chain = buildProviderChain(primaryProvider, primaryKey, state.model, state.providerKeys);
 
     let lastError = 'Eroare necunoscuta';
-    const maxAttempts = 4;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    for (let ci = 0; ci < chain.length; ci++) {
+      const link = chain[ci];
+      const cfg = getProviderConfig(link.provider);
+      const next = chain[ci + 1];
+      logAIDebug('groq:request', {
+        task,
+        provider: link.provider,
+        model: link.model,
+        temperature: finalTemperature,
+        maxTokens: finalMaxTokens,
+        messagesCount: messages.length,
+      });
       try {
-        const response = await fetch(providerConfig.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages: finalMessages,
-            temperature: finalTemperature,
-            max_tokens: finalMaxTokens,
-          }),
-          signal: abortSignal,
-        });
-
-        if (!response.ok) {
-          const err = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
-          const msg = err?.error?.message ?? response.statusText;
-          if (response.status === 429 && attempt < maxAttempts - 1) { // Rate limit hit
-            const retryAfter = response.headers.get('retry-after');
-            const delayMs = getRetryDelayMs(attempt, retryAfter);
-            logAIDebug('groq:ratelimit', { task, retryAfter, delayMs });
-            logDiagnosticEvent({
-              area: 'ai',
-              level: 'warning',
-              title: `Limita ${providerConfig.name} atinsa`,
-              detail: `Task ${task}: StudyX pune cererea in pauza ${Math.ceil(delayMs / 1000)}s si reincerca automat.`,
-            });
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-            continue;
-          }
-          throw new Error(msg);
-        }
-
-        const data = await response.json();
-        const output = (data.choices?.[0]?.message?.content ?? '').trim();
-        logAIDebug('groq:response', { task, output });
-        return output;
+        return await attemptOnProvider(cfg, link, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal);
       } catch (error: unknown) {
         lastError = error instanceof Error ? error.message : String(error);
-        logAIDebug('groq:error', { task, attempt, error: lastError });
-        if (attempt < maxAttempts - 1) {
-          await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(attempt, null)));
+        logAIDebug('groq:providerFailed', { provider: link.provider, error: lastError });
+        if (next) {
+          logDiagnosticEvent({
+            area: 'ai',
+            level: 'warning',
+            title: 'Trec pe alt provider AI',
+            detail: `${cfg.name} indisponibil (${lastError}). Continui automat pe ${getProviderConfig(next.provider).name}.`,
+          });
         }
       }
     }
 
-    logDiagnosticEvent({
-      area: 'ai',
-      level: 'error',
-      title: `${providerConfig.name} indisponibil`,
-      detail: `Task ${task}: ${lastError}`,
-    });
-    throw new Error(`Eroare ${providerConfig.name} API: ${lastError}`);
+    logDiagnosticEvent({ area: 'ai', level: 'error', title: 'AI indisponibil', detail: `Task ${task}: ${lastError}` });
+    throw new Error(`Eroare AI: ${lastError}`);
   });
 }
 
@@ -470,8 +554,7 @@ export async function groqVisionRequest(
   });
 
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-    throw new Error(err?.error?.message ?? res.statusText);
+    throw new Error(await extractApiErrorMessage(res));
   }
   const data = await res.json();
   return ((data.choices?.[0]?.message?.content as string | undefined) ?? '').trim();
@@ -488,11 +571,10 @@ export async function groqStream(
     throw new Error('Stream aborted before start');
   }
   return groqGovernor.run('chat', async () => {
-    const { apiKey, provider, model, getKnowledgeContext } = useAIStore.getState();
-    const providerConfig = getProviderConfig(provider);
-    const key = sanitizeKey(apiKey);
-    if (!key) throw new Error(providerConfig.keyHint);
-    const kb = skipLibraryContext ? '' : await getKnowledgeContext(buildKnowledgeQuery(messages), 4500);
+    const state = useAIStore.getState();
+    const primaryKey = sanitizeKey(state.apiKey);
+    if (!primaryKey) throw new Error(getProviderConfig(state.provider).keyHint);
+    const kb = skipLibraryContext ? '' : await state.getKnowledgeContext(buildKnowledgeQuery(messages), 4500);
     const finalMessages: GroqMessage[] = kb
       ? [
           {
@@ -511,24 +593,44 @@ export async function groqStream(
       ? AbortSignal.any([abortSignal, timeoutSignal])
       : timeoutSignal;
 
-    const res = await fetch(providerConfig.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages: finalMessages, temperature, max_tokens: 4096, stream: true }),
-      signal: combinedSignal,
-    });
+    // Try each provider in the chain for the INITIAL connection only — once bytes
+    // start streaming to the UI we commit to that provider (switching mid-stream
+    // would mean discarding partial output the user already sees).
+    const chain = buildProviderChain(state.provider, primaryKey, state.model, state.providerKeys);
+    let res: Response | null = null;
+    let providerName = getProviderConfig(state.provider).name;
+    let lastError = 'Eroare necunoscuta';
 
-    if (!res.ok) {
-      const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-      const message = err?.error?.message ?? res.statusText;
-      logDiagnosticEvent({
-        area: 'ai',
-        level: 'warning',
-        title: 'Stream AI oprit',
-        detail: message,
-      });
-      throw new Error(`Eroare ${providerConfig.name} API: ${message}`);
+    for (let ci = 0; ci < chain.length; ci++) {
+      const link = chain[ci];
+      const cfg = getProviderConfig(link.provider);
+      try {
+        const attempt = await fetch(cfg.endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${link.key}` },
+          body: JSON.stringify({ model: link.model, messages: finalMessages, temperature, max_tokens: 4096, stream: true }),
+          signal: combinedSignal,
+        });
+        if (attempt.ok) {
+          res = attempt;
+          providerName = cfg.name;
+          break;
+        }
+        lastError = await extractApiErrorMessage(attempt);
+        logDiagnosticEvent({
+          area: 'ai',
+          level: 'warning',
+          title: chain[ci + 1] ? 'Trec pe alt provider AI' : 'Stream AI oprit',
+          detail: chain[ci + 1]
+            ? `${cfg.name} indisponibil (${lastError}). Continui automat pe ${getProviderConfig(chain[ci + 1].provider).name}.`
+            : lastError,
+        });
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
     }
+
+    if (!res) throw new Error(`Eroare ${providerName} API: ${lastError}`);
     if (!res.body) throw new Error('Răspuns fără corp — încearcă din nou.');
 
     const reader = res.body.getReader();

@@ -26,6 +26,13 @@ const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; 
     keyHint: 'AIza...',
     docs: 'https://aistudio.google.com/apikey',
   },
+  {
+    id: 'cerebras',
+    name: 'Cerebras',
+    desc: '1M tokeni/zi gratis · cel mai mare volum, foarte rapid',
+    keyHint: 'csk-...',
+    docs: 'https://cloud.cerebras.ai/',
+  },
 ];
 
 const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; speed: string }[]> = {
@@ -38,6 +45,11 @@ const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; spee
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: 'Echilibrat, rapid și inteligent', speed: 'Rapid' },
     { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', desc: 'Ultra rapid pentru chat', speed: 'Instant' },
     { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', desc: 'Cel mai bun pentru raționament', speed: 'Smart' },
+  ],
+  cerebras: [
+    { id: 'gpt-oss-120b', name: 'GPT-OSS 120B', desc: 'Cel mai inteligent, foarte rapid', speed: 'Ultra rapid' },
+    { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', desc: 'Puternic (preview)', speed: 'Rapid' },
+    { id: 'zai-glm-4.7', name: 'GLM 4.7', desc: 'Echilibrat (preview)', speed: 'Rapid' },
   ],
 };
 
@@ -61,6 +73,16 @@ const KEY_GUIDE: Record<AIProvider, { intro: string; steps: string[] }> = {
       'Creează un cont sau conectează-te.',
       'Apasă „Create API Key".',
       'Copiază cheia generată — începe cu „gsk_…".',
+      'Lipește-o în câmpul de mai sus și apasă „Salvează".',
+    ],
+  },
+  cerebras: {
+    intro: '1.000.000 tokeni/zi gratis, fără card. Cel mai mare volum free.',
+    steps: [
+      'Apasă butonul de mai jos — se deschide Cerebras Cloud.',
+      'Creează un cont sau conectează-te.',
+      'Mergi la „API Keys" și apasă „Generate API Key".',
+      'Copiază cheia generată — începe cu „csk-…".',
       'Lipește-o în câmpul de mai sus și apasă „Salvează".',
     ],
   },
@@ -143,8 +165,9 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
   const detectProviderFromKey = (k: string): AIProvider | null => {
     const trimmed = k.trim();
     if (trimmed.startsWith('gsk_') && trimmed.length > 20) return 'groq';
-    // Groq keys are always "gsk_"; any other substantial key is a Google/Gemini
-    // key (AIza, AQ., …) — we don't gate on the Google prefix.
+    if (trimmed.startsWith('csk-') && trimmed.length > 20) return 'cerebras';
+    // Groq/Cerebras keys have fixed prefixes; any other substantial key is a
+    // Google/Gemini key (AIza, AQ., …) — we don't gate on the Google prefix.
     if (trimmed.length >= 20) return 'google';
     return null;
   };

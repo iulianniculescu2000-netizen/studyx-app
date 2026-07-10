@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, X, Check, AlertCircle, Loader2, Sparkles, Copy, FileJson, ClipboardPaste } from 'lucide-react';
+import { Upload, X, Check, AlertCircle, Loader2, Sparkles, Copy, FileJson, FileText, ClipboardPaste } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { buildExternalAIPrompt, importQuizzesFromJsonText } from '../lib/quizImport';
 import Portal from './Portal';
+import ImportFromDocument from './ImportFromDocument';
 
-type Tab = 'file' | 'external-ai';
+type Tab = 'document' | 'file' | 'external-ai';
 
 interface Props {
   targetFolderId?: string | null;
@@ -19,7 +20,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>('file');
+  const [tab, setTab] = useState<Tab>('document');
 
   // External-AI tab state
   const [topic, setTopic] = useState('');
@@ -144,7 +145,17 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
                   <button onClick={closeModal} style={{ color: theme.text3 }}><X size={16} /></button>
                 </div>
 
-                <div className="flex gap-2 mb-5 rounded-xl p-1" style={{ background: theme.surface2 }}>
+                <div className="flex gap-1.5 mb-5 rounded-xl p-1" style={{ background: theme.surface2 }}>
+                  <button
+                    onClick={() => setTab('document')}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all"
+                    style={{
+                      background: tab === 'document' ? theme.surface : 'transparent',
+                      color: tab === 'document' ? theme.text : theme.text3,
+                    }}
+                  >
+                    <FileText size={13} /> Din document
+                  </button>
                   <button
                     onClick={() => setTab('file')}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all"
@@ -153,7 +164,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
                       color: tab === 'file' ? theme.text : theme.text3,
                     }}
                   >
-                    <FileJson size={13} /> Fișier JSON
+                    <FileJson size={13} /> JSON
                   </button>
                   <button
                     onClick={() => setTab('external-ai')}
@@ -163,9 +174,13 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
                       color: tab === 'external-ai' ? theme.text : theme.text3,
                     }}
                   >
-                    <Sparkles size={13} /> AI extern (ChatGPT / Gemini)
+                    <Sparkles size={13} /> AI extern
                   </button>
                 </div>
+
+                {tab === 'document' && (
+                  <ImportFromDocument targetFolderId={targetFolderId} onDone={closeModal} />
+                )}
 
                 {tab === 'file' && (
                   <div className="space-y-3">

@@ -8,6 +8,7 @@ import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useTutorialStore } from '../store/tutorialStore';
 import ImportQuizButton from '../components/ImportQuizButton';
+import MagicImportCard from '../components/MagicImportCard';
 import QuizCard from '../components/QuizCard';
 import DashboardErrorBoundary from '../components/dashboard/DashboardErrorBoundary';
 import MagneticButton from '../components/dashboard/MagneticButton';
@@ -123,11 +124,14 @@ function EmptyRecentQuizzes({ onStartTutorial }: { onStartTutorial: () => void }
         <BookOpen size={40} className="opacity-20" style={{ color: theme.text }} />
       </div>
       <h3 className="mb-2 text-xl font-bold" style={{ color: theme.text }}>Începe călătoria ta medicală</h3>
-      <p className="mx-auto mb-8 max-w-xs text-sm font-medium" style={{ color: theme.text3 }}>
-        Nu ai nicio grilă adăugată încă. Importă un fișier sau creează una manual pentru a începe studiul.
+      <p className="mx-auto mb-6 max-w-xs text-sm font-medium" style={{ color: theme.text3 }}>
+        Cel mai rapid mod: fă o poză grilelor sau aruncă un PDF/Word — ți le recunosc automat.
       </p>
+      <div className="mx-auto mb-6 max-w-sm px-4">
+        <MagicImportCard />
+      </div>
       <div className="mb-8 flex flex-wrap items-center justify-center gap-2 px-4">
-        <span className="premium-chip rounded-full px-3 py-1 text-[11px] font-semibold" style={{ color: theme.text3 }}>Import JSON rapid</span>
+        <span className="premium-chip rounded-full px-3 py-1 text-[11px] font-semibold" style={{ color: theme.text3 }}>Grile din PDF/poză</span>
         <span className="premium-chip rounded-full px-3 py-1 text-[11px] font-semibold" style={{ color: theme.text3 }}>Flashcards automate</span>
         <span className="premium-chip rounded-full px-3 py-1 text-[11px] font-semibold" style={{ color: theme.text3 }}>Bibliotecă AI integrată</span>
       </div>

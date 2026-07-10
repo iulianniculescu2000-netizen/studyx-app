@@ -35,14 +35,16 @@ function StepParamEditor({
   onChange: (patch: Partial<AgentJobStepParams>) => void;
 }) {
   const isQuizPack = action === 'generate_quiz_pack';
+  const isQuizTopic = action === 'generate_quiz_topic';
   const isMistakes = action === 'generate_from_mistakes';
   const isFlashcards = action === 'create_flashcards';
-  if (!isQuizPack && !isMistakes && !isFlashcards) return null;
+  if (!isQuizPack && !isQuizTopic && !isMistakes && !isFlashcards) return null;
 
-  const countKey: keyof AgentJobStepParams = isQuizPack ? 'questionsPerPack' : 'count';
-  const countValue = isQuizPack ? params.questionsPerPack ?? 10 : params.count ?? (isFlashcards ? 15 : 10);
-  const countStep = isQuizPack ? 5 : isFlashcards ? 5 : 5;
-  const countMax = isQuizPack ? 60 : isFlashcards ? 100 : 100;
+  const usesPackCount = isQuizPack || isQuizTopic;
+  const countKey: keyof AgentJobStepParams = usesPackCount ? 'questionsPerPack' : 'count';
+  const countValue = usesPackCount ? params.questionsPerPack ?? 10 : params.count ?? (isFlashcards ? 15 : 10);
+  const countStep = 5;
+  const countMax = usesPackCount ? 60 : 100;
 
   const chipStyle = (active: boolean) => ({
     background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
@@ -74,7 +76,7 @@ function StepParamEditor({
         </button>
       </div>
 
-      {(isQuizPack || isMistakes) && (
+      {(isQuizPack || isQuizTopic || isMistakes) && (
         <div className="flex gap-1">
           {QUESTION_TYPE_OPTIONS.map((opt) => (
             <button
@@ -90,7 +92,7 @@ function StepParamEditor({
         </div>
       )}
 
-      {isQuizPack && (
+      {(isQuizPack || isQuizTopic) && (
         <div className="flex gap-1">
           {DIFFICULTY_OPTIONS.map((opt) => (
             <button

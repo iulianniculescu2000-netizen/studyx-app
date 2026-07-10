@@ -11,13 +11,15 @@ import { groqRequest, notesToFlashcards } from '../groq';
 import { generateQuizPackagesFromSource } from './batchQuizGeneration';
 import { clampStudioPackCount, clampStudioQuestionCount } from './studioGeneration';
 import { getVaultChunksBySource } from '../../ai/vectorStore';
-import { generateQuestions, getUserProfile } from '../../ai/AIEngine';
+import { generateQuestions, generateQuestionsFromTopic, getUserProfile } from '../../ai/AIEngine';
 import { generateFromMistakes, getWeakTopicsForProfile } from '../../ai/UserProfile';
 import { useQuizStore } from '../../store/quizStore';
 import { useFolderStore } from '../../store/folderStore';
 import { useAIStore } from '../../store/aiStore';
 import { useUserStore } from '../../store/userStore';
+import { useQuizChatContextStore } from '../../store/quizChatContextStore';
 import { suggestFolderAppearance } from '../folderAppearance';
+import { extractJsonFromText } from '../quizImport';
 import type { Difficulty, Folder, Question, Quiz } from '../../types';
 
 function shortId() {
@@ -54,7 +56,9 @@ export type AgentActionType =
   | 'create_folder'
   | 'create_library_folder'
   | 'generate_quiz_pack'
+  | 'generate_quiz_topic'
   | 'generate_from_mistakes'
+  | 'correct_answer'
   | 'create_flashcards'
   | 'summarize_document'
   | 'create_study_plan'
@@ -70,6 +74,8 @@ export interface AgentStep {
   newName?: string;
   parent?: string;
   source?: string;
+  /** For generate_quiz_topic: freeform subject when no library course matches (e.g. "fiziologia plămânului"). */
+  topic?: string;
   folder?: string;
   quiz?: string;
   packCount?: number;
@@ -83,6 +89,12 @@ export interface AgentStep {
   examName?: string;
   studyDays?: number;
   hoursPerDay?: number;
+  /** For correct_answer: exact quiz/question identity (never guessed from text). */
+  quizId?: string;
+  questionId?: string;
+  correctOptionIds?: string[];
+  reasoning?: string;
+  groundedIn?: 'course' | 'general' | 'user_claim';
 }
 
 export interface AgentPlan {
@@ -248,6 +260,141 @@ export function isRetryPhrase(text: string): boolean {
   return RETRY_PATTERNS.some((pattern) => pattern.test(norm));
 }
 
+// ── In-quiz answer disputes ────────────────────────────────────────────────
+// "Cred că e corect și varianta C" — the student disagrees with the marked
+// answer while looking at a question (QuizPlay → useQuizChatContextStore).
+// This is deliberately SEPARATE from the folder/generation planner above: it
+// needs the EXACT quiz/question identity from app state, not something an LLM
+// should infer from chat text, and it must never silently guess — general
+// medical knowledge is only used when the student explicitly allows it.
+
+function normalizeForMatch(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+/** Does this message read as "I think the marked answer is wrong / X is also correct"? */
+export function looksLikeAnswerDispute(text: string): boolean {
+  const norm = normalizeForMatch(text);
+  const DISPUTE_PATTERNS = [
+    /\bcred c[ăa]\b[\s\S]{0,40}\b(corect|gre[șs]it|varianta|r[ăa]spuns)/,
+    /\bnu (e|este|cred c[ăa] e|cred c[ăa] este) corect/,
+    /\br[ăa]spuns(ul)? (e|este) gre[șs]it/,
+    /\bde fapt (e|este|ar trebui|cred)/,
+    /\b(si|și) varianta [a-e]\b/,
+    /\bmai e[i]? corect[ăa]?\b/,
+  ];
+  return DISPUTE_PATTERNS.some((p) => p.test(norm));
+}
+
+/** Explicit permission to use general knowledge when no course backs the claim. */
+export function grantsGeneralKnowledgePermission(text: string): boolean {
+  const norm = normalizeForMatch(text);
+  return /\bghice[șs]te\b|\bintuie[șs]te\b|din cuno[șs]tin[țt]ele tale|cunostinte generale|f[ăa]r[ăa] curs|chiar dac[ăa] nu (ai|g[ăa]se[șs]ti)/.test(norm);
+}
+
+interface AnswerVerdict {
+  agrees?: boolean;
+  correctLetters?: string[];
+  reasoning?: string;
+}
+
+/**
+ * Research the student's claim against the current quiz question: check the
+ * library first, and only fall back to general medical knowledge if the
+ * student explicitly allowed it. Returns an AgentPlan so the SAME confirm-card
+ * UI (AgentJobCard) that folder/generation commands use also handles this —
+ * without a needsConfirm step, nothing gets mutated.
+ */
+export async function proposeAnswerCorrection(claim: string, allowGeneralKnowledge: boolean): Promise<AgentPlan> {
+  const ctx = useQuizChatContextStore.getState().context;
+  if (!ctx) {
+    return { isCommand: false, reply: '', steps: [], needsConfirm: false };
+  }
+
+  const kb = await useAIStore.getState().getKnowledgeContext(ctx.questionText, 3000);
+  const grounded = kb.trim().length > 0;
+
+  if (!grounded && !allowGeneralKnowledge) {
+    return {
+      isCommand: true,
+      reply: 'Nu găsesc niciun curs legat de această întrebare în Biblioteca AI. Vrei să încerc să apreciez din cunoștințe medicale generale (fără sursă sigură)? Spune „da, din cunoștințele tale" dacă vrei să continui.',
+      steps: [],
+      needsConfirm: false,
+    };
+  }
+
+  const optionLines = ctx.options
+    .map((o, i) => `${String.fromCharCode(97 + i)}) ${o.text}${o.isCorrect ? '  [marcat corect acum]' : ''}`)
+    .join('\n');
+  const prompt = [
+    'Ești examinator de Medicină. Un student contestă răspunsul corect marcat la o grilă.',
+    `Întrebare: ${ctx.questionText}`,
+    `Variante:\n${optionLines}`,
+    `Afirmația studentului: "${claim}"`,
+    grounded
+      ? `Context relevant din biblioteca studentului — folosește-l ca sursă principală:\n${kb}`
+      : 'Nu există context din bibliotecă pentru această întrebare — folosește DOAR cunoștințe medicale generale, stabile, și marchează asta clar în reasoning.',
+    'Răspunde STRICT cu JSON, fără text în plus: {"agrees": true|false, "correctLetters": ["a"], "reasoning": "1-2 propoziții, în română"}',
+    '"agrees": ești de acord că e nevoie să schimbi ce e marcat corect acum. "correctLetters": literele care AR TREBUI să fie marcate corecte (poate fi identic cu ce e marcat acum dacă agrees:false). Nu inventa fapte medicale.',
+  ].join('\n\n');
+
+  let parsed: AnswerVerdict | null = null;
+  try {
+    const raw = await groqRequest({
+      task: 'analysis',
+      messages: [{ role: 'user', content: prompt }],
+      skipLibraryContext: true,
+      temperature: 0.2,
+    });
+    parsed = extractJsonFromText(raw) as AnswerVerdict;
+  } catch {
+    return { isCommand: true, reply: 'Nu am putut verifica afirmația acum — încearcă din nou.', steps: [], needsConfirm: false };
+  }
+
+  if (!parsed?.agrees || !Array.isArray(parsed.correctLetters) || parsed.correctLetters.length === 0) {
+    return {
+      isCommand: true,
+      reply: parsed?.reasoning ? `Am verificat: ${parsed.reasoning}` : 'Am verificat și răspunsul marcat acum pare corect — nu am motive să-l schimb.',
+      steps: [],
+      needsConfirm: false,
+    };
+  }
+
+  const letterToIdx = (l: string) => l.trim().toLowerCase().charCodeAt(0) - 97;
+  const correctOptionIds = [...new Set(parsed.correctLetters.map(letterToIdx))]
+    .filter((i) => i >= 0 && i < ctx.options.length)
+    .map((i) => ctx.options[i].id);
+
+  if (correctOptionIds.length === 0) {
+    return {
+      isCommand: true,
+      reply: 'Am înțeles că vrei o corectare, dar nu am putut identifica exact varianta — specifică litera (a/b/c/d/e).',
+      steps: [],
+      needsConfirm: false,
+    };
+  }
+
+  const step: AgentStep = {
+    action: 'correct_answer',
+    quizId: ctx.quizId,
+    questionId: ctx.questionId,
+    correctOptionIds,
+    reasoning: parsed.reasoning,
+    groundedIn: grounded ? 'course' : 'general',
+  };
+
+  return {
+    isCommand: true,
+    reply: `${parsed.reasoning ?? 'Am verificat afirmația ta.'} ${grounded ? '(confirmat din biblioteca ta)' : '(din cunoștințe generale — te rog verifică oricum)'}`,
+    steps: [step],
+    needsConfirm: true,
+    confirmReason: 'Modific răspunsul corect salvat al acestei întrebări.',
+  };
+}
+
 function extractJsonObject(raw: string): string | null {
   const stripped = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '');
   const start = stripped.indexOf('{');
@@ -296,6 +443,7 @@ function buildPlannerPrompt() {
     '- create_folder: {"action":"create_folder","name":"Nume","parent":"NumeFolderParinte (optional, pt subfolder)"}',
     '- create_library_folder: {"action":"create_library_folder","name":"Nume","parent":"NumeFolderParinte (optional, pt subfolder de bibliotecă)"}  // folder pt cursuri în Bibliotecă',
     '- generate_quiz_pack: {"action":"generate_quiz_pack","source":"nume curs din bibliotecă","folder":"nume folder destinatie (optional)","packCount":N,"questionsPerPack":N,"questionType":"single|multiple","difficulty":"auto|easy|medium|hard"}',
+    '- generate_quiz_topic: {"action":"generate_quiz_topic","topic":"subiectul cerut de user, EXACT cum l-a formulat","folder":"nume folder destinatie (optional)","questionsPerPack":N,"questionType":"single|multiple","difficulty":"auto|easy|medium|hard"}  // grile pe un subiect general (cunoștințe medicale generale ale AI-ului), FĂRĂ curs din bibliotecă',
     '- generate_from_mistakes: {"action":"generate_from_mistakes","count":N,"folder":"nume folder destinatie (optional)","questionType":"single|multiple"}  // grile de recapitulare țintite pe greșelile salvate ale studentului (NU are nevoie de sursă)',
     '- create_flashcards: {"action":"create_flashcards","source":"nume curs din bibliotecă","folder":"nume folder destinatie (optional)","count":N}  // deck de flashcarduri (active recall) dintr-un curs',
     '- summarize_document: {"action":"summarize_document","source":"nume curs din bibliotecă"}  // rezumat structurat pentru examen al unui curs din bibliotecă',
@@ -317,7 +465,8 @@ function buildPlannerPrompt() {
     '- IMPLICIT packCount = 1. Pune packCount > 1 DOAR dacă userul cere explicit mai multe "seturi"/"pachete", SAU dacă numărul de întrebări depășește 60 (abia atunci împarte în pachete de maxim 60 fiecare).',
     '- NU inventa numere și NU exagera. Exemple: "2 grile" → packCount:1, questionsPerPack:2. "10 întrebări" → packCount:1, questionsPerPack:10. "3 seturi a câte 20" → packCount:3, questionsPerPack:20. "150 de grile" → packCount:3, questionsPerPack:50.',
     '- Atenție: un număr lângă numele cursului (ex. "Cursul 2") NU e un număr de grile, e parte din numele cursului.',
-    '- Folosește DOAR cursuri care există în bibliotecă (lista de mai jos). Dacă nu identifici cursul, pune isCommand:false și explică în reply ce lipsește.',
+    '- Pentru generare de grile: dacă userul NUMEȘTE un curs/sursă și acesta EXISTĂ în bibliotecă (lista de mai jos), folosește generate_quiz_pack. Dacă userul cere grile pe un SUBIECT/temă generală (nu numește un curs, sau cursul numit nu există), folosește generate_quiz_topic cu "topic" = subiectul cerut — NU pune isCommand:false doar pentru că nu există curs în bibliotecă; AI-ul poate genera din cunoștințe medicale generale.',
+    '- Folosește isCommand:false DOAR când mesajul chiar nu e o comandă de acțiune (întrebare normală, conversație), nu când lipsește un curs din bibliotecă.',
     '',
     `Cursuri în bibliotecă: ${sources.length ? sources.join(' | ') : '(niciunul)'}`,
     `Foldere grile: ${quizFolderNames.length ? quizFolderNames.join(' | ') : '(niciunul)'}`,
@@ -329,7 +478,7 @@ function buildPlannerPrompt() {
 function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
   const action = String(raw.action ?? '') as AgentActionType;
   const valid: AgentActionType[] = [
-    'create_folder', 'create_library_folder', 'generate_quiz_pack', 'generate_from_mistakes',
+    'create_folder', 'create_library_folder', 'generate_quiz_pack', 'generate_quiz_topic', 'generate_from_mistakes',
     'create_flashcards', 'summarize_document', 'create_study_plan',
     'move_quiz', 'rename_quiz', 'delete_quiz', 'rename_folder', 'delete_folder',
   ];
@@ -345,6 +494,7 @@ function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
     newName: str('newName') ?? str('new_name'),
     parent: str('parent'),
     source: str('source'),
+    topic: str('topic'),
     folder: str('folder'),
     quiz: str('quiz'),
     packCount: num('packCount') ?? num('packcount'),
@@ -453,6 +603,16 @@ export function describeStep(step: AgentStep): string {
       const typeLabel = step.questionType === 'multiple' ? ' (complement multiplu)' : '';
       const countLabel = packs === 1 ? `${perPack} grile` : `${packs}×${perPack} grile`;
       return `Generez ${countLabel}${typeLabel} din „${step.source}"${dest}`;
+    }
+    case 'generate_quiz_topic': {
+      const n = clampStudioQuestionCount(step.questionsPerPack ?? 10);
+      const typeLabel = step.questionType === 'multiple' ? ' (complement multiplu)' : '';
+      const dest = step.folder ? ` în „${step.folder}"` : '';
+      return `Generez ${n} grile${typeLabel} despre „${step.topic}"${dest}`;
+    }
+    case 'correct_answer': {
+      const src = step.groundedIn === 'course' ? 'confirmat din biblioteca ta' : step.groundedIn === 'general' ? 'din cunoștințe medicale generale — verifică' : 'după observația ta';
+      return `Actualizez răspunsul corect al întrebării (${src})`;
     }
     case 'generate_from_mistakes': {
       const n = clampStudioQuestionCount(step.count ?? 10);
@@ -585,6 +745,73 @@ export async function executeAgentPlan(
             mostlyFallback ? 'error' : 'done',
             mostlyFallback ? `${result.quizzes.length} seturi (rezervă locală — verifică cheia AI)` : `${result.quizzes.length} seturi`,
           );
+          break;
+        }
+
+        case 'correct_answer': {
+          if (!step.quizId || !step.questionId || !step.correctOptionIds?.length) {
+            throw new Error('Date lipsă pentru corectarea răspunsului.');
+          }
+          const targetQuiz = useQuizStore.getState().quizzes.find((q) => q.id === step.quizId);
+          if (!targetQuiz) throw new Error('Grila nu mai există.');
+          const qIndex = targetQuiz.questions.findIndex((q) => q.id === step.questionId);
+          if (qIndex === -1) throw new Error('Întrebarea nu mai există în grilă (poate a fost editată).');
+
+          const previousQuestions = targetQuiz.questions;
+          const correctIds = new Set(step.correctOptionIds);
+          const updatedQuestion: Question = {
+            ...previousQuestions[qIndex],
+            options: previousQuestions[qIndex].options.map((o) => ({ ...o, isCorrect: correctIds.has(o.id) })),
+            multipleCorrect: correctIds.size > 1,
+          };
+          const nextQuestions = previousQuestions.map((q, i) => (i === qIndex ? updatedQuestion : q));
+          useQuizStore.getState().updateQuiz(targetQuiz.id, { questions: nextQuestions });
+          undoOps.push(() => useQuizStore.getState().updateQuiz(targetQuiz.id, { questions: previousQuestions }));
+          summaryParts.push(`răspuns corectat în „${targetQuiz.title}"`);
+          callbacks.onStep(index, 'done', 'Răspuns actualizat');
+          break;
+        }
+
+        case 'generate_quiz_topic': {
+          if (!step.topic) throw new Error('Lipsește subiectul grilelor.');
+          const count = clampStudioQuestionCount(step.questionsPerPack ?? ctx.defaultQuestionsPerPack);
+          const profile = activeProfileId ? getUserProfile(activeProfileId) : null;
+          const difficulty = (step.difficulty && step.difficulty !== 'auto' ? step.difficulty : profile?.currentDifficulty ?? 'medium') as Difficulty;
+
+          // NOT generateQuestions() — that always grounds in the user's library (RAG),
+          // which silently mixes in unrelated content when the topic isn't covered
+          // there (e.g. asking for "mielom multiplu" pulled in dermatology chunks).
+          // A freeform topic like this should use general medical knowledge only.
+          const result = await generateQuestionsFromTopic(
+            step.topic,
+            count,
+            difficulty,
+            step.questionType ?? 'single',
+            profile,
+          );
+          if (result.questions.length === 0) throw new Error(`Nu am putut genera grile despre „${step.topic}".`);
+
+          const folder = resolveQuizFolder(step.folder);
+          const quiz: Quiz = {
+            id: shortId(),
+            title: step.topic,
+            description: `${result.questions.length} grile generate de AI despre „${step.topic}".`,
+            emoji: '✨',
+            color: folder?.color ?? 'blue',
+            category: folder?.name ?? 'Altele',
+            kind: 'quiz',
+            folderId: folder?.id ?? null,
+            shuffleQuestions: true,
+            shuffleAnswers: true,
+            tags: ['ai', 'topic'],
+            questions: result.questions,
+            createdAt: Date.now(),
+          };
+          useQuizStore.getState().addQuiz(quiz);
+          createdQuizIds.push(quiz.id);
+          undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
+          summaryParts.push(`${result.questions.length} grile despre „${step.topic}"`);
+          callbacks.onStep(index, 'done', `${result.questions.length} grile`);
           break;
         }
 

@@ -9,9 +9,12 @@ export type AIModel =
   | 'mixtral-8x7b-32768'
   | 'gemini-2.5-flash'
   | 'gemini-2.0-flash'
-  | 'gemini-2.5-pro';
+  | 'gemini-2.5-pro'
+  | 'gpt-oss-120b'
+  | 'qwen-3-235b-a22b-instruct-2507'
+  | 'zai-glm-4.7';
 
-export type AIProvider = 'groq' | 'google';
+export type AIProvider = 'groq' | 'google' | 'cerebras';
 
 export type AIKnowledgeSourceType = 'txt' | 'pdf' | 'docx' | 'image';
 export type AIKnowledgeSourceStatus = 'indexing' | 'ready' | 'error';
@@ -148,6 +151,7 @@ const DEFAULT_MODEL: AIModel = 'llama-3.3-70b-versatile';
 const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
   groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
   google: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
+  cerebras: ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507', 'zai-glm-4.7'],
 };
 
 function isValidProviderKey(provider: AIProvider, apiKey: string) {
@@ -155,13 +159,17 @@ function isValidProviderKey(provider: AIProvider, apiKey: string) {
   if (!trimmed) return false;
   // Groq keys are reliably prefixed with "gsk_".
   if (provider === 'groq') return trimmed.startsWith('gsk_') && trimmed.length > 20;
+  // Cerebras keys are prefixed with "csk-".
+  if (provider === 'cerebras') return trimmed.startsWith('csk-') && trimmed.length > 20;
   // Google/Gemini keys vary in prefix (AIza, AQ., …), so don't gate on a prefix.
-  // Accept any substantial key that isn't a Groq key; the live API check decides.
-  return trimmed.length >= 20 && !trimmed.startsWith('gsk_');
+  // Accept any substantial key that isn't a Groq/Cerebras key; the live API check decides.
+  return trimmed.length >= 20 && !trimmed.startsWith('gsk_') && !trimmed.startsWith('csk-');
 }
 
 function getDefaultModelForProvider(provider: AIProvider): AIModel {
-  return provider === 'google' ? 'gemini-2.5-flash' : DEFAULT_MODEL;
+  if (provider === 'google') return 'gemini-2.5-flash';
+  if (provider === 'cerebras') return 'gpt-oss-120b';
+  return DEFAULT_MODEL;
 }
 
 function normalizeProviderModel(provider: AIProvider, model: AIModel | string | undefined): AIModel {
