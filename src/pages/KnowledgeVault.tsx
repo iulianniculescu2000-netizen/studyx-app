@@ -466,6 +466,7 @@ export default function KnowledgeVault() {
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
       detail: {
         open: true,
+        view: 'chat', // "Întreabă AI" opens a conversation, not the generator
         mode: 'summarize',
         sourceId: source.id,
         sourceName: source.name,

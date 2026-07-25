@@ -88,7 +88,14 @@ export default function QuizPlay() {
   const [questionTimer, setQuestionTimer] = useState(TIME_PER_Q);
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
-  const aiAbortRef = useRef<AbortController | null>(null);
+  /**
+   * Generation token for in-flight AI requests. The AI helpers are plain
+   * promises with no abort support, so an AbortController here was never
+   * actually wired to anything — a slow explanation would land after the user
+   * had already moved on and repopulate the panel against the WRONG question.
+   * Bumping this invalidates any reply still in flight.
+   */
+  const aiRequestIdRef = useRef(0);
   const [mnemonicText, setMnemonicText] = useState<string | null>(null);
   const [mnemonicLoading, setMnemonicLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(null);
@@ -119,6 +126,9 @@ export default function QuizPlay() {
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
       detail: {
         open: true,
+        // Without this the drawer keeps whatever view it was last left in, so a
+        // conversational prompt could land in the AI Studio pane instead.
+        view: 'chat',
         mode,
         resetConversation: true,
         prompt,
@@ -310,8 +320,7 @@ export default function QuizPlay() {
   }, [questionQueue, quiz, startedAt, addSession, navigate, recordAnswer, recordStudySession, examMode, timedMode, activeProfileId]);
 
   const resetAssistiveState = useCallback(() => {
-    aiAbortRef.current?.abort();
-    aiAbortRef.current = null;
+    aiRequestIdRef.current += 1; // discard anything still in flight
     setAiText(null);
     setAiLoading(false);
     setMnemonicText(null);
@@ -425,6 +434,8 @@ export default function QuizPlay() {
       setAiText(analysisResult.explanation);
       return;
     }
+    const requestId = ++aiRequestIdRef.current;
+    const isStale = () => aiRequestIdRef.current !== requestId;
     setAiLoading(true);
     const currentAnswers = answers[question.id] ?? selectedNow;
     const userAnswer = getAnswerTextForOptionIds(question.options, currentAnswers);
@@ -442,17 +453,20 @@ export default function QuizPlay() {
       }
       const { analyzeAnswer } = await loadAIEngine();
       const { analysis } = await analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect });
+      if (isStale()) return; // user moved on — this answer belongs to a past question
       setAnalysisResult(analysis);
       setAnalysisQuestionId(question.id);
       setAiText(analysis.explanation);
     } catch {
+      if (isStale()) return;
       const fallbackAnalysis = buildAnalysisFallback({ question, userAnswer, correctAnswer, isCorrect });
       setAnalysisResult(fallbackAnalysis);
       setAnalysisQuestionId(question.id);
       setAiText(fallbackAnalysis.explanation);
       setNextTopicHint(fallbackAnalysis.recommendedTopic ?? null);
     } finally {
-      setAiLoading(false);
+      // Leave the spinner alone if a newer request owns it now.
+      if (!isStale()) setAiLoading(false);
     }
   }, [question, aiLoading, activeProfileId, analysisResult, analysisQuestionId, answers, selectedNow]);
 
@@ -1164,6 +1178,8 @@ export default function QuizPlay() {
               revealed={revealed}
               wasWrong={wasWrong}
               onGenerate={async () => {
+                const requestId = ++aiRequestIdRef.current;
+                const isStale = () => aiRequestIdRef.current !== requestId;
                 setMnemonicLoading(true);
                 try {
                   const correctAnswer = getCorrectAnswerText(question);
@@ -1177,13 +1193,15 @@ export default function QuizPlay() {
                   const repeatedMistake = profile.mistakeBank.find((entry) => entry.questionId === question.id)?.wrongCount ?? 0;
                   const targetConcept = repeatedMistake >= 2 ? concept : `${correctAnswer} | ${question.text}`;
                   const mnemonic = await generateMnemonicForConcept(targetConcept, correctAnswer);
+                  if (isStale()) return; // belongs to a question the user already left
                   setMnemonicText(mnemonic);
                 } catch {
+                  if (isStale()) return;
                   const correctAnswer = getCorrectAnswerText(question);
                   const concept = analysisResult?.missingConcept || analysisResult?.recommendedTopic || correctAnswer || question.text;
                   setMnemonicText(buildMnemonicFallback(concept, correctAnswer));
                 } finally {
-                  setMnemonicLoading(false);
+                  if (!isStale()) setMnemonicLoading(false);
                 }
               }}
               theme={theme}

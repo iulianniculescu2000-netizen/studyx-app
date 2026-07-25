@@ -58,7 +58,6 @@
     "src/components/quiz/QuizPlayQuestion.tsx",
     "src/components/quiz/QuizPlayRefactored.tsx",
     "src/hooks/useUIManager.ts",
-    "src/lib/ai/**/*",
     "src/lib/content/**/*",
     "src/lib/gamification/**/*",
     "src/lib/offline/**/*",

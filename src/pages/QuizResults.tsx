@@ -115,6 +115,7 @@ export default function QuizResults() {
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
       detail: {
         open: true,
+        view: 'chat', // a debrief is a conversation, never the Studio pane
         mode,
         resetConversation: true,
         prompt,

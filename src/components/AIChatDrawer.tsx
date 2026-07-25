@@ -498,7 +498,12 @@ export default function AIChatDrawer() {
       if (!detail?.prompt) return;
       if (detail.open) setChatOpen(true);
       if (detail.view) setView(detail.view);
-      setStudioHeading(detail.heading ?? WHOLE_DOCUMENT_HEADING);
+      // Only a chapter-scoped event may move the Studio's chapter selection.
+      // Resetting unconditionally meant any plain chat prompt ("Discută
+      // răspunsul", "Debrief cu AI Coach") silently threw away a chapter the
+      // user had picked in Studio.
+      if (detail.heading) setStudioHeading(detail.heading);
+      else if (detail.sourceId) setStudioHeading(WHOLE_DOCUMENT_HEADING);
 
       if (detail.resetConversation) {
         setMessages([]);

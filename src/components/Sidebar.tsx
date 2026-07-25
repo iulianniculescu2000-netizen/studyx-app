@@ -566,6 +566,7 @@ export default function Sidebar() {
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
       detail: {
         open: true,
+        view: 'chat', // the coach talks; it must not open the Studio pane
         mode: weakCount > 0 ? 'test' : 'summarize',
         resetConversation: true,
         prompt: weakCount > 0
