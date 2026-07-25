@@ -8,7 +8,7 @@ import {
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIModel, type AIProvider } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
-import { getUserMemorySummary, resetUserMemory } from '../lib/ai/userMemory';
+import { clearStudyPatterns, getProfileSummaryText } from '../ai/UserProfile';
 import Portal from './Portal';
 
 const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; docs: string }[] = [
@@ -110,7 +110,6 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
   const [dragActive, setDragActive] = useState(false);
   const activeProfileId = useUserStore((s) => s.activeProfileId);
   const [memorySummary, setMemorySummary] = useState('');
-  const [memoryLoading, setMemoryLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processStep, setProcessProcessingStep] = useState('');
   
@@ -123,18 +122,13 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
 
   useEffect(() => {
     if (!open || !activeProfileId) return;
-    let cancelled = false;
-    setMemoryLoading(true);
-    void getUserMemorySummary(activeProfileId)
-      .then((summary) => { if (!cancelled) setMemorySummary(summary); })
-      .finally(() => { if (!cancelled) setMemoryLoading(false); });
-    return () => { cancelled = true; };
+    setMemorySummary(getProfileSummaryText(activeProfileId));
   }, [open, activeProfileId]);
 
-  const handleResetMemory = async () => {
+  const handleResetMemory = () => {
     if (!activeProfileId) return;
-    await resetUserMemory(activeProfileId);
-    setMemorySummary('');
+    clearStudyPatterns(activeProfileId);
+    setMemorySummary(getProfileSummaryText(activeProfileId));
   };
 
   useEffect(() => () => {
@@ -509,11 +503,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                       </button>
                     )}
                   </div>
-                  {memoryLoading ? (
-                    <p className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: theme.text3 }}>
-                      <Loader2 size={12} className="animate-spin" /> Se încarcă…
-                    </p>
-                  ) : memorySummary ? (
+                  {memorySummary ? (
                     <p className="text-[12px] leading-relaxed" style={{ color: theme.text2 }}>{memorySummary}</p>
                   ) : (
                     <p className="text-[12px] leading-relaxed" style={{ color: theme.text3 }}>

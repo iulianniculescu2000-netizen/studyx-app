@@ -7,7 +7,7 @@ import {
   Plus, Pencil, Trash2, Check, X, RefreshCw, LogOut,
   PanelLeftOpen, StickyNote, CreditCard,
   Download, ArrowDownCircle, RotateCcw, AlertCircle,
-  Settings, Brain, Database, MessageSquare, Sparkles,
+  Settings, Brain, Database, MessageSquare, Sparkles, Stethoscope,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
@@ -806,6 +806,11 @@ export default function Sidebar() {
                 <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} />
               </div>
             </Tip>
+            <Tip label="Rezidențiat">
+              <div>
+                <NavItem to="/rezidentiat" icon={<Stethoscope size={17} />} label="Rezidențiat" collapsed />
+              </div>
+            </Tip>
             <Tip label="Flashcarduri">
               <div data-tutorial="nav-flashcards">
                 <NavItem to="/flashcards" icon={<CreditCard size={17} />} label="Flashcarduri" collapsed />
@@ -873,6 +878,7 @@ export default function Sidebar() {
             <div data-tutorial="nav-vault">
               <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} />
             </div>
+            <NavItem to="/rezidentiat" icon={<Stethoscope size={16} />} label="Rezidențiat" collapsed={false} />
             <div data-tutorial="nav-flashcards">
               <NavItem
                 to="/flashcards"

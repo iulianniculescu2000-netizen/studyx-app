@@ -37,6 +37,8 @@ import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildPerformanceSummary, buildUserContextString } from '../lib/aiContext';
 import { isDocumentHidden } from '../lib/asyncGuard';
 import { generateQuizPackagesFromSource } from '../lib/ai/batchQuizGeneration';
+import { generateQuizFromChapter, WHOLE_DOCUMENT_HEADING } from '../lib/ai/chapterQuizGeneration';
+import { useSourceChapters } from '../hooks/useSourceChapters';
 import {
   STUDIO_MAX_PACK_COUNT,
   STUDIO_MAX_QUESTIONS_PER_PACK,
@@ -67,8 +69,7 @@ import { suggestFolderAppearance } from '../lib/folderAppearance';
 import { useAgentJobsStore } from '../store/agentJobsStore';
 import { useQuizChatContextStore } from '../store/quizChatContextStore';
 import { desktopNotify } from '../lib/desktopNotify';
-import { getWeakTopicsForProfile } from '../ai/UserProfile';
-import { getUserMemorySummary } from '../lib/ai/userMemory';
+import { getProfileSummaryText, getWeakTopicsForProfile } from '../ai/UserProfile';
 import type { Folder, Question, Quiz } from '../types';
 import AgentJobCard from './ai-chat/AgentJobCard';
 import AIOrb from './ai-chat/AIOrb';
@@ -329,17 +330,6 @@ export default function AIChatDrawer() {
   const memoryInteractions = useAIStore((state) =>
     activeProfileId ? (state.studyMemory[activeProfileId]?.interactions ?? 0) : 0
   );
-  // Long-term, IndexedDB-backed memory summary (Task 4). Refreshed when the
-  // drawer opens so it reflects sessions completed since it was last open.
-  const [longTermMemory, setLongTermMemory] = useState('');
-  useEffect(() => {
-    if (!open || !activeProfileId) return;
-    let cancelled = false;
-    void getUserMemorySummary(activeProfileId).then((summary) => {
-      if (!cancelled) setLongTermMemory(summary);
-    });
-    return () => { cancelled = true; };
-  }, [open, activeProfileId]);
   const folders = useFolderStore((state) => state.folders);
   const addFolder = useFolderStore((state) => state.addFolder);
   const addToast = useToastStore((state) => state.addToast);
@@ -379,6 +369,7 @@ export default function AIChatDrawer() {
   const [activeCitationKey, setActiveCitationKey] = useState<string | null>(null);
   const [view, setView] = useState<DrawerView>('chat');
   const [studioSourceId, setStudioSourceId] = useState<string>('');
+  const [studioHeading, setStudioHeading] = useState<string>(WHOLE_DOCUMENT_HEADING);
   const [studioFolderId, setStudioFolderId] = useState<string>('__uncategorized__');
   const [studioPackCount, setStudioPackCount] = useState(4);
   const [studioQuestionsPerPack, setStudioQuestionsPerPack] = useState(12);
@@ -428,9 +419,10 @@ export default function AIChatDrawer() {
     const focusText = weakTopics.length > 0
       ? `Focus recomandat acum: ${weakTopics.map((topic) => `${topic.topic} ${topic.accuracy}%`).join(', ')}.`
       : '';
+    const longTermMemory = activeProfileId ? getProfileSummaryText(activeProfileId) : '';
     const longTermText = longTermMemory ? `Memorie pe termen lung: ${longTermMemory}` : '';
     return [baseContext, focusText, memoryContext, longTermText].filter(Boolean).join(' ');
-  }, [memoryContext, performanceSummary, weakTopics, longTermMemory]);
+  }, [activeProfileId, memoryContext, performanceSummary, weakTopics]);
 
   const recommendedActions = useMemo(
     () => buildRecommendedActions(weakTopics, performanceSummary.dueCount, scopedSource?.name),
@@ -450,6 +442,13 @@ export default function AIChatDrawer() {
 
   const selectedStudioSourceId = studioSourceId || scopedSource?.id || readySources[0]?.id || '';
   const selectedStudioSource = readySources.find((source) => source.id === selectedStudioSourceId) ?? null;
+  const { chapters: studioChapters } = useSourceChapters(selectedStudioSourceId || null);
+  const studioChapterOptions = useMemo(() => [
+    { value: WHOLE_DOCUMENT_HEADING, label: 'Tot documentul' },
+    ...studioChapters
+      .filter((chapter) => chapter.heading !== WHOLE_DOCUMENT_HEADING)
+      .map((chapter) => ({ value: chapter.heading, label: `${chapter.label} (${chapter.chunkCount})` })),
+  ], [studioChapters]);
   const selectedStudioFolder = studioFolderId === '__uncategorized__'
     ? null
     : folders.find((folder) => folder.id === studioFolderId) ?? null;
@@ -491,6 +490,7 @@ export default function AIChatDrawer() {
         open?: boolean;
         sourceId?: string;
         sourceName?: string;
+        heading?: string;
         resetConversation?: boolean;
         view?: DrawerView;
       }>).detail;
@@ -498,6 +498,7 @@ export default function AIChatDrawer() {
       if (!detail?.prompt) return;
       if (detail.open) setChatOpen(true);
       if (detail.view) setView(detail.view);
+      setStudioHeading(detail.heading ?? WHOLE_DOCUMENT_HEADING);
 
       if (detail.resetConversation) {
         setMessages([]);
@@ -593,6 +594,7 @@ export default function AIChatDrawer() {
     packCount,
     questionsPerPack,
     difficulty,
+    heading = WHOLE_DOCUMENT_HEADING,
     announceInChat = true,
     forceChatView = true,
     announceMode = 'summarize',
@@ -602,6 +604,7 @@ export default function AIChatDrawer() {
     packCount: number;
     questionsPerPack: number;
     difficulty: StudioDifficulty;
+    heading?: string;
     announceInChat?: boolean;
     forceChatView?: boolean;
     announceMode?: ChatMode;
@@ -616,27 +619,45 @@ export default function AIChatDrawer() {
     setStudioQuestionsPerPack(questionsPerPack);
     setStudioDifficulty(difficulty);
 
+    const isChapterScoped = heading !== WHOLE_DOCUMENT_HEADING;
+
     try {
-      const result = await generateQuizPackagesFromSource({
-        sourceId: source.id,
-        sourceName: source.name,
-        folder,
-        folderId: folder?.id ?? null,
-        packCount,
-        questionsPerPack,
-        difficulty,
-        activeProfileId,
-        existingQuizzes: quizzes,
-      });
+      const result = isChapterScoped
+        ? await (async () => {
+            const chapterResult = await generateQuizFromChapter({
+              sourceId: source.id,
+              sourceName: source.name,
+              heading,
+              folder,
+              folderId: folder?.id ?? null,
+              questionCount: questionsPerPack,
+              difficulty,
+              activeProfileId,
+              existingQuizzes: quizzes,
+            });
+            return { ...chapterResult, quizzes: [chapterResult.quiz] };
+          })()
+        : await generateQuizPackagesFromSource({
+            sourceId: source.id,
+            sourceName: source.name,
+            folder,
+            folderId: folder?.id ?? null,
+            packCount,
+            questionsPerPack,
+            difficulty,
+            activeProfileId,
+            existingQuizzes: quizzes,
+          });
 
       if (generationAbortedRef.current) return false; // user pressed Stop — discard
 
       result.quizzes.forEach((quiz) => addQuiz(quiz));
 
       const folderLabel = folder?.name ?? 'Neclasificate';
+      const sourceLabel = isChapterScoped ? `${source.name} · ${heading}` : source.name;
       const summary = result.fallbackQuestionCount > 0
-        ? `Am generat ${result.quizzes.length} pachete din "${source.name}" și le-am trimis în folderul "${folderLabel}". ${result.aiQuestionCount} întrebări au venit din AI, iar ${result.fallbackQuestionCount} au fost completate inteligent din document pentru stabilitate. Dificultate folosită: ${result.difficulty}.`
-        : `Am generat ${result.quizzes.length} pachete din "${source.name}" și le-am trimis în folderul "${folderLabel}". Dificultate folosită: ${result.difficulty}.`;
+        ? `Am generat ${result.quizzes.length} pachete din "${sourceLabel}" și le-am trimis în folderul "${folderLabel}". ${result.aiQuestionCount} întrebări au venit din AI, iar ${result.fallbackQuestionCount} au fost completate inteligent din document pentru stabilitate. Dificultate folosită: ${result.difficulty}.`
+        : `Am generat ${result.quizzes.length} pachete din "${sourceLabel}" și le-am trimis în folderul "${folderLabel}". Dificultate folosită: ${result.difficulty}.`;
       const fullSummary = result.warnings.length > 0
         ? `${summary}\n\nNotă: ${result.warnings[0]}`
         : summary;
@@ -1278,6 +1299,7 @@ export default function AIChatDrawer() {
       packCount: studioPackCount,
       questionsPerPack: studioQuestionsPerPack,
       difficulty: studioDifficulty,
+      heading: studioHeading,
       announceInChat: true,
       forceChatView: true,
     });
@@ -1872,6 +1894,7 @@ export default function AIChatDrawer() {
                             value={selectedStudioSourceId}
                             onChange={(nextValue) => {
                               setStudioSourceId(nextValue);
+                              setStudioHeading(WHOLE_DOCUMENT_HEADING);
                               const nextSource = readySources.find((source) => source.id === nextValue);
                               if (nextSource) {
                                 setScopedSource({ id: nextSource.id, name: nextSource.name });
@@ -1883,6 +1906,17 @@ export default function AIChatDrawer() {
                             theme={theme}
                           />
 
+                          {studioChapterOptions.length > 1 && (
+                            <StudioSelect
+                              label="Capitol"
+                              value={studioHeading}
+                              onChange={setStudioHeading}
+                              options={studioChapterOptions}
+                              placeholder="Tot documentul"
+                              theme={theme}
+                            />
+                          )}
+
                           <StudioSelect
                             label="Folder țintă"
                             value={studioFolderId}
@@ -1892,25 +1926,27 @@ export default function AIChatDrawer() {
                             theme={theme}
                           />
 
-                          <div className="grid grid-cols-2 gap-3">
-                            <label className="block">
-                              <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                                Pachete
-                              </span>
-                              <input
-                                type="number"
-                                min={1}
-                                max={STUDIO_MAX_PACK_COUNT}
-                                value={studioPackCount}
-                                onChange={(event) => setStudioPackCount(clampStudioPackCount(Number(event.target.value) || 1))}
-                                className="w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none"
-                                style={{ background: theme.surface, borderColor: theme.border, color: theme.text }}
-                              />
-                            </label>
+                          <div className={studioHeading === WHOLE_DOCUMENT_HEADING ? 'grid grid-cols-2 gap-3' : ''}>
+                            {studioHeading === WHOLE_DOCUMENT_HEADING && (
+                              <label className="block">
+                                <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                                  Pachete
+                                </span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={STUDIO_MAX_PACK_COUNT}
+                                  value={studioPackCount}
+                                  onChange={(event) => setStudioPackCount(clampStudioPackCount(Number(event.target.value) || 1))}
+                                  className="w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none"
+                                  style={{ background: theme.surface, borderColor: theme.border, color: theme.text }}
+                                />
+                              </label>
+                            )}
 
                             <label className="block">
                               <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                                Întrebări / pachet
+                                {studioHeading === WHOLE_DOCUMENT_HEADING ? 'Întrebări / pachet' : 'Întrebări'}
                               </span>
                               <input
                                 type="number"

@@ -34,6 +34,7 @@ import { getHealthBadgeLabel } from './lib/healthReporter';
 import { useRuntimeStore } from './store/runtimeStore';
 import { beginStartupSession, completeStartupSession, inspectPreviousStartup } from './lib/startupSessionGuard';
 import { useUpdateStore } from './store/updateStore';
+import { migrateLegacyUserMemory } from './ai/UserProfile';
 
 const AIChatDrawer = lazy(() => import('./components/AIChatDrawer'));
 const WhatsNewTour = lazy(() => import('./components/WhatsNewTour'));
@@ -53,6 +54,7 @@ const ReviewMode = lazy(() => import('./pages/ReviewMode'));
 const DailyReview = lazy(() => import('./pages/DailyReview'));
 const FlashcardHub = lazy(() => import('./pages/FlashcardHub'));
 const KnowledgeVault = lazy(() => import('./pages/KnowledgeVault'));
+const Residency = lazy(() => import('./pages/Residency'));
 const FlashcardSession = lazy(() => import('./pages/FlashcardSession'));
 const Notes = lazy(() => import('./pages/Notes'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -148,6 +150,14 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
   };
 
   useAutoBackup(activeProfileId ?? null);
+
+  // One-time port of the legacy userMemory.ts IndexedDB record (study patterns, rolling
+  // aggregates) into the unified AI profile. No-op after the first run (guarded internally
+  // by schemaVersion) and safe to fire on every mount.
+  useEffect(() => {
+    if (!activeProfileId) return;
+    void migrateLegacyUserMemory(activeProfileId);
+  }, [activeProfileId]);
 
   // Auto-check for updates 10s after startup (packaged builds only)
   useEffect(() => {
@@ -269,6 +279,7 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
                   <Route path="/review" element={<RouteView><ReviewMode /></RouteView>} />
                   <Route path="/daily-review" element={<RouteView><DailyReview /></RouteView>} />
                   <Route path="/vault" element={<RouteView><KnowledgeVault /></RouteView>} />
+                  <Route path="/rezidentiat" element={<RouteView><Residency /></RouteView>} />
                   <Route path="/flashcards" element={<RouteView><FlashcardHub /></RouteView>} />
                   <Route path="/flashcards/session/:id" element={<RouteView><FlashcardSession /></RouteView>} />
                   <Route path="/notes" element={<RouteView><Notes /></RouteView>} />

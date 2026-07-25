@@ -5,6 +5,7 @@ import { logAIDebug } from '../ai/debug';
 import type { AIRequestTask } from '../ai/types';
 import { createRequestGovernor } from './aiRequestGovernor';
 import { logDiagnosticEvent } from '../store/diagnosticsStore';
+import { useToastStore } from '../store/toastStore';
 import { buildQuestionTypeInstruction, type QuestionType } from './ai/questionTypes';
 
 /**
@@ -129,26 +130,74 @@ const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras', string> = {
 
 type ProviderId = 'groq' | 'google' | 'cerebras';
 
+const PROVIDER_ORDER: ProviderId[] = ['groq', 'google', 'cerebras'];
+
+/**
+ * How long we keep starting requests on a fallback provider after switching away
+ * from a rate-limited one, before giving the primary another shot. Without this,
+ * every single request would re-hit the still-limited primary first and eat its
+ * retry attempts before falling back again.
+ */
+const FALLBACK_STICKY_MS = 10 * 60 * 1000;
+
+/** In-memory only (per app session) — which provider we're currently "stuck" on. */
+let stickyFallback: { provider: ProviderId; primary: ProviderId; until: number } | null = null;
+
 /**
  * Provider chain: the active provider first, then any OTHER provider that has a
  * saved key. When one hits its free-tier limit (or errors), callers transparently
  * continue on the next — so the three free tiers act like one big pool.
+ *
+ * If we recently switched away from `primaryProvider` due to a failure, requests
+ * start on that fallback provider instead (still trying `primaryProvider` later in
+ * the chain, in case it already recovered) until FALLBACK_STICKY_MS elapses.
  */
 function buildProviderChain(
   primaryProvider: ProviderId,
-  primaryKey: string,
   primaryModel: string,
-  providerKeys: Partial<Record<ProviderId, string>> | undefined,
+  providerKeys: Partial<Record<ProviderId, string>>,
 ): Array<{ provider: ProviderId; key: string; model: string }> {
-  const chain: Array<{ provider: ProviderId; key: string; model: string }> = [
-    { provider: primaryProvider, key: primaryKey, model: primaryModel },
-  ];
-  for (const p of ['groq', 'google', 'cerebras'] as const) {
-    if (p === primaryProvider) continue;
-    const k = sanitizeKey(providerKeys?.[p] ?? '');
-    if (k) chain.push({ provider: p, key: k, model: FALLBACK_MODEL[p] });
+  if (stickyFallback && stickyFallback.until <= Date.now()) stickyFallback = null;
+
+  const startProvider =
+    stickyFallback &&
+    stickyFallback.primary === primaryProvider &&
+    sanitizeKey(providerKeys[stickyFallback.provider] ?? '')
+      ? stickyFallback.provider
+      : primaryProvider;
+
+  const modelFor = (p: ProviderId) => (p === primaryProvider ? primaryModel : FALLBACK_MODEL[p]);
+  const ordered = [startProvider, ...PROVIDER_ORDER.filter((p) => p !== startProvider)];
+
+  const chain: Array<{ provider: ProviderId; key: string; model: string }> = [];
+  for (const p of ordered) {
+    const k = sanitizeKey(providerKeys[p] ?? '');
+    if (k) chain.push({ provider: p, key: k, model: modelFor(p) });
   }
   return chain;
+}
+
+/**
+ * Records which provider actually served a request and, when it's a fallback
+ * (not the user's configured primary), notifies the user once via toast so
+ * they know the app quietly switched — e.g. "Limita Groq atinsă — am trecut
+ * automat pe Google Gemini." Clears the sticky state once the primary answers
+ * again (it recovered on its own).
+ */
+function trackProviderOutcome(provider: ProviderId, primaryProvider: ProviderId, providerName: string) {
+  if (provider === primaryProvider) {
+    stickyFallback = null;
+    return;
+  }
+  const isNewSwitch = !stickyFallback || stickyFallback.provider !== provider;
+  stickyFallback = { provider, primary: primaryProvider, until: Date.now() + FALLBACK_STICKY_MS };
+  if (isNewSwitch) {
+    useToastStore.getState().addToast(
+      `Limita cheii curente a fost atinsă — am trecut automat pe ${providerName}.`,
+      'info',
+      6000,
+    );
+  }
 }
 
 /**
@@ -447,6 +496,7 @@ export async function groqRequest({
     const primaryProvider = state.provider;
     const primaryKey = sanitizeKey(state.apiKey);
     if (!primaryKey) throw new Error(getProviderConfig(primaryProvider).keyHint);
+    const effectiveKeys: Partial<Record<ProviderId, string>> = { ...state.providerKeys, [primaryProvider]: primaryKey };
 
     const kb = skipLibraryContext ? '' : await state.getKnowledgeContext(buildKnowledgeQuery(messages), 6000);
     const finalMessages: GroqMessage[] = kb
@@ -467,7 +517,7 @@ export async function groqRequest({
 
     if (abortSignal?.aborted) throw new Error('Request aborted before start');
 
-    const chain = buildProviderChain(primaryProvider, primaryKey, state.model, state.providerKeys);
+    const chain = buildProviderChain(primaryProvider, state.model, effectiveKeys);
 
     let lastError = 'Eroare necunoscuta';
     for (let ci = 0; ci < chain.length; ci++) {
@@ -483,7 +533,9 @@ export async function groqRequest({
         messagesCount: messages.length,
       });
       try {
-        return await attemptOnProvider(cfg, link, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal);
+        const result = await attemptOnProvider(cfg, link, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal);
+        trackProviderOutcome(link.provider, primaryProvider, cfg.name);
+        return result;
       } catch (error: unknown) {
         lastError = error instanceof Error ? error.message : String(error);
         logAIDebug('groq:providerFailed', { provider: link.provider, error: lastError });
@@ -596,9 +648,11 @@ export async function groqStream(
     // Try each provider in the chain for the INITIAL connection only — once bytes
     // start streaming to the UI we commit to that provider (switching mid-stream
     // would mean discarding partial output the user already sees).
-    const chain = buildProviderChain(state.provider, primaryKey, state.model, state.providerKeys);
+    const primaryProvider = state.provider;
+    const effectiveKeys: Partial<Record<ProviderId, string>> = { ...state.providerKeys, [primaryProvider]: primaryKey };
+    const chain = buildProviderChain(primaryProvider, state.model, effectiveKeys);
     let res: Response | null = null;
-    let providerName = getProviderConfig(state.provider).name;
+    let providerName = getProviderConfig(primaryProvider).name;
     let lastError = 'Eroare necunoscuta';
 
     for (let ci = 0; ci < chain.length; ci++) {
@@ -614,6 +668,7 @@ export async function groqStream(
         if (attempt.ok) {
           res = attempt;
           providerName = cfg.name;
+          trackProviderOutcome(link.provider, primaryProvider, cfg.name);
           break;
         }
         lastError = await extractApiErrorMessage(attempt);

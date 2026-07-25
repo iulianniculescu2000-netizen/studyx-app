@@ -64,6 +64,5 @@ export async function buildContext(
     weakTopics,
     recentMistakes: userProfile?.recentMistakes ?? [],
     level: userProfile?.currentDifficulty ?? 'medium',
-    availableTime: userProfile?.availableTime,
   };
 }

@@ -14,7 +14,79 @@ import { useToastStore } from './toastStore';
 const LS_KEY = (profileId: string, ns: string) => `studyx-p-${profileId}-${ns}`;
 type ProfileNamespace = 'quizzes' | 'folders' | 'stats' | 'notes';
 const CORRUPT_TOAST_ID = 'profile-storage-corrupt';
+const QUOTA_TOAST_ID = 'profile-storage-quota';
+const QUARANTINE_SUFFIX = '__corrupt-';
+/** How many quarantined copies to keep per namespace before pruning the oldest. */
+const QUARANTINE_KEEP = 3;
 type LoadMarker<T> = T & { __corrupt?: boolean; __namespace?: string };
+
+export type ProfileStorageErrorKind = 'quota' | 'unknown';
+
+/**
+ * Thrown when a save did not reach storage. This exists so a failed write can
+ * never be mistaken for a successful one: callers that import data need to know
+ * the work is still only in memory.
+ */
+export class ProfileStorageError extends Error {
+  readonly kind: ProfileStorageErrorKind;
+  readonly namespace: string;
+
+  constructor(kind: ProfileStorageErrorKind, namespace: string, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'ProfileStorageError';
+    this.kind = kind;
+    this.namespace = namespace;
+  }
+}
+
+export function isProfileStorageError(value: unknown): value is ProfileStorageError {
+  return value instanceof ProfileStorageError;
+}
+
+function classifyWriteError(err: unknown): ProfileStorageErrorKind {
+  const name = (err as { name?: string } | null)?.name ?? '';
+  const message = String((err as { message?: string } | null)?.message ?? '');
+  // Browsers disagree on the name; Firefox uses NS_ERROR_DOM_QUOTA_REACHED.
+  if (/quota/i.test(name) || /quota/i.test(message) || name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+    return 'quota';
+  }
+  return 'unknown';
+}
+
+/** Every quarantined blob currently held for a profile, newest first. */
+export function listQuarantinedKeys(profileId: string): string[] {
+  const prefix = `studyx-p-${profileId}-`;
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(prefix) && key.includes(QUARANTINE_SUFFIX)) keys.push(key);
+  }
+  return keys.sort().reverse();
+}
+
+/**
+ * Copies a blob we could not read to a timestamped backup key.
+ *
+ * The original is deliberately left in place: if this copy fails (we may be out
+ * of space, which is how the app got into trouble in the first place), the only
+ * remaining copy must not be one we just deleted. Autosave may later overwrite
+ * the original, and that is exactly what the backup is here to survive.
+ */
+function quarantine(profileId: string, ns: string, raw: string) {
+  try {
+    localStorage.setItem(`${LS_KEY(profileId, ns)}${QUARANTINE_SUFFIX}${Date.now()}`, raw);
+    const mine = listQuarantinedKeys(profileId).filter((key) => key.startsWith(`${LS_KEY(profileId, ns)}${QUARANTINE_SUFFIX}`));
+    mine.slice(QUARANTINE_KEEP).forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // Out of space — the untouched original is still the best copy we have.
+  }
+  useToastStore.getState().upsertToast(
+    CORRUPT_TOAST_ID,
+    `Datele „${ns}" nu au putut fi citite. Am pastrat o copie de siguranta si am pornit de la zero pentru aceasta sectiune.`,
+    'warning',
+    9000,
+  );
+}
 
 // Mutex lock to prevent overlapping disk writes
 let writeLock: Promise<void> = Promise.resolve();
@@ -82,11 +154,12 @@ async function read<T>(profileId: string, ns: string, legacyKey?: string): Promi
     if (window.electronAPI?.storageLoad) {
       const diskData = await window.electronAPI.storageLoad(profileId, ns) as LoadMarker<unknown> | null;
       if (diskData?.__corrupt) {
+        // Deliberately NOT returning here: the localStorage copy below is often
+        // intact, and bailing out early turned a recoverable disk problem into
+        // an empty profile.
         useSaveStatusStore.getState().setRecovering('Recuperam datele profilului');
-        useToastStore.getState().upsertToast(CORRUPT_TOAST_ID, `Am detectat un fisier corupt in ${diskData.__namespace ?? ns}. Am revenit la o copie sigura.`, 'warning', 5200);
-        return null;
-      }
-      if (diskData) {
+        useToastStore.getState().upsertToast(CORRUPT_TOAST_ID, `Am detectat un fisier corupt in ${diskData.__namespace ?? ns}. Incerc copia locala.`, 'warning', 5200);
+      } else if (diskData) {
         const validated = validateSnapshot<T>(ns as ProfileNamespace, diskData);
         if (validated) return validated;
       }
@@ -95,10 +168,21 @@ async function read<T>(profileId: string, ns: string, legacyKey?: string): Promi
     // 2. Fallback to LocalStorage
     const raw = localStorage.getItem(LS_KEY(profileId, ns));
     if (raw) {
-      const parsed = JSON.parse(raw);
-      const validated = validateSnapshot<T>(ns as ProfileNamespace, parsed);
-      if (validated) return validated;
-      localStorage.removeItem(LS_KEY(profileId, ns));
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // Unreadable, but not worthless — keep the bytes for recovery.
+        quarantine(profileId, ns, raw);
+        parsed = undefined;
+      }
+      if (parsed !== undefined) {
+        const validated = validateSnapshot<T>(ns as ProfileNamespace, parsed);
+        if (validated) return validated;
+        // Parsed fine but doesn't match the expected shape (e.g. a schema
+        // change). Previously this was deleted outright.
+        quarantine(profileId, ns, raw);
+      }
     }
 
     // 3. Legacy Migration
@@ -151,7 +235,23 @@ async function write(profileId: string, ns: string, data: unknown) {
     useSaveStatusStore.getState().setSaved('Salvat local');
   } catch (err) {
     console.error('[Storage] Write failed:', err);
-    useSaveStatusStore.getState().setError('Eroare la salvare');
+    const kind = classifyWriteError(err);
+    useSaveStatusStore.getState().setError(
+      kind === 'quota' ? 'Spatiu insuficient — NU s-a salvat' : 'Eroare la salvare',
+    );
+    // The save-status pill clears itself after ~3s, which is far too quiet for
+    // "your work is not on disk". Losing data deserves a toast that stays put.
+    useToastStore.getState().upsertToast(
+      QUOTA_TOAST_ID,
+      kind === 'quota'
+        ? 'Spatiul de stocare al browserului este plin. Modificarile NU au fost salvate — elibereaza spatiu sau foloseste aplicatia de desktop.'
+        : 'Salvarea a esuat. Modificarile sunt doar in memorie — nu inchide aplicatia pana nu reusesti sa salvezi.',
+      'error',
+      30_000,
+    );
+    // Rethrow so importers and profile swaps can no longer mistake a failed
+    // write for a successful one.
+    throw new ProfileStorageError(kind, ns, `Nu am putut salva "${ns}".`, { cause: err });
   } finally {
     resolveLock();
   }

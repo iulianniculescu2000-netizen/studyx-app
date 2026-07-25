@@ -11,7 +11,7 @@ import { groqVisionRequest } from '../groq';
 import { extractJsonFromText } from '../quizImport';
 import type { ParsedQuestion } from './grileParser';
 
-const MAX_SCANNED_PAGES = 20; // bound cost/time on huge scanned PDFs
+const MAX_SCANNED_PAGES = 25; // bound cost/time on huge scanned PDFs
 
 const VISION_PROMPT = [
   'Ești examinator de Medicină. Imaginea conține una sau mai multe întrebări grilă.',

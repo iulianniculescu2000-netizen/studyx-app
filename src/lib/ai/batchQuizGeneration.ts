@@ -1,6 +1,7 @@
 import { generateQuestions, getAdaptiveDifficulty, getUserProfile } from '../../ai/AIEngine';
 import { getWeakTopicsForProfile } from '../../ai/UserProfile';
 import { getVaultChunksBySource } from '../../ai/vectorStore';
+import type { ChunkRecord } from '../../ai/types';
 import type { Difficulty, Folder, Quiz } from '../../types';
 import type { QuestionType } from './questionTypes';
 import {
@@ -28,6 +29,10 @@ interface BatchGenerationOptions {
   questionTypes?: QuestionType[];
   activeProfileId: string | null;
   existingQuizzes?: Quiz[];
+  /** Skip the vault fetch and use this chunk set instead (e.g. one chapter's chunks). */
+  chunks?: ChunkRecord[];
+  /** Folded into each pack's title/description/tags — e.g. a chapter/heading name. */
+  titleContext?: string;
 }
 
 function uid() {
@@ -54,7 +59,6 @@ function pickPackDifficulty(requested: BatchDifficulty, activeProfileId: string 
   return getAdaptiveDifficulty({
     accuracy: profile.globalAccuracy,
     streak: profile.streak,
-    time: profile.availableTime,
   });
 }
 
@@ -70,8 +74,10 @@ export async function generateQuizPackagesFromSource({
   questionTypes,
   activeProfileId,
   existingQuizzes = [],
+  chunks: chunksOverride,
+  titleContext,
 }: BatchGenerationOptions) {
-  const chunks = await getVaultChunksBySource(sourceId);
+  const chunks = chunksOverride ?? await getVaultChunksBySource(sourceId);
   if (chunks.length === 0) {
     throw new Error('Nu am găsit suficient conținut indexat pentru documentul selectat.');
   }
@@ -191,10 +197,13 @@ export async function generateQuizPackagesFromSource({
 
       const packNumber = result.packIndex + 1;
       const titleSuffix = normalizedPackCount === 1 ? 'Set premium' : `Set premium ${packNumber}`;
+      const titleLabel = titleContext ? `${sourceName} · ${titleContext}` : sourceName;
       quizzes.push({
         id: uid(),
-        title: `${sourceName} · ${titleSuffix}`,
-        description: `Generat de AI Studio din documentul "${sourceName}" cu ${dedupedQuestions.length} întrebări și dificultate ${targetDifficulty}.`,
+        title: `${titleLabel} · ${titleSuffix}`,
+        description: titleContext
+          ? `Generat de AI Studio din capitolul "${titleContext}" al documentului "${sourceName}", cu ${dedupedQuestions.length} întrebări și dificultate ${targetDifficulty}.`
+          : `Generat de AI Studio din documentul "${sourceName}" cu ${dedupedQuestions.length} întrebări și dificultate ${targetDifficulty}.`,
         emoji: folder?.emoji ?? '\u{1F9E0}',
         category: folder?.name ?? 'AI Studio',
         kind: 'quiz',
@@ -205,7 +214,7 @@ export async function generateQuizPackagesFromSource({
         updatedAt: Date.now(),
         shuffleQuestions: true,
         shuffleAnswers: true,
-        tags: ['ai-studio', 'document-pack', sourceName],
+        tags: titleContext ? ['ai-studio', 'chapter-pack', sourceName, titleContext] : ['ai-studio', 'document-pack', sourceName],
       });
     }
   }

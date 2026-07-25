@@ -8,6 +8,16 @@
     "types": ["vite/client"],
     "skipLibCheck": true,
 
+    /* jszip's own shipped .d.ts unconditionally does `/// <reference types="node" />`,
+       which leaks Node's ambient setTimeout/Timeout globals into this browser-only
+       project (confirmed conflict, not theoretical — breaks window.setTimeout typing
+       app-wide). Type-check against a local stub instead; Vite's runtime bundling is
+       unaffected since `paths` only changes TypeScript's type resolution. */
+    "baseUrl": ".",
+    "paths": {
+      "jszip": ["./src/types/jszip-stub.d.ts"]
+    },
+
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

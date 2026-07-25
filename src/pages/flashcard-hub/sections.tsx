@@ -22,6 +22,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  Layers,
   X as XIcon,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -375,6 +376,7 @@ interface FlashcardHubActionsProps {
   librarySources: Array<{ id: string; name: string }>;
   libraryGenerating: boolean;
   onAiCountChange: (count: number) => void;
+  onAnkiImport: () => void;
   onCreateFolder: (name: string, parentId: string | null) => string;
   onCsvImport: () => void;
   onLibraryGenerate: (sourceId: string) => void;
@@ -404,6 +406,7 @@ export function FlashcardHubActions({
   librarySources,
   libraryGenerating,
   onAiCountChange,
+  onAnkiImport,
   onCreateFolder,
   onCsvImport,
   onLibraryGenerate,
@@ -426,7 +429,8 @@ export function FlashcardHubActions({
   const secondaryActions: SecondaryAction[] = [
     { key: 'quick', label: 'Deck rapid', icon: <Plus size={17} />, color: theme.accent, onClick: onQuickDeckCreate },
     { key: 'photo', label: 'Import poze', icon: <ImageIcon size={17} />, color: theme.success, busy: photoImporting, onClick: onPhotoImport },
-    { key: 'csv', label: 'Import CSV / Anki', icon: <Upload size={17} />, color: theme.accent2, busy: csvImporting, onClick: onCsvImport },
+    { key: 'csv', label: 'Import CSV', icon: <Upload size={17} />, color: theme.accent2, busy: csvImporting, onClick: onCsvImport },
+    { key: 'anki', label: 'Import Anki (.apkg)', icon: <Layers size={17} />, color: theme.accent, onClick: onAnkiImport },
     { key: 'mistakes', label: 'Din greșeli', icon: <Brain size={17} />, color: theme.warning, onClick: onMistakeDeckCreate },
   ];
 

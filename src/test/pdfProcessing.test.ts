@@ -6,11 +6,15 @@ import { describe, it, expect } from 'vitest';
 import { chunkDocument } from '../ai/chunker';
 import { documentProcessor } from '../ai/documentProcessor';
 
+// Mirrors DocumentProcessor's private normalizeText (src/ai/documentProcessor.ts) — it
+// preserves paragraph breaks (needed for structure-aware chunking and chapter-heading
+// detection) instead of collapsing all whitespace, so tests assert against the same shape.
 function normalizeForAssertions(text: string) {
   return text
     .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
-    .replace(/\s+/g, ' ')
+    .split('\n').map((line) => line.trim()).join('\n')
     .trim();
 }
 
@@ -160,6 +164,40 @@ describe('PDF Processing - Complete Document Reading', () => {
         // Verify no content loss
         expect(processedDoc.statistics.totalChars).toBe(normalizedTestText.length);
       }
+    });
+  });
+
+  describe('knownHeadings (curriculum-anchored chapter detection)', () => {
+    it('anchors chunk headings to known chapter titles instead of the generic heuristic', async () => {
+      const text = `Some intro text before any chapter.
+
+CARDIOLOGIE
+
+${'Text about cardiology goes here and describes clinical management. '.repeat(5)}
+
+HEMATOLOGIE
+
+${'Text about hematology follows here describing blood disorders. '.repeat(5)}`;
+
+      const processed = await documentProcessor.processDocument(text, 'kumar-doar-capitolele-rezi.pdf', {
+        knownHeadings: ['CARDIOLOGIE', 'HEMATOLOGIE', 'PNEUMOLOGIE'],
+        chunkSize: 200,
+      });
+
+      const headings = new Set(processed.chunks.map((c) => c.metadata.heading).filter(Boolean));
+      expect(headings.has('CARDIOLOGIE')).toBe(true);
+      expect(headings.has('HEMATOLOGIE')).toBe(true);
+    });
+
+    it('falls back to the generic heuristic when no known headings match', async () => {
+      const processed = await documentProcessor.processDocument(
+        'CAPITOLUL 1\n\nSome body text that has nothing to do with the curriculum list at all.',
+        'unrelated.pdf',
+        { knownHeadings: ['CARDIOLOGIE', 'HEMATOLOGIE'] },
+      );
+      const headings = processed.chunks.map((c) => c.metadata.heading).filter(Boolean);
+      expect(headings.length).toBeGreaterThan(0);
+      expect(headings[0]).toBe('CAPITOLUL 1');
     });
   });
 });

@@ -1,14 +1,25 @@
-import type { Question, QuestionStat } from '../types';
+import { idbGet } from '../lib/idb';
+import type { Confidence, Question } from '../types';
 import type {
   AIAnalysisResult,
   MistakeBankEntry,
+  RecordQuizSessionInput,
+  StrongTopic,
+  StudyPatterns,
+  TopicPerformance,
   TopicStatsMap,
+  TopicTrend,
   UserProfileData,
   WeakTopic,
   WeakTopicInput,
 } from './types';
 
 const PROFILE_KEY_PREFIX = 'studyx-ai-profile';
+const TOPIC_RECENT_WINDOW = 10; // outcomes kept per topic to derive a trend
+const SESSION_LENGTH_WINDOW = 20;
+const CONFIDENCE_WINDOW = 100;
+const MIN_HOUR_SAMPLES = 5; // before we trust a "best hour"
+const CURRENT_SCHEMA_VERSION = 2;
 
 function getProfileKey(profileId: string) {
   return `${PROFILE_KEY_PREFIX}:${profileId}`;
@@ -19,12 +30,18 @@ function emptyProfile(profileId: string): UserProfileData {
     profileId,
     globalAccuracy: 0,
     topicAccuracy: {},
+    strongTopics: [],
+    studyPatterns: { preferredSessionLength: 0, bestPerformanceHour: null, averageConfidence: 0 },
     recentMistakes: [],
     mistakeBank: [],
     currentDifficulty: 'medium',
     streak: 0,
     recentQuestions: [],
     updatedAt: Date.now(),
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    _hourStats: {},
+    _sessionLengths: [],
+    _confidences: [],
   };
 }
 
@@ -63,18 +80,42 @@ function weaknessRank(correct: number, total: number, priorMean = 65, priorWeigh
   return ((correct + (priorWeight * priorMean) / 100) / (total + priorWeight)) * 100;
 }
 
-export function extractWeakTopics({ stats, questions }: WeakTopicInput): WeakTopic[] {
+/**
+ * Single source of truth for "what topic does this question belong to" — used everywhere a
+ * question needs a topic label (weak/strong-topic ranking, mistake-bank entries, session
+ * pattern tracking) so the same question always buckets the same way.
+ */
+function topicsForQuestion(question: { tags?: string[]; category?: string } | undefined): string[] {
+  return question?.tags?.length ? question.tags : [question?.category || 'Topic general'];
+}
+
+/** Trend from a topic's recent outcome window: compare older half vs newer half. */
+function deriveTrend(recent: boolean[]): TopicTrend {
+  if (recent.length < 4) return 'stable';
+  const mid = Math.floor(recent.length / 2);
+  const older = recent.slice(0, mid);
+  const newer = recent.slice(mid);
+  const rate = (arr: boolean[]) => arr.filter(Boolean).length / arr.length;
+  const delta = rate(newer) - rate(older);
+  if (delta > 0.15) return 'improving';
+  if (delta < -0.15) return 'worsening';
+  return 'stable';
+}
+
+function confidenceValue(confidence?: Confidence): number | null {
+  if (confidence === 'blackout') return 0;
+  if (confidence === 'guess') return 0.5;
+  if (confidence === 'confident') return 1;
+  return null;
+}
+
+function computeTopicStats({ stats, questions }: WeakTopicInput): TopicStatsMap {
   const byId = new Map(questions.map((question) => [question.id, question]));
   const topicStats: TopicStatsMap = {};
 
   for (const stat of Object.values(stats)) {
     const question = byId.get(stat.questionId);
-    // Untagged questions used to fall back to their first 3 words as a pseudo-topic (e.g.
-    // "Care este mecanismul"), which fragments stats into one-off buckets that never
-    // accumulate enough samples to mean anything and read like garbage in the UI/AI prompt.
-    // The quiz's own category is a real, already-curated grouping — a much better fallback.
-    const tags = question?.tags?.length ? question.tags : [question?.category || 'Topic general'];
-    for (const tag of tags) {
+    for (const tag of topicsForQuestion(question)) {
       if (!topicStats[tag]) {
         topicStats[tag] = { correct: 0, total: 0, wrong: 0, lastWrongAt: 0 };
       }
@@ -86,6 +127,12 @@ export function extractWeakTopics({ stats, questions }: WeakTopicInput): WeakTop
       }
     }
   }
+
+  return topicStats;
+}
+
+export function extractWeakTopics({ stats, questions }: WeakTopicInput): WeakTopic[] {
+  const topicStats = computeTopicStats({ stats, questions });
 
   return Object.entries(topicStats)
     .map(([topic, current]) => ({
@@ -106,24 +153,125 @@ export function extractWeakTopics({ stats, questions }: WeakTopicInput): WeakTop
     .slice(0, 5);
 }
 
-export function syncProfileFromStats(
-  profileId: string,
-  stats: Record<string, QuestionStat>,
-  questions: Question[],
-  streak: number
-) {
+export function extractStrongTopics({ stats, questions }: WeakTopicInput): StrongTopic[] {
+  const topicStats = computeTopicStats({ stats, questions });
+
+  return Object.entries(topicStats)
+    .map(([topic, current]) => ({
+      topic,
+      accuracy: current.total > 0 ? Math.round((current.correct / current.total) * 100) : 0,
+      total: current.total,
+    }))
+    .filter((topic) => topic.total >= 3 && topic.accuracy >= 80)
+    .sort((a, b) => b.accuracy - a.accuracy)
+    .slice(0, 10);
+}
+
+/**
+ * The single writer for topicAccuracy/globalAccuracy/currentDifficulty/strongTopics/
+ * studyPatterns, called once when a quiz session finishes. Also unconditionally records a
+ * mistake-bank entry for every wrong answer in the session — recording no longer depends on
+ * the user clicking "Explică cu AI" (see updateUserProfileAfterAnswer, which now only enriches
+ * an existing entry with an AI explanation when/if that happens).
+ */
+export function recordQuizSession(profileId: string, input: RecordQuizSessionInput): UserProfileData {
   const profile = loadUserProfile(profileId);
-  const weakTopics = extractWeakTopics({ stats, questions });
-  const topicAccuracy = Object.fromEntries(
-    weakTopics.map((topic) => [
-      topic.topic,
-      {
-        correct: topic.total - topic.wrongCount,
-        total: topic.total,
-        accuracy: topic.accuracy,
-      },
-    ])
-  );
+  const { stats, questions, streak, sessionItems, durationSeconds, finishedAt } = input;
+  const byId = new Map(questions.map((q) => [q.id, q]));
+
+  const topicStatsMap = computeTopicStats({ stats, questions });
+  const strongTopics = extractStrongTopics({ stats, questions });
+
+  const topicAccuracy: Record<string, TopicPerformance> = {};
+  for (const [topic, current] of Object.entries(topicStatsMap)) {
+    const previous = profile.topicAccuracy[topic];
+    topicAccuracy[topic] = {
+      correct: current.correct,
+      total: current.total,
+      accuracy: current.total > 0 ? Math.round((current.correct / current.total) * 100) : 0,
+      recent: previous?.recent ?? [],
+      lastSeen: previous?.lastSeen ?? 0,
+    };
+  }
+
+  // Fold this session's outcomes into each topic's rolling "recent" window (trend) and into
+  // the hour/session-length/confidence aggregates — none of this is derivable from the
+  // lifetime `stats` map alone, it needs the actual ordered events from this session.
+  const hourStats = { ...profile._hourStats };
+  const hour = String(new Date(finishedAt).getHours());
+  const hourStat = { ...(hourStats[hour] ?? { correct: 0, total: 0 }) };
+
+  let confidences = [...profile._confidences];
+  const nextMistakes = [...profile.recentMistakes];
+  const bank = [...profile.mistakeBank];
+
+  for (const item of sessionItems) {
+    const question = byId.get(item.questionId);
+    const topics = topicsForQuestion(question);
+
+    for (const topic of topics) {
+      const entry = topicAccuracy[topic] ?? { correct: 0, total: 0, accuracy: 0, recent: [], lastSeen: 0 };
+      entry.recent = [...entry.recent, item.correct].slice(-TOPIC_RECENT_WINDOW);
+      entry.lastSeen = finishedAt;
+      topicAccuracy[topic] = entry;
+    }
+
+    hourStat.total += 1;
+    if (item.correct) hourStat.correct += 1;
+
+    const conf = confidenceValue(item.confidence);
+    if (conf !== null) confidences = [...confidences, conf].slice(-CONFIDENCE_WINDOW);
+
+    if (!item.correct && question) {
+      const topic = topics[0];
+      nextMistakes.unshift({
+        questionId: item.questionId,
+        topic,
+        answer: item.userAnswer ?? '',
+        correctAnswer: item.correctAnswer ?? '',
+        timestamp: finishedAt,
+      });
+
+      const existing = bank.find((entry) => entry.questionId === item.questionId);
+      if (existing) {
+        existing.wrongCount += 1;
+      } else {
+        const entry: MistakeBankEntry = {
+          id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+          questionId: item.questionId,
+          questionText: question.text,
+          topic,
+          userAnswer: item.userAnswer ?? '',
+          correctAnswer: item.correctAnswer ?? '',
+          createdAt: finishedAt,
+          wrongCount: 1,
+        };
+        bank.unshift(entry);
+      }
+    }
+  }
+  hourStats[hour] = hourStat;
+
+  const sessionLengths = durationSeconds > 0
+    ? [...profile._sessionLengths, durationSeconds / 60].slice(-SESSION_LENGTH_WINDOW)
+    : profile._sessionLengths;
+
+  const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+  let bestHour: number | null = null;
+  let bestRate = -1;
+  for (const [h, s] of Object.entries(hourStats)) {
+    if (s.total < MIN_HOUR_SAMPLES) continue;
+    const rate = s.correct / s.total;
+    if (rate > bestRate) {
+      bestRate = rate;
+      bestHour = Number(h);
+    }
+  }
+  const studyPatterns: StudyPatterns = {
+    preferredSessionLength: Math.round(avg(sessionLengths)),
+    bestPerformanceHour: bestHour,
+    averageConfidence: Math.round(avg(confidences) * 100) / 100,
+  };
 
   const allStats = Object.values(stats);
   const totalAnswers = allStats.reduce((sum, stat) => sum + stat.timesCorrect + stat.timesWrong, 0);
@@ -133,15 +281,29 @@ export function syncProfileFromStats(
   const nextProfile: UserProfileData = {
     ...profile,
     globalAccuracy,
-    topicAccuracy: { ...profile.topicAccuracy, ...topicAccuracy },
+    topicAccuracy,
+    strongTopics,
+    studyPatterns,
     currentDifficulty: difficultyFromAccuracy(globalAccuracy),
     streak,
+    recentMistakes: nextMistakes.slice(0, 12),
+    mistakeBank: bank.slice(0, 50),
+    _hourStats: hourStats,
+    _sessionLengths: sessionLengths,
+    _confidences: confidences,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     updatedAt: Date.now(),
   };
   saveUserProfile(nextProfile);
   return nextProfile;
 }
 
+/**
+ * Called when the user asks the AI to explain a wrong answer. Narrower than it used to be:
+ * it only *enriches* the mistake-bank entry (explanation/mistakeType/missingConcept/mnemonic,
+ * plus backfilling the real answer text) — recordQuizSession() is now the only writer of
+ * topicAccuracy/globalAccuracy/currentDifficulty, so this can no longer disagree with it.
+ */
 export function updateUserProfileAfterAnswer(
   profileId: string,
   payload: {
@@ -153,19 +315,7 @@ export function updateUserProfileAfterAnswer(
   }
 ) {
   const profile = loadUserProfile(profileId);
-  const topics = payload.question.tags?.length ? payload.question.tags : ['Topic general'];
-  const topicAccuracy = { ...profile.topicAccuracy };
-
-  for (const topic of topics) {
-    const current = topicAccuracy[topic] ?? { correct: 0, total: 0, accuracy: 0 };
-    const correct = current.correct + (payload.isCorrect ? 1 : 0);
-    const total = current.total + 1;
-    topicAccuracy[topic] = {
-      correct,
-      total,
-      accuracy: Math.round((correct / total) * 100),
-    };
-  }
+  const topics = topicsForQuestion(payload.question);
 
   const nextMistakes = payload.isCorrect
     ? profile.recentMistakes
@@ -186,12 +336,16 @@ export function updateUserProfileAfterAnswer(
     const existing = bank.find((entry) => entry.questionId === payload.question.id);
     if (existing) {
       existing.wrongCount += 1;
+      existing.userAnswer = payload.userAnswer || existing.userAnswer;
+      existing.correctAnswer = payload.correctAnswer || existing.correctAnswer;
       existing.explanation = payload.analysis?.explanation ?? existing.explanation;
       existing.mistakeType = payload.analysis?.mistakeType ?? existing.mistakeType;
       existing.recommendedTopic = payload.analysis?.recommendedTopic ?? existing.recommendedTopic;
       existing.missingConcept = payload.analysis?.missingConcept ?? existing.missingConcept;
       existing.sourceRefs = payload.analysis?.sources ?? existing.sourceRefs;
     } else {
+      // Safety net — recordQuizSession() normally creates the base entry at quiz-end, but
+      // this keeps working even if analyzeAnswer() somehow runs before that.
       const entry: MistakeBankEntry = {
         id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
         questionId: payload.question.id,
@@ -211,15 +365,8 @@ export function updateUserProfileAfterAnswer(
     }
   }
 
-  const totalAnswered = Object.values(topicAccuracy).reduce((sum, item) => sum + item.total, 0);
-  const totalCorrect = Object.values(topicAccuracy).reduce((sum, item) => sum + item.correct, 0);
-  const globalAccuracy = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
-
   const nextProfile: UserProfileData = {
     ...profile,
-    globalAccuracy,
-    topicAccuracy,
-    currentDifficulty: difficultyFromAccuracy(globalAccuracy),
     recentMistakes: nextMistakes,
     mistakeBank: bank.slice(0, 50),
     recentQuestions: [payload.question.id, ...profile.recentQuestions.filter((id) => id !== payload.question.id)].slice(0, 20),
@@ -247,9 +394,105 @@ export function getWeakTopicsForProfile(profileId: string): WeakTopic[] {
     .slice(0, 5);
 }
 
+export function getStrongTopicsForProfile(profileId: string): StrongTopic[] {
+  return loadUserProfile(profileId).strongTopics;
+}
+
 export function generateFromMistakes(profileId: string) {
   const profile = loadUserProfile(profileId);
   return profile.mistakeBank
     .sort((a, b) => b.wrongCount - a.wrongCount || b.createdAt - a.createdAt)
     .slice(0, 10);
+}
+
+const TREND_LABEL: Record<TopicTrend, string> = {
+  improving: 'în creștere',
+  stable: 'stabil',
+  worsening: 'în scădere',
+};
+
+/**
+ * Compressed (~200 token) natural-language summary for injection into AI requests as a
+ * system-prompt fragment. Synchronous (unlike the old userMemory.ts version) since the
+ * canonical profile is localStorage-backed. Returns '' when there's nothing to say.
+ */
+export function getProfileSummaryText(profileId: string): string {
+  const profile = loadUserProfile(profileId);
+  const parts: string[] = [];
+
+  const weakTopics = getWeakTopicsForProfile(profileId);
+  if (weakTopics.length > 0) {
+    const list = weakTopics
+      .slice(0, 3)
+      .map((t) => {
+        const trend = deriveTrend(profile.topicAccuracy[t.topic]?.recent ?? []);
+        return `${t.topic} (${t.wrongCount} greșeli, ${TREND_LABEL[trend]})`;
+      })
+      .join(', ');
+    parts.push(`Are dificultăți cu: ${list}.`);
+  }
+
+  if (profile.strongTopics.length > 0) {
+    const list = profile.strongTopics
+      .slice(0, 3)
+      .map((t) => `${t.topic} (${t.accuracy}%)`)
+      .join(', ');
+    parts.push(`Performanță bună la: ${list}.`);
+  }
+
+  const { preferredSessionLength, bestPerformanceHour, averageConfidence } = profile.studyPatterns;
+  const patternBits: string[] = [];
+  if (preferredSessionLength > 0) patternBits.push(`sesiuni tipice ~${preferredSessionLength} min`);
+  if (bestPerformanceHour !== null) patternBits.push(`mai productiv în jurul orei ${bestPerformanceHour}:00`);
+  if (averageConfidence > 0) patternBits.push(`încredere medie ${Math.round(averageConfidence * 100)}%`);
+  if (patternBits.length > 0) parts.push(`Tipar de studiu: ${patternBits.join(', ')}.`);
+
+  return parts.join(' ');
+}
+
+/** Resets only the behavioral-pattern slice (study patterns + rolling aggregates), preserving
+ *  topicAccuracy/mistakeBank/recentMistakes — those aren't "AI memory" in the sense the
+ *  Settings reset button describes, they're core profile data. */
+export function clearStudyPatterns(profileId: string): void {
+  const profile = loadUserProfile(profileId);
+  saveUserProfile({
+    ...profile,
+    strongTopics: [],
+    studyPatterns: { preferredSessionLength: 0, bestPerformanceHour: null, averageConfidence: 0 },
+    _hourStats: {},
+    _sessionLengths: [],
+    _confidences: [],
+  });
+}
+
+interface LegacyUserMemoryRecord {
+  studyPatterns?: StudyPatterns;
+  _hourStats?: Record<string, { correct: number; total: number }>;
+  _sessionLengths?: number[];
+  _confidences?: number[];
+}
+
+/**
+ * One-time, best-effort port of the old userMemory.ts IndexedDB record (study patterns,
+ * rolling aggregates) into the unified profile, so upgrading users don't lose accumulated
+ * history. Guarded by schemaVersion so it's a no-op on every call after the first. Reads the
+ * legacy IndexedDB key directly (rather than importing the now-deleted userMemory.ts module).
+ */
+export async function migrateLegacyUserMemory(profileId: string): Promise<void> {
+  const profile = loadUserProfile(profileId);
+  if (profile.schemaVersion >= CURRENT_SCHEMA_VERSION) return;
+  try {
+    const legacy = await idbGet<LegacyUserMemoryRecord>(`studyx-user-memory-${profileId}`);
+    if (legacy) {
+      if (legacy.studyPatterns) profile.studyPatterns = legacy.studyPatterns;
+      profile._hourStats = legacy._hourStats ?? {};
+      profile._sessionLengths = legacy._sessionLengths ?? [];
+      profile._confidences = legacy._confidences ?? [];
+    }
+  } catch {
+    // best-effort — a fresh profile with no ported patterns is an acceptable fallback
+  } finally {
+    profile.schemaVersion = CURRENT_SCHEMA_VERSION;
+    saveUserProfile(profile);
+  }
 }

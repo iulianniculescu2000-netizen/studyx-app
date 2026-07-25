@@ -14,7 +14,6 @@ import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { buildClarificationFallback, cleanQuestionExplanation, getAnswerTextForOptionIds, getCorrectAnswerText } from '../helpers/quizAi';
 import { explainWrongAnswer } from '../lib/groq';
 import { buildAdaptiveExamQuiz, buildMistakeFlashcardQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
-import { syncProfileFromStats } from '../ai/UserProfile';
 
 export default function QuizResults() {
   const { id } = useParams<{ id: string }>();
@@ -77,19 +76,6 @@ export default function QuizResults() {
       }
     }
   }, [pct, session, quiz]);
-
-  useEffect(() => {
-    if (!activeProfileId) return;
-    // Citim direct din store (fără a crea array nou la fiecare render)
-    // pentru a evita re-declanșarea useEffect la fiecare re-render
-    const allQuestions = useQuizStore.getState().quizzes.flatMap((item) =>
-      item.questions.map((question) => ({ ...question, category: item.category })),
-    );
-    const currentStreak = useStatsStore.getState().streak.currentStreak;
-    syncProfileFromStats(activeProfileId, questionStats, allQuestions, currentStreak);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProfileId, questionStats]);
-  // quizzes exclus din deps — se citesc direct din store pentru a evita array nou la fiecare render
 
   if (!session || !quiz) {
     return (

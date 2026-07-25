@@ -8,6 +8,9 @@ export interface DocumentProcessingOptions {
   overlap?: number;
   minChunkLength?: number;
   preserveStructure?: boolean;
+  /** When the uploaded source matches a known reference book, its real chapter titles —
+   *  checked before the generic heading heuristic, higher precision for those books. */
+  knownHeadings?: string[];
 }
 
 export interface ProcessedDocument {
@@ -22,6 +25,8 @@ export interface ProcessedDocument {
       endIndex: number;
       wordCount: number;
       charCount: number;
+      /** Nearest preceding detected heading/chapter title, if any (best-effort). */
+      heading?: string;
     };
   }>;
   statistics: {
@@ -81,13 +86,16 @@ export class DocumentProcessor {
   }
 
   /**
-   * Normalize text for processing
+   * Normalize text for processing. Preserves paragraph breaks (needed for
+   * createStructureAwareChunks' paragraph split and heading detection) — only
+   * horizontal whitespace and excessive blank lines get collapsed.
    */
   private normalizeText(text: string): string {
     return text
       .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
-      .replace(/\s+/g, ' ')
+      .split('\n').map((line) => line.trim()).join('\n')
       .trim();
   }
 
@@ -110,13 +118,58 @@ export class DocumentProcessor {
     sourceName: string,
     options: DocumentProcessingOptions
   ) {
-    const { chunkSize = 1500, overlap = 200, minChunkLength = 100, preserveStructure = true } = options;
-    
+    const { chunkSize = 1500, overlap = 200, minChunkLength = 100, preserveStructure = true, knownHeadings } = options;
+
     if (preserveStructure) {
-      return this.createStructureAwareChunks(text, sourceName, chunkSize, overlap, minChunkLength);
+      return this.createStructureAwareChunks(text, sourceName, chunkSize, overlap, minChunkLength, knownHeadings);
     } else {
       return this.createSimpleChunks(text, sourceName, chunkSize, overlap, minChunkLength);
     }
+  }
+
+  /**
+   * Diacritics/case-insensitive normalization shared by known-heading matching.
+   */
+  private normalizeForHeadingMatch(text: string): string {
+    return text
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Authoritative match against a known reference book's real chapter titles — checked
+   * before the generic heuristic, since it's far less likely to false-positive/negative.
+   */
+  private matchesKnownHeading(paragraph: string, knownHeadings: string[]): boolean {
+    const trimmed = paragraph.trim();
+    if (!trimmed || trimmed.includes('\n') || trimmed.length > 120) return false;
+    const normalizedParagraph = this.normalizeForHeadingMatch(trimmed);
+    return knownHeadings.some((heading) => normalizedParagraph.includes(this.normalizeForHeadingMatch(heading)));
+  }
+
+  /**
+   * Best-effort check for whether a single paragraph is a chapter/section heading
+   * rather than body text — short single line, no sentence-ending punctuation,
+   * and either an explicit chapter/section marker or a short all-caps title.
+   * Conservative on purpose: under-detecting just falls back to one "whole
+   * document" bucket in the UI, over-detecting would fragment chapters wrongly.
+   */
+  private isLikelyHeading(paragraph: string): boolean {
+    const trimmed = paragraph.trim();
+    if (!trimmed || trimmed.includes('\n')) return false;
+    if (trimmed.length < 3 || trimmed.length > 80) return false;
+    if (/[.!?]$/.test(trimmed)) return false;
+
+    if (/^(cap(itolul)?|chapter|partea|sec(ț|t)iunea)\s*[\divxlcIVXLC]+/i.test(trimmed)) return true;
+    if (/^\d+(\.\d+){0,3}\.?\s+[A-ZĂÂÎȘȚ]/.test(trimmed)) return true;
+
+    const hasLetters = /[a-zA-ZĂÂÎȘȚăâîșț]/.test(trimmed);
+    if (hasLetters && trimmed === trimmed.toUpperCase() && trimmed.length <= 60) return true;
+
+    return false;
   }
 
   /**
@@ -127,14 +180,15 @@ export class DocumentProcessor {
     sourceName: string,
     chunkSize: number,
     overlap: number,
-    minChunkLength: number
+    minChunkLength: number,
+    knownHeadings?: string[]
   ) {
     void overlap;
     void minChunkLength;
     const chunks: Array<{
       id: string;
       text: string;
-      metadata: { startIndex: number; endIndex: number; wordCount: number; charCount: number; };
+      metadata: { startIndex: number; endIndex: number; wordCount: number; charCount: number; heading?: string; };
     }> = [];
 
     // Split by paragraphs first
@@ -142,13 +196,20 @@ export class DocumentProcessor {
     let currentChunk = '';
     let chunkIndex = 0;
     let globalIndex = 0;
+    let currentHeading: string | undefined;
 
     for (let i = 0; i < paragraphs.length; i++) {
       const paragraph = paragraphs[i].trim();
       if (!paragraph) continue;
 
+      if (knownHeadings?.length && this.matchesKnownHeading(paragraph, knownHeadings)) {
+        currentHeading = paragraph;
+      } else if (this.isLikelyHeading(paragraph)) {
+        currentHeading = paragraph;
+      }
+
       const potentialChunk = currentChunk + (currentChunk ? '\n\n' : '') + paragraph;
-      
+
       if (potentialChunk.length <= chunkSize) {
         currentChunk = potentialChunk;
         continue;
@@ -156,7 +217,7 @@ export class DocumentProcessor {
 
       // Current chunk is too large, save it and start new one
       if (currentChunk.trim().length > 0) {
-        chunks.push(this.createChunk(currentChunk.trim(), sourceName, chunkIndex++, globalIndex));
+        chunks.push(this.createChunk(currentChunk.trim(), sourceName, chunkIndex++, globalIndex, currentHeading));
         globalIndex += currentChunk.length;
       }
 
@@ -165,7 +226,7 @@ export class DocumentProcessor {
         const paragraphChunks = this.splitOversizedText(paragraph, chunkSize, 0);
         for (const chunk of paragraphChunks) {
           if (chunk.trim().length > 0) {
-            chunks.push(this.createChunk(chunk.trim(), sourceName, chunkIndex++, globalIndex));
+            chunks.push(this.createChunk(chunk.trim(), sourceName, chunkIndex++, globalIndex, currentHeading));
             globalIndex += chunk.length;
           }
         }
@@ -177,7 +238,7 @@ export class DocumentProcessor {
 
     // Add final chunk
     if (currentChunk.trim().length > 0) {
-      chunks.push(this.createChunk(currentChunk.trim(), sourceName, chunkIndex++, globalIndex));
+      chunks.push(this.createChunk(currentChunk.trim(), sourceName, chunkIndex++, globalIndex, currentHeading));
     }
 
     return chunks;
@@ -288,7 +349,8 @@ export class DocumentProcessor {
     text: string,
     sourceName: string,
     index: number,
-    startIndex: number
+    startIndex: number,
+    heading?: string
   ) {
     const words = text.split(/\s+/).filter(word => word.length > 0);
     return {
@@ -298,7 +360,8 @@ export class DocumentProcessor {
         startIndex,
         endIndex: startIndex + text.length,
         wordCount: words.length,
-        charCount: text.length
+        charCount: text.length,
+        ...(heading ? { heading } : {}),
       }
     };
   }

@@ -108,7 +108,10 @@ export function useProfileLifecycle({
 
     const flushPending = async () => {
       namespaces.forEach(clearScheduledSave);
-      await saveProfileData(activeProfileId);
+      // Every caller fires this as `void flushPending()` (unload/visibility
+      // paths), so a rejected save must be absorbed here. The user is already
+      // warned by the toast profileStorage raises.
+      await saveProfileData(activeProfileId).catch(() => undefined);
     };
 
     const handleVisibilityChange = () => {

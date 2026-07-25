@@ -1,4 +1,4 @@
-import type { Difficulty, Question, QuestionStat } from '../types';
+import type { Confidence, Difficulty, Question, QuestionStat } from '../types';
 
 export type AIRequestTask =
   | 'questions'
@@ -42,18 +42,68 @@ export interface MistakeBankEntry {
   wrongCount: number;
 }
 
+export type TopicTrend = 'improving' | 'stable' | 'worsening';
+
+export interface TopicPerformance {
+  correct: number;
+  total: number;
+  accuracy: number;
+  /** Rolling last-10 outcomes (oldest→newest), used to derive `TopicTrend`. */
+  recent: boolean[];
+  lastSeen: number;
+}
+
+export interface StrongTopic {
+  topic: string;
+  accuracy: number;
+  total: number;
+}
+
+export interface StudyPatterns {
+  /** Minutes, average of the last 20 sessions. */
+  preferredSessionLength: number;
+  /** Hour of day (0-23) with the highest accuracy, or null until enough samples exist. */
+  bestPerformanceHour: number | null;
+  /** 0-1, average of the last 100 self-rated confidence values. */
+  averageConfidence: number;
+}
+
 export interface UserProfileData {
   profileId: string;
   globalAccuracy: number;
-  topicAccuracy: Record<string, { correct: number; total: number; accuracy: number }>;
+  topicAccuracy: Record<string, TopicPerformance>;
+  strongTopics: StrongTopic[];
+  studyPatterns: StudyPatterns;
   recentMistakes: RecentMistake[];
   mistakeBank: MistakeBankEntry[];
   currentDifficulty: Difficulty;
   streak: number;
   recentQuestions: string[];
-  availableTime?: number;
-  examModeEnabled?: boolean;
   updatedAt: number;
+  /** Bumped when the stored shape changes in a way that needs a one-time migration. */
+  schemaVersion: number;
+  // Internal rolling aggregates backing `studyPatterns` — not part of the "public" API,
+  // kept on the same record for simplicity (mirrors the shape userMemory.ts used to own).
+  _hourStats: Record<string, { correct: number; total: number }>;
+  _sessionLengths: number[];
+  _confidences: number[];
+}
+
+export interface RecordQuizSessionInput {
+  /** Authoritative SM-2 per-question outcome map (statsStore's questionStats). */
+  stats: Record<string, QuestionStat>;
+  questions: WeakTopicInput['questions'];
+  streak: number;
+  /** Per-question outcome for *this* session only — not derivable from `stats` alone. */
+  sessionItems: Array<{
+    questionId: string;
+    correct: boolean;
+    confidence?: Confidence;
+    userAnswer?: string;
+    correctAnswer?: string;
+  }>;
+  durationSeconds: number;
+  finishedAt: number;
 }
 
 export interface RetrievedChunk {
@@ -136,6 +186,8 @@ export interface ChunkRecord {
   difficulty: Difficulty;
   embedding: number[];
   createdAt: number;
+  /** Nearest preceding detected chapter/section heading, if any (best-effort). */
+  heading?: string;
 }
 
 export interface CoverageRecord {

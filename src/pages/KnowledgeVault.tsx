@@ -26,6 +26,8 @@ import { useAIStore, type AILibraryFolder, type AIKnowledgeSource, type AIKnowle
 import { useToastStore } from '../store/toastStore';
 import { useUIStore } from '../store/uiStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
+import { useSourceChapters } from '../hooks/useSourceChapters';
+import { dispatchGenerateFromChapter } from '../lib/ai/chapterEvents';
 import ThemedSelect from '../components/ThemedSelect';
 import ConfirmDialog from '../components/ConfirmDialog';
 
@@ -267,6 +269,8 @@ export default function KnowledgeVault() {
     [knowledgeSources, selectedSourceId],
   );
 
+  const { chapters: sourceChapters } = useSourceChapters(readerOpen ? selectedSourceId : null);
+
   const submitNewFolder = () => {
     const name = newFolderName.trim();
     if (!name) { setCreatingFolder(false); return; }
@@ -442,6 +446,21 @@ export default function KnowledgeVault() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, knowledgeSources]);
 
+  // Deep-link from other pages (e.g. the Residency bookshelf's "Adaugă carte" button):
+  // /vault?folder=<id> selects that folder once, then clears the param.
+  const deepLinkedFolderRef = useRef<string | null>(null);
+  useEffect(() => {
+    const folderId = searchParams.get('folder');
+    if (!folderId || deepLinkedFolderRef.current === folderId) return;
+    if (!libraryFolders.some((folder) => folder.id === folderId)) return;
+    deepLinkedFolderRef.current = folderId;
+    setActiveFolderId(folderId);
+    const next = new URLSearchParams(searchParams);
+    next.delete('folder');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, libraryFolders]);
+
   const askAIAboutSource = (source: AIKnowledgeSource) => {
     setChatOpen(true);
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
@@ -472,6 +491,12 @@ export default function KnowledgeVault() {
           : 'Vreau să generez pachete de grile dintr-un curs și să aleg unde se salvează.',
       },
     }));
+  };
+
+  const generateFromChapter = (heading: string, label: string) => {
+    if (!selectedSource) return;
+    setChatOpen(true);
+    dispatchGenerateFromChapter(selectedSource, heading, label);
   };
 
   const isTopLevel = activeFolderId === null;
@@ -1034,11 +1059,41 @@ export default function KnowledgeVault() {
                     <div className="skeleton-block h-4 w-5/6 rounded-full" />
                   </div>
                 ) : (
-                  <div className="rounded-[28px] p-6" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
-                    <pre className="whitespace-pre-wrap break-words text-sm leading-7" style={{ color: theme.text, fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
-                      {readerContent}
-                    </pre>
-                  </div>
+                  <>
+                    {selectedSource.indexStatus === 'ready' && sourceChapters.length > 0 && (
+                      <div className="mb-5 rounded-[28px] p-5" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+                        <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                          <Layers3 size={13} /> Capitole detectate
+                        </div>
+                        <div className="space-y-2">
+                          {sourceChapters.map((chapter) => (
+                            <div
+                              key={chapter.heading}
+                              className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
+                              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-bold" style={{ color: theme.text }}>{chapter.label}</div>
+                                <div className="text-[11px] font-medium" style={{ color: theme.text3 }}>{chapter.chunkCount} fragmente indexate</div>
+                              </div>
+                              <button
+                                onClick={() => generateFromChapter(chapter.heading, chapter.label)}
+                                className="flex-shrink-0 rounded-xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.1em]"
+                                style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent }}
+                              >
+                                Generează grile
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="rounded-[28px] p-6" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+                      <pre className="whitespace-pre-wrap break-words text-sm leading-7" style={{ color: theme.text, fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+                        {readerContent}
+                      </pre>
+                    </div>
+                  </>
                 )}
               </div>
             </motion.div>

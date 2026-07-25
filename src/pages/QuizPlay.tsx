@@ -19,7 +19,7 @@ import QuizImage from '../components/QuizImage';
 import type { QuizSession, Question, Option, Confidence } from '../types';
 import type { AIAnalysisResult, HintResult } from '../ai/types';
 import ConfidenceButtons from './quiz-play/ConfidenceButtons';
-import { updateUserMemory } from '../lib/ai/userMemory';
+import { recordQuizSession } from '../ai/UserProfile';
 import {
   buildAnalysisFallback,
   buildHintFallback,
@@ -84,6 +84,7 @@ export default function QuizPlay() {
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [showKeys, setShowKeys] = useState(false);
   const [autoAdvance, setAutoAdvance] = useState(false);
+  const [autoAdvanceHold, setAutoAdvanceHold] = useState(false);
   const [questionTimer, setQuestionTimer] = useState(TIME_PER_Q);
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -191,6 +192,7 @@ export default function QuizPlay() {
   useEffect(() => {
     setHintLevel(0);
     setHintData(null);
+    setAutoAdvanceHold(false);
   }, [currentIdx]);
 
   useEffect(() => {
@@ -239,21 +241,33 @@ export default function QuizPlay() {
     const duration = Math.floor((Date.now() - startedAt) / 1000);
     recordStudySession(duration);
 
-    // Feed the session into the AI's long-term memory (Task 4). Fire-and-forget.
+    // Single canonical write of the AI personalization profile (topic accuracy, weak/strong
+    // topics, study patterns, mistake bank) — recordAnswer above already updated the SM-2
+    // stats store, so questionStats is fresh by the time we read it here.
     if (activeProfileId) {
       const finishedAt = Date.now();
-      const memoryItems = questionQueue.map((q) => {
+      const allQuestions = useQuizStore.getState().quizzes.flatMap((item) =>
+        item.questions.map((q) => ({ ...q, category: item.category })),
+      );
+      const sessionItems = questionQueue.map((q) => {
         const userAnswers = finalAnswers[q.id] ?? [];
         const correctIds = getCorrectOptionIds(q.options);
         return {
           questionId: q.id,
-          questionText: q.text,
-          topic: q.tags?.[0] ?? quiz!.tags?.[0] ?? q.difficulty ?? 'general',
           correct: evaluateSelection(userAnswers, correctIds) === 'correct',
           confidence: confidenceRef.current[q.id],
+          userAnswer: getAnswerTextForOptionIds(q.options, userAnswers),
+          correctAnswer: getCorrectAnswerText(q),
         };
       });
-      void updateUserMemory(activeProfileId, { items: memoryItems, durationSeconds: duration, finishedAt });
+      recordQuizSession(activeProfileId, {
+        stats: useStatsStore.getState().questionStats,
+        questions: allQuestions,
+        streak: useStatsStore.getState().streak.currentStreak,
+        sessionItems,
+        durationSeconds: duration,
+        finishedAt,
+      });
     }
 
     // -- Rezidențiat penalty scoring ------------------------------------------
@@ -393,6 +407,18 @@ export default function QuizPlay() {
     handleNext();
   }, [revealed, question, handleNext]);
 
+  // Auto-advance still needs a confidence rating for spaced repetition to work —
+  // silently calling handleNext() would leave confidenceRef empty for the question
+  // and degrade the SM-2 scheduling. Infer a reasonable rating from correctness
+  // instead of skipping it (the user can always tap a real rating before this fires).
+  const handleAutoAdvance = useCallback(() => {
+    if (!revealed || !question) return;
+    const selection = answers[question.id] ?? selectedNow;
+    const result = evaluateSelection(selection, getCorrectOptionIds(question.options));
+    const inferred: Confidence = result === 'correct' ? 'confident' : result === 'partial' ? 'guess' : 'blackout';
+    handleConfidence(inferred);
+  }, [revealed, question, answers, selectedNow, handleConfidence]);
+
   const handleAIExplain = useCallback(async () => {
     if (!question || aiLoading) return;
     if (analysisResult?.explanation && analysisQuestionId === question.id) {
@@ -480,16 +506,37 @@ export default function QuizPlay() {
     return () => { cancelled = true; };
   }, [revealed, examMode, question, answers, selectedNow, navigate, addToast]);
 
-  // Auto-advance after reveal
-  // Dacă AI-ul a fost activ, așteptăm 5s după ce finalizează (nu 2s) pentru a citi explicația.
-  // Timer-ul pornește NUMAI dacă nu s-a cerut explicație AI (aiText null = nu a fost apăsat).
+  // Auto-advance after reveal. Gives enough time to actually read before moving on,
+  // and backs off entirely (autoAdvanceHold) the moment the user shows they're still
+  // engaging with the question — see the interaction-cancel effect below.
   useEffect(() => {
-    if (!revealed || !autoAdvance || examMode || aiLoading || mnemonicLoading) return;
-    // Dacă există text AI deja afișat, dăm 5s să-l citească; altfel 2s standard
-    const delay = aiText ? 5000 : 2000;
-    const t = setTimeout(handleNext, delay);
+    if (!revealed || !autoAdvance || examMode || aiLoading || mnemonicLoading || autoAdvanceHold) return;
+    const hasExplanation = !!cleanQuestionExplanation(question?.explanation);
+    // Longer once AI explanation text is showing (more to read), shorter for a bare reveal.
+    const delay = aiText ? 6500 : hasExplanation ? 4500 : 3200;
+    const t = setTimeout(handleAutoAdvance, delay);
     return () => clearTimeout(t);
-  }, [revealed, autoAdvance, handleNext, examMode, aiLoading, mnemonicLoading, aiText]);
+  }, [revealed, autoAdvance, handleAutoAdvance, examMode, aiLoading, mnemonicLoading, aiText, autoAdvanceHold, question]);
+
+  // Any sign the user is still engaging with the revealed question — clicking into the
+  // explanation/AI/mnemonic panels, writing a note, scrolling to read — cancels the pending
+  // auto-advance instead of yanking them to the next question mid-read. Manually tapping a
+  // confidence rating or the Next button still advances immediately (unaffected: the effect
+  // above cleans itself up once `revealed` flips).
+  useEffect(() => {
+    if (!revealed || !autoAdvance || autoAdvanceHold) return;
+    const cancel = () => setAutoAdvanceHold(true);
+    window.addEventListener('wheel', cancel, { passive: true });
+    window.addEventListener('touchmove', cancel, { passive: true });
+    window.addEventListener('keydown', cancel);
+    window.addEventListener('pointerdown', cancel);
+    return () => {
+      window.removeEventListener('wheel', cancel);
+      window.removeEventListener('touchmove', cancel);
+      window.removeEventListener('keydown', cancel);
+      window.removeEventListener('pointerdown', cancel);
+    };
+  }, [revealed, autoAdvance, autoAdvanceHold]);
 
   // Timed mode: auto-advance when timer expires
   // Dacă utilizatorul a selectat ceva (parțial), păstrăm selecția — nu o anulăm
@@ -572,6 +619,9 @@ export default function QuizPlay() {
   const selectedAnswerText = getAnswerTextForOptionIds(question.options, currentSelection);
   const correctAnswerText = getCorrectAnswerText(question);
   const studyFocusTopic = analysisResult?.recommendedTopic ?? analysisResult?.missingConcept ?? nextTopicHint ?? question.tags?.[0] ?? null;
+  const autoAdvanceDelayMs = (!revealed || !autoAdvance || examMode || aiLoading || mnemonicLoading || autoAdvanceHold)
+    ? undefined
+    : aiText ? 6500 : cleanQuestionExplanation(question.explanation) ? 4500 : 3200;
   const focusSurface = focusMode
     ? (theme.isDark ? 'rgba(18, 22, 30, 0.96)' : 'rgba(255, 255, 255, 0.98)')
     : theme.surface;
@@ -1090,14 +1140,6 @@ export default function QuizPlay() {
                     <span className="font-semibold" style={{ color: theme.accent }}>Explicație: </span>
                     {cleanQuestionExplanation(question.explanation)}
                   </p>
-                  {autoAdvance && (
-                    <div className="mt-3 h-0.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
-                      <motion.div className="h-full rounded-full"
-                        initial={{ width: '0%' }} animate={{ width: '100%' }}
-                        transition={{ duration: calmMotion ? 1 : 1.5, ease: 'linear' }}
-                        style={{ background: theme.accent }} />
-                    </div>
-                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1273,6 +1315,8 @@ export default function QuizPlay() {
                   calmMotion={calmMotion}
                   isLast={isLast}
                   denseLayout={denseLayout}
+                  autoAdvanceMs={autoAdvanceDelayMs}
+                  onCancelAutoAdvance={() => setAutoAdvanceHold(true)}
                 />
               )}
             </AnimatePresence>

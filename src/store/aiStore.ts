@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { chunkDocument } from '../ai/chunker';
 import { addChunksToVault, clearVault, removeChunksBySource, searchVault } from '../ai/vectorStore';
+import { matchBookByName } from '../data/residencyCurriculum';
 
 export type AIModel =
   | 'llama-3.3-70b-versatile'
@@ -390,11 +391,13 @@ export const useAIStore = create<AIState & AIActions>()(
           }), false, 'ai/addKnowledgeSource:start');
 
           try {
+            const curriculumBook = matchBookByName(name);
             const chunks = await chunkDocument(normalizedText, name, {
               chunkSize: 1500,
               overlap: 200,
               preserveStructure: true,
               minChunkLength: 100,
+              knownHeadings: curriculumBook?.chapters,
             });
 
             await addChunksToVault(chunks, name, sourceId, {

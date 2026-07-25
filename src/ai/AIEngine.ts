@@ -440,7 +440,7 @@ export class ExamSimulator {
       count: 10,
       difficulty: 'hard',
       weakTopics: getWeakTopicsForProfile(profileId),
-      userProfile: { ...profile, examModeEnabled: true },
+      userProfile: profile,
       mode: 'exam',
     });
   }

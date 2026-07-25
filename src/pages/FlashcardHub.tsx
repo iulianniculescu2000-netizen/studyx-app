@@ -17,6 +17,7 @@ import { CARD_COLOR_MAP } from '../theme/colorMaps';
 import type { Difficulty, Question } from '../types';
 import { suggestFolderAppearance } from '../lib/folderAppearance';
 import { FlashcardDeckGrid, FlashcardHubActions } from './flashcard-hub/sections';
+import { AnkiImportModal } from './flashcard-hub/AnkiImportModal';
 
 function generateId() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
@@ -196,6 +197,7 @@ export default function FlashcardHub() {
   const [photoError, setPhotoError] = useState('');
   const [aiProgress, setAiProgress] = useState('');
   const [libraryGenerating, setLibraryGenerating] = useState(false);
+  const [ankiModalOpen, setAnkiModalOpen] = useState(false);
   const [targetFolderId, setTargetFolderId] = useState<string>(() => {
     if (typeof localStorage === 'undefined') return '__uncategorized__';
     return localStorage.getItem(LAST_FOLDER_LS_KEY) ?? '__uncategorized__';
@@ -837,6 +839,7 @@ export default function FlashcardHub() {
           onAiCountChange={setAiCount}
           onCreateFolder={handleCreateFolder}
           onCsvImport={handleCsvImport}
+          onAnkiImport={() => setAnkiModalOpen(true)}
           onLibraryGenerate={generateDeckFromLibrary}
           onMistakeDeckCreate={createMistakeDeck}
           onPhotoImport={handlePhotoImport}
@@ -847,6 +850,18 @@ export default function FlashcardHub() {
 
         <FlashcardDeckGrid decks={decks} folders={folders} theme={theme} />
       </div>
+
+      {ankiModalOpen && (
+        <AnkiImportModal
+          folders={folders}
+          theme={theme}
+          onClose={() => setAnkiModalOpen(false)}
+          onImported={(firstQuizId) => {
+            setAnkiModalOpen(false);
+            if (firstQuizId) navigate(`/flashcards/session/${firstQuizId}?mode=all`);
+          }}
+        />
+      )}
     </div>
   );
 }

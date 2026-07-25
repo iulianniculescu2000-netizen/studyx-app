@@ -11,7 +11,7 @@ import { useQuizStore } from '../store/quizStore';
 import { useFolderStore } from '../store/folderStore';
 import { useAIStore } from '../store/aiStore';
 import { useToastStore } from '../store/toastStore';
-import { extractGrileFromFiles, toQuizImportData, type GrileExtractionResult } from '../lib/ai/grileImport';
+import { extractGrileFromFiles, toQuizImportData, toQuizImportDataBySpecialty, type GrileExtractionResult } from '../lib/ai/grileImport';
 import { inferAnswersWithAI } from '../lib/ai/grileAIFallback';
 import type { ParsedQuestion } from '../lib/ai/grileParser';
 import { parseImportedQuiz } from '../lib/quizImport';
@@ -157,13 +157,25 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
       return;
     }
 
-    const data = toQuizImportData(title.trim() || 'Grile importate', importable);
-
     if (dest === 'new') {
-      const quiz = parseImportedQuiz(data, resolveFolderId());
-      addQuiz(quiz);
-      addToast(`${importable.length} grile importate în „${quiz.title}".`, 'success', 4000);
+      // Split by detected specialty (e.g. "CARDIOLOGIE") when the bank organizes
+      // itself that way — resolveFolderId() runs once so a "new folder" choice
+      // isn't created again for every group.
+      const groups = toQuizImportDataBySpecialty(title.trim() || 'Grile importate', importable);
+      const folderId = resolveFolderId();
+      const createdTitles = groups.map((groupData) => {
+        const quiz = parseImportedQuiz(groupData, folderId);
+        addQuiz(quiz);
+        return quiz.title;
+      });
+      addToast(
+        groups.length > 1
+          ? `${importable.length} grile importate în ${groups.length} seturi, pe specialități.`
+          : `${importable.length} grile importate în „${createdTitles[0]}".`,
+        'success', 4000,
+      );
     } else {
+      const data = toQuizImportData(title.trim() || 'Grile importate', importable);
       const target = quizzes.find((q) => q.id === dest);
       if (!target) {
         addToast('Grila țintă nu mai există.', 'error', 4000);

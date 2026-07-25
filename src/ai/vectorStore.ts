@@ -57,7 +57,7 @@ async function yieldToMainThread() {
 }
 
 export async function addChunksToVault(
-  chunks: { text: string; id: string }[],
+  chunks: { text: string; id: string; heading?: string }[],
   sourceName: string,
   sourceId: string,
   options: AddChunksOptions = {},
@@ -90,6 +90,7 @@ export async function addChunksToVault(
           topic: derivedTopic,
           difficulty: 'medium',
           createdAt: Date.now(),
+          ...(chunk.heading ? { heading: chunk.heading } : {}),
         });
       }
 
