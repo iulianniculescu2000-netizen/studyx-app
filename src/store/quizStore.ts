@@ -14,6 +14,8 @@ interface QuizStore {
   togglePin: (id: string) => void;
   toggleArchive: (id: string) => void;
   moveToFolder: (quizId: string, folderId: string | null) => void;
+  /** Detach quizzes from folders that no longer exist, so they stay reachable. */
+  detachFromFolders: (folderIds: string[]) => void;
   addSession: (session: QuizSession) => void;
   getSessionsForQuiz: (quizId: string) => QuizSession[];
   getBestScore: (quizId: string) => number | null;
@@ -82,6 +84,14 @@ export const useQuizStore = create<QuizStore>()(
       set((s) => ({
         quizzes: s.quizzes.map((q) => q.id === quizId ? { ...q, folderId } : q),
       })),
+
+    detachFromFolders: (folderIds) =>
+      set((s) => {
+        const removed = new Set(folderIds);
+        return {
+          quizzes: s.quizzes.map((q) => (q.folderId && removed.has(q.folderId) ? { ...q, folderId: null } : q)),
+        };
+      }),
 
     addSession: (session) =>
       set((s) => ({ sessions: [session, ...s.sessions] })),

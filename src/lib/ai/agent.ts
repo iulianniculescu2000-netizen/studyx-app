@@ -1088,10 +1088,19 @@ export async function executeAgentPlan(
         case 'delete_folder': {
           const folder = findByName(useFolderStore.getState().folders, step.name);
           if (!folder) throw new Error(`Nu am găsit folderul „${step.name ?? '?'}".`);
-          const snapshot = folder;
-          useFolderStore.getState().deleteFolder(folder.id);
+          // Remember where every affected quiz lived. Undo used to call
+          // addFolder, which mints a NEW id, so the folder came back empty and
+          // the quizzes stayed detached — an unrecoverable loss of structure.
+          const affected = useQuizStore.getState().quizzes
+            .filter((quiz): quiz is typeof quiz & { folderId: string } => !!quiz.folderId)
+            .map((quiz) => ({ id: quiz.id, folderId: quiz.folderId }));
+          const removedFolders = useFolderStore.getState().deleteFolder(folder.id);
+          const removedIds = new Set(removedFolders.map((entry) => entry.id));
+          const detached = affected.filter((entry) => removedIds.has(entry.folderId));
+
           undoOps.push(() => {
-            useFolderStore.getState().addFolder(snapshot.name, snapshot.emoji, snapshot.color, snapshot.parentId ?? null);
+            useFolderStore.getState().restoreFolders(removedFolders);
+            detached.forEach((entry) => useQuizStore.getState().moveToFolder(entry.id, entry.folderId));
           });
           summaryParts.push(`folder șters „${folder.name}"`);
           callbacks.onStep(index, 'done');
