@@ -7,7 +7,7 @@ interface UserStats {
   studyStreak: number;
   achievements: number;
   aiScore: number;
-  weeklyRank: number;
+  weeklyQuestions: number;
 }
 
 interface AIGamificationStatsProps {
@@ -74,11 +74,11 @@ export default function AIGamificationStats({ userStats }: AIGamificationStatsPr
           <div className="flex items-center justify-center gap-2 mb-2">
             <BarChart3 className="w-5 h-5 text-red-600 dark:text-red-400" />
             <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              Rang Săptămânal
+              Întrebări (7 zile)
             </span>
           </div>
           <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            #{userStats.weeklyRank}
+            {userStats.weeklyQuestions}
           </p>
         </div>
       </div>

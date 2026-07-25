@@ -10,7 +10,14 @@ type Props = {
   display?: string;
   color: string;
   delay: number;
-  trend?: 'up' | 'down' | 'neutral';
+  /**
+   * Real week-over-week change, or null when there is no previous week to
+   * compare against. Percentage points for accuracy, percent for the rest.
+   * This card used to render a fixed "2%" for everything.
+   */
+  delta?: number | null;
+  /** Unit shown after the delta — 'pp' for percentage points. */
+  deltaUnit?: '%' | 'pp';
 };
 
 const DashboardStatCard = memo(function DashboardStatCard({
@@ -20,7 +27,8 @@ const DashboardStatCard = memo(function DashboardStatCard({
   display,
   color,
   delay,
-  trend,
+  delta,
+  deltaUnit = '%',
 }: Props) {
   const theme = useTheme();
   const { calmMotion } = useAdaptiveMotion();
@@ -41,12 +49,15 @@ const DashboardStatCard = memo(function DashboardStatCard({
       <div className="relative z-10">
         <div className="mb-4 flex items-center justify-between">
           <div className="secondary-label font-black tracking-widest" style={{ color: theme.text3 }}>{label}</div>
-          {trend && trend !== 'neutral' && (
+          {/* No badge at all when there is no real change to report — an
+              unchanged week is not "up 2%". */}
+          {typeof delta === 'number' && delta !== 0 && (
             <div
-              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${trend === 'up' ? 'text-green-600' : 'text-red-600'}`}
-              style={{ background: trend === 'up' ? 'rgba(48,209,88,0.15)' : 'rgba(255,69,58,0.15)' }}
+              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black ${delta > 0 ? 'text-green-600' : 'text-red-600'}`}
+              style={{ background: delta > 0 ? 'rgba(48,209,88,0.15)' : 'rgba(255,69,58,0.15)' }}
+              title="Față de săptămâna trecută"
             >
-              {trend === 'up' ? '▲' : '▼'} 2%
+              {delta > 0 ? '▲' : '▼'} {Math.abs(delta)}{deltaUnit === 'pp' ? ' pp' : '%'}
             </div>
           )}
         </div>

@@ -7,6 +7,7 @@ import AIGamificationStats from './AIGamificationStats';
 import AIGamificationTabs from './AIGamificationTabs';
 import { useQuizStore } from '../../store/quizStore';
 import { useStatsStore } from '../../store/statsStore';
+import { computeCategoryMastery, masteryProgress, questionsAnsweredThisWeek } from '../../lib/gamificationProgress';
 
 interface Achievement {
   id: string;
@@ -55,7 +56,7 @@ interface UserStats {
   studyStreak: number;
   achievements: number;
   aiScore: number;
-  weeklyRank: number;
+  weeklyQuestions: number;
 }
 
 interface AIGamificationProps {
@@ -75,7 +76,18 @@ export default function AIGamificationRefactored({ username }: AIGamificationPro
   const getAccuracy = useStatsStore((state) => state.getAccuracy);
   const accuracy = getAccuracy();
   const perfectSessions = sessions.filter((session) => session.total > 0 && session.score === session.total).length;
-  const completedQuestions = sessions.reduce((sum, session) => sum + session.total, 0);
+  const questionStats = useStatsStore((state) => state.questionStats);
+
+  // Real per-subject progress, so a subject badge counts that subject's questions.
+  const masteredSubject = useMemo(
+    () => masteryProgress(computeCategoryMastery(quizzes, questionStats)),
+    [quizzes, questionStats],
+  );
+  const longestRun = Math.max(streak.currentStreak, streak.longestStreak);
+  const weeklyQuestions = useMemo(
+    () => questionsAnsweredThisWeek(sessions, nowTs),
+    [sessions, nowTs],
+  );
 
   const userStats = useMemo<UserStats>(
     () => ({
@@ -91,45 +103,50 @@ export default function AIGamificationRefactored({ username }: AIGamificationPro
         accuracy >= 80,
       ].filter(Boolean).length,
       aiScore: Math.max(0, Math.min(100, accuracy || Math.min(95, 45 + sessions.length * 4 + streak.currentStreak * 3))),
-      weeklyRank: Math.max(1, 12 - Math.min(10, streak.currentStreak + sessions.length)),
+      // Replaces a fabricated "#rank" that implied competing against other
+      // users — StudyX is single-user, so there was never a leaderboard.
+      weeklyQuestions,
     }),
-    [accuracy, perfectSessions, quizzes.length, sessions.length, streak.currentStreak, streak.longestStreak, totalStudyTime],
+    [accuracy, perfectSessions, quizzes.length, sessions.length, streak.currentStreak, streak.longestStreak, totalStudyTime, weeklyQuestions],
   );
 
   const achievements = useMemo<Achievement[]>(
     () => [
       {
         id: '1',
-        title: 'Maestru Anatomiei',
-        description: 'Completeaza 100 de quiz-uri de anatomie cu 90% acuratete.',
+        title: masteredSubject.category ? `Maestru — ${masteredSubject.category}` : 'Maestru pe o materie',
+        description: 'Răspunde la 100 de întrebări dintr-o singură materie, păstrând cel puțin 90% acuratețe.',
         icon: <span className="text-2xl">{'🏆'}</span>,
         points: 500,
         category: 'study',
         rarity: 'legendary',
-        progress: Math.min(100, completedQuestions),
+        // Counts only questions from the subject the user is actually holding at
+        // 90%. It used to count every answered question of any subject.
+        progress: Math.min(100, masteredSubject.answeredQuestions),
         maxProgress: 100,
-        aiGenerated: true,
-        prerequisites: ['anatomy_basic', 'quiz_master'],
+        aiGenerated: false,
         rewards: [
-          { type: 'badge', value: '🏆 Maestru Anatomiei' },
-          { type: 'title', value: 'Expert Anatomie' },
+          { type: 'badge', value: '🏆 Maestru pe materie' },
           { type: 'points', value: 500 },
         ],
       },
       {
         id: '2',
-        title: 'Colaborator Perfect',
-        description: 'Ajuta 10 colegi sa obtina note de trecere prin review AI.',
-        icon: <span className="text-2xl">{'🤝'}</span>,
+        // Was "Ajută 10 colegi prin review AI" — StudyX has no peer review, so
+        // that badge could never be earned by doing what it described. Restated
+        // to the thing its number was already measuring.
+        title: 'Constructor de bancă',
+        description: 'Creează sau importă 10 seturi de grile.',
+        icon: <span className="text-2xl">{'🧱'}</span>,
         points: 300,
-        category: 'collaboration',
+        category: 'milestone',
         rarity: 'epic',
         progress: Math.min(10, quizzes.length),
         maxProgress: 10,
-        aiGenerated: true,
+        aiGenerated: false,
         rewards: [
-          { type: 'badge', value: '🤝 Colaborator Perfect' },
-          { type: 'feature', value: 'AI Review Pro' },
+          { type: 'badge', value: '🧱 Constructor de bancă' },
+          { type: 'points', value: 300 },
         ],
       },
       {
@@ -140,10 +157,12 @@ export default function AIGamificationRefactored({ username }: AIGamificationPro
         points: 200,
         category: 'milestone',
         rarity: 'rare',
-        progress: Math.min(7, streak.currentStreak),
+        progress: Math.min(7, longestRun),
         maxProgress: 7,
         aiGenerated: false,
-        unlockedAt: new Date('2026-04-19T00:00:00.000Z'),
+        // Unlocked from the real streak — this used to carry a hard-coded date,
+        // so the badge claimed to have been earned whether it had been or not.
+        ...(longestRun >= 7 ? { unlockedAt: new Date(streak.lastStudyDate || Date.now()) } : {}),
         rewards: [
           { type: 'badge', value: '🔥 Saptamana de Studiu' },
           { type: 'points', value: 200 },
@@ -151,23 +170,24 @@ export default function AIGamificationRefactored({ username }: AIGamificationPro
       },
       {
         id: '4',
-        title: 'Geniu AI',
-        description: 'Obtine 95% scor AI in 50 de sesiuni consecutive.',
+        // Was "95% scor AI în 50 de sesiuni consecutive" while counting perfect
+        // sessions — neither consecutive nor an AI score. Now it says what it counts.
+        title: 'Sesiuni impecabile',
+        description: 'Termină 50 de sesiuni cu toate răspunsurile corecte.',
         icon: <span className="text-2xl">{'🤖'}</span>,
         points: 750,
         category: 'performance',
         rarity: 'legendary',
         progress: Math.min(50, perfectSessions),
         maxProgress: 50,
-        aiGenerated: true,
+        aiGenerated: false,
         rewards: [
-          { type: 'badge', value: '🤖 Geniu AI' },
-          { type: 'title', value: 'AI Master' },
-          { type: 'feature', value: 'AI Insights Pro' },
+          { type: 'badge', value: '🤖 Sesiuni impecabile' },
+          { type: 'points', value: 750 },
         ],
       },
     ],
-    [completedQuestions, perfectSessions, quizzes.length, streak.currentStreak],
+    [masteredSubject, perfectSessions, quizzes.length, longestRun, streak.lastStudyDate],
   );
 
   const challenges = useMemo<Challenge[]>(
@@ -190,18 +210,20 @@ export default function AIGamificationRefactored({ username }: AIGamificationPro
       },
       {
         id: '2',
-        title: 'Review AI Rapid',
-        description: 'Evalueaza 5 quiz-uri create de colegi in 15 minute.',
+        // Was "Evaluează 5 quiz-uri create de colegi" — there are no colleagues
+        // and no review feature; the bar was really counting study time.
+        title: 'Maraton de studiu',
+        description: 'Adună 75 de minute de studiu în această săptămână.',
         type: 'weekly',
         difficulty: 'hard',
         points: 300,
         timeLimit: 15,
-        aiGenerated: true,
-        requirements: [{ type: 'collaboration_points', value: 50 }],
+        aiGenerated: false,
+        requirements: [{ type: 'study_time', value: 75 }],
         progress: Math.min(5, Math.floor(totalStudyTime / 900)),
         rewards: {
           points: 300,
-          badge: '⚡ Review Expert',
+          badge: '⚡ Maraton de studiu',
         },
       },
       {

@@ -31,7 +31,9 @@ export default function AIGamificationHeader({ username }: AIGamificationHeaderP
         </h1>
       </div>
       <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-        Provocari personalizate AI, realizari epice si clasamente globale pentru a-ti motiva studiul
+        {/* "clasamente globale" promised a leaderboard that never existed —
+            StudyX is single-user, and the comparison tab is you vs. your past self. */}
+        Provocări, realizări și comparație cu propriul tău progres, ca să-ți susțină studiul
       </p>
       <p className="mt-3 text-sm font-medium text-yellow-600/80 dark:text-yellow-400/80">
         Hub-ul premium de progres pentru {username}

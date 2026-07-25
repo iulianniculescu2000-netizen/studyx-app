@@ -5,6 +5,7 @@ import { BookOpen, Plus, Sparkles } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
 import { useQuizStore } from '../store/quizStore';
+import { computeDashboardTrends } from '../lib/dashboardTrends';
 import { useStatsStore } from '../store/statsStore';
 import { useTutorialStore } from '../store/tutorialStore';
 import ImportQuizButton from '../components/ImportQuizButton';
@@ -24,7 +25,9 @@ type DashboardStat = {
   display?: string;
   suffix: string;
   color: string;
-  trend?: 'up' | 'down' | 'neutral';
+  /** Real week-over-week change; null when there's no previous week to compare. */
+  delta?: number | null;
+  deltaUnit?: '%' | 'pp';
 };
 
 function DashboardLoading({ compact }: { compact: boolean }) {
@@ -207,7 +210,7 @@ export default function Dashboard() {
   const theme = useTheme();
   const compact = typeof window !== 'undefined' && (window.innerHeight < 860 || window.innerWidth < 1280);
   const { username } = useUserStore();
-  const { quizzes, _hasHydrated } = useQuizStore();
+  const { quizzes, sessions, _hasHydrated } = useQuizStore();
   const { streak, getAccuracy, totalStudyTime } = useStatsStore();
   const startTutorial = useTutorialStore((state) => state.startTutorial);
   const [hour, setHour] = useState(new Date().getHours());
@@ -215,6 +218,9 @@ export default function Dashboard() {
   const accuracy = getAccuracy();
   const studyHours = Math.floor(totalStudyTime / 3600);
   const studyMinutes = Math.floor(totalStudyTime / 60);
+
+  // Real week-over-week deltas. Every stat card used to show a fixed "▲ 2%".
+  const trends = useMemo(() => computeDashboardTrends(quizzes, sessions), [quizzes, sessions]);
 
   const quizOnlyCount = useMemo(() => quizzes.filter(q => !(q.tags?.includes('flashcard'))).length, [quizzes]);
   const animatedQuizzes = useCountUp(quizOnlyCount);
@@ -237,10 +243,12 @@ export default function Dashboard() {
 
   const greeting = hour < 12 ? 'Bună dimineața' : hour < 18 ? 'Bună ziua' : 'Bună seara';
   const stats: DashboardStat[] = [
-    { label: 'Grile', numeric: quizOnlyCount, display: String(animatedQuizzes), suffix: '', color: theme.accent, trend: 'neutral' },
-    { label: 'Streak', numeric: streak.currentStreak, display: `${animatedStreak} ${animatedStreak === 1 ? 'zi' : 'zile'}`, suffix: '', color: theme.warning, trend: 'up' },
-    { label: 'Acuratețe', numeric: accuracy, display: accuracy > 0 ? `${animatedAccuracy}%` : '-', suffix: '%', color: theme.success, trend: accuracy >= 75 ? 'up' : 'down' },
-    { label: 'Timp studiu', numeric: studyHours, display: studyHours > 0 ? `${animatedStudyHours}h` : `${animatedStudyMinutes}m`, suffix: 'h', color: theme.accent2, trend: 'up' },
+    { label: 'Grile', numeric: quizOnlyCount, display: String(animatedQuizzes), suffix: '', color: theme.accent, delta: trends.quizzes },
+    // A streak has no meaningful week-over-week percentage — the number itself
+    // already says everything, so it carries no badge.
+    { label: 'Streak', numeric: streak.currentStreak, display: `${animatedStreak} ${animatedStreak === 1 ? 'zi' : 'zile'}`, suffix: '', color: theme.warning },
+    { label: 'Acuratețe', numeric: accuracy, display: accuracy > 0 ? `${animatedAccuracy}%` : '-', suffix: '%', color: theme.success, delta: trends.accuracy, deltaUnit: 'pp' },
+    { label: 'Timp studiu', numeric: studyHours, display: studyHours > 0 ? `${animatedStudyHours}h` : `${animatedStudyMinutes}m`, suffix: 'h', color: theme.accent2, delta: trends.studyTime },
   ];
 
   if (!_hasHydrated) {
