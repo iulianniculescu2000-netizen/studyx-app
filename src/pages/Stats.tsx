@@ -1,14 +1,14 @@
 import { motion } from 'framer-motion';
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain, Sparkles, Loader2, RefreshCw, Award } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useAIStore } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
-import { loadUserProfile } from '../ai/UserProfile';
+import { getStrongTopicsForProfile, loadUserProfile } from '../ai/UserProfile';
 
 const ActivityBarChart = lazy(() => import('../components/stats/ActivityBarChart'));
 const AccuracyTrendChart = lazy(() => import('../components/stats/AccuracyTrendChart'));
@@ -104,6 +104,14 @@ export default function Stats() {
       setAiReportLoading(false);
     }
   };
+  // The profile has tracked strong topics since the personalization rewrite, but
+  // nothing ever displayed them — the data was computed and stored on every quiz
+  // and then went nowhere.
+  const strongTopics = useMemo(
+    () => (activeProfileId ? getStrongTopicsForProfile(activeProfileId).slice(0, 6) : []),
+    [activeProfileId, questionStats],
+  );
+
   const sessionsByDay = useMemo(() => {
     const grouped = new Map<string, typeof sessions>();
     for (const session of sessions) {
@@ -572,6 +580,36 @@ export default function Stats() {
             )}
 
             {/* Weak questions */}
+            {strongTopics.length > 0 && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+                className="luxe-card rounded-[28px] p-5"
+                style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+                <h2 className="font-semibold mb-1 flex items-center gap-2" style={{ color: theme.text }}>
+                  <Award size={16} style={{ color: theme.success }} />
+                  Puncte forte
+                </h2>
+                <p className="mb-4 text-xs" style={{ color: theme.text3 }}>
+                  Subiecte pe care le stăpânești — bune de păstrat prin recapitulări rare.
+                </p>
+                <div className="space-y-2">
+                  {strongTopics.map((topic) => (
+                    <div key={topic.topic} className="flex items-center gap-3 rounded-xl p-3"
+                      style={{ background: `${theme.success}08`, border: `1px solid ${theme.success}20` }}>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium" style={{ color: theme.text }}>{topic.topic}</p>
+                        <p className="mt-0.5 text-xs" style={{ color: theme.text3 }}>
+                          {topic.total} {topic.total === 1 ? 'întrebare' : 'întrebări'}
+                        </p>
+                      </div>
+                      <span className="flex-shrink-0 text-sm font-bold" style={{ color: theme.success }}>
+                        {Math.round(topic.accuracy)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
             {weakQuestions.length > 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.45 }}
                 className="luxe-card rounded-[28px] p-5"
