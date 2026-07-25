@@ -123,10 +123,13 @@ const EXPLANATION_START_RE = /^\s*(?:din\s+curs|nota)\s*:/i;
 // ("Raspuns corect E"), the colon/equals is optional for the long, unambiguous
 // phrases below. It stays MANDATORY for the short/ambiguous single-word markers
 // (bare "r"/"key"/"corect"/"cheie") so a colon-less stray word doesn't false-match.
+// The separator class must include plain ASCII "s": diacritic-free Romanian
+// ("a si c") is the norm in OCR'd and older banks, and omitting it made the
+// whole key line fall through as a bogus extra option.
 const EXPLICIT_ANSWER_RE =
-  /^\s*(?:r[aă]spuns(?:ul)?(?:\s*corecte?)?|varianta?\s*corect[aă])\s*[:=]?\s*([a-eA-E](?:\s*[,;șiȘI/\s]+[a-eA-E])*)\s*\.?\s*$/i;
+  /^\s*(?:r[aă]spuns(?:ul)?(?:\s*corecte?)?|varianta?\s*corect[aă])\s*[:=]?\s*([a-eA-E](?:\s*[,;șsȘSiI/\s]+[a-eA-E])*)\s*\.?\s*$/i;
 const EXPLICIT_ANSWER_STRICT_RE =
-  /^\s*(?:r|answer|corecte?|chei[ae]?|solu[țt]i[ae]|key)\s*[:=]\s*([a-eA-E](?:\s*[,;șiȘI/\s]+[a-eA-E])*)\s*\.?\s*$/i;
+  /^\s*(?:r|answer|corecte?|chei[ae]?|solu[țt]i[ae]|key)\s*[:=]\s*([a-eA-E](?:\s*[,;șsȘSiI/\s]+[a-eA-E])*)\s*\.?\s*$/i;
 // Moodle-style key that names the answer TEXT: "The correct answer is: Verruca"
 const ANSWER_TEXT_RE =
   /^\s*(?:the\s+)?(?:correct\s+answers?\s+(?:is|are)|r[aă]spuns(?:ul)?\s+corect\s+este)\s*:?\s*(.+\S)\s*$/i;
@@ -156,10 +159,14 @@ function letterToIndex(letter: string): number {
   return letter.trim().toLowerCase().charCodeAt(0) - 97; // a->0
 }
 
-function parseAnswerLetters(raw: string): number[] {
-  const letters = raw.match(/[a-eA-E]/g) ?? [];
-  const idx = letters.map((l) => letterToIndex(l));
-  return [...new Set(idx)].filter((i) => i >= 0 && i < 26);
+/**
+ * The letters named by an answer key, kept AS LETTERS rather than converted to
+ * positions. Banks skip letters and occasionally repeat them, so "d" must mean
+ * "the option printed as d", not "the fourth option".
+ */
+function parseAnswerLetters(raw: string): string[] {
+  const letters = (raw.match(/[a-eA-E]/g) ?? []).map((l) => l.toLowerCase());
+  return [...new Set(letters)];
 }
 
 // ---- block model ---------------------------------------------------------
@@ -167,7 +174,7 @@ function parseAnswerLetters(raw: string): number[] {
 interface Block {
   questionLines: SourceLine[];
   optionLines: SourceLine[];
-  explicitAnswer?: number[]; // option indices from a "Raspuns corect: a" line
+  explicitAnswer?: string[]; // option LETTERS from a "Raspuns corect: a" line
   explicitAnswerText?: string; // answer named by text: "The correct answer is: X"
   typeIsMultiple?: boolean; // from a "Complement multiplu" marker
   specialty?: string; // nearest preceding section header, if any
@@ -227,10 +234,18 @@ function segmentBlocks(lines: SourceLine[]): Block[] {
   // every block created until the next header line updates it.
   let currentSpecialty: string | undefined;
 
-  for (const line of cleaned) {
+  for (let i = 0; i < cleaned.length; i++) {
+    const line = cleaned[i];
+    // A section header introduces the questions that follow it, so require that
+    // a question really does start next. Without that lookahead any ALL-CAPS
+    // option ("BCG", "HIV") was swallowed as a header — the option vanished AND
+    // it renamed the specialty for every question after it.
     if (isSpecialtyHeading(line.text)) {
-      currentSpecialty = line.text.trim();
-      continue;
+      const next = cleaned[i + 1];
+      if (next && isQuestionStart(next).start) {
+        currentSpecialty = line.text.trim();
+        continue;
+      }
     }
     const q = isQuestionStart(line);
     if (q.start) {
@@ -243,6 +258,16 @@ function segmentBlocks(lines: SourceLine[]): Block[] {
     }
     if (!current) continue; // preamble/junk before the first question
 
+    // Checked BEFORE the explanation guard: an answer key is unambiguous, and
+    // banks routinely print it after the "Din curs:" note. Skipping it there
+    // left the question keyless and flagged for manual review.
+    const ans = line.text.match(EXPLICIT_ANSWER_RE) ?? line.text.match(EXPLICIT_ANSWER_STRICT_RE);
+    if (ans) {
+      current.explicitAnswer = parseAnswerLetters(ans[1]);
+      inExplanation = false;
+      continue;
+    }
+
     if (inExplanation) continue;
     if (EXPLANATION_START_RE.test(line.text)) {
       inExplanation = true;
@@ -251,13 +276,6 @@ function segmentBlocks(lines: SourceLine[]): Block[] {
 
     // Moodle / exam-export noise ("Select one:", "Your answer is correct", …).
     if (SKIP_LINE_RE.test(line.text)) continue;
-
-    // Explicit answer key line (by letter).
-    const ans = line.text.match(EXPLICIT_ANSWER_RE) ?? line.text.match(EXPLICIT_ANSWER_STRICT_RE);
-    if (ans) {
-      current.explicitAnswer = parseAnswerLetters(ans[1]);
-      continue;
-    }
     // Explicit answer key by TEXT ("The correct answer is: Verruca").
     const ansText = line.text.match(ANSWER_TEXT_RE);
     if (ansText) {
@@ -301,14 +319,47 @@ function segmentBlocks(lines: SourceLine[]): Block[] {
 
 // ---- option + answer extraction -----------------------------------------
 
-function extractOptions(block: Block): { text: string; bold: boolean; marked: boolean }[] {
-  return block.optionLines.map((l) => {
+interface ExtractedOption {
+  text: string;
+  /** The letter this option is actually printed with, when it has one. */
+  letter?: string;
+  bold: boolean;
+  marked: boolean;
+}
+
+function extractOptions(block: Block): ExtractedOption[] {
+  // Only when the block labels its options ("a)", "-") can an unlabelled line
+  // be assumed to be a wrap. In an unnumbered .docx list every bare line really
+  // is its own option, so that shape must keep splitting.
+  const usesPrefixes = block.optionLines.some(
+    (l) => LETTER_OPTION_RE.test(l.text) || DASH_OPTION_RE.test(l.text),
+  );
+
+  const out: ExtractedOption[] = [];
+  for (const l of block.optionLines) {
     const letter = l.text.match(LETTER_OPTION_RE);
-    if (letter) return { text: letter[2].trim(), bold: !!l.bold, marked: !!l.marked };
+    if (letter) {
+      out.push({ text: letter[2].trim(), letter: letter[1].toLowerCase(), bold: !!l.bold, marked: !!l.marked });
+      continue;
+    }
     const dash = l.text.match(DASH_OPTION_RE);
-    if (dash) return { text: dash[1].trim(), bold: !!l.bold, marked: !!l.marked };
-    return { text: l.text.trim(), bold: !!l.bold, marked: !!l.marked };
-  });
+    if (dash) {
+      out.push({ text: dash[1].trim(), bold: !!l.bold, marked: !!l.marked });
+      continue;
+    }
+
+    const previous = out[out.length - 1];
+    if (usesPrefixes && previous) {
+      // Continuation of the option above. Treating it as a new option used to
+      // shift every following letter, so the key then marked the wrong answer.
+      previous.text = `${previous.text} ${l.text.trim()}`.replace(/\s+/g, ' ').trim();
+      previous.bold = previous.bold || !!l.bold;
+      previous.marked = previous.marked || !!l.marked;
+      continue;
+    }
+    out.push({ text: l.text.trim(), bold: !!l.bold, marked: !!l.marked });
+  }
+  return out;
 }
 
 function buildQuestion(block: Block): ParsedQuestion | null {
@@ -345,9 +396,20 @@ function buildQuestion(block: Block): ParsedQuestion | null {
   const correct = new Set<number>();
   let answerSource: AnswerSource = 'none';
 
+  // Letters named by the key that match no option — usually an OCR slip, and
+  // worth reporting as such instead of as "unmarked".
+  const unresolvedLetters: string[] = [];
+
   if (block.explicitAnswer && block.explicitAnswer.length > 0) {
-    block.explicitAnswer.forEach((i) => {
-      if (i < rawOptions.length) correct.add(i);
+    const printedLetters = rawOptions.map((o) => o.letter);
+    const isLettered = printedLetters.some(Boolean);
+
+    block.explicitAnswer.forEach((letter) => {
+      // Prefer the letter each option actually carries; fall back to position
+      // only for lists that print no letters at all (dash/plain .docx lists).
+      const index = isLettered ? printedLetters.indexOf(letter) : letterToIndex(letter);
+      if (index >= 0 && index < rawOptions.length) correct.add(index);
+      else unresolvedLetters.push(letter);
     });
     if (correct.size > 0) answerSource = 'explicit';
   }
@@ -380,10 +442,23 @@ function buildQuestion(block: Block): ParsedQuestion | null {
   }
 
   if (answerSource === 'none') {
-    warnings.push('Răspuns nemarcat — de verificat.');
+    warnings.push(
+      unresolvedLetters.length
+        ? `Cheia indică varianta „${unresolvedLetters.join(', ')}", care nu apare în listă — de verificat.`
+        : 'Răspuns nemarcat — de verificat.',
+    );
+  } else if (unresolvedLetters.length) {
+    warnings.push(`Cheia mai indică varianta „${unresolvedLetters.join(', ')}", care nu apare în listă.`);
   }
 
-  const multipleCorrect = block.typeIsMultiple ?? correct.size > 1;
+  // A "complement simplu" tag can contradict the key. Trust the key for what is
+  // correct, but never emit a single-choice question with several right answers
+  // — at play time that is simply unanswerable.
+  let multipleCorrect = block.typeIsMultiple ?? correct.size > 1;
+  if (correct.size > 1 && !multipleCorrect) {
+    multipleCorrect = true;
+    warnings.push('Marcată „complement simplu", dar cheia indică mai multe variante — de verificat.');
+  }
 
   const confidence: Confidence =
     answerSource === 'explicit'
@@ -419,6 +494,9 @@ function mergeLoneOptionLabels(lines: SourceLine[]): SourceLine[] {
     const next = lines[i + 1];
     if (LONE_LABEL_RE.test(line.text) && next && next.text.trim() && !LONE_LABEL_RE.test(next.text)) {
       out.push({
+        // Spread first so `page` survives — rebuilding the object from scratch
+        // dropped it, which silently broke same-page image attachment.
+        ...line,
         text: `${line.text.trim()} ${next.text.trim()}`,
         bold: line.bold || next.bold,
         marked: line.marked || next.marked,
@@ -441,7 +519,10 @@ function mergeLoneOptionLabels(lines: SourceLine[]): SourceLine[] {
 function stripYesPrefix(lines: SourceLine[]): SourceLine[] {
   return lines.map((l) => {
     const m = l.text.match(YES_PREFIX_RE);
-    if (!m) return l;
+    // Only a marker sitting in FRONT of a real option letter counts. Applying
+    // this to any line truncated legitimate answers that merely begin with
+    // "Da - …" and force-marked them correct.
+    if (!m || !LETTER_OPTION_RE.test(m[1])) return l;
     return { ...l, text: m[1].trim(), marked: true };
   });
 }

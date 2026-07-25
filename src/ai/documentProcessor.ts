@@ -79,7 +79,9 @@ export class DocumentProcessor {
       statistics: {
         ...statistics,
         totalChunks: chunks.length,
-        averageChunkSize: Math.round(statistics.totalChars / chunks.length),
+        // Guard the empty-document case: dividing by 0 produced NaN, which
+        // serializes to null and poisons any stats UI reading it.
+        averageChunkSize: chunks.length > 0 ? Math.round(statistics.totalChars / chunks.length) : 0,
         processingTime: Date.now() - startTime
       }
     };
