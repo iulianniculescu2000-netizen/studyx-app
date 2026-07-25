@@ -97,6 +97,41 @@ function normalizeQuestion(question: QuestionGenerationResponse['questions'][num
   };
 }
 
+/** Loose comparison key for spotting option texts that are the same answer twice. */
+function optionKey(text: string): string {
+  return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/**
+ * Drops generated questions that cannot be answered, and de-duplicates repeated
+ * options. Nothing validated model output before this: a reply could yield a
+ * question with an empty stem, with no correct option at all, or with the same
+ * distractor twice — and it was saved as a real quiz the user then studied.
+ */
+export function sanitizeGeneratedQuestions(questions: Question[]): Question[] {
+  const usable: Question[] = [];
+
+  for (const question of questions) {
+    if (!question.text || question.text.trim().length < 6) continue;
+
+    const seen = new Set<string>();
+    const options = question.options.filter((option) => {
+      const key = optionKey(option.text);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (options.length < 2) continue;
+    const correctCount = options.filter((option) => option.isCorrect).length;
+    if (correctCount === 0) continue; // unanswerable
+
+    usable.push({ ...question, options, multipleCorrect: correctCount > 1 });
+  }
+
+  return usable;
+}
+
 function normalizeAnalysisResult(result: AIAnalysisResult, context: AIContextPayload): AIAnalysisResult {
   const chunks = (context.chunks as ContextChunk[] | undefined) ?? [];
   const fallbackSources = uniqueSourceList(chunks).slice(0, 4);
@@ -176,12 +211,16 @@ export class QuestionGenerator {
         const result = validateJson<QuestionGenerationResponse>(raw);
         return result.ok && result.value?.questions?.length ? result.value : null;
       },
-      fix: async (_raw, error) => (
+      fix: async (raw, error) => (
         groqRequest({
           task: 'questions',
           messages: [
-            { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Păstrează conținutul în română.' },
-            { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}` },
+            { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Nu inventa conținut nou — corectează doar sintaxa JSON-ului primit. Păstrează conținutul în română.' },
+            // The broken JSON must travel with the request. Sending only the
+            // parser error left the model nothing to repair, so it invented a
+            // fresh set of questions from nothing — ungrounded content that was
+            // then saved as a real quiz.
+            { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}\n\nJSON de reparat:\n${raw}` },
           ],
           skipLibraryContext: true,
         })
@@ -189,7 +228,7 @@ export class QuestionGenerator {
     });
 
     return {
-      questions: parsed.questions.map(normalizeQuestion),
+      questions: sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion)),
       sources: uniqueSourceList((context.chunks as ContextChunk[] | undefined) ?? []),
       mode: request.mode ?? 'standard',
     };
@@ -234,12 +273,12 @@ export async function generateQuestionsFromTopic(
       const result = validateJson<QuestionGenerationResponse>(raw);
       return result.ok && result.value?.questions?.length ? result.value : null;
     },
-    fix: async (_raw, error) => (
+    fix: async (raw, error) => (
       groqRequest({
         task: 'questions',
         messages: [
-          { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Păstrează conținutul în română.' },
-          { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}` },
+          { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Nu inventa conținut nou — corectează doar sintaxa JSON-ului primit. Păstrează conținutul în română.' },
+          { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}\n\nJSON de reparat:\n${raw}` },
         ],
         skipLibraryContext: true,
       })
@@ -247,7 +286,7 @@ export async function generateQuestionsFromTopic(
   });
 
   return {
-    questions: parsed.questions.map(normalizeQuestion),
+    questions: sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion)),
     sources: [],
     mode: 'standard',
   };
@@ -317,12 +356,12 @@ export async function analyzeAnswer(
       const result = validateJson<AIAnalysisResult>(raw);
       return result.ok && result.value?.explanation ? result.value : null;
     },
-    fix: async (_raw, error) => (
+    fix: async (raw, error) => (
       groqRequest({
         task: 'explanation',
         messages: [
-          { role: 'system', content: 'Repară JSON-ul invalid și păstrează exact aceeași schemă. Nu adăuga text în afara JSON-ului. Păstrează valorile în română.' },
-          { role: 'user', content: `JSON invalid: ${error}` },
+          { role: 'system', content: 'Repară JSON-ul invalid și păstrează exact aceeași schemă. Nu inventa conținut nou — corectează doar sintaxa. Nu adăuga text în afara JSON-ului. Păstrează valorile în română.' },
+          { role: 'user', content: `JSON invalid: ${error}\n\nJSON de reparat:\n${raw}` },
         ],
         skipLibraryContext: true,
       })
