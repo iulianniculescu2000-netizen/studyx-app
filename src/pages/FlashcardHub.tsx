@@ -184,7 +184,7 @@ export default function FlashcardHub() {
   const { quizzes, addQuiz } = useQuizStore();
   const folders = useFolderStore((state) => state.folders);
   const addFolder = useFolderStore((state) => state.addFolder);
-  const { questionStats, getDueQuestions } = useStatsStore();
+  const { questionStats } = useStatsStore();
   const { hasKey, addKnowledgeSource, knowledgeSources } = useAIStore();
   const activeProfileId = useUserStore((state) => state.activeProfileId);
 
@@ -671,9 +671,6 @@ export default function FlashcardHub() {
     navigate(`/flashcards/session/${deckId}?mode=all`);
   };
 
-  const dueQuestions = getDueQuestions();
-  const totalDue = dueQuestions.length;
-
   const decks = useMemo(() => {
     return quizzes
       .filter((quiz) => !quiz.archived && quiz.questions.length > 0)
@@ -698,6 +695,10 @@ export default function FlashcardHub() {
 
   const totalCards = decks.reduce((sum, deck) => sum + deck.total, 0);
   const totalMastered = decks.reduce((sum, deck) => sum + deck.mastered, 0);
+  // Summed from the flashcard decks above, not from the store's app-wide due
+  // list — that counted every due multiple-choice question too, so the hub
+  // advertised far more "carduri restante" than it actually had cards.
+  const totalDue = decks.reduce((sum, deck) => sum + deck.due, 0);
 
   return (
     <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">

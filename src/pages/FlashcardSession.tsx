@@ -14,6 +14,7 @@ import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildClarificationFallback, cleanQuestionExplanation, getCorrectAnswerText } from '../helpers/quizAi';
 import { explainWrongAnswer } from '../lib/groq';
 import QuizImage from '../components/QuizImage';
+import { isFlashcardDeck } from '../lib/deckKind';
 import type { Question, Quiz } from '../types';
 
 interface CardItem {
@@ -88,7 +89,12 @@ export default function FlashcardSession() {
   const initialCards = useMemo<CardItem[]>(() => {
     if (id === 'all') {
       const items: CardItem[] = [];
-      quizzes.filter((quiz) => !quiz.archived && quiz.questions.length > 0).forEach((quiz) => {
+      // Only real flashcard decks belong in a flip-card session. Without this
+      // filter "Recapitulează tot" swept in every multiple-choice grilă in the
+      // app and showed it as a card with a single visible answer.
+      quizzes
+        .filter((quiz) => !quiz.archived && quiz.questions.length > 0 && isFlashcardDeck(quiz))
+        .forEach((quiz) => {
         quiz.questions.forEach((question) => {
           const stat = questionStats[`${quiz.id}:${question.id}`];
           if (!stat || (stat.nextReview > 0 && stat.nextReview <= now)) {
