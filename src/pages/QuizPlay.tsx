@@ -96,6 +96,14 @@ export default function QuizPlay() {
    * Bumping this invalidates any reply still in flight.
    */
   const aiRequestIdRef = useRef(0);
+  /** Question whose countdown already triggered an auto-advance, so it can't fire twice. */
+  const autoAdvancedQuestionRef = useRef<string | null>(null);
+  /** Answer-feedback animation timers, cleared on unmount. */
+  const feedbackTimersRef = useRef<number[]>([]);
+  useEffect(() => () => {
+    feedbackTimersRef.current.forEach((id) => window.clearTimeout(id));
+    feedbackTimersRef.current = [];
+  }, []);
   const [mnemonicText, setMnemonicText] = useState<string | null>(null);
   const [mnemonicLoading, setMnemonicLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(null);
@@ -380,19 +388,21 @@ export default function QuizPlay() {
       setRevealed(true);
       const correctIdsForQuestion = getCorrectOptionIds(question.options);
       const result = evaluateSelection(selectedNow, correctIdsForQuestion);
+      // Tracked so unmounting mid-animation cannot leave a timer firing at a
+      // component that is no longer on screen.
       if (result === 'correct') {
         setFeedbackAnim('correct');
-        window.setTimeout(() => setFeedbackAnim(null), 420);
+        feedbackTimersRef.current.push(window.setTimeout(() => setFeedbackAnim(null), 420));
       } else if (result === 'partial') {
         setFeedbackAnim('partial');
-        window.setTimeout(() => setFeedbackAnim(null), 600);
+        feedbackTimersRef.current.push(window.setTimeout(() => setFeedbackAnim(null), 600));
       } else {
         setFeedbackAnim('wrong');
         setShakeId(selectedNow.find((id) => !correctIdsForQuestion.includes(id)) ?? selectedNow[0] ?? null);
-        window.setTimeout(() => {
+        feedbackTimersRef.current.push(window.setTimeout(() => {
           setFeedbackAnim(null);
           setShakeId(null);
-        }, 520);
+        }, 520));
       }
     }
   }, [selectedNow, question, answers, examMode, isLast, finishQuiz]);
@@ -557,14 +567,28 @@ export default function QuizPlay() {
   useEffect(() => {
     if (!timedMode || revealed || questionTimer > 0) return;
     if (!question?.id) return;
+    // Guard against firing twice for the same question: this effect also depends
+    // on `answers`/`selectedNow`, which it updates itself.
+    if (autoAdvancedQuestionRef.current === question.id) return;
+    autoAdvancedQuestionRef.current = question.id;
+
     // Păstrăm selectedNow dacă există (răspuns parțial mai bun decât nimic)
     const effectiveAnswer = selectedNow.length > 0 ? selectedNow : [];
     const newAnswers = { ...answers, [question.id]: effectiveAnswer };
     setAnswers(newAnswers);
     setSelectedNow([]);
-    if (isLast) finishQuiz(newAnswers);
-    else setCurrentIdx(i => i + 1);
-  }, [questionTimer, timedMode, revealed, question, isLast, finishQuiz, answers, selectedNow]);
+    if (isLast) {
+      finishQuiz(newAnswers);
+      return;
+    }
+    // Re-arm the countdown in the SAME state batch as the index change.
+    // Without this the next render still saw `questionTimer === 0` (the reset in
+    // the countdown effect below only lands on the following commit), so this
+    // effect fired again immediately and blanked question N+1 as well — two
+    // questions lost to one expired timer.
+    setQuestionTimer(TIME_PER_Q);
+    setCurrentIdx(i => i + 1);
+  }, [questionTimer, timedMode, revealed, question, isLast, finishQuiz, answers, selectedNow, TIME_PER_Q]);
 
   // Maintain latest state for keyboard handler without re-binding listener
   const kbStateRef = useRef({ question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, isMultiple, revealed, examMode });

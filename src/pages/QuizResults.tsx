@@ -65,16 +65,27 @@ export default function QuizResults() {
     })
     .filter((entry) => !entry.isCorrect), [questions, session?.answers]);
 
-  const pct = Math.round(((session?.score ?? 0) / (session?.total ?? 1)) * 100);
+  // `?? 1` only guards `undefined`; a session with total 0 (imported/legacy data,
+  // or a quiz whose questions were later deleted) still gave 0/0 = NaN, which
+  // rendered as "NaN%" and poisoned the score ring's strokeDashoffset.
+  const pct = session && session.total > 0
+    ? Math.round((session.score / session.total) * 100)
+    : 0;
 
   useEffect(() => {
     if (pct >= 90 && session && quiz) {
       confetti({ particleCount: 120, spread: 70, origin: { y: 0.35 }, colors: ['#FFD60A', '#FF9F0A', '#30D158', '#0A84FF'] });
       if (pct >= 95) {
-        setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 60, colors: ['#FFD60A', '#FF375F'] }), 400);
-        setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 120, colors: ['#30D158', '#5E5CE6'] }), 700);
+        // Cleared on unmount so a burst can't paint over the next screen.
+        const first = window.setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 60, colors: ['#FFD60A', '#FF375F'] }), 400);
+        const second = window.setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 120, colors: ['#30D158', '#5E5CE6'] }), 700);
+        return () => {
+          window.clearTimeout(first);
+          window.clearTimeout(second);
+        };
       }
     }
+    return undefined;
   }, [pct, session, quiz]);
 
   if (!session || !quiz) {
@@ -297,7 +308,7 @@ export default function QuizResults() {
                 </span>
               </div>
               <div style={{ fontSize: 12, color: theme.text2, marginTop: 6 }}>
-                {Math.round((session.penalizedScore / session.total) * 100)}% din punctajul maxim ·{' '}
+                {session.total > 0 ? Math.round((session.penalizedScore / session.total) * 100) : 0}% din punctajul maxim ·{' '}
                 <span style={{ color: theme.text3 }}>+1 corect · −0.25/greșit</span>
               </div>
             </motion.div>
