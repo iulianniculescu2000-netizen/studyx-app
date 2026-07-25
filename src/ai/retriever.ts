@@ -88,8 +88,13 @@ export async function retrieveRelevantChunks(
   const queryEmbedding = embedText(query);
   const queryTokens = tokenize(query);
 
+  // Derived from measured accuracy, NOT from the mistake list: this used to read
+  // `recentMistakes` — the very array `recentMistakeTopics` below uses — so a
+  // single recent mistake quietly earned a topic both boosts (0.30 + 0.20).
   const weakTopics = new Set(
-    (userProfile?.recentMistakes ?? []).map(m => m.topic.toLowerCase())
+    Object.entries(userProfile?.topicAccuracy ?? {})
+      .filter(([, performance]) => performance.total >= 3 && performance.accuracy < 60)
+      .map(([topic]) => topic.toLowerCase())
   );
   // mistakeBank și recentMistakes conțin topicuri (string-uri), nu chunk IDs.
   // Comparăm chunk.topic cu topicurile greșite pentru boost-uri.
@@ -128,12 +133,15 @@ export async function retrieveRelevantChunks(
     const queryLen = query.trim().length;
     const bm25Weight = queryLen <= 25 ? 0.65 : queryLen <= 60 ? 0.55 : 0.42;
     const semanticWeight = queryLen <= 25 ? 0.12 : queryLen <= 60 ? 0.25 : 0.38;
-    const score =
-      bm25Normalized * bm25Weight +
-      semanticScore * semanticWeight +
-      weaknessBoost +
-      recencyBoost +
-      mistakeBankBoost;
+    // Personalization SCALES relevance instead of being added to it. Added
+    // flat, the three boosts summed to 0.65 — enough for a chunk with zero
+    // keyword and near-zero semantic match to outrank a perfectly relevant one
+    // purely because its topic appeared in the mistake list. Multiplying keeps
+    // an irrelevant chunk at ~0 while still promoting weak topics among chunks
+    // that genuinely answer the query.
+    const relevance = bm25Normalized * bm25Weight + semanticScore * semanticWeight;
+    const personalBoost = weaknessBoost + recencyBoost + mistakeBankBoost;
+    const score = relevance * (1 + personalBoost);
 
     return {
       id: chunk.id,
