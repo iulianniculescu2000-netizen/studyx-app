@@ -72,3 +72,70 @@ describe('heading attribution', () => {
     expect(Number.isFinite(result.statistics.averageChunkSize)).toBe(true);
   });
 });
+
+describe('chunk overlap', () => {
+  /** Distinct numbered sentences so an overlap is easy to spot across chunks. */
+  function numberedBody(count: number): string {
+    return Array.from({ length: count }, (_, i) => `Propozitia numarul ${i} descrie un aspect clinic relevant pentru examen si contine text suficient.`).join('\n\n');
+  }
+
+  it('repeats the tail of a chunk at the start of the next one', async () => {
+    const processor = new DocumentProcessor();
+    const { chunks } = await processor.processDocument(numberedBody(40), 'Manual.pdf', {
+      chunkSize: 400,
+      overlap: 120,
+    });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    // Every chunk after the first must begin with text that also appears in its
+    // predecessor — that shared window is what keeps a sentence split across the
+    // boundary findable from both sides.
+    for (let i = 1; i < chunks.length; i++) {
+      const opening = chunks[i].text.slice(0, 30);
+      expect(chunks[i - 1].text, `chunk ${i} should overlap chunk ${i - 1}`).toContain(opening);
+    }
+  });
+
+  it('produces no overlap when the caller asks for none', async () => {
+    const processor = new DocumentProcessor();
+    const { chunks } = await processor.processDocument(numberedBody(40), 'Manual.pdf', {
+      chunkSize: 400,
+      overlap: 0,
+    });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks[0].text).not.toContain(chunks[1].text.slice(0, 30));
+  });
+
+  it('never carries text across a chapter boundary', async () => {
+    const text = [
+      'CARDIOLOGIE',
+      numberedBody(10).replace(/Propozitia/g, 'CARDIO'),
+      'PNEUMOLOGIE',
+      numberedBody(10).replace(/Propozitia/g, 'PNEUMO'),
+    ].join('\n\n');
+
+    const processor = new DocumentProcessor();
+    const { chunks } = await processor.processDocument(text, 'Manual.pdf', {
+      chunkSize: 400,
+      overlap: 120,
+      knownHeadings: CHAPTERS,
+    });
+
+    // Overlap must not smuggle cardiology text into a pneumology chunk.
+    const leaked = chunks.filter((c) => c.metadata.heading === 'PNEUMOLOGIE' && c.text.includes('CARDIO numarul'));
+    expect(leaked.map((c) => c.text.slice(0, 60))).toEqual([]);
+  });
+
+  it('merges an undersized trailing chunk instead of dropping its text', async () => {
+    const processor = new DocumentProcessor();
+    const tail = 'Coada scurta.';
+    const { chunks } = await processor.processDocument(`${numberedBody(6)}\n\n${tail}`, 'Manual.pdf', {
+      chunkSize: 400,
+      overlap: 0,
+      minChunkLength: 200,
+    });
+
+    expect(chunks.some((c) => c.text.includes(tail))).toBe(true);
+  });
+});

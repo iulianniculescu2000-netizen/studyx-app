@@ -185,76 +185,89 @@ export class DocumentProcessor {
     minChunkLength: number,
     knownHeadings?: string[]
   ) {
-    void overlap;
-    void minChunkLength;
-    const chunks: Array<{
-      id: string;
-      text: string;
-      metadata: { startIndex: number; endIndex: number; wordCount: number; charCount: number; heading?: string; };
-    }> = [];
-
-    // Split by paragraphs first
+    const entries: Array<{ text: string; heading?: string }> = [];
     const paragraphs = text.split(/\n\s*\n/);
     let currentChunk = '';
-    let chunkIndex = 0;
-    let globalIndex = 0;
     let currentHeading: string | undefined;
 
-    for (let i = 0; i < paragraphs.length; i++) {
-      const paragraph = paragraphs[i].trim();
+    /**
+     * Trailing slice of a chunk, repeated at the start of the next one so a
+     * sentence split across the boundary is still searchable from both sides.
+     * Cut at a word boundary to avoid starting on half a word.
+     */
+    const tailFor = (chunkText: string): string => {
+      if (overlap <= 0) return '';
+      if (chunkText.length <= overlap) return chunkText;
+      const slice = chunkText.slice(-overlap);
+      const boundary = slice.search(/\s/);
+      return boundary >= 0 ? slice.slice(boundary + 1) : slice;
+    };
+
+    const push = (chunkText: string) => {
+      const trimmed = chunkText.trim();
+      if (trimmed.length > 0) entries.push({ text: trimmed, heading: currentHeading });
+    };
+
+    for (const raw of paragraphs) {
+      const paragraph = raw.trim();
       if (!paragraph) continue;
 
       const isHeading = (knownHeadings?.length && this.matchesKnownHeading(paragraph, knownHeadings))
         || this.isLikelyHeading(paragraph);
 
       if (isHeading) {
-        // A chapter title must close the previous chapter's chunk before it
-        // becomes the current heading. Without this the accumulated text of the
-        // PREVIOUS chapter is flushed under the NEW chapter's name — and a
-        // chapter short enough to fit alongside the next one disappeared from
-        // the chapter list entirely, since only the last heading survived.
-        if (currentChunk.trim().length > 0) {
-          chunks.push(this.createChunk(currentChunk.trim(), sourceName, chunkIndex++, globalIndex, currentHeading));
-          globalIndex += currentChunk.length;
-          currentChunk = '';
-        }
+        // A chapter title closes the previous chapter's chunk before becoming
+        // the current heading — otherwise the previous chapter's trailing text
+        // is stored under the NEW chapter's name, and a chapter short enough to
+        // sit beside the next one vanishes from the chapter list entirely.
+        // Deliberately no overlap here: carrying text across a chapter boundary
+        // would reintroduce exactly that mix-up.
+        push(currentChunk);
+        currentChunk = '';
         currentHeading = paragraph;
       }
 
-      const potentialChunk = currentChunk + (currentChunk ? '\n\n' : '') + paragraph;
-
+      const potentialChunk = currentChunk ? `${currentChunk}\n\n${paragraph}` : paragraph;
       if (potentialChunk.length <= chunkSize) {
         currentChunk = potentialChunk;
         continue;
       }
 
-      // Current chunk is too large, save it and start new one
-      if (currentChunk.trim().length > 0) {
-        chunks.push(this.createChunk(currentChunk.trim(), sourceName, chunkIndex++, globalIndex, currentHeading));
-        globalIndex += currentChunk.length;
-      }
+      const carry = tailFor(currentChunk.trim());
+      push(currentChunk);
+      currentChunk = '';
 
-      // Handle oversized paragraph
       if (paragraph.length > chunkSize) {
-        const paragraphChunks = this.splitOversizedText(paragraph, chunkSize, 0);
-        for (const chunk of paragraphChunks) {
-          if (chunk.trim().length > 0) {
-            chunks.push(this.createChunk(chunk.trim(), sourceName, chunkIndex++, globalIndex, currentHeading));
-            globalIndex += chunk.length;
-          }
-        }
-        currentChunk = '';
+        this.splitOversizedText(paragraph, chunkSize).forEach(push);
       } else {
-        currentChunk = paragraph;
+        currentChunk = carry ? `${carry}\n\n${paragraph}` : paragraph;
       }
     }
+    push(currentChunk);
 
-    // Add final chunk
-    if (currentChunk.trim().length > 0) {
-      chunks.push(this.createChunk(currentChunk.trim(), sourceName, chunkIndex++, globalIndex, currentHeading));
+    // Fold an undersized chunk into the previous one from the SAME chapter.
+    // Merging rather than dropping means `minChunkLength` can never lose text.
+    const merged: Array<{ text: string; heading?: string }> = [];
+    for (const entry of entries) {
+      const previous = merged[merged.length - 1];
+      const fitsInPrevious = previous
+        && entry.text.length < minChunkLength
+        && previous.heading === entry.heading
+        && previous.text.length + entry.text.length + 2 <= chunkSize;
+
+      if (fitsInPrevious) {
+        previous.text = `${previous.text}\n\n${entry.text}`;
+        continue;
+      }
+      merged.push({ ...entry });
     }
 
-    return chunks;
+    let globalIndex = 0;
+    return merged.map((entry, index) => {
+      const chunk = this.createChunk(entry.text, sourceName, index, globalIndex, entry.heading);
+      globalIndex += entry.text.length;
+      return chunk;
+    });
   }
 
   /**
@@ -304,8 +317,7 @@ export class DocumentProcessor {
   /**
    * Split oversized text into smaller pieces
    */
-  private splitOversizedText(text: string, maxSize: number, minSize: number): string[] {
-    void minSize;
+  private splitOversizedText(text: string, maxSize: number): string[] {
     if (text.length <= maxSize) return [text];
 
     const chunks: string[] = [];
@@ -330,7 +342,7 @@ export class DocumentProcessor {
         }
 
         if (part.length > maxSize) {
-          result.push(...this.splitOversizedText(part, maxSize, 0));
+          result.push(...this.splitOversizedText(part, maxSize));
           current = '';
         } else {
           current = part;
