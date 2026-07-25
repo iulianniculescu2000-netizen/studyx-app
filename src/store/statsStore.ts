@@ -78,7 +78,10 @@ function calcNextReview(
   let newInterval: number;
   if (n === 0) newInterval = 1;
   else if (n === 1) newInterval = 6;
-  else newInterval = Math.round(interval * newEF);
+  // A stat carrying interval 0 (legacy or partially hydrated data) would stay at
+  // 0 forever here, since 0 * eFactor is still 0 — leaving the card due on every
+  // single review, permanently. The floor of one day keeps it moving.
+  else newInterval = Math.max(1, Math.round(interval * newEF));
 
   // Cap la 1 an pentru studenți la medicină (memorie pe termen lung)
   newInterval = Math.min(newInterval, 365);
