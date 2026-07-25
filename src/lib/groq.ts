@@ -4,6 +4,7 @@ import { getMedicalSystemPrompt } from './aiContext';
 import { logAIDebug } from '../ai/debug';
 import type { AIRequestTask } from '../ai/types';
 import { createRequestGovernor } from './aiRequestGovernor';
+import { extractJsonArrayLenient } from './jsonExtract';
 import { logDiagnosticEvent } from '../store/diagnosticsStore';
 import { useToastStore } from '../store/toastStore';
 import { buildQuestionTypeInstruction, type QuestionType } from './ai/questionTypes';
@@ -305,11 +306,10 @@ export async function validateApiKey(
 }
 
 function extractJsonArray(raw: string): string | null {
-  const stripped = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '');
-  const start = stripped.indexOf('[');
-  const end = stripped.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) return null;
-  return stripped.slice(start, end + 1);
+  // Slicing to the last `]` used to land on an inner `options` array whenever a
+  // reply was cut short by max_tokens, so the batch failed to parse and every
+  // complete question in it was thrown away. This keeps the finished ones.
+  return extractJsonArrayLenient(raw);
 }
 
 function detectLanguage(text: string): string {
@@ -348,26 +348,36 @@ export function isDuplicateQuestion(newText: string, existingTexts: string[]): b
 
 // ── Anti-Hallucination Validator ──────────────────────────────────────────────
 // Ensures AI output is coherent: exactly 1 correct option, non-empty, non-duplicate options.
-function isValidQuestion(q: GeneratedQuestion): boolean {
+export function isValidQuestion(q: GeneratedQuestion): boolean {
   if (!q.text?.trim() || !Array.isArray(q.options) || q.options.length < 2) return false;
-  if (q.text.toLowerCase().includes('json') || q.text.toLowerCase().includes('format')) return false;
+  // Reject a stem that is ABOUT the output format ("returnează în format JSON"),
+  // not any stem that merely contains those words. The old substring test threw
+  // away perfectly good medical questions — "Din ce este format nefronul?" is
+  // ordinary Romanian, and every such question vanished silently.
+  if (/\b(format|formatul)\s+(json|de\s+r[aă]spuns)\b|\bjson\b/i.test(q.text)) return false;
+
   const corrects = q.options.filter(o => o.isCorrect === true);
   // Hallucination check 1: must have exactly one correct option
   if (corrects.length !== 1) return false;
   // Hallucination check 2: correct option must have non-empty text
   if (!corrects[0].text?.trim()) return false;
-  // Hallucination check 3: correct option must not be virtually identical to a wrong option
-  // (catches cases where AI copies the answer into a distractor with minimal edits)
-  const correctNorm = corrects[0].text.toLowerCase().trim();
-  const hasPhantomDuplicate = q.options
-    .filter(o => !o.isCorrect)
-    .some(o => {
-      const wrongNorm = (o.text ?? '').toLowerCase().trim();
-      if (!wrongNorm) return false;
-      const maxLen = Math.max(correctNorm.length, wrongNorm.length);
-      return maxLen > 0 && levenshtein(correctNorm, wrongNorm) / maxLen < 0.07; // >93% identical
-    });
-  return !hasPhantomDuplicate;
+  // Hallucination check 3: every option needs real text. An empty distractor
+  // used to be skipped by the duplicate scan below and so passed validation,
+  // leaving a blank choice in a saved quiz.
+  if (q.options.some(o => !o.text?.trim())) return false;
+
+  // Hallucination check 4: no two options may say the same thing — previously
+  // only distractor-vs-correct was compared, so the AI could repeat the same
+  // wrong answer twice and it was accepted.
+  const normalized = q.options.map(o => o.text.toLowerCase().trim());
+  for (let i = 0; i < normalized.length; i += 1) {
+    for (let j = i + 1; j < normalized.length; j += 1) {
+      const maxLen = Math.max(normalized[i].length, normalized[j].length);
+      if (maxLen === 0) return false;
+      if (levenshtein(normalized[i], normalized[j]) / maxLen < 0.07) return false; // >93% identical
+    }
+  }
+  return true;
 }
 
 // ── Smart Context Chunking ────────────────────────────────────────────────────
