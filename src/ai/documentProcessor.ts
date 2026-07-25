@@ -204,9 +204,20 @@ export class DocumentProcessor {
       const paragraph = paragraphs[i].trim();
       if (!paragraph) continue;
 
-      if (knownHeadings?.length && this.matchesKnownHeading(paragraph, knownHeadings)) {
-        currentHeading = paragraph;
-      } else if (this.isLikelyHeading(paragraph)) {
+      const isHeading = (knownHeadings?.length && this.matchesKnownHeading(paragraph, knownHeadings))
+        || this.isLikelyHeading(paragraph);
+
+      if (isHeading) {
+        // A chapter title must close the previous chapter's chunk before it
+        // becomes the current heading. Without this the accumulated text of the
+        // PREVIOUS chapter is flushed under the NEW chapter's name — and a
+        // chapter short enough to fit alongside the next one disappeared from
+        // the chapter list entirely, since only the last heading survived.
+        if (currentChunk.trim().length > 0) {
+          chunks.push(this.createChunk(currentChunk.trim(), sourceName, chunkIndex++, globalIndex, currentHeading));
+          globalIndex += currentChunk.length;
+          currentChunk = '';
+        }
         currentHeading = paragraph;
       }
 
