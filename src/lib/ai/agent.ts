@@ -226,7 +226,34 @@ function findByName<T extends { name: string }>(items: T[], query: string | unde
   return bestScore > 0 ? best : null;
 }
 
-const COMMAND_HINTS = /\b(cre(e|ea)z|creaz|adaug|genere|fa(-| )?mi|fa(ce)?|mut(a|ă)|redenume|sterg|șterg|organiz|pune|baga|bag(ă)?|fol?der|subfolder|grile|grila|set(ul|uri)?|pachet|atlas|biblioteca|gre(ș|s)el|gre(ș|s)esc|recapitul)\b/i;
+/** Romanian inflection: everything here may be followed by a normal word ending. */
+const ENDING = '[a-zăâîșț]*';
+
+/**
+ * Stems that mark a message as an instruction rather than a question.
+ *
+ * These used to sit inside `\b(...)\b`, and that closing boundary demanded the
+ * stem be the ENTIRE word — which Romanian almost never obliges. "șterg"
+ * matched but "șterge" did not, "folder" matched but "folderul" did not, so
+ * "șterge folderul Cardiologie" was answered as chit-chat.
+ *
+ * Short or ambiguous stems stay anchored on purpose: a loose "fa" would swallow
+ * "familie" and "facultate", and "card" would swallow "cardiologie".
+ */
+const COMMAND_PATTERNS = [
+  // Actions
+  `cre[ea]z${ENDING}`, `creaz${ENDING}`, `adaug${ENDING}`, `gener${ENDING}`,
+  `[sș]terg${ENDING}`, `mut[aă]${ENDING}`, `redenum${ENDING}`, `organiz${ENDING}`,
+  `import${ENDING}`, `pune${ENDING}`, `bag[aă]\\b`,
+  // Imperative "fă" / "fă-mi", kept tight so ordinary "fa..." words don't match.
+  'f[aă]\\s*-?\\s*mi\\b', 'f[aă]\\b', 'face\\b',
+  // Things the actions operate on
+  `fol?der${ENDING}`, `subfolder${ENDING}`, `gril[aăe]${ENDING}`,
+  'set(ul|uri|urile)?\\b', `pachet${ENDING}`, `atlas${ENDING}`, `bibliotec${ENDING}`,
+  `gre[șs]el${ENDING}`, 'gre[șs]esc', `recapitul${ENDING}`,
+];
+
+const COMMAND_HINTS = new RegExp(`\\b(?:${COMMAND_PATTERNS.join('|')})`, 'i');
 
 /** Cheap pre-filter so normal chat questions never pay for a planning round-trip. */
 export function looksLikeAgentCommand(text: string): boolean {
@@ -1067,7 +1094,9 @@ export async function executeAgentPlan(
           const target = match ? useQuizStore.getState().quizzes.find((q) => q.id === match.id) : undefined;
           if (!target) throw new Error(`Nu am găsit setul „${step.quiz ?? '?'}".`);
           const snapshot: Quiz = target;
-          useQuizStore.getState().deleteQuiz(target.id);
+          // Keep the flashcard images: this deletion is undoable, and purging
+          // them here left an undone deck with all its pictures missing.
+          useQuizStore.getState().deleteQuiz(target.id, { keepImages: true });
           undoOps.push(() => useQuizStore.getState().addQuiz(snapshot));
           summaryParts.push(`șters „${target.title}"`);
           callbacks.onStep(index, 'done');

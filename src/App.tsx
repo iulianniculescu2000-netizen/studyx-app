@@ -6,6 +6,7 @@ import { useUserStore } from './store/userStore';
 import { useFocusModeStore } from './store/focusModeStore';
 import { useTutorialStore } from './store/tutorialStore';
 import { useAIStore } from './store/aiStore';
+import { useQuizStore } from './store/quizStore';
 import { useToastStore } from './store/toastStore';
 import { useSaveStatusStore } from './store/saveStatusStore';
 import TitleBar from './components/TitleBar';
@@ -157,6 +158,15 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
   useEffect(() => {
     if (!activeProfileId) return;
     void migrateLegacyUserMemory(activeProfileId);
+  }, [activeProfileId]);
+
+  // Reclaim flashcard images whose deck no longer exists. Deletion is deferred
+  // for undoable removals, and this was never called at all, so pictures from
+  // deleted decks used to sit in IndexedDB forever.
+  useEffect(() => {
+    if (!activeProfileId) return;
+    const timer = window.setTimeout(() => useQuizStore.getState().cleanupOrphanImages(), 8000);
+    return () => window.clearTimeout(timer);
   }, [activeProfileId]);
 
   // Auto-check for updates 10s after startup (packaged builds only)

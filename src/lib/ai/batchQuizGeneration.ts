@@ -101,7 +101,11 @@ export async function generateQuizPackagesFromSource({
   const packIndexes = Array.from({ length: normalizedPackCount }, (_, i) => i);
 
   type PackResult =
-    | { ok: true; packIndex: number; questions: Quiz['questions']; warning: string | null }
+    // `fallbackIds` marks which questions came from the local template builder
+    // rather than the AI. Counting them by sniffing for an `isFallback` field
+    // never worked — the builder never set one, so the count was always zero and
+    // the user was never told a pack was locally generated.
+    | { ok: true; packIndex: number; questions: Quiz['questions']; warning: string | null; fallbackIds: Set<string> }
     | { ok: false; packIndex: number; error: string };
 
   const generatePack = async (packIndex: number): Promise<PackResult> => {
@@ -146,6 +150,7 @@ export async function generateQuizPackagesFromSource({
       }
     }
 
+    const fallbackIds = new Set<string>();
     if (packQuestions.length < normalizedQuestionCount) {
       const fallback = buildFallbackQuestionsFromChunks({
         sourceName,
@@ -154,6 +159,7 @@ export async function generateQuizPackagesFromSource({
         difficulty: targetDifficulty,
         packIndex,
       }).filter((q) => !seenPackSignatures.has(questionSignature(q)));
+      fallback.forEach((q) => fallbackIds.add(q.id));
       packQuestions.push(...fallback);
     }
 
@@ -161,7 +167,7 @@ export async function generateQuizPackagesFromSource({
       return { ok: false, packIndex, error: aiError ?? 'Nu am reușit să generăm întrebări.' };
     }
 
-    return { ok: true, packIndex, questions: packQuestions, warning: aiError };
+    return { ok: true, packIndex, questions: packQuestions, warning: aiError, fallbackIds };
   };
 
   // Run packs in batches of PACK_CONCURRENCY.
@@ -188,12 +194,20 @@ export async function generateQuizPackagesFromSource({
       );
       dedupedQuestions.forEach((q) => globalSeenQuestionSignatures.add(questionSignature(q)));
 
-      const aiCount = dedupedQuestions.filter((q) => !('isFallback' in q)).length;
-      const fbCount = dedupedQuestions.length - aiCount;
+      // Counted after dedup, by id, so a fallback question dropped as a
+      // duplicate isn't still reported as generated.
+      const fbCount = dedupedQuestions.filter((q) => result.fallbackIds.has(q.id)).length;
+      const aiCount = dedupedQuestions.length - fbCount;
       aiQuestionCount += aiCount;
       fallbackQuestionCount += fbCount;
 
-      if (result.warning) warnings.push(`Pachetul ${result.packIndex + 1} a folosit fallback: ${result.warning}`);
+      if (result.warning) {
+        warnings.push(`Pachetul ${result.packIndex + 1} a folosit fallback: ${result.warning}`);
+      } else if (fbCount > 0) {
+        // The AI didn't error, it just returned too few questions — previously
+        // this case passed completely unreported.
+        warnings.push(`Pachetul ${result.packIndex + 1}: ${fbCount} întrebări completate local, AI-ul a returnat prea puține.`);
+      }
 
       const packNumber = result.packIndex + 1;
       const titleSuffix = normalizedPackCount === 1 ? 'Set premium' : `Set premium ${packNumber}`;
