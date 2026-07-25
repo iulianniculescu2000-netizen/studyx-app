@@ -8,6 +8,7 @@ import {
   Cpu,
   Database,
   Gauge,
+  History,
   RotateCcw,
   ShieldCheck,
   Trash2,
@@ -18,6 +19,11 @@ import { useViewportProfile } from '../hooks/useViewportProfile';
 import { detectDeviceCapabilities } from '../lib/deviceTier';
 import { getHealthBadgeLabel } from '../lib/healthReporter';
 import { runStartupHealthCheck } from '../lib/startupHealthCheck';
+import { clearRollbackSnapshot, formatSnapshotDate, getRollbackSnapshot } from '../lib/rollback';
+import { saveProfileData } from '../store/profileStorage';
+import { useQuizStore } from '../store/quizStore';
+import { useFolderStore } from '../store/folderStore';
+import type { Folder, Quiz, QuizSession } from '../types';
 import { useAIStore } from '../store/aiStore';
 import { useDiagnosticsStore } from '../store/diagnosticsStore';
 import { useFocusModeStore } from '../store/focusModeStore';
@@ -220,7 +226,7 @@ function ActionRow({
 export default function Settings() {
   const theme = useTheme();
   const { addToast } = useToastStore();
-  const { themeId, setTheme } = useUserStore();
+  const { themeId, setTheme, activeProfileId } = useUserStore();
   const { screenshotProtection, setContentProtection } = useFocusModeStore();
   const { hasKey } = useAIStore();
   const { localVersion } = useUpdateStore();
@@ -242,6 +248,32 @@ export default function Settings() {
   const [showAISettings, setShowAISettings] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const deviceInfo = detectDeviceCapabilities();
+
+  // A rollback snapshot is written before every content-pack install. Until now
+  // nothing ever read it back, so the safety net only performed the half that
+  // costs storage and none of the half that saves you.
+  const [snapshot, setSnapshot] = useState(() => getRollbackSnapshot());
+  const [restoring, setRestoring] = useState(false);
+
+  const handleRestoreSnapshot = async () => {
+    if (!snapshot || restoring) return;
+    setRestoring(true);
+    try {
+      useQuizStore.getState()._hydrate({
+        quizzes: snapshot.quizzes as Quiz[],
+        sessions: snapshot.sessions as QuizSession[],
+      });
+      useFolderStore.getState()._hydrate({ folders: snapshot.folders as Folder[] });
+      if (activeProfileId) await saveProfileData(activeProfileId);
+      clearRollbackSnapshot();
+      setSnapshot(null);
+      addToast('Am restaurat starea dinaintea ultimei instalări.', 'success');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Restaurarea a eșuat.', 'error');
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const themeCardHeight = mobile ? 132 : shortHeight ? 140 : compact ? 156 : 180;
 
@@ -494,6 +526,19 @@ export default function Settings() {
             buttonLabel="Deschide"
             onClick={() => setShowBackup(true)}
           />
+          {snapshot && (
+            <>
+              <Divider />
+              <ActionRow
+                icon={<History size={16} />}
+                label="Restaurează dinaintea ultimei instalări"
+                description={`${snapshot.label} · ${formatSnapshotDate(snapshot.savedAt)} · ${snapshot.quizzes.length} seturi`}
+                buttonLabel={restoring ? 'Se restaurează...' : 'Restaurează'}
+                onClick={handleRestoreSnapshot}
+                danger
+              />
+            </>
+          )}
           <Divider />
           <ToggleRow
             icon={<ShieldCheck size={16} />}
