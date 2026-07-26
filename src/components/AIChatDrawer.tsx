@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -14,6 +14,8 @@ import {
   Layers3,
   ListChecks,
   Loader2,
+  Maximize2,
+  Minimize2,
   PanelRightClose,
   PanelRightOpen,
   RotateCcw,
@@ -368,6 +370,10 @@ export default function AIChatDrawer() {
   const [scopedSource, setScopedSource] = useState<{ id: string; name: string } | null>(null);
   const [activeCitationKey, setActiveCitationKey] = useState<string | null>(null);
   const [view, setView] = useState<DrawerView>('chat');
+  /** Chat sheet widened to studio size — schemas and tables need the room. */
+  const [wideChat, setWideChat] = useState(false);
+  /** Markup of a schema/table opened full-screen from a message. */
+  const [zoomedBlock, setZoomedBlock] = useState<string | null>(null);
   const [studioSourceId, setStudioSourceId] = useState<string>('');
   const [studioHeading, setStudioHeading] = useState<string>(WHOLE_DOCUMENT_HEADING);
   const [studioFolderId, setStudioFolderId] = useState<string>('__uncategorized__');
@@ -1424,6 +1430,33 @@ export default function AIChatDrawer() {
     }
   };
 
+  // Escape closes the zoom overlay before anything else reacts to the key.
+  useEffect(() => {
+    if (!zoomedBlock) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setZoomedBlock(null);
+    };
+    window.addEventListener('keydown', handleEscape, true);
+    return () => window.removeEventListener('keydown', handleEscape, true);
+  }, [zoomedBlock]);
+
+  /**
+   * Message bodies are injected as HTML, so schemas and wide tables can't carry
+   * React handlers. One delegated click lifts the block the user tapped into a
+   * full-screen overlay instead.
+   */
+  const handleZoomableClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    const block = target?.closest?.('[data-sx-zoom]') as HTMLElement | null;
+    if (!block) return;
+    if (target?.closest('a')) return; // links inside a table keep working
+    const clone = block.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('[data-sx-hint]').forEach((hint) => hint.remove());
+    setZoomedBlock(clone.innerHTML);
+  };
+
   const renderMessageList = (compact = false) => {
     const threadMessages = messages;
     const recentSourceName = scopedSource?.name
@@ -1432,7 +1465,7 @@ export default function AIChatDrawer() {
     const greeting = buildProactiveGreeting(weakTopics, performanceSummary.dueCount, recentSourceName);
 
     return (
-    <div className={compact ? 'space-y-4' : 'space-y-5'}>
+    <div className={compact ? 'space-y-4' : 'space-y-5'} onClick={handleZoomableClick}>
       {threadMessages.length === 0 ? (
         <div className={`text-center ${compact ? 'py-6' : 'py-8'}`}>
           <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mb-5 text-5xl">
@@ -1719,8 +1752,12 @@ export default function AIChatDrawer() {
 
   const drawerWidth = view === 'studio'
     ? (mobile ? 'min(600px, calc(100vw - 20px))' : 'min(1080px, calc(100vw - 28px))')
-    : (mobile ? 'min(520px, calc(100vw - 20px))' : 'min(560px, calc(100vw - 28px))');
-  const drawerHeight = view === 'studio' ? 'min(88vh, 880px)' : 'min(85vh, 860px)';
+    : mobile
+      ? 'min(520px, calc(100vw - 20px))'
+      : wideChat
+        ? 'min(1080px, calc(100vw - 28px))'
+        : 'min(560px, calc(100vw - 28px))';
+  const drawerHeight = view === 'studio' || (wideChat && view === 'chat') ? 'min(88vh, 880px)' : 'min(85vh, 860px)';
 
   if (floatingUiSuppressed && !open) {
     return null;
@@ -1831,6 +1868,20 @@ export default function AIChatDrawer() {
                       );
                     })}
                   </div>
+
+                  {view === 'chat' && !mobile && (
+                    <motion.button
+                      whileHover={calmMotion ? undefined : { scale: 1.08 }}
+                      whileTap={calmMotion ? undefined : { scale: 0.92 }}
+                      onClick={() => setWideChat((value) => !value)}
+                      aria-label={wideChat ? 'Îngustează chatul' : 'Lățește chatul'}
+                      title={wideChat ? 'Îngustează chatul' : 'Lățește chatul — mai mult spațiu pentru scheme și tabele'}
+                      className="rounded-2xl p-2.5 transition-colors hover:bg-white/5 press-feedback"
+                      style={{ color: wideChat ? theme.accent : theme.text3 }}
+                    >
+                      {wideChat ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </motion.button>
+                  )}
 
                   <motion.button
                     whileHover={calmMotion ? undefined : { rotate: 90, scale: 1.08 }}
@@ -2254,6 +2305,38 @@ export default function AIChatDrawer() {
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {zoomedBlock && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setZoomedBlock(null)}
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-8"
+            style={{ background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.97, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.97, opacity: 0 }}
+              onClick={(event) => event.stopPropagation()}
+              className="relative max-h-full w-full max-w-[1200px] overflow-auto rounded-3xl p-5 sm:p-7"
+              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text }}
+            >
+              <button
+                onClick={() => setZoomedBlock(null)}
+                aria-label="Închide"
+                className="absolute right-3 top-3 rounded-2xl p-2 transition-colors hover:bg-white/10"
+                style={{ color: theme.text3 }}
+              >
+                <X size={18} />
+              </button>
+              <div dangerouslySetInnerHTML={{ __html: zoomedBlock }} />
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </>

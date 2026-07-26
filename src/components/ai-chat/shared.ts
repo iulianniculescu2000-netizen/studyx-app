@@ -1,3 +1,6 @@
+import { ZOOM_ATTR, isDiagramLanguage, renderDiagramBlock } from './diagram';
+import { structureRawText } from './structure';
+
 export type ChatMode = 'grounded' | 'explain' | 'summarize' | 'diagram' | 'test' | 'mnemonic';
 
 export type Citation = {
@@ -145,6 +148,10 @@ function formatInline(text: string) {
     `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color:currentColor;text-decoration:underline;font-weight:600;">${label}</a>`,
   );
 
+  // Models write literal <br> inside table cells to stack answer options; after
+  // escaping it would show up as text, so restore it as the only allowed tag.
+  out = out.replace(/&lt;br\s*\/?&gt;/gi, '<br/>');
+
   out = out
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/__(.+?)__/g, '<strong>$1</strong>')
@@ -179,13 +186,19 @@ function renderTable(header: string, rows: string[]) {
       return `<tr>${cells}</tr>`;
     })
     .join('');
-  return `<table style="border-collapse:collapse;margin:10px 0;font-size:0.92em;width:100%;"><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+  // Wide comparison tables are unusable squeezed into the chat column, so they
+  // scroll inside their own box and can be opened full-screen (see ZOOM_ATTR).
+  return [
+    `<div ${ZOOM_ATTR} style="overflow-x:auto;margin:10px 0;cursor:zoom-in;">`,
+    `<table style="border-collapse:collapse;font-size:0.92em;width:100%;min-width:420px;"><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>`,
+    '</div>',
+  ].join('');
 }
 
 export function formatMessage(content: string) {
   if (!content) return '';
 
-  const escaped = escapeHtml(content);
+  const escaped = escapeHtml(structureRawText(content));
   const lines = escaped.split('\n');
   const html: string[] = [];
   let i = 0;
@@ -214,6 +227,7 @@ export function formatMessage(content: string) {
     if (/^```/.test(trimmed)) {
       flushParagraph();
       closeListsTo(0);
+      const lang = trimmed.replace(/^```/, '').trim();
       const codeLines: string[] = [];
       i += 1;
       while (i < lines.length && !/^```/.test(lines[i].trim())) {
@@ -221,6 +235,17 @@ export function formatMessage(content: string) {
         i += 1;
       }
       i += 1; // skip closing fence
+
+      // Flowchart blocks become real SVG schemas; unparsable ones fall through
+      // to the plain code block below so nothing is ever lost.
+      if (isDiagramLanguage(lang)) {
+        const svg = renderDiagramBlock(codeLines.join('\n'));
+        if (svg) {
+          html.push(svg);
+          continue;
+        }
+      }
+
       html.push(
         `<pre style="background:${MD_SOFT_BG};border:1px solid ${MD_BORDER};border-radius:10px;padding:10px 12px;margin:8px 0;overflow-x:auto;font-size:0.86em;line-height:1.5;"><code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${codeLines.join('\n')}</code></pre>`,
       );
