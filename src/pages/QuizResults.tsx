@@ -14,6 +14,7 @@ import { useUIStore } from '../store/uiStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { buildClarificationFallback, cleanQuestionExplanation, getAnswerTextForOptionIds, getCorrectAnswerText } from '../helpers/quizAi';
 import { explainAnswerInline } from '../lib/groq';
+import AIRichText from '../components/ai-chat/AIRichText';
 import { buildAdaptiveExamQuiz, buildMistakeFlashcardQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
 
 export default function QuizResults() {
@@ -494,7 +495,7 @@ export default function QuizResults() {
                                 <span className="font-semibold flex items-center gap-1 mb-1" style={{ color: theme.accent }}>
                                   <Bot size={11} />{hasKey ? 'Explicație AI' : 'Explicație ghidată'}
                                 </span>
-                                {aiExplanations[q.id]}
+                                <AIRichText text={aiExplanations[q.id]} />
                               </motion.div>
                             </AnimatePresence>
                           )}

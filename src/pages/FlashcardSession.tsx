@@ -14,6 +14,7 @@ import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildClarificationFallback, cleanQuestionExplanation, getCorrectAnswerText } from '../helpers/quizAi';
 import { explainWrongAnswer } from '../lib/groq';
 import QuizImage from '../components/QuizImage';
+import AIRichText from '../components/ai-chat/AIRichText';
 import { isFlashcardDeck } from '../lib/deckKind';
 import type { Question, Quiz } from '../types';
 
@@ -578,9 +579,9 @@ export default function FlashcardSession() {
                           <p className="mt-2 text-xs leading-relaxed" style={{ color: theme.text3 }}>
                             Explicație reformulată pe scurt, într-un ton mai ușor de reținut.
                           </p>
-                          <p className="mt-4 whitespace-pre-wrap text-sm leading-7 sm:text-[15px]" style={{ color: theme.text2 }}>
-                            {aiExplanation}
-                          </p>
+                          <div className="mt-4 text-sm leading-7 sm:text-[15px]" style={{ color: theme.text2 }}>
+                            <AIRichText text={aiExplanation} />
+                          </div>
                         </div>
                       )}
                     </div>

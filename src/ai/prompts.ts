@@ -21,6 +21,20 @@ export const GROUNDING_RULES =
   '6. Opțiunile de răspuns trebuie să fie concise, clare și utile pentru examen, nu propoziții lungi copiate integral.\n' +
   '7. Evită să repeți textual pasaje întregi din context; reformulează fidel și precis.';
 
+/**
+ * Shared readability contract for every AI surface (chat, explicații, rezumate).
+ * Without it models answer with one dense paragraph and the structure gets
+ * inlined as "1. … 2. …", which is unreadable in a narrow panel.
+ */
+export const STRUCTURED_OUTPUT_RULES =
+  'FORMA RĂSPUNSULUI (obligatoriu):\n' +
+  '- scrie pe secțiuni scurte, fiecare pe rândul ei, separate prin linie goală; niciodată un bloc compact de text\n' +
+  '- pune un titlu îngroșat la începutul fiecărei secțiuni, ex. **✅ De ce e corect:**\n' +
+  '- enumerările merg pe rânduri separate, ca listă cu „- ”; NU înșirui „1. … 2. … 3. …” în același paragraf\n' +
+  '- îngroașă termenii-cheie, valorile-prag și capcanele; maximum 2-3 propoziții pe secțiune\n' +
+  '- folosește tabel Markdown pentru comparații și diferențiale\n' +
+  '- nu folosi backslash înaintea caracterelor markdown (scrie * nu \\*)';
+
 export const TRUSTED_GENERAL_KNOWLEDGE_RULES =
   'Cand biblioteca nu acopera complet raspunsul, completeaza doar cu rationament medical general stabil, compatibil cu manuale si ghiduri consacrate. ' +
   'Nu inventa citari exacte, editii, pagini, doze, scoruri sau recomandari temporale neverificate; marcheaza clar ce este completare generala.';
@@ -150,11 +164,12 @@ export function buildExplanationPrompt(
     GROUNDING_RULES,
     TRUSTED_GENERAL_KNOWLEDGE_RULES,
     'SCOP: explicație CLARĂ după o grilă greșită. Acoperă mecanismul corect și toate variantele greșite cheie. Nu scrie eseuri, dar nu sacrifica niciun mecanism important.',
-    'FORMAT STRICT:\n' +
-      '1. De ce răspunsul corect e corect — 1-2 propoziții cu mecanismul fiziopatologic cheie.\n' +
-      '2. De ce varianta greșită aleasă cade și ce confuzie clinică clasică reprezintă — 1-2 propoziții.\n' +
-      '3. De ce celelalte variante greșite nu sunt corecte — câte 1 propoziție scurtă, precisă, pentru fiecare.\n' +
-      '4. Regula de reținut pentru examen — 1 propoziție scurtă și memorabilă.',
+    STRUCTURED_OUTPUT_RULES,
+    'STRUCTURA EXPLICAȚIEI — exact aceste patru secțiuni, în această ordine, separate prin linie goală (\\n\\n în JSON):\n' +
+      '**✅ De ce e corect:** mecanismul fiziopatologic cheie, 1-2 propoziții.\n\n' +
+      '**❌ De ce cade varianta ta:** ce confuzie clinică clasică reprezintă, 1-2 propoziții.\n\n' +
+      '**⚠️ Celelalte variante:** listă cu „- ”, câte un rând scurt pentru fiecare variantă greșită rămasă.\n\n' +
+      '**🧠 Regula de examen:** o singură propoziție scurtă și memorabilă.',
     'Nu repeta întrebarea. Fii direct ca un profesor care corectează oral.',
     question ? `ÎNTREBAREA: ${sanitizeUserInput(question.text)}` : '',
     optionLines ? `OPȚIUNI:\n${optionLines}` : '',
@@ -162,7 +177,7 @@ export function buildExplanationPrompt(
     `RĂSPUNS CORECT: ${sanitizeUserInput(correctAnswer)}`,
     contextPayload?.summary ? `CONTEXT RELEVANT:\n${contextPayload.summary}` : '',
     'Returnează strict JSON:\n' +
-      '{"explanation":"explicatie clara: mecanism corect, de ce greseala alesa cade, scurt de ce celelalte variante cad, regula","mistakeType":"confuzie_mecanism|inversare_tratament|diagnostic_diferential|lipsa_cunostinte|citire_superficiala|altul","rule":"regula scurta de retinut","confidence":0.0,"missingConcept":"concept lipsa","recommendedTopic":"topic recomandat","relatedConcepts":[""],"sources":[""]}',
+      '{"explanation":"cele patru secțiuni Markdown de mai sus, separate prin \\n\\n","mistakeType":"confuzie_mecanism|inversare_tratament|diagnostic_diferential|lipsa_cunostinte|citire_superficiala|altul","rule":"regula scurta de retinut","confidence":0.0,"missingConcept":"concept lipsa","recommendedTopic":"topic recomandat","relatedConcepts":[""],"sources":[""]}',
   ]
     .filter(Boolean)
     .join('\n\n');

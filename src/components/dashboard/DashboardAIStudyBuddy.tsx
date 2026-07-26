@@ -12,6 +12,7 @@ import { useAdaptiveMotion } from '../../hooks/useAdaptiveMotion';
 import { cancelIdleTask, scheduleIdleTask } from '../../lib/idleTaskScheduler';
 import { createLatestOnlyRunner } from '../../lib/asyncGuard';
 import { logDiagnosticEvent } from '../../store/diagnosticsStore';
+import AIRichText from '../ai-chat/AIRichText';
 
 const AI_REC_KEY = 'studyx-ai-recommendation';
 
@@ -211,9 +212,9 @@ export default function DashboardAIStudyBuddy() {
                 <div className="skeleton-block h-3 w-1/2 rounded-full" />
               </div>
             ) : (
-              <p className="text-[15px] font-medium leading-[1.72]" style={{ color: theme.text }}>
-                {displayText}
-              </p>
+              <div className="text-[15px] font-medium leading-[1.72]" style={{ color: theme.text }}>
+                <AIRichText text={displayText} />
+              </div>
             )}
             {!loading && text && (
               <motion.button

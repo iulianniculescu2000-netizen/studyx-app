@@ -5,6 +5,7 @@
  * astfel încât răspunsurile să fie mai bine adaptate și mai utile pentru studiu.
  */
 import type { Quiz } from '../types';
+import { STRUCTURED_OUTPUT_RULES } from '../ai/prompts';
 
 export interface PerformanceSummary {
   totalAnswered: number;
@@ -105,7 +106,12 @@ export function getMedicalSystemPrompt(
       'Tonul este motivant, realist și orientat pe progres.',
   };
 
-  const prompt = base[role] ?? base.tutor;
+  // The examiner returns JSON, so formatting rules would only confuse it; every
+  // prose role shares the same readability contract as the chat.
+  const prompt = role === 'examiner'
+    ? base.examiner
+    : `${base[role] ?? base.tutor}\n\n${STRUCTURED_OUTPUT_RULES}`;
+
   if (userContext && userContext.trim().length > 20) {
     return `${prompt}\n\nPROFIL STUDENT:\n${userContext}`;
   }

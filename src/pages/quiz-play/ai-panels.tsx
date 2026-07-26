@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, Sparkles, Zap } from 'lucide-react';
 import type { AIAnalysisResult, HintResult } from '../../ai/types';
 import type { Theme } from '../../theme/themes';
+import AIRichText from '../../components/ai-chat/AIRichText';
 
 interface HintPanelProps {
   calmMotion: boolean;
@@ -191,10 +192,10 @@ export function AIExplanationPanel({
                 />
               )}
             </div>
-            <p className="whitespace-pre-wrap text-sm leading-generous" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
-              {aiText}
+            <div className="text-sm leading-generous" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
+              <AIRichText text={aiText} />
               {aiLoading && <span className="animate-pulse">...</span>}
-            </p>
+            </div>
             {analysisResult?.mistakeType && (
               <div className="mt-4 border-t border-dashed pt-4 opacity-60" style={{ borderColor: `${theme.accent2}30` }}>
                 <div className="mb-1 text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accent2 }}>Analiză eroare</div>
