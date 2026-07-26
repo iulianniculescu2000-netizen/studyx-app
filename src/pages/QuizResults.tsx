@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { RotateCcw, Home, Check, X, Star, Download, Bot, Loader2, Scale, MessageSquare, BookOpen } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { QuizSession, Question, QuestionStat } from '../types';
+import type { WrongOptionAnalysis } from '../ai/types';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useTheme } from '../theme/ThemeContext';
@@ -12,7 +13,7 @@ import { useUserStore } from '../store/userStore';
 import { useUIStore } from '../store/uiStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { buildClarificationFallback, cleanQuestionExplanation, getAnswerTextForOptionIds, getCorrectAnswerText } from '../helpers/quizAi';
-import { explainWrongAnswer } from '../lib/groq';
+import { explainAnswerInline } from '../lib/groq';
 import { buildAdaptiveExamQuiz, buildMistakeFlashcardQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
 
 export default function QuizResults() {
@@ -28,6 +29,8 @@ export default function QuizResults() {
   const activeProfileId = useUserStore((state) => state.activeProfileId);
   const setChatOpen = useUIStore((state) => state.setChatOpen);
   const [aiExplanations, setAiExplanations] = useState<Record<string, string>>({});
+  const [optionAnalysis, setOptionAnalysis] = useState<Record<string, WrongOptionAnalysis[]>>({});
+  const [optionAnalysisLoading, setOptionAnalysisLoading] = useState<Record<string, boolean>>({});
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
   const [followUpLoading, setFollowUpLoading] = useState<'flashcards' | 'recovery' | 'exam' | null>(null);
 
@@ -107,12 +110,42 @@ export default function QuizResults() {
     const total = Object.values(questionStats).reduce((s, qs: QuestionStat) => s + qs.timesCorrect + qs.timesWrong, 0);
     const userContext = total > 0 ? `Student medical: ${total} grile rezolvate, acuratețe ${getAccuracy()}%.` : undefined;
     try {
-      const explanation = await explainWrongAnswer(q.text, userAnswerText, correctText, userContext);
-      setAiExplanations((p) => ({ ...p, [q.id]: explanation }));
+      // Streams, and — unlike the previous explainer — first checks whether the
+      // marked answer is medically correct at all, saying so loudly when it
+      // isn't. Imported banks do carry mis-keyed questions.
+      let streamed = '';
+      await explainAnswerInline(
+        q.text,
+        q.options.map((option) => ({ text: option.text, isCorrect: option.isCorrect })),
+        (chunk) => {
+          streamed += chunk;
+          setAiExplanations((p) => ({ ...p, [q.id]: streamed }));
+        },
+        undefined,
+        userContext,
+      );
+      if (!streamed.trim()) {
+        setAiExplanations((p) => ({ ...p, [q.id]: buildClarificationFallback(q, userAnswerText, correctText) }));
+      }
     } catch {
       setAiExplanations((p) => ({ ...p, [q.id]: buildClarificationFallback(q, userAnswerText, correctText) }));
     } finally {
       setAiLoading((p) => ({ ...p, [q.id]: false }));
+    }
+  };
+
+  /** Per-distractor breakdown: why each wrong option fails, and when it wouldn't. */
+  const handleExplainOptions = async (q: Question) => {
+    if (optionAnalysisLoading[q.id] || optionAnalysis[q.id]) return;
+    setOptionAnalysisLoading((p) => ({ ...p, [q.id]: true }));
+    try {
+      const { explainWrongOptions } = await import('../ai/AIEngine');
+      const options = await explainWrongOptions(q);
+      setOptionAnalysis((p) => ({ ...p, [q.id]: options }));
+    } catch {
+      setOptionAnalysis((p) => ({ ...p, [q.id]: [] }));
+    } finally {
+      setOptionAnalysisLoading((p) => ({ ...p, [q.id]: false }));
     }
   };
 
@@ -465,6 +498,37 @@ export default function QuizResults() {
                               </motion.div>
                             </AnimatePresence>
                           )}
+
+                          {hasKey && (optionAnalysis[q.id] ? (
+                            <div
+                              className="mt-1 space-y-2 rounded-xl p-2.5 text-xs leading-relaxed"
+                              style={{ background: `${theme.warning}0d`, border: `1px solid ${theme.warning}20` }}
+                            >
+                              <span className="mb-1 flex items-center gap-1 font-semibold" style={{ color: theme.warning }}>
+                                <Bot size={11} /> De ce pică fiecare variantă
+                              </span>
+                              {optionAnalysis[q.id].length === 0 ? (
+                                <p style={{ color: theme.text3 }}>Nu am putut analiza variantele acum.</p>
+                              ) : optionAnalysis[q.id].map((entry) => (
+                                <div key={entry.option} style={{ color: theme.text2 }}>
+                                  <div className="font-semibold" style={{ color: theme.text }}>{entry.option}</div>
+                                  <div>{entry.whyWrong}</div>
+                                  {entry.whenCorrect && <div className="mt-0.5 opacity-80">Ar fi corectă când: {entry.whenCorrect}</div>}
+                                  {entry.classicConfusion && <div className="mt-0.5 opacity-80">Confuzie clasică: {entry.classicConfusion}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleExplainOptions(q)}
+                              disabled={optionAnalysisLoading[q.id]}
+                              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all disabled:opacity-60"
+                              style={{ background: `${theme.warning}12`, color: theme.warning, border: `1px solid ${theme.warning}28` }}
+                            >
+                              <Bot size={11} />
+                              {optionAnalysisLoading[q.id] ? 'Analizez variantele...' : 'De ce pică fiecare variantă'}
+                            </button>
+                          ))}
 
                           <button
                             onClick={() => openResultsDebrief(

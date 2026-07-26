@@ -228,8 +228,23 @@ export interface TutorSessionState {
   questionIds: string[];
 }
 
+/**
+ * One distractor, analysed. `buildWrongOptionsPrompt` asks the model for all
+ * four fields, but the type only modelled the first two, so the reasoning about
+ * when an option WOULD be right — the genuinely instructive part — was parsed
+ * and then dropped on the floor.
+ */
+export interface WrongOptionAnalysis {
+  option: string;
+  whyWrong: string;
+  /** The context in which this option would have been the correct one. */
+  whenCorrect?: string;
+  /** The classic exam confusion this distractor is testing for. */
+  classicConfusion?: string;
+}
+
 export interface ExplainWrongOptionsResult {
-  options: Array<{ option: string; whyWrong: string }>;
+  options: WrongOptionAnalysis[];
 }
 
 export type TopicStatsMap = Record<string, { correct: number; total: number; wrong: number; lastWrongAt: number }>;
