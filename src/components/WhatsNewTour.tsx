@@ -28,10 +28,10 @@ import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
 import { useUserStore } from '../store/userStore';
 
-const WHATS_NEW_VERSION = '1.0.6';
+const WHATS_NEW_VERSION = '1.0.7';
 // Bump the suffix when the tour content changes within the same app version, so
 // users who already dismissed the previous tour see the new highlights once more.
-const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-examsplit:seen`;
+const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-scheme:seen`;
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
 export const WHATS_NEW_OPEN_EVENT = 'studyx:whats-new:open';
@@ -391,6 +391,220 @@ function ExamSplitDemo({ theme }: { theme: Theme }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Slides
+function SchemaDrawnDemo({ theme }: { theme: Theme }) {
+  // 0: plain text answer · 1..: the schema draws itself
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % 4), 1400);
+    return () => window.clearInterval(id);
+  }, []);
+  const drawn = phase > 0;
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="flex w-full max-w-[390px] items-center justify-center gap-4 px-4">
+        {/* before: the schema as a wall of text */}
+        <div
+          className="w-[104px] rounded-[14px] border p-2.5"
+          style={{ background: theme.surface2, borderColor: theme.border, opacity: drawn ? 0.42 : 1 }}
+        >
+          <div className="mb-1.5 text-[7px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>Înainte</div>
+          {[92, 78, 88, 64, 82].map((w, i) => (
+            <div key={i} className="mb-1 h-[3px] rounded-full" style={{ width: `${w}%`, background: theme.text3, opacity: 0.4 }} />
+          ))}
+          <div className="mt-1.5 text-[7px] font-semibold" style={{ color: theme.text3 }}>cauză → efect → …</div>
+        </div>
+
+        <ArrowRight size={14} style={{ color: theme.accent, flexShrink: 0 }} />
+
+        {/* after: a real drawn flowchart */}
+        <div
+          className="relative h-[168px] w-[176px] rounded-[16px] border"
+          style={{ background: theme.surface, borderColor: `${theme.accent}35` }}
+        >
+          <svg viewBox="0 0 176 168" className="h-full w-full">
+            {[
+              { y: 16, w: 92, label: 'Suspiciune', kind: 'start' as const },
+              { y: 62, w: 78, label: 'Scor clinic', kind: 'step' as const },
+              { y: 108, w: 84, label: 'Decizie?', kind: 'decision' as const },
+            ].map((node, i) => {
+              const color = node.kind === 'start' ? theme.success : node.kind === 'decision' ? theme.warning : theme.accent;
+              return (
+                <motion.g
+                  key={node.label}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: drawn ? 1 : 0.15 }}
+                  transition={{ delay: drawn ? i * 0.18 : 0, duration: 0.35 }}
+                >
+                  <rect
+                    x={(176 - node.w) / 2}
+                    y={node.y}
+                    width={node.w}
+                    height={28}
+                    rx={node.kind === 'start' ? 14 : 9}
+                    fill={`${color}20`}
+                    stroke={color}
+                    strokeWidth={1.4}
+                  />
+                  <text x={88} y={node.y + 18} textAnchor="middle" fontSize={9} fontWeight={700} fill={theme.text}>
+                    {node.label}
+                  </text>
+                </motion.g>
+              );
+            })}
+            {[44, 90].map((y, i) => (
+              <motion.line
+                key={y}
+                x1={88}
+                y1={y}
+                x2={88}
+                y2={y + 18}
+                stroke={theme.text3}
+                strokeWidth={1.4}
+                initial={{ pathLength: 0 }}
+                animate={{ pathLength: drawn ? 1 : 0 }}
+                transition={{ delay: drawn ? 0.12 + i * 0.18 : 0, duration: 0.3 }}
+              />
+            ))}
+            {(['Da', 'Nu'] as const).map((label, i) => (
+              <motion.g
+                key={label}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: drawn && phase > 1 ? 1 : 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <line x1={88} y1={136} x2={i === 0 ? 44 : 132} y2={150} stroke={theme.text3} strokeWidth={1.4} />
+                <text x={i === 0 ? 40 : 136} y={160} textAnchor="middle" fontSize={8} fontWeight={800} fill={theme.text2}>
+                  {label}
+                </text>
+              </motion.g>
+            ))}
+          </svg>
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+function StructuredAnswerDemo({ theme }: { theme: Theme }) {
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % 2), 1900);
+    return () => window.clearInterval(id);
+  }, []);
+  const structured = phase === 1;
+
+  const sections = [
+    { label: '✅ De ce e corect', color: theme.success, rows: 2 },
+    { label: '❌ De ce cade varianta ta', color: theme.danger, rows: 1 },
+    { label: '⚠️ Celelalte variante', color: theme.warning, rows: 3, bullets: true },
+  ];
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-full max-w-[320px] px-4">
+        <div className="mb-2 flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
+          <FileText size={11} style={{ color: theme.accent }} /> Explicație AI
+        </div>
+
+        <AnimatePresence mode="wait">
+          {!structured ? (
+            <motion.div
+              key="blob"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="rounded-[13px] border p-3"
+              style={{ background: theme.surface2, borderColor: theme.border }}
+            >
+              {[96, 92, 98, 88, 94, 61].map((w, i) => (
+                <div key={i} className="mb-[5px] h-[4px] rounded-full" style={{ width: `${w}%`, background: theme.text3, opacity: 0.38 }} />
+              ))}
+            </motion.div>
+          ) : (
+            <motion.div key="sections" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2">
+              {sections.map((section, i) => (
+                <motion.div
+                  key={section.label}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.14 }}
+                  className="rounded-[11px] border px-2.5 py-2"
+                  style={{ background: `${section.color}0D`, borderColor: `${section.color}30` }}
+                >
+                  <div className="mb-1 text-[9px] font-black" style={{ color: section.color }}>{section.label}</div>
+                  {Array.from({ length: section.rows }, (_, r) => (
+                    <div key={r} className="mb-[3px] flex items-center gap-1">
+                      {section.bullets && <Minus size={7} style={{ color: theme.text3 }} />}
+                      <div className="h-[3px] flex-1 rounded-full" style={{ background: theme.text3, opacity: 0.34 }} />
+                    </div>
+                  ))}
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </DemoFrame>
+  );
+}
+
+function BookIndexingDemo({ theme }: { theme: Theme }) {
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setPage((p) => (p >= 391 ? 0 : Math.min(391, p + 37))), 420);
+    return () => window.clearInterval(id);
+  }, []);
+  const percent = Math.round((page / 391) * 100);
+  const chapters = ['Sepsis', 'Hematologie', 'Cardiologie', 'Pneumologie'];
+  const attached = Math.floor((percent / 100) * chapters.length);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="flex w-full max-w-[370px] items-center gap-4 px-4">
+        <div
+          className="flex w-[112px] flex-col items-center gap-2 rounded-[14px] border p-3"
+          style={{ background: theme.surface2, borderColor: theme.border }}
+        >
+          <FileText size={26} style={{ color: theme.accent }} />
+          <span className="text-[9px] font-black" style={{ color: theme.text }}>Kumar & Clark</span>
+          <span className="text-[8px] font-semibold tabular-nums" style={{ color: theme.text3 }}>
+            pagina {page}/391
+          </span>
+          <div className="h-[5px] w-full overflow-hidden rounded-full" style={{ background: theme.surface }}>
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${percent}%`, background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-1.5">
+          <div className="mb-1 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
+            Capitole recunoscute
+          </div>
+          {chapters.map((chapter, i) => {
+            const done = i < attached;
+            return (
+              <div
+                key={chapter}
+                className="flex items-center gap-1.5 rounded-[9px] border px-2 py-1"
+                style={{
+                  background: done ? `${theme.success}12` : theme.surface2,
+                  borderColor: done ? `${theme.success}35` : theme.border,
+                }}
+              >
+                {done ? <CheckCircle2 size={10} style={{ color: theme.success }} /> : <Minus size={10} style={{ color: theme.text3 }} />}
+                <span className="text-[9px] font-bold" style={{ color: done ? theme.text : theme.text3 }}>{chapter}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Slide = {
@@ -406,9 +620,32 @@ const SLIDES: Slide[] = [
   {
     id: 'hero',
     badge: `Update ${WHATS_NEW_VERSION}`,
-    title: 'StudyX v1.0.6 — fă o poză, primești grile',
-    description: 'Cea mai tare noutate: bagi un PDF, un Word sau doar o poză cu grile și ți le recunosc automat — întrebări, variante și răspunsul corect. Plus import fără JSON, agent AI mai controlabil și predicții din statisticile tale reale.',
+    title: 'StudyX v1.0.7 — AI-ul îți desenează, nu doar îți scrie',
+    description: 'Schemele și algoritmii apar acum ca diagrame adevărate, explicațiile vin pe secțiuni în loc de blocuri de text, iar manualele mari de rezidențiat sunt în sfârșit citite până la ultima pagină și indexate pe capitole.',
     Demo: HeroDemo,
+  },
+  {
+    id: 'drawn-schemas',
+    badge: 'Scheme desenate',
+    title: 'Schemele și algoritmii sunt desenați, nu descriși',
+    description: 'Când ceri o schemă, un mecanism sau un algoritm de conduită, AI-ul îl desenează: noduri, ramuri „Da/Nu”, start, capcane de examen. Un click deschide diagrama pe tot ecranul, iar chatul are buton de lățire pentru scheme și tabele mari.',
+    Demo: SchemaDrawnDemo,
+    tip: 'Merge din orice mod de chat — cere „fă-mi o schemă” sau „algoritm de diagnostic”.',
+  },
+  {
+    id: 'structured-answers',
+    badge: 'Răspunsuri organizate',
+    title: 'Explicațiile vin pe secțiuni, nu ca un perete de text',
+    description: 'Fiecare explicație de grilă are acum structură fixă: de ce e corect, de ce cade varianta ta, celelalte variante ca listă și regula de examen. Se aplică peste tot — chat, Rezultate, flashcarduri și recomandarea zilnică.',
+    Demo: StructuredAnswerDemo,
+  },
+  {
+    id: 'full-books',
+    badge: 'Cărți de rezidențiat',
+    title: 'Kumar, Lawrence și Sinopsis sunt citite complet',
+    description: 'Manualele mari se opreau după câteva secunde de citire și se pierdeau în întregime. Acum sunt parcurse pagină cu pagină, până la ultima, iar fiecare fragment știe din ce capitol vine — deci poți cere grile sau explicații pe capitol.',
+    Demo: BookIndexingDemo,
+    tip: 'Reimportă cărțile adăugate înainte de 1.0.7 ca să primească și ele capitolele.',
   },
   {
     id: 'grile-scan',
