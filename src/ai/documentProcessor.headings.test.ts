@@ -138,4 +138,58 @@ describe('chunk overlap', () => {
 
     expect(chunks.some((c) => c.text.includes(tail))).toBe(true);
   });
+  /**
+   * Regression for the residency textbooks: extracted PDFs arrive as long runs
+   * of single-newline lines with no blank lines at all. Before headings were
+   * isolated, chapter titles dissolved into the surrounding paragraph and every
+   * chunk of a 391-page book came back with no chapter (measured: 0 of 16).
+   */
+  it('detects chapters in book text that has no blank lines', async () => {
+    const lines = [
+      'Cuprins general al lucrarii',
+      'CARDIOLOGIE',
+      ...Array.from({ length: 40 }, (_, i) => `CARDIO linia ${i} cu text de manual despre insuficienta cardiaca si tratamentul ei.`),
+      'PNEUMOLOGIE',
+      ...Array.from({ length: 40 }, (_, i) => `PNEUMO linia ${i} cu text de manual despre astm si bronhopneumopatie obstructiva.`),
+    ];
+
+    const processor = new DocumentProcessor();
+    const { chunks } = await processor.processDocument(lines.join('\n'), 'Manual.pdf', { knownHeadings: CHAPTERS });
+
+    const headings = new Set(chunks.map((c) => c.metadata.heading).filter(Boolean));
+    expect(headings.has('CARDIOLOGIE')).toBe(true);
+    expect(headings.has('PNEUMOLOGIE')).toBe(true);
+    expect(chunks.filter((c) => c.metadata.heading === 'PNEUMOLOGIE').every((c) => !c.text.includes('CARDIO linia'))).toBe(true);
+  });
+
+  /**
+   * Printed books wrap long chapter titles across two lines, so the full title
+   * never appears on one line (real case: Kumar's STI/HIV chapter).
+   */
+  it('anchors a chapter whose printed title is wrapped onto two lines', async () => {
+    const full = 'INFECTII TRANSMISIBILE PE CALE SEXUALA SI INFECTIA CU VIRUSUL IMUNODEFICIENTEI UMANE';
+    const lines = [
+      'INFECTII TRANSMISIBILE PE CALE SEXUALA',
+      'SI INFECTIA CU VIRUSUL IMUNODEFICIENTEI UMANE',
+      ...Array.from({ length: 30 }, (_, i) => `ITS linia ${i} despre diagnosticul si tratamentul infectiilor cu transmitere sexuala.`),
+    ];
+
+    const processor = new DocumentProcessor();
+    const { chunks } = await processor.processDocument(lines.join('\n'), 'Kumar.pdf', { knownHeadings: [full] });
+
+    // The canonical curriculum title is stored, not the truncated printed line.
+    expect(chunks.some((c) => c.metadata.heading === full)).toBe(true);
+  });
+
+  it('keeps a short chapter title from matching on a prefix alone', async () => {
+    const processor = new DocumentProcessor();
+    const { chunks } = await processor.processDocument(
+      ['HEMATOLOGIE APLICATA', 'Text oarecare de manual pentru un capitol scurt.'].join('\n'),
+      'Manual.pdf',
+      { knownHeadings: ['HEMATOLOGIE'] },
+    );
+    // "HEMATOLOGIE" is contained in the line, so it matches — but only because
+    // of the full-title rule, never a shortened prefix of a short title.
+    expect(chunks[0].metadata.heading).toBe('HEMATOLOGIE');
+  });
 });

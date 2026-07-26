@@ -15,10 +15,15 @@ async function extractPdfTextInBrowser(file: File): Promise<string> {
       const page = await pdf.getPage(pageNumber);
       const textContent = await page.getTextContent().catch(() => null);
       if (textContent) {
+        // Keep line breaks (`hasEOL`): chapter-title detection downstream needs
+        // titles to stay on their own line instead of dissolving into the page.
         parts.push(
           textContent.items
-            .map((item) => ('str' in item ? String(item.str) : ''))
-            .join(' '),
+            .map((item) => {
+              const value = 'str' in item ? String(item.str) : '';
+              return 'hasEOL' in item && item.hasEOL ? `${value}\n` : `${value} `;
+            })
+            .join(''),
         );
       }
       page.cleanup();

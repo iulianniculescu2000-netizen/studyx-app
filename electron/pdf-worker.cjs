@@ -77,6 +77,67 @@ async function parseWithPdfLib(buffer) {
   return '';
 }
 
+/** Pages per streamed batch: often enough to salvage a killed job, rarely enough to stay cheap. */
+const STREAM_BATCH_PAGES = 20;
+
+/**
+ * Page-by-page extraction with pdf.js.
+ *
+ * Textbooks are the reason this exists: `pdf-parse` returns one string at the
+ * very end, so a 391-page book that outruns the job timeout yields NOTHING.
+ * Streaming batches upstream means the parent keeps every page already read,
+ * and reports real progress instead of a silent wait.
+ */
+async function extractWithPdfjs(buffer) {
+  let pdfjs;
+  try {
+    pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  } catch (error) {
+    process.send?.({ type: 'log', message: `[PDF Worker] pdf.js unavailable: ${error instanceof Error ? error.message : String(error)}` });
+    return '';
+  }
+
+  const doc = await pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    useSystemFonts: true,
+    isEvalSupported: false,
+  }).promise;
+
+  const parts = [];
+  let batch = [];
+  try {
+    for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+      const page = await doc.getPage(pageNumber);
+      const textContent = await page.getTextContent().catch(() => null);
+      if (textContent) {
+        // `hasEOL` is what preserves the book's line structure — without it a
+        // page collapses into one blob and chapter titles stop being detectable
+        // (measured on Kumar: 0 of 16 chapters found vs 11 in the first 60 pages).
+        batch.push(
+          textContent.items
+            .map((item) => {
+              const value = 'str' in item ? String(item.str) : '';
+              return item.hasEOL ? `${value}\n` : `${value} `;
+            })
+            .join(''),
+        );
+      }
+      page.cleanup();
+
+      if (batch.length >= STREAM_BATCH_PAGES || pageNumber === doc.numPages) {
+        const text = batch.join('\n');
+        parts.push(text);
+        batch = [];
+        process.send?.({ type: 'chunk', text, page: pageNumber, total: doc.numPages });
+      }
+    }
+  } finally {
+    await doc.destroy().catch(() => {});
+  }
+
+  return cleanText(parts.join('\n'));
+}
+
 async function extractText(payload) {
   const buffer = payload?.filePath
     ? fs.readFileSync(payload.filePath)
@@ -85,6 +146,13 @@ async function extractText(payload) {
       : null;
 
   if (!buffer || buffer.length === 0) return null;
+
+  try {
+    const streamed = await extractWithPdfjs(buffer);
+    if (streamed.length > 24) return streamed;
+  } catch (error) {
+    process.send?.({ type: 'log', message: `[PDF Worker] pdf.js extraction failed: ${error instanceof Error ? error.message : String(error)}` });
+  }
 
   const parsedText = await parseWithPdfLib(buffer);
 

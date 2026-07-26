@@ -145,11 +145,63 @@ export class DocumentProcessor {
    * Authoritative match against a known reference book's real chapter titles — checked
    * before the generic heuristic, since it's far less likely to false-positive/negative.
    */
-  private matchesKnownHeading(paragraph: string, knownHeadings: string[]): boolean {
+  private matchesKnownHeading(paragraph: string, knownHeadings: string[]): string | null {
     const trimmed = paragraph.trim();
-    if (!trimmed || trimmed.includes('\n') || trimmed.length > 120) return false;
+    if (!trimmed || trimmed.includes('\n') || trimmed.length > 120) return null;
     const normalizedParagraph = this.normalizeForHeadingMatch(trimmed);
-    return knownHeadings.some((heading) => normalizedParagraph.includes(this.normalizeForHeadingMatch(heading)));
+
+    // The curriculum title is returned rather than the printed line, so every
+    // chunk of a chapter is filed under one canonical name.
+    return knownHeadings.find((heading) => {
+      const normalizedHeading = this.normalizeForHeadingMatch(heading);
+      if (normalizedParagraph.includes(normalizedHeading)) return true;
+
+      // Long titles ("INFECȚII TRANSMISIBILE PE CALE SEXUALĂ ȘI …") are wrapped
+      // onto two lines in the printed book, so the full string never appears on
+      // one line. A distinctive prefix is enough to anchor the chapter.
+      const prefix = this.headingPrefix(normalizedHeading);
+      return prefix !== null && normalizedParagraph.includes(prefix);
+    }) ?? null;
+  }
+
+  /** First words of a long chapter title — only when they stay distinctive enough. */
+  private headingPrefix(normalizedHeading: string): string | null {
+    const words = normalizedHeading.split(' ');
+    if (words.length < 6) return null;
+    const prefix = words.slice(0, 4).join(' ');
+    return prefix.length >= 24 ? prefix : null;
+  }
+
+  /**
+   * Promotes heading lines to standalone paragraphs.
+   *
+   * Extracted books arrive as long runs of single-newline lines with almost no
+   * blank lines, so a chapter title would otherwise be swallowed by the
+   * paragraph around it and every chunk would end up with no chapter at all.
+   */
+  private isolateHeadings(text: string, knownHeadings?: string[]): string {
+    if (!text.includes('\n')) return text;
+
+    const lines = text.split('\n');
+    const out: string[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const isHeading = trimmed.length > 0 && (
+        (knownHeadings?.length ? this.matchesKnownHeading(trimmed, knownHeadings) !== null : false)
+        || this.isLikelyHeading(trimmed)
+      );
+
+      if (isHeading) {
+        if (out.length > 0 && out[out.length - 1].trim() !== '') out.push('');
+        out.push(trimmed);
+        out.push('');
+        continue;
+      }
+      out.push(line);
+    }
+
+    return out.join('\n');
   }
 
   /**
@@ -186,7 +238,7 @@ export class DocumentProcessor {
     knownHeadings?: string[]
   ) {
     const entries: Array<{ text: string; heading?: string }> = [];
-    const paragraphs = text.split(/\n\s*\n/);
+    const paragraphs = this.isolateHeadings(text, knownHeadings).split(/\n\s*\n/);
     let currentChunk = '';
     let currentHeading: string | undefined;
 
@@ -212,8 +264,8 @@ export class DocumentProcessor {
       const paragraph = raw.trim();
       if (!paragraph) continue;
 
-      const isHeading = (knownHeadings?.length && this.matchesKnownHeading(paragraph, knownHeadings))
-        || this.isLikelyHeading(paragraph);
+      const knownHeading = knownHeadings?.length ? this.matchesKnownHeading(paragraph, knownHeadings) : null;
+      const isHeading = knownHeading !== null || this.isLikelyHeading(paragraph);
 
       if (isHeading) {
         // A chapter title closes the previous chapter's chunk before becoming
@@ -224,7 +276,7 @@ export class DocumentProcessor {
         // would reintroduce exactly that mix-up.
         push(currentChunk);
         currentChunk = '';
-        currentHeading = paragraph;
+        currentHeading = knownHeading ?? paragraph;
       }
 
       const potentialChunk = currentChunk ? `${currentChunk}\n\n${paragraph}` : paragraph;

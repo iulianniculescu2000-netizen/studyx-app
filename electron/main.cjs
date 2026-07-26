@@ -451,6 +451,24 @@ if (startupSettings.hardwareAccel === false) {
 // Helper Functions
 
 const PDF_JOB_TIMEOUT_MS = 12000;
+
+/**
+ * A flat 12s budget silently truncated residency textbooks: Kumar (391 pages,
+ * ~71 MB) needs ~11s of pure parsing on a fast machine, so any loaded laptop
+ * blew the deadline and the whole book was thrown away. The budget now scales
+ * with the file, and partial text is kept when the deadline is still hit.
+ */
+const PDF_TIMEOUT_PER_MB_MS = 1500;
+const PDF_TIMEOUT_MAX_MS = 300000;
+/** Below this a salvaged partial extraction isn't worth handing to the indexer. */
+const PDF_PARTIAL_MIN_CHARS = 2000;
+
+function pdfTimeoutForBytes(byteLength) {
+  if (!byteLength) return PDF_JOB_TIMEOUT_MS;
+  const megabytes = byteLength / (1024 * 1024);
+  return Math.min(PDF_TIMEOUT_MAX_MS, PDF_JOB_TIMEOUT_MS + Math.ceil(megabytes * PDF_TIMEOUT_PER_MB_MS));
+}
+
 let pdfQueue = Promise.resolve();
 
 function queuePdfJob(task) {
@@ -464,6 +482,15 @@ function runPdfWorker(payload, timeoutMs = PDF_JOB_TIMEOUT_MS) {
     const workerPath = path.join(__dirname, 'pdf-worker.cjs');
     const child = fork(workerPath, { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     let settled = false;
+    /** Batches streamed by the worker, kept so a crash or timeout doesn't lose read pages. */
+    const streamedParts = [];
+    let lastProgress = null;
+
+    /** Whatever pages were already streamed, if that is worth indexing at all. */
+    const salvagePartial = () => {
+      const partial = streamedParts.join('\n');
+      return partial.length >= PDF_PARTIAL_MIN_CHARS ? partial : null;
+    };
 
     const finish = (result) => {
       if (settled) return;
@@ -481,17 +508,29 @@ function runPdfWorker(payload, timeoutMs = PDF_JOB_TIMEOUT_MS) {
     };
 
     const timeout = setTimeout(() => {
-      console.warn('[PDF] Worker timed out and will be terminated.');
+      const salvaged = salvagePartial();
+      console.warn(
+        salvaged
+          ? `[PDF] Worker timed out at page ${lastProgress?.page ?? '?'}/${lastProgress?.total ?? '?'}; keeping ${salvaged.length} extracted characters.`
+          : '[PDF] Worker timed out and will be terminated.',
+      );
       try {
         child.kill();
       } catch (error) {
         console.warn('[StudyX] Failed to kill PDF worker timeout:', error.message);
       }
-      finish(null);
+      finish(salvaged);
     }, timeoutMs);
 
     child.on('message', (message) => {
       if (!message || typeof message !== 'object') return;
+      if (message.type === 'chunk') {
+        if (typeof message.text === 'string' && message.text.length > 0) {
+          streamedParts.push(message.text);
+        }
+        lastProgress = { page: message.page, total: message.total };
+        return;
+      }
       if (message.type === 'result') {
         finish(message.text ?? null);
         return;
@@ -502,20 +541,20 @@ function runPdfWorker(payload, timeoutMs = PDF_JOB_TIMEOUT_MS) {
       }
       if (message.type === 'error') {
         console.error('[PDF] Worker failed:', message.message);
-        finish(null);
+        finish(salvagePartial());
       }
     });
 
     child.on('error', (error) => {
       console.error('[PDF] Worker process error:', error);
-      finish(null);
+      finish(salvagePartial());
     });
 
     child.on('exit', (code, signal) => {
       if (!settled && code !== 0) {
         console.warn(`[PDF] Worker exited unexpectedly (code=${code}, signal=${signal}).`);
       }
-      finish(null);
+      finish(salvagePartial());
     });
 
     try {
@@ -535,8 +574,8 @@ function runPdfWorker(payload, timeoutMs = PDF_JOB_TIMEOUT_MS) {
 const extractPdfText = async (filePath) => {
   return queuePdfJob(async () => {
     try {
-      await fsp.access(filePath);
-      return await runPdfWorker({ filePath });
+      const { size } = await fsp.stat(filePath);
+      return await runPdfWorker({ filePath }, pdfTimeoutForBytes(size));
     } catch {
       return null;
     }
@@ -545,7 +584,10 @@ const extractPdfText = async (filePath) => {
 
 const extractPdfTextFromBuffer = async (buffer) => {
   if (!buffer || buffer.length === 0) return null;
-  return queuePdfJob(() => runPdfWorker({ bufferBase64: buffer.toString('base64') }));
+  return queuePdfJob(() => runPdfWorker(
+    { bufferBase64: buffer.toString('base64') },
+    pdfTimeoutForBytes(buffer.length),
+  ));
 };
 
 const extractDocxText = async (filePath) => {
