@@ -11,7 +11,7 @@ vi.mock('../groq', () => ({
   notesToFlashcards: vi.fn(),
 }));
 
-const { isReferentialTopic, resolveDiscussedTopic, planAgentCommand } = await import('./agent');
+const { isReferentialTopic, resolveDiscussedTopic, planAgentCommand, describeStep, looksLikeAgentCommand } = await import('./agent');
 
 describe('isReferentialTopic', () => {
   const referential = [
@@ -112,5 +112,68 @@ describe('planAgentCommand topic resolution', () => {
     const result = await planAgentCommand('fa mi 10 grile despre nefron', history);
     expect(result.steps[0].topic).toBe('nefronul');
     expect(groqRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * "fă-mi un set de 30 de flashcarduri și pune-l în Bac" produced a chat answer
+ * with a table of cards that were never saved: the planner had no action for
+ * flashcards on a subject, only for flashcards from a library course.
+ */
+describe('flashcards on a subject', () => {
+  beforeEach(() => groqRequest.mockReset());
+
+  const history = [
+    { role: 'user' as const, content: 'explică-mi cardiologia de examen' },
+    { role: 'assistant' as const, content: 'Angina stabilă apare la efort...' },
+  ];
+
+  it('plans a real deck instead of answering in chat', async () => {
+    groqRequest.mockResolvedValueOnce(JSON.stringify({
+      isCommand: true,
+      reply: 'Gata',
+      steps: [{ action: 'create_flashcards_topic', topic: 'cardiologie', count: 30, folder: 'Bac' }],
+    }));
+    const result = await planAgentCommand('acum fa mi un set de 30 de flascarduri si sa l pui in bac', history);
+    expect(result.isCommand).toBe(true);
+    expect(result.steps[0]).toMatchObject({
+      action: 'create_flashcards_topic',
+      topic: 'cardiologie',
+      count: 30,
+      folder: 'Bac',
+    });
+  });
+
+  it('resolves a referential subject from the conversation', async () => {
+    groqRequest
+      .mockResolvedValueOnce(JSON.stringify({
+        isCommand: true,
+        reply: 'Gata',
+        steps: [{ action: 'create_flashcards_topic', topic: 'subiectul discutat', count: 30 }],
+      }))
+      .mockResolvedValueOnce('cardiologie');
+    const result = await planAgentCommand('fa-mi 30 de flashcarduri din ce am discutat', history);
+    expect(result.steps[0].topic).toBe('cardiologie');
+  });
+
+  it('describes the step for the plan card', () => {
+    expect(describeStep({ action: 'create_flashcards_topic', topic: 'cardiologie', count: 30, folder: 'Bac' }))
+      .toBe('Creez 30 flashcarduri despre „cardiologie" în „Bac"');
+  });
+});
+
+describe('command detection for flashcards', () => {
+  const commands = [
+    'acum fa mi un set de 30 de flascarduri si sa l pui in bac',
+    'fă-mi 20 de flashcarduri din cursul de cardiologie',
+    'creează un deck de flash carduri',
+    'vreau niște fișe de memorare',
+  ];
+  it.each(commands)('recognises %j', (text) => {
+    expect(looksLikeAgentCommand(text)).toBe(true);
+  });
+
+  it('still ignores ordinary questions', () => {
+    expect(looksLikeAgentCommand('ce este cardiologia intervențională?')).toBe(false);
   });
 });

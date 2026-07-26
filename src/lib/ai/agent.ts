@@ -52,6 +52,79 @@ function buildAgentFlashcard(front: string, back: string): Question {
   };
 }
 
+/**
+ * Flashcards straight from the model's medical knowledge, for subjects with no
+ * matching course in the library. Mirrors `notesToFlashcards`, minus the source
+ * text: same card shape, same dedupe-by-front, same top-up when the model
+ * returns fewer cards than asked.
+ */
+async function generateTopicFlashcards(
+  topic: string,
+  count: number,
+): Promise<Array<{ front: string; back: string }>> {
+  const target = Math.max(1, Math.min(100, Math.round(count)));
+
+  const request = async (needed: number, avoid: string[]) => {
+    const raw = await groqRequest({
+      task: 'analysis',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'Ești profesor de medicină și creezi flashcarduri de memorare activă pentru studenți români.',
+            'Fața cardului este o întrebare scurtă și precisă; spatele este răspunsul complet, dar concis (maximum 2 propoziții).',
+            'Acoperă definiții, mecanisme, criterii, diferențiale, indicații, complicații și capcane de examen — nu repeta același concept.',
+            'Nu inventa doze, scoruri sau valori pe care nu le știi sigur.',
+            'Răspunde STRICT cu JSON valid, fără markdown și fără text în plus:',
+            '{"cards":[{"front":"întrebare","back":"răspuns"}]}',
+          ].join('\n'),
+        },
+        {
+          role: 'user',
+          content: [
+            `Creează exact ${needed} flashcarduri despre: ${topic}.`,
+            'Scrie exclusiv în limba română.',
+            avoid.length > 0
+              ? `Evită aceste fețe deja folosite:\n${avoid.slice(-40).map((front) => `- ${front}`).join('\n')}`
+              : '',
+          ].filter(Boolean).join('\n\n'),
+        },
+      ],
+      temperature: 0.4,
+      maxTokens: 4000,
+      skipLibraryContext: true,
+    });
+
+    const parsed = extractJsonFromText(raw) as { cards?: Array<{ front?: unknown; back?: unknown }> } | null;
+    return Array.isArray(parsed?.cards) ? parsed.cards : [];
+  };
+
+  const cards: Array<{ front: string; back: string }> = [];
+  const seen = new Set<string>();
+
+  const collect = (batch: Array<{ front?: unknown; back?: unknown }>) => {
+    for (const entry of batch) {
+      const front = typeof entry?.front === 'string' ? entry.front.trim() : '';
+      const back = typeof entry?.back === 'string' ? entry.back.trim() : '';
+      if (front.length < 3 || back.length < 2) continue;
+      const key = normalizeName(front);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      cards.push({ front, back });
+      if (cards.length >= target) return;
+    }
+  };
+
+  collect(await request(target, []));
+
+  // One top-up round: models routinely return 20 cards when asked for 30.
+  if (cards.length < target) {
+    collect(await request(target - cards.length, cards.map((card) => card.front)));
+  }
+
+  return cards.slice(0, target);
+}
+
 export type AgentActionType =
   | 'create_folder'
   | 'create_library_folder'
@@ -60,6 +133,7 @@ export type AgentActionType =
   | 'generate_from_mistakes'
   | 'correct_answer'
   | 'create_flashcards'
+  | 'create_flashcards_topic'
   | 'summarize_document'
   | 'create_study_plan'
   | 'move_quiz'
@@ -251,6 +325,9 @@ const COMMAND_PATTERNS = [
   `fol?der${ENDING}`, `subfolder${ENDING}`, `gril[aăe]${ENDING}`,
   'set(ul|uri|urile)?\\b', `pachet${ENDING}`, `atlas${ENDING}`, `bibliotec${ENDING}`,
   `gre[șs]el${ENDING}`, 'gre[șs]esc', `recapitul${ENDING}`,
+  // Flashcards, including the "flascard" typo users type constantly. "card" on
+  // its own stays out — it would swallow "cardiologie".
+  `flash\\s?card${ENDING}`, `flascard${ENDING}`, `deck${ENDING}`, 'fi[sș]e\\b',
 ];
 
 const COMMAND_HINTS = new RegExp(`\\b(?:${COMMAND_PATTERNS.join('|')})`, 'i');
@@ -472,7 +549,8 @@ function buildPlannerPrompt() {
     '- generate_quiz_pack: {"action":"generate_quiz_pack","source":"nume curs din bibliotecă","folder":"nume folder destinatie (optional)","packCount":N,"questionsPerPack":N,"questionType":"single|multiple","difficulty":"auto|easy|medium|hard"}',
     '- generate_quiz_topic: {"action":"generate_quiz_topic","topic":"subiectul cerut de user, EXACT cum l-a formulat","folder":"nume folder destinatie (optional)","questionsPerPack":N,"questionType":"single|multiple","difficulty":"auto|easy|medium|hard"}  // grile pe un subiect general (cunoștințe medicale generale ale AI-ului), FĂRĂ curs din bibliotecă',
     '- generate_from_mistakes: {"action":"generate_from_mistakes","count":N,"folder":"nume folder destinatie (optional)","questionType":"single|multiple"}  // grile de recapitulare țintite pe greșelile salvate ale studentului (NU are nevoie de sursă)',
-    '- create_flashcards: {"action":"create_flashcards","source":"nume curs din bibliotecă","folder":"nume folder destinatie (optional)","count":N}  // deck de flashcarduri (active recall) dintr-un curs',
+    '- create_flashcards: {"action":"create_flashcards","source":"nume curs din bibliotecă","folder":"nume folder destinatie (optional)","count":N}  // deck de flashcarduri (active recall) DINTR-UN CURS din bibliotecă',
+    '- create_flashcards_topic: {"action":"create_flashcards_topic","topic":"subiectul cerut","folder":"nume folder destinatie (optional)","count":N}  // flashcarduri pe un SUBIECT general (cunoștințele medicale ale AI-ului), fără curs din bibliotecă',
     '- summarize_document: {"action":"summarize_document","source":"nume curs din bibliotecă"}  // rezumat structurat pentru examen al unui curs din bibliotecă',
     '- create_study_plan: {"action":"create_study_plan","examName":"Numele examenului","studyDays":N,"hoursPerDay":N}  // plan de studiu personalizat bazat pe biblioteca curentă și SM-2',
     '- move_quiz: {"action":"move_quiz","quiz":"titlu set","folder":"nume folder"}',
@@ -484,7 +562,8 @@ function buildPlannerPrompt() {
     'Reguli:',
     '- Folderele de mai jos pot fi imbricate: un folder scris ca „Parinte / Copil" înseamnă că „Copil" e subfolder al lui „Parinte". Ca să pui ceva într-un subfolder, folosește exact numele subfolderului (ex. „Copil") la câmpul "folder". Ca să creezi un subfolder nou, folosește create_folder cu "parent" = numele folderului părinte.',
     '- Dacă userul cere generare într-un folder care nu există, adaugă întâi un pas create_folder, apoi generate_quiz_pack cu același "folder".',
-    '- "flashcard"/"flashcarduri"/"carduri"/"fișe" cerute explicit → create_flashcards cu "count" = numărul cerut (implicit 15). NU confunda cu grile.',
+    '- "flashcard"/"flashcarduri"/"flascarduri"/"carduri"/"fișe" cerute explicit → flashcarduri, NU grile. "count" = numărul cerut (implicit 15).',
+    '- Dacă userul NUMEȘTE un curs din bibliotecă → create_flashcards. Dacă cere flashcarduri pe un subiect/temă, sau nu numește niciun curs → create_flashcards_topic. NU pune isCommand:false doar pentru că nu există curs în bibliotecă.',
     '- "greșeli"/"greșesc"/"unde greșesc"/"recapitulare greșeli"/"din ce am greșit" → generate_from_mistakes (NU cere sursă; folosește banca de greșeli).',
     '- "rezumă"/"rezumat"/"sinteză" pentru un curs din bibliotecă → summarize_document.',
     '- "complement multiplu"/"răspunsuri multiple"/"mai multe răspunsuri corecte" → questionType:"multiple". "complement simplu"/"un singur răspuns" → questionType:"single". Implicit "single".',
@@ -494,7 +573,7 @@ function buildPlannerPrompt() {
     '- Atenție: un număr lângă numele cursului (ex. "Cursul 2") NU e un număr de grile, e parte din numele cursului.',
     '- Pentru generare de grile: dacă userul NUMEȘTE un curs/sursă și acesta EXISTĂ în bibliotecă (lista de mai jos), folosește generate_quiz_pack. Dacă userul cere grile pe un SUBIECT/temă generală (nu numește un curs, sau cursul numit nu există), folosește generate_quiz_topic cu "topic" = subiectul cerut — NU pune isCommand:false doar pentru că nu există curs în bibliotecă; AI-ul poate genera din cunoștințe medicale generale.',
     '- Folosește isCommand:false DOAR când mesajul chiar nu e o comandă de acțiune (întrebare normală, conversație), nu când lipsește un curs din bibliotecă.',
-    '- "topic" trebuie să fie MEREU un subiect medical concret. Dacă userul face referire la conversație („despre subiectul discutat", „din tema de mai sus", „despre asta", „ce am vorbit acum"), înlocuiește referința cu subiectul real din mesajele anterioare (ex. „embolia pulmonară"). NU scrie niciodată „subiectul discutat", „tema de mai sus" sau alt text-referință în câmpul "topic".',
+    '- "topic" (la generate_quiz_topic și create_flashcards_topic) trebuie să fie MEREU un subiect medical concret. Dacă userul face referire la conversație („despre subiectul discutat", „din tema de mai sus", „despre asta", „ce am vorbit acum"), înlocuiește referința cu subiectul real din mesajele anterioare (ex. „embolia pulmonară"). NU scrie niciodată „subiectul discutat", „tema de mai sus" sau alt text-referință în câmpul "topic".',
     '- Dacă referința nu poate fi rezolvată din conversație, pune isCommand:false și cere clarificare în "reply".',
     '',
     `Cursuri în bibliotecă: ${sources.length ? sources.join(' | ') : '(niciunul)'}`,
@@ -589,7 +668,7 @@ function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
   const action = String(raw.action ?? '') as AgentActionType;
   const valid: AgentActionType[] = [
     'create_folder', 'create_library_folder', 'generate_quiz_pack', 'generate_quiz_topic', 'generate_from_mistakes',
-    'create_flashcards', 'summarize_document', 'create_study_plan',
+    'create_flashcards', 'create_flashcards_topic', 'summarize_document', 'create_study_plan',
     'move_quiz', 'rename_quiz', 'delete_quiz', 'rename_folder', 'delete_folder',
   ];
   if (!valid.includes(action)) return null;
@@ -677,7 +756,8 @@ export async function planAgentCommand(
   // conversation offers nothing concrete, drop the step rather than generate
   // questions about the phrase itself.
   const referential = steps.filter(
-    (step) => step.action === 'generate_quiz_topic' && isReferentialTopic(step.topic),
+    (step) => (step.action === 'generate_quiz_topic' || step.action === 'create_flashcards_topic')
+      && isReferentialTopic(step.topic),
   );
   if (referential.length > 0) {
     const resolved = await resolveDiscussedTopic([...recentTurns, { role: 'user', content: command }]);
@@ -750,6 +830,11 @@ export function describeStep(step: AgentStep): string {
       const dest = step.folder ? ` în „${step.folder}"` : '';
       return `Creez ${cards} flashcarduri din „${step.source}"${dest}`;
     }
+    case 'create_flashcards_topic': {
+      const cards = Math.max(1, Math.min(100, step.count ?? 15));
+      const dest = step.folder ? ` în „${step.folder}"` : '';
+      return `Creez ${cards} flashcarduri despre „${step.topic}"${dest}`;
+    }
     case 'summarize_document':
       return `Rezum cursul „${step.source}"`;
     case 'move_quiz':
@@ -798,6 +883,33 @@ export async function executeAgentPlan(
     return findByName(useFolderStore.getState().folders, folderName);
   };
 
+  /**
+   * Destination folder for generated content. A named folder that doesn't exist
+   * yet is created instead of silently ignored — "pune-l în Bac" must put it in
+   * Bac, not drop the deck at the root because no such folder was there.
+   */
+  const resolveOrCreateQuizFolder = (folderName: string | undefined): Folder | null => {
+    if (!folderName?.trim()) return null;
+    const existing = resolveQuizFolder(folderName);
+    if (existing) return existing;
+
+    const name = folderName.trim();
+    const appearance = suggestFolderAppearance(name);
+    const id = folderStore.addFolder(name, appearance.emoji, appearance.color, null);
+    const folder: Folder = {
+      id,
+      name,
+      emoji: appearance.emoji,
+      color: appearance.color,
+      parentId: null,
+      createdAt: Date.now(),
+    };
+    createdFolderByName.set(normalizeName(name), folder);
+    undoOps.push(() => useFolderStore.getState().deleteFolder(id));
+    summaryParts.push(`folder „${name}"`);
+    return folder;
+  };
+
   for (let index = 0; index < plan.steps.length; index += 1) {
     const step = plan.steps[index];
     callbacks.onStep(index, 'running');
@@ -835,7 +947,7 @@ export async function executeAgentPlan(
             step.source,
           );
           if (!source) throw new Error(`Nu am găsit cursul „${step.source ?? '?'}" în bibliotecă.`);
-          const folder = resolveQuizFolder(step.folder);
+          const folder = resolveOrCreateQuizFolder(step.folder);
           const packCount = clampStudioPackCount(step.packCount ?? ctx.defaultPackCount);
           const questionsPerPack = clampStudioQuestionCount(step.questionsPerPack ?? ctx.defaultQuestionsPerPack);
 
@@ -916,7 +1028,7 @@ export async function executeAgentPlan(
           );
           if (result.questions.length === 0) throw new Error(`Nu am putut genera grile despre „${step.topic}".`);
 
-          const folder = resolveQuizFolder(step.folder);
+          const folder = resolveOrCreateQuizFolder(step.folder);
           const quiz: Quiz = {
             id: shortId(),
             title: step.topic,
@@ -967,7 +1079,7 @@ export async function executeAgentPlan(
           });
           if (result.questions.length === 0) throw new Error('Nu am putut genera grile din greșeli.');
 
-          const folder = resolveQuizFolder(step.folder);
+          const folder = resolveOrCreateQuizFolder(step.folder);
           const quiz: Quiz = {
             id: shortId(),
             title: `Recapitulare greșeli · ${new Date().toLocaleDateString('ro-RO')}`,
@@ -1004,7 +1116,7 @@ export async function executeAgentPlan(
           const cards = await notesToFlashcards(text, { count, sourceName: source.name });
           if (cards.length === 0) throw new Error(`Nu am putut genera flashcarduri din „${source.name}".`);
 
-          const folder = resolveQuizFolder(step.folder);
+          const folder = resolveOrCreateQuizFolder(step.folder);
           const deck: Quiz = {
             id: shortId(),
             title: `Flashcarduri · ${source.name}`,
@@ -1024,6 +1136,44 @@ export async function executeAgentPlan(
           createdQuizIds.push(deck.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(deck.id));
           summaryParts.push(`${cards.length} flashcarduri din „${source.name}"`);
+          callbacks.onStep(index, 'done', `${cards.length} carduri`);
+          break;
+        }
+
+        /**
+         * Flashcards on a subject rather than a library course. Without this the
+         * planner had no valid action for "fă-mi 30 de flashcarduri și pune-le
+         * în Bac", so it gave up and answered in chat with a table of cards that
+         * were never saved anywhere.
+         */
+        case 'create_flashcards_topic': {
+          const topic = step.topic?.trim();
+          if (!topic) throw new Error('Lipsește subiectul pentru flashcarduri.');
+
+          const count = Math.max(1, Math.min(100, step.count ?? 15));
+          const cards = await generateTopicFlashcards(topic, count);
+          if (cards.length === 0) throw new Error(`Nu am putut genera flashcarduri despre „${topic}".`);
+
+          const folder = resolveOrCreateQuizFolder(step.folder);
+          const deck: Quiz = {
+            id: shortId(),
+            title: `Flashcarduri · ${topic}`,
+            description: `Deck de ${cards.length} flashcarduri despre „${topic}".`,
+            emoji: '🃏',
+            color: folder?.color ?? 'purple',
+            category: folder?.name ?? 'AI Flashcards',
+            kind: 'flashcard',
+            folderId: folder?.id ?? null,
+            shuffleQuestions: true,
+            shuffleAnswers: false,
+            tags: ['flashcard', 'ai'],
+            questions: cards.map((card) => buildAgentFlashcard(card.front, card.back)),
+            createdAt: Date.now(),
+          };
+          useQuizStore.getState().addQuiz(deck);
+          createdQuizIds.push(deck.id);
+          undoOps.push(() => useQuizStore.getState().deleteQuiz(deck.id));
+          summaryParts.push(`${cards.length} flashcarduri despre „${topic}"`);
           callbacks.onStep(index, 'done', `${cards.length} carduri`);
           break;
         }
