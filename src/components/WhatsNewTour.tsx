@@ -28,7 +28,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
 import { useUserStore } from '../store/userStore';
 
-const WHATS_NEW_VERSION = '1.0.7';
+const WHATS_NEW_VERSION = '1.0.8';
 // Bump the suffix when the tour content changes within the same app version, so
 // users who already dismissed the previous tour see the new highlights once more.
 const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-scheme:seen`;
@@ -620,7 +620,7 @@ const SLIDES: Slide[] = [
   {
     id: 'hero',
     badge: `Update ${WHATS_NEW_VERSION}`,
-    title: 'StudyX v1.0.7 — AI-ul îți desenează, nu doar îți scrie',
+    title: 'StudyX v1.0.8 — AI-ul îți desenează, nu doar îți scrie',
     description: 'Schemele și algoritmii apar acum ca diagrame adevărate, explicațiile vin pe secțiuni în loc de blocuri de text, iar manualele mari de rezidențiat sunt în sfârșit citite până la ultima pagină și indexate pe capitole.',
     Demo: HeroDemo,
   },
@@ -645,7 +645,7 @@ const SLIDES: Slide[] = [
     title: 'Kumar, Lawrence și Sinopsis sunt citite complet',
     description: 'Manualele mari se opreau după câteva secunde de citire și se pierdeau în întregime. Acum sunt parcurse pagină cu pagină, până la ultima, iar fiecare fragment știe din ce capitol vine — deci poți cere grile sau explicații pe capitol.',
     Demo: BookIndexingDemo,
-    tip: 'Reimportă cărțile adăugate înainte de 1.0.7 ca să primească și ele capitolele.',
+    tip: 'Reimportă cărțile adăugate înainte de 1.0.8 ca să primească și ele capitolele.',
   },
   {
     id: 'grile-scan',
