@@ -494,12 +494,95 @@ function buildPlannerPrompt() {
     '- Atenție: un număr lângă numele cursului (ex. "Cursul 2") NU e un număr de grile, e parte din numele cursului.',
     '- Pentru generare de grile: dacă userul NUMEȘTE un curs/sursă și acesta EXISTĂ în bibliotecă (lista de mai jos), folosește generate_quiz_pack. Dacă userul cere grile pe un SUBIECT/temă generală (nu numește un curs, sau cursul numit nu există), folosește generate_quiz_topic cu "topic" = subiectul cerut — NU pune isCommand:false doar pentru că nu există curs în bibliotecă; AI-ul poate genera din cunoștințe medicale generale.',
     '- Folosește isCommand:false DOAR când mesajul chiar nu e o comandă de acțiune (întrebare normală, conversație), nu când lipsește un curs din bibliotecă.',
+    '- "topic" trebuie să fie MEREU un subiect medical concret. Dacă userul face referire la conversație („despre subiectul discutat", „din tema de mai sus", „despre asta", „ce am vorbit acum"), înlocuiește referința cu subiectul real din mesajele anterioare (ex. „embolia pulmonară"). NU scrie niciodată „subiectul discutat", „tema de mai sus" sau alt text-referință în câmpul "topic".',
+    '- Dacă referința nu poate fi rezolvată din conversație, pune isCommand:false și cere clarificare în "reply".',
     '',
     `Cursuri în bibliotecă: ${sources.length ? sources.join(' | ') : '(niciunul)'}`,
     `Foldere grile: ${quizFolderNames.length ? quizFolderNames.join(' | ') : '(niciunul)'}`,
     `Foldere bibliotecă: ${libFolderNames.length ? libFolderNames.join(' | ') : '(niciunul)'}`,
     `Seturi existente: ${quizTitles.length ? quizTitles.join(' | ') : '(niciunul)'}`,
   ].join('\n');
+}
+
+/**
+ * Topics that are references to the conversation, not subjects: "grile despre
+ * subiectul discutat". Generating on such a string produces garbage questions
+ * (or a failed validation), so they are resolved against the thread first.
+ */
+const REFERENTIAL_TOPIC_RE = new RegExp(
+  '^(?:acest[ai]?\\s+|acel[ai]?\\s+|acelasi\\s+|aceeasi\\s+)?' +
+  '(?:subiect(?:ul)?|tema|tem[ăa]|capitol(?:ul)?|materi[ae]|noti(?:unea|unile)|chestia|lucrul)?\\s*' +
+  '(?:discutat[ăa]?|dezbatut[ăa]?|de mai sus|de dinainte|de dinaintea|anterior[ăa]?|precedent[ăa]?|curent[ăa]?|' +
+  'de care am (?:vorbit|discutat)|despre care am (?:vorbit|discutat)|de care vorbeam|de care discutam|' +
+  'de aici|de sus|de adineauri|asta|aceasta|acesta|ast[ae]a)\\.?$',
+  'i',
+);
+
+function stripDiacritics(value: string) {
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+export function isReferentialTopic(topic: string | undefined): boolean {
+  const cleaned = stripDiacritics((topic ?? '').trim().toLowerCase()).replace(/\s+/g, ' ');
+  if (!cleaned) return true;
+  if (/^(?:ce|despre ce) am (?:vorbit|discutat)/.test(cleaned)) return true;
+  // "acelasi subiect" / "aceeasi tema" — a bare demonstrative + noun, no tail.
+  if (/^(?:acelasi|aceeasi|acest|aceasta|acel|acea)\s+(?:subiect|tema|capitol|materie|lucru)(?:ul|a)?$/.test(cleaned)) return true;
+  return REFERENTIAL_TOPIC_RE.test(cleaned);
+}
+
+/**
+ * Asks the model what the thread was actually about, so "fă-mi grile despre
+ * subiectul discutat" becomes a real subject. Returns null when the
+ * conversation gives nothing concrete — the caller then falls back to chat
+ * instead of generating questions about a placeholder.
+ */
+export async function resolveDiscussedTopic(
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+): Promise<string | null> {
+  const transcript = history
+    .filter((turn) => turn.content && turn.content.trim())
+    .slice(-6)
+    .map((turn) => `${turn.role === 'user' ? 'Student' : 'Asistent'}: ${turn.content.slice(0, 900)}`)
+    .join('\n\n');
+  if (!transcript.trim()) return null;
+
+  let raw: string;
+  try {
+    raw = await groqRequest({
+      task: 'analysis',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'Primești ultima parte a unei conversații de studiu medical.',
+            'Spune care este subiectul medical concret discutat, în maximum 8 cuvinte, în română.',
+            'Răspunde DOAR cu subiectul, fără ghilimele, fără explicații și fără propoziții.',
+            'Dacă nu există un subiect medical clar, răspunde exact: NONE',
+          ].join('\n'),
+        },
+        { role: 'user', content: transcript },
+      ],
+      temperature: 0,
+      maxTokens: 40,
+      skipLibraryContext: true,
+    });
+  } catch {
+    return null;
+  }
+
+  const topic = raw
+    .replace(/["'`*]/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!topic || /^none$/i.test(topic)) return null;
+  // The prompt asks for at most 8 words; anything longer is a sentence, i.e. the
+  // model ignored the format and the "topic" would poison the generator.
+  if (topic.length < 3 || topic.split(/\s+/).length > 8) return null;
+  if (isReferentialTopic(topic)) return null;
+  return topic;
 }
 
 function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
@@ -586,6 +669,21 @@ export async function planAgentCommand(
       if (intent.questionsPerPack !== undefined) step.questionsPerPack = intent.questionsPerPack;
       if (intent.packCount !== undefined) step.packCount = intent.packCount;
       if (intent.questionType !== undefined) step.questionType = intent.questionType;
+    }
+  }
+
+  // The planner is told to copy the topic verbatim, so "grile despre subiectul
+  // discutat" arrives as a placeholder. Resolve it against the thread; if the
+  // conversation offers nothing concrete, drop the step rather than generate
+  // questions about the phrase itself.
+  const referential = steps.filter(
+    (step) => step.action === 'generate_quiz_topic' && isReferentialTopic(step.topic),
+  );
+  if (referential.length > 0) {
+    const resolved = await resolveDiscussedTopic([...recentTurns, { role: 'user', content: command }]);
+    for (const step of referential) {
+      if (resolved) step.topic = resolved;
+      else steps.splice(steps.indexOf(step), 1);
     }
   }
 
