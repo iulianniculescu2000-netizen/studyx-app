@@ -28,10 +28,10 @@ import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
 import { useUserStore } from '../store/userStore';
 
-const WHATS_NEW_VERSION = '1.0.10';
+const WHATS_NEW_VERSION = '2.0.0';
 // Bump the suffix when the tour content changes within the same app version, so
 // users who already dismissed the previous tour see the new highlights once more.
-const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-scheme:seen`;
+const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-v2:seen`;
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
 export const WHATS_NEW_OPEN_EVENT = 'studyx:whats-new:open';
@@ -619,9 +619,9 @@ type Slide = {
 const SLIDES: Slide[] = [
   {
     id: 'hero',
-    badge: `Update ${WHATS_NEW_VERSION}`,
-    title: 'StudyX v1.0.10 — AI-ul îți desenează, nu doar îți scrie',
-    description: 'Schemele și algoritmii apar acum ca diagrame adevărate, explicațiile vin pe secțiuni în loc de blocuri de text, iar manualele mari de rezidențiat sunt în sfârșit citite până la ultima pagină și indexate pe capitole.',
+    badge: `Versiunea ${WHATS_NEW_VERSION}`,
+    title: 'StudyX 2.0 — cel mai mare update de până acum',
+    description: 'AI-ul îți desenează scheme adevărate, îți explică pe secțiuni în loc de pereți de text, iar manualele mari de rezidențiat sunt citite până la ultima pagină și indexate pe capitole. Plus secțiunea Rezidențiat, import din Anki, grile din poză și zeci de reparații la lucruri care nu funcționau corect.',
     Demo: HeroDemo,
   },
   {
@@ -645,7 +645,7 @@ const SLIDES: Slide[] = [
     title: 'Kumar, Lawrence și Sinopsis sunt citite complet',
     description: 'Manualele mari se opreau după câteva secunde de citire și se pierdeau în întregime. Acum sunt parcurse pagină cu pagină, până la ultima, iar fiecare fragment știe din ce capitol vine — deci poți cere grile sau explicații pe capitol.',
     Demo: BookIndexingDemo,
-    tip: 'Reimportă cărțile adăugate înainte de 1.0.10 ca să primească și ele capitolele.',
+    tip: 'Reimportă cărțile adăugate înainte de 2.0 ca să primească și ele capitolele.',
   },
   {
     id: 'grile-scan',
