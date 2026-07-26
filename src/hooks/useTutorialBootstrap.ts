@@ -61,8 +61,14 @@ export function useTutorialBootstrap({
   useEffect(() => {
     if (!hasHydrated || !activeProfileId || pendingTutorialProfileId !== activeProfileId || splashVisible) return;
 
-    const raf = window.requestAnimationFrame(() => {
-      const nested = window.requestAnimationFrame(() => {
+    // Both frame ids are tracked here. The inner cancel used to be *returned
+    // from the rAF callback*, where nothing ever calls it — dead code. If the
+    // profile switched between the two frames, the tutorial still started.
+    let outer = 0;
+    let inner = 0;
+
+    outer = window.requestAnimationFrame(() => {
+      inner = window.requestAnimationFrame(() => {
         const state = useTutorialStore.getState();
         if (!state.active && !state.isCompleted(activeProfileId)) {
           tutorialArmedProfileRef.current = activeProfileId;
@@ -71,10 +77,11 @@ export function useTutorialBootstrap({
           clearPendingTutorialProfile(activeProfileId);
         }
       });
-
-      return () => window.cancelAnimationFrame(nested);
     });
 
-    return () => window.cancelAnimationFrame(raf);
+    return () => {
+      window.cancelAnimationFrame(outer);
+      window.cancelAnimationFrame(inner);
+    };
   }, [activeProfileId, clearPendingTutorialProfile, hasHydrated, pendingTutorialProfileId, splashVisible]);
 }
