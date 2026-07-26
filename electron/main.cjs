@@ -357,6 +357,41 @@ function getBundledVersion() {
   }
 }
 
+/**
+ * Drops Chromium's compiled-code cache when the app version changes.
+ *
+ * The renderer bundle uses fixed filenames (no content hashes) so update
+ * patches stay predictable — which means an update replaces the *contents* of
+ * URLs like `dist/assets/FolderView.js` while the URL stays identical. V8 then
+ * serves bytecode it compiled from the PREVIOUS build for that URL, the module
+ * fails to instantiate, and the renderer dies with "Failed to fetch dynamically
+ * imported module" (observed on the 1.0.7 -> 1.0.8 update).
+ */
+async function clearCodeCacheOnVersionChange() {
+  const markerPath = path.join(app.getPath('userData'), 'last-run-version.json');
+  const version = getBundledVersion();
+
+  let previous = null;
+  try {
+    previous = JSON.parse(await fsp.readFile(markerPath, 'utf-8'))?.version ?? null;
+  } catch { /* first run, or unreadable marker — treat as a version change */ }
+
+  if (previous !== version) {
+    try {
+      await session.defaultSession.clearCodeCaches({ urls: [] });
+      console.log(`[StudyX] Cleared code cache after version change (${previous ?? 'necunoscut'} -> ${version}).`);
+    } catch (error) {
+      console.warn('[StudyX] Failed to clear code cache:', error.message);
+    }
+  }
+
+  try {
+    await fsp.writeFile(markerPath, JSON.stringify({ version, at: new Date().toISOString() }), 'utf-8');
+  } catch (error) {
+    console.warn('[StudyX] Failed to record run version:', error.message);
+  }
+}
+
 function compareVersionParts(a, b) {
   const parse = (value) => String(value || '0.0.0').replace(/^v/, '').split('.').map((part) => Number(part) || 0);
   const [a1 = 0, a2 = 0, a3 = 0] = parse(a);
@@ -967,6 +1002,34 @@ function createWindow() {
     } catch (e) { /* ignore */ }
   }
 
+  // Links must never open inside the app. Without this, a middle-click (or any
+  // target="_blank" link, including ones inside AI answers) spawned a bare
+  // Electron window with the page loaded in it — no address bar, no way back.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url).catch((error) => {
+        console.warn('[StudyX] Failed to open external link:', error.message);
+      });
+    }
+    return { action: 'deny' };
+  });
+
+  // Same protection for the main frame: a link must not navigate the app away
+  // from its own UI. Anything external is handed to the system browser.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const current = mainWindow?.webContents.getURL() ?? '';
+    if (url === current) return;
+    const isAppUrl = url.startsWith('file://') || (isDev && url.startsWith('http://localhost:5173'));
+    if (isAppUrl) return;
+
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url).catch((error) => {
+        console.warn('[StudyX] Failed to open external link:', error.message);
+      });
+    }
+  });
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -977,6 +1040,27 @@ function createWindow() {
   } else {
     const loadPath = getPreferredRendererEntry();
     mainWindow.loadFile(loadPath);
+
+    // Safety net: if the renderer dies anyway (stale code cache, corrupt cache
+    // entry), wipe the caches and reload once instead of leaving the user on a
+    // dead window they can only fix by reinstalling.
+    let recovered = false;
+    mainWindow.webContents.on('render-process-gone', async (_event, details) => {
+      if (recovered || details?.reason === 'clean-exit') return;
+      recovered = true;
+      console.error(`[StudyX] Renderer gone (${details?.reason}); clearing caches and reloading.`);
+      try {
+        await session.defaultSession.clearCodeCaches({ urls: [] });
+        await session.defaultSession.clearCache();
+      } catch (error) {
+        console.warn('[StudyX] Cache clear after renderer crash failed:', error.message);
+      }
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+      } catch (error) {
+        console.warn('[StudyX] Reload after renderer crash failed:', error.message);
+      }
+    });
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -1091,6 +1175,7 @@ if (!gotTheLock) {
     await runPendingHardResetCleanup();
     await migrateLegacyUserData();
     await pruneStaleOverlay();
+    await clearCodeCacheOnVersionChange();
     const ud = app.getPath('userData');
     const sentinelPath = path.join(ud, '.first-run');
     try {
