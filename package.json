@@ -38,7 +38,6 @@
     "test:npx": "node scripts/dev-commands.js test",
     "analyze:npx": "node scripts/dev-commands.js analyze",
     "electron:dev:npx": "node scripts/dev-commands.js electron:dev",
-    "storybook:npx": "node scripts/dev-commands.js storybook",
     "lighthouse:npx": "node scripts/dev-commands.js lighthouse",
     "ai:test:npx": "node scripts/dev-commands.js ai:test",
     "install-deps": "node scripts/dev-commands.js install-deps"

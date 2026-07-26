@@ -24,7 +24,7 @@ import type {
   RetrievedChunk,
   UserProfileData,
 } from './types';
-import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile, generateFromMistakes } from './UserProfile';
+import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile } from './UserProfile';
 import { validateJson } from './validator';
 
 type ContextChunk = ChunkRecord | RetrievedChunk;
@@ -378,10 +378,6 @@ export async function generateQuestions(request: AIQuestionRequest) {
   return QuestionGenerator.generate(profile, request);
 }
 
-export function getNextQuestion(state: AINextQuestionState) {
-  return LearningStrategist.getNextQuestion(state);
-}
-
 export async function generateHint(question: Question) {
   const query = question.text;
   const { chunks, summary } = await buildRelevantContext(query, 4);
@@ -679,6 +675,3 @@ export function getUserProfile(profileId: string) {
   return loadUserProfile(profileId);
 }
 
-export function generateFromMistakeBank(profileId: string) {
-  return generateFromMistakes(profileId);
-}

@@ -1,85 +1,56 @@
 # Utility Libraries
 
-## Overview
+Helpers used across the StudyX app. This file is only worth keeping if it stays
+true — the previous version listed a `sm2Test.ts` that no longer exists, called
+`generateClinicalCase()` unused when QuizCreate calls it, and carried a cleanup
+list where nothing had been done.
 
-This directory contains utility libraries and helpers for the StudyX application.
+## AI
 
-## Active Libraries
+| File | What it does |
+|---|---|
+| `groq.ts` | The AI API layer: chat, question generation, explanations, provider fallback. |
+| `aiContext.ts` | Builds the user-context strings injected into prompts. |
+| `aiRequestGovernor.ts` | Request queue, spacing and concurrency limits. |
+| `jsonExtract.ts` | Pulls JSON out of model replies: survives a conversational preamble and recovers complete items from a reply truncated by `max_tokens`. |
+| `ai/` | Higher-level AI features — the agent, quiz generation, the grile (question-bank) importer. See the files there. |
 
-### `aiContext.ts`
-- Builds user context strings for AI prompts
-- Performance summaries and study coach plans
-- **Status**: ✅ Active and used
+## Documents
 
-### `aiRequestGovernor.ts`
-- Manages AI request queue and rate limiting
-- Prevents API abuse and handles concurrency
-- **Status**: ✅ Active and used
+| File | What it does |
+|---|---|
+| `pdfParser.ts` | PDF text extraction (pdf.js). |
+| `docxParser.ts` | DOCX text extraction (mammoth). |
+| `ocrParser.ts` | OCR for images (Tesseract.js). |
+| `imageProcessing.ts` | Page rendering, captioned-image extraction, resizing. |
 
-### `asyncGuard.ts`
-- `createLatestOnlyRunner()`: Prevents race conditions in async operations
-- `isDocumentHidden()`: Checks document visibility state
-- **Status**: ⚠️ Partially used (only in DashboardAIStudyBuddy)
+## Storage and scheduling
 
-### `backgroundTaskQueue.ts`
-- Queues background AI indexing tasks
-- Handles task scheduling and retry logic
-- **Status**: ✅ Active and used
+| File | What it does |
+|---|---|
+| `idb.ts` | Shared IndexedDB wrapper. |
+| `flashcardImageStore.ts` | Flashcard images in IndexedDB, keyed `quizId:tag`; questions store an `idb:` pointer so quiz snapshots stay small. |
+| `rollback.ts` | Snapshot taken before a content-pack install; restored from Settings → Date & Securitate. |
+| `backgroundTaskQueue.ts` | Queues background indexing work. |
+| `idleTaskScheduler.ts` | Defers non-critical work to idle time. |
+| `asyncGuard.ts` | `createLatestOnlyRunner()` drops superseded async results. Used by the dashboard study buddy. |
 
-### `groq.ts`
-- Main AI API integration layer
-- Question generation, explanations, chat functionality
-- **Status**: ✅ Active and core to the app
+## Progress and scoring
 
-### `idleTaskScheduler.ts`
-- Schedules tasks during browser idle time
-- Optimizes performance by deferring non-critical work
-- **Status**: ✅ Active and used
+| File | What it does |
+|---|---|
+| `dashboardTrends.ts` | Week-over-week deltas for the dashboard cards. Returns `null` when there is no previous week, so no trend is shown rather than invented. |
+| `gamificationProgress.ts` | Per-subject mastery and weekly question counts behind the gamification screen. |
+| `adaptiveStudy.ts` | Builds review sets from the mistake bank. |
+| `examSplit.ts` | Splits a bank into dated study sessions before an exam. |
+| `deckKind.ts` | Single source of truth for "is this a flashcard deck or a quiz?". |
 
-### `idb.ts`
-- IndexedDB wrapper for client-side storage
-- Handles large data sets beyond localStorage limits
-- **Status**: ✅ Active and used
+## Known gaps
 
-### `pdfParser.ts`
-- PDF text extraction using pdf-parse
-- Handles document import functionality
-- **Status**: ✅ Active and used
-
-### `docxParser.ts`
-- DOCX text extraction using mammoth
-- Handles Word document imports
-- **Status**: ✅ Active and used
-
-### `ocrParser.ts`
-- OCR text extraction from images using Tesseract.js
-- Handles image-based document imports
-- **Status**: ✅ Active and used
-
-## Debug/Development Libraries
-
-### `sm2Test.ts`
-- SM-2 algorithm simulation and testing utility
-- **Status**: 🧪 Debug only - Can be removed from production build
-- **Usage**: Manual testing via browser console
-- **Recommendation**: Move to test suite or remove from production
-
-## Deprecated/Unused Functions
-
-### In `groq.ts`
-- `recommendImage()`: Not integrated with UI
-- `generateClinicalCase()`: Not exposed in application
-- `explainAnswerInline()`: Partially implemented but unused
-- **Recommendation**: Either integrate or remove
-
-### In `asyncGuard.ts`
-- `createLatestOnlyRunner()`: Only used in one component
-- **Recommendation**: Consider inline implementation or expand usage
-
-## Cleanup Recommendations
-
-1. **Remove `sm2Test.ts` from production builds**
-2. **Integrate or remove unused functions in `groq.ts`**
-3. **Expand usage of `asyncGuard.ts` utilities or inline them**
-4. **Add proper error boundaries for AI operations**
-5. **Consider moving debug utilities to separate test package**
+- **Complete but unwired:** `AIEngine.explainWrongOptions()` (explains why each
+  wrong option is wrong) and `groq.explainAnswerInline()` (streaming explanation
+  that also flags a suspicious answer key). Both work; neither has a button.
+  Wire them or delete them — don't leave them ambiguous.
+- **Storybook:** `*.stories.tsx` files exist for a few `ui/` components, but
+  Storybook is not installed or configured, so they are documentation only. The
+  scripts that pretended to run it have been removed.

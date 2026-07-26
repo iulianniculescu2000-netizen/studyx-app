@@ -81,9 +81,16 @@ export const useFolderStore = create<FolderStore>()(
       }),
 
     reorderFolders: (ids) =>
-      set((s) => ({
-        folders: ids.map((id) => s.folders.find((f) => f.id === id)!).filter(Boolean),
-      })),
+      set((s) => {
+        // Rebuilding the list purely from `ids` DELETED every folder the caller
+        // didn't mention — a drag inside one subtree only knows its own ids, so
+        // reordering there would have wiped the rest of the tree.
+        const ordered = ids
+          .map((id) => s.folders.find((f) => f.id === id))
+          .filter((folder): folder is NonNullable<typeof folder> => !!folder);
+        const moved = new Set(ordered.map((f) => f.id));
+        return { folders: [...ordered, ...s.folders.filter((f) => !moved.has(f.id))] };
+      }),
 
     _hydrate: (data) => set({ folders: data.folders ?? [] }),
     _snapshot: () => ({ folders: get().folders }),

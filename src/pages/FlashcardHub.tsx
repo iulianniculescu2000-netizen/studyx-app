@@ -26,7 +26,6 @@ function generateId() {
 const OPTION_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
 const FLASHCARD_ANSWER_SOFT_LIMIT = 210;
 const VISUAL_FLASHCARD_IMAGE_MAX_EDGE = 1680;
-const USE_NATIVE_TEXT_ONLY_PDF_IMPORT = false;
 const PHOTO_CARD_PROMPT = 'Privește imaginea și descrie aspectul clinic.';
 const LAST_FOLDER_LS_KEY = 'studyx-flashcard-last-folder';
 
@@ -375,17 +374,10 @@ export default function FlashcardHub() {
     }
   };
 
+  // The Electron-native "text only" branch that used to sit here was gated behind
+  // a constant hard-wired to false, so it never ran. The browser file picker path
+  // below handles both builds and additionally supports captioned-image decks.
   const handlePdfImport = async () => {
-    if (USE_NATIVE_TEXT_ONLY_PDF_IMPORT && window.electronAPI?.openPdfFile) {
-      const text = await window.electronAPI.openPdfFile();
-      if (text) {
-        await generateDeckFromPdf(text);
-      } else {
-        setAiError('Nu s-a putut extrage text din PDF. Încearcă un alt fișier.');
-      }
-      return;
-    }
-
     const input = fileInputRef.current;
     if (!input) return;
     input.value = '';

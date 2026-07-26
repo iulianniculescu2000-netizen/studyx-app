@@ -1,5 +1,4 @@
 import { useAIStore } from '../store/aiStore';
-import { HEART_IMG, ECG_IMG, CELL_IMG, DNA_IMG, NEURON_IMG } from '../data/sampleImages';
 import { getMedicalSystemPrompt } from './aiContext';
 import { logAIDebug } from '../ai/debug';
 import type { AIRequestTask } from '../ai/types';
@@ -404,67 +403,6 @@ function chunkText(text: string, maxSize = 4500, overlap = 350, maxChunks = 4): 
     start = end - overlap;
   }
   return chunks;
-}
-
-// ── Image Recommendation ──────────────────────────────────────────────────────
-// Returns the most relevant sample medical diagram for a given question's topic.
-const IMAGE_KEYWORD_MAP: Array<{ keywords: string[]; image: string }> = [
-  {
-    keywords: [
-      'inimă', 'cardiac', 'atriu', 'ventricul', 'cord', 'mitral', 'aortă',
-      'pericardiu', 'coronarian', 'endocard', 'miocard', 'valvă', 'sinusal',
-      'heart', 'atrial', 'ventricular', 'tricuspidă', 'pulmonară',
-    ],
-    image: HEART_IMG,
-  },
-  {
-    keywords: [
-      'ecg', 'ekg', 'electrocardiog', 'pqrst', 'fibrilație atrială',
-      'tahicardie', 'bradicardie', 'aritmie', 'flutter', 'bloc av',
-      'st-', 'qrs', 'interval qt', 'undă p', 'infarct miocardic',
-    ],
-    image: ECG_IMG,
-  },
-  {
-    keywords: [
-      'celulă', 'nucleu', 'mitocondri', 'golgi', 'lizozom', 'ribozom',
-      'reticul endoplasmatic', 'eucariot', 'citoplasmă', 'membrană celulară',
-      'organit', 'celular', 'procariote',
-    ],
-    image: CELL_IMG,
-  },
-  {
-    keywords: [
-      'adn', 'dna', 'cromozom', 'genă', 'mutație', 'helix', 'nucleotid',
-      'baze azotate', 'transcripție', 'translație', 'replicare', 'codon',
-      'genomic', 'alele', 'genotip', 'fenotip',
-    ],
-    image: DNA_IMG,
-  },
-  {
-    keywords: [
-      'neuron', 'axon', 'dendrit', 'sinapsă', 'sistem nervos', 'neural',
-      'mielină', 'potențial de acțiune', 'neurotransmițător', 'sinaptic',
-      'glia', 'neuro', 'acetilcolină', 'dopamină',
-    ],
-    image: NEURON_IMG,
-  },
-];
-
-/**
- * Recommends the most relevant sample medical diagram for a question.
- * Returns a data URL string or null if no strong match is found.
- */
-export function recommendImage(questionText: string): string | null {
-  const text = questionText.toLowerCase();
-  let best: { image: string; score: number } | null = null;
-  for (const entry of IMAGE_KEYWORD_MAP) {
-    const score = entry.keywords.reduce((acc, kw) => acc + (text.includes(kw) ? 1 : 0), 0);
-    if (score > 0 && (!best || score > best.score)) {
-      best = { image: entry.image, score };
-    }
-  }
-  return best?.image ?? null;
 }
 
 // ── Request Queue & Rate Limiting ──────────────────────────────────────────
