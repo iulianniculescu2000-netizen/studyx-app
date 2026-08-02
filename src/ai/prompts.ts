@@ -2,6 +2,7 @@ import type { Question } from '../types';
 import type { AIContextPayload, MistakeBankEntry, UserProfileData, WeakTopic } from './types';
 import { buildQuestionTypeInstruction, type QuestionType } from '../lib/ai/questionTypes';
 import { DEFAULT_EXAM_STYLE, type ExamStyle } from '../lib/ai/examStyle';
+import { buildExemplarBlock } from '../data/questionExemplars';
 
 export const AI_PERSONALITY =
   'Ești un profesor de medicină cu experiență clinică vastă, exigent și foarte clar, ' +
@@ -189,6 +190,9 @@ export function buildQuestionPrompt(
     vignetteInstruction,
     distractorInstruction,
     answerQualityInstruction,
+    // Anchors last before the context: the model copies the shape it saw most
+    // recently, and prose rules alone never got the stems short enough.
+    buildExemplarBlock(examStyle, questionType),
     typeInstruction,
     safeContext
       ? `CONTEXT DIN BIBLIOTECA STUDENTULUI:\n${safeContext}`
