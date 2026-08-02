@@ -10,6 +10,7 @@
 import { groqRequest, notesToFlashcards } from '../groq';
 import { generateQuizPackagesFromSource } from './batchQuizGeneration';
 import { clampStudioPackCount, clampStudioQuestionCount } from './studioGeneration';
+import { DEFAULT_EXAM_STYLE, EXAM_STYLE_META, detectExamStyle, examStyleTags, type ExamStyle } from './examStyle';
 import { getVaultChunksBySource } from '../../ai/vectorStore';
 import { generateQuestions, generateQuestionsFromTopic, getUserProfile } from '../../ai/AIEngine';
 import { generateFromMistakes, getWeakTopicsForProfile } from '../../ai/UserProfile';
@@ -158,6 +159,8 @@ export interface AgentStep {
   count?: number;
   /** For generate_quiz_pack: single-answer (complement simplu) vs multi-answer. */
   questionType?: 'single' | 'multiple';
+  /** Which track: rezidențiat (5 variante A-E) or a plain subject quiz (4, A-D). */
+  examStyle?: ExamStyle;
   difficulty?: 'auto' | 'easy' | 'medium' | 'hard';
   /** For create_study_plan: exam name, number of study days, hours per day. */
   examName?: string;
@@ -567,6 +570,7 @@ function buildPlannerPrompt() {
     '- "greșeli"/"greșesc"/"unde greșesc"/"recapitulare greșeli"/"din ce am greșit" → generate_from_mistakes (NU cere sursă; folosește banca de greșeli).',
     '- "rezumă"/"rezumat"/"sinteză" pentru un curs din bibliotecă → summarize_document.',
     '- "complement multiplu"/"răspunsuri multiple"/"mai multe răspunsuri corecte" → questionType:"multiple". "complement simplu"/"un singur răspuns" → questionType:"single". Implicit "single".',
+    '- "examStyle" alege formatul: "residency" = grile ca la rezidențiat, cu 5 variante (A-E) — implicit; "simple" = grilă clasică de facultate, cu 4 variante (A-D). Pune "simple" doar dacă userul cere explicit grile simple sau spune că sunt pentru o materie/facultate/licență.',
     '- "grilă"/"grile"/"întrebări"/"întrebare" = NUMĂRUL DE ÎNTREBĂRI (questionsPerPack). "set"/"seturi"/"pachet"/"pachete" = NUMĂRUL DE PACHETE (packCount).',
     '- IMPLICIT packCount = 1. Pune packCount > 1 DOAR dacă userul cere explicit mai multe "seturi"/"pachete", SAU dacă numărul de întrebări depășește 60 (abia atunci împarte în pachete de maxim 60 fiecare).',
     '- NU inventa numere și NU exagera. Exemple: "2 grile" → packCount:1, questionsPerPack:2. "10 întrebări" → packCount:1, questionsPerPack:10. "3 seturi a câte 20" → packCount:3, questionsPerPack:20. "150 de grile" → packCount:3, questionsPerPack:50.',
@@ -690,6 +694,7 @@ function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
     questionsPerPack: num('questionsPerPack') ?? num('questions') ?? num('questionsperpack'),
     count: num('count') ?? num('cards') ?? num('cardCount'),
     questionType: (['single', 'multiple'].includes(str('questionType') ?? str('question_type') ?? '') ? (str('questionType') ?? str('question_type')) : undefined) as AgentStep['questionType'],
+    examStyle: (['residency', 'simple'].includes(str('examStyle') ?? str('exam_style') ?? '') ? (str('examStyle') ?? str('exam_style')) : undefined) as AgentStep['examStyle'],
     difficulty: (['auto', 'easy', 'medium', 'hard'].includes(diff ?? '') ? diff : undefined) as AgentStep['difficulty'],
     examName: str('examName') ?? str('exam'),
     studyDays: num('studyDays') ?? num('days'),
@@ -736,6 +741,18 @@ export async function planAgentCommand(
   // Deterministic correction: the planner often miscounts ("3 grile" → 3×10)
   // and drops the question type, so override generate_quiz_pack steps with what
   // the user literally wrote whenever the wording is unambiguous.
+  // The two tracks matter enough not to leave them to the planner's judgement:
+  // "grile de rezidentiat" and "grile simple pentru materie" are read straight
+  // from the user's wording, exactly like the counts below.
+  const requestedStyle = detectExamStyle(command);
+  if (requestedStyle) {
+    for (const step of steps) {
+      if (step.action === 'generate_quiz_pack' || step.action === 'generate_quiz_topic' || step.action === 'generate_from_mistakes') {
+        step.examStyle = requestedStyle;
+      }
+    }
+  }
+
   const intent = extractQuizIntent(command);
   if (intent.packCount || intent.questionsPerPack || intent.questionType) {
     for (const step of steps) {
@@ -813,7 +830,8 @@ export function describeStep(step: AgentStep): string {
       const n = clampStudioQuestionCount(step.questionsPerPack ?? 10);
       const typeLabel = step.questionType === 'multiple' ? ' (complement multiplu)' : '';
       const dest = step.folder ? ` în „${step.folder}"` : '';
-      return `Generez ${n} grile${typeLabel} despre „${step.topic}"${dest}`;
+      const styleLabel = EXAM_STYLE_META[step.examStyle ?? DEFAULT_EXAM_STYLE].short;
+      return `Generez ${n} grile${typeLabel} despre „${step.topic}" · ${styleLabel}${dest}`;
     }
     case 'correct_answer': {
       const src = step.groundedIn === 'course' ? 'confirmat din biblioteca ta' : step.groundedIn === 'general' ? 'din cunoștințe medicale generale — verifică' : 'după observația ta';
@@ -1025,6 +1043,7 @@ export async function executeAgentPlan(
             difficulty,
             step.questionType ?? 'single',
             profile,
+            step.examStyle ?? DEFAULT_EXAM_STYLE,
           );
           if (result.questions.length === 0) throw new Error(`Nu am putut genera grile despre „${step.topic}".`);
 
@@ -1032,7 +1051,7 @@ export async function executeAgentPlan(
           const quiz: Quiz = {
             id: shortId(),
             title: step.topic,
-            description: `${result.questions.length} grile generate de AI despre „${step.topic}".`,
+            description: `${result.questions.length} grile generate de AI despre „${step.topic}" · ${EXAM_STYLE_META[step.examStyle ?? DEFAULT_EXAM_STYLE].description}.`,
             emoji: '✨',
             color: folder?.color ?? 'blue',
             category: folder?.name ?? 'Altele',
@@ -1040,7 +1059,7 @@ export async function executeAgentPlan(
             folderId: folder?.id ?? null,
             shuffleQuestions: true,
             shuffleAnswers: true,
-            tags: ['ai', 'topic'],
+            tags: [...examStyleTags(step.examStyle ?? DEFAULT_EXAM_STYLE), 'topic'],
             questions: result.questions,
             createdAt: Date.now(),
           };

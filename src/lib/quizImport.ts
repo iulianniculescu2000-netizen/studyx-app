@@ -121,7 +121,7 @@ export function buildExternalAIPrompt(topicOrText: string, questionCount = 15): 
     [
       'Reguli:',
       `- Generează ${questionCount} întrebări dacă subiectul permite (altfel câte poți acoperi corect).`,
-      '- Fiecare întrebare are exact 4 opțiuni cu un singur "isCorrect": true (sau 5 opțiuni cu 2-3 corecte dacă "multipleCorrect": true).',
+      '- Fiecare întrebare are exact 5 opțiuni (A-E) cu un singur "isCorrect": true — formatul de la rezidențiat (sau 5 opțiuni cu 2-3 corecte dacă "multipleCorrect": true).',
       '- Explicațiile sunt scurte, corecte medical, fără informații inventate.',
       '- "color" trebuie să fie una din: blue, purple, green, orange, pink, red, teal.',
       '- "difficulty" este una din: easy, medium, hard.',

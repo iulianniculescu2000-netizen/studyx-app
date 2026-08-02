@@ -131,7 +131,13 @@ function extractTail(sentence: string, pattern: RegExp) {
  * option: unbalanced parentheses ("…gălbuie (ex"), a dangling opener, a trailing
  * connector word (clause cut mid-thought), or trailing punctuation.
  */
-function isCleanOptionText(text: string): boolean {
+/**
+ * `allowTrailingColon` exists for question stems: the rezidențiat format ends
+ * the stem with a colon that the options complete ("Sifilisul este cauzat de:"),
+ * and the dangling-punctuation rule below would otherwise throw away every
+ * exam-shaped question we generate. Options themselves must still end cleanly.
+ */
+function isCleanOptionText(text: string, options: { allowTrailingColon?: boolean } = {}): boolean {
   const t = normalizeText(text);
   if (!t) return false;
   const open = (t.match(/\(/g) ?? []).length;
@@ -143,7 +149,7 @@ function isCleanOptionText(text: string): boolean {
   // Clause cut mid-thought on a connector.
   if (/\b(?:prin|cu|care|iar|unde|de|in|într|la|pe|si|și|sau|ca|spre|din|sub|fără|fara|după|dupa|pentru)\s*$/i.test(t)) return false;
   // Must not end on dangling punctuation.
-  if (/[,;:\-–(]$/.test(t)) return false;
+  if (options.allowTrailingColon ? /[,;\-–(]$/.test(t) : /[,;:\-–(]$/.test(t)) return false;
   return true;
 }
 
@@ -283,13 +289,15 @@ export function isStudioQuestionQualityAcceptable(question: Question, sourceName
     if (question.options.length < 4 || question.options.length > 6) return false;
     if (correctCount < 2 || correctCount > 3) return false;
   } else {
-    // Complement simplu: exact 4 opțiuni, exact 1 corect.
-    if (question.options.length !== 4) return false;
+    // Complement simplu: 4-5 opțiuni, exact 1 corectă. Rezidențiatul cere 5
+    // (A-E) și asta cerem și noi generatorului, dar seturile create înainte de
+    // calibrare au 4 și nu au de ce să fie respinse la revalidare.
+    if (question.options.length < 4 || question.options.length > 5) return false;
     if (correctCount !== 1) return false;
   }
   if (question.text.length < 18 || question.text.length > 180) return false;
   if (isBadStudioPrompt(question.text, sourceName)) return false;
-  if (!isCleanOptionText(question.text)) return false;
+  if (!isCleanOptionText(question.text, { allowTrailingColon: true })) return false;
 
   // The correct answer must not be copied verbatim into the question stem — that
   // happened when a bad chunk topic ("Se disting două tipuri") became both the

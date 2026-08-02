@@ -342,7 +342,7 @@ export default function ReviewMode() {
               exit={{ opacity: 0, height: 0 }}
               className="mb-3 px-3 py-2 rounded-xl text-xs flex flex-wrap gap-3 overflow-hidden"
               style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text3 }}>
-              {['1-4 / A-D: selectează opțiune', 'Enter / Space: următor', 'Enter (multi): confirmă'].map(h => (
+              {['1-5 / A-E: selectează opțiune', 'Enter / Space: următor', 'Enter (multi): confirmă'].map(h => (
                 <span key={h} className="font-mono">{h}</span>
               ))}
             </motion.div>

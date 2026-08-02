@@ -617,8 +617,11 @@ export default function QuizPlay() {
         }
       }
 
-      // 1-4 or A-D to select option
-      const keyMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
+      // 1-5 or A-E to select option (rezidențiat questions have five answers)
+      const keyMap: Record<string, number> = {
+        '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
+        a: 0, b: 1, c: 2, d: 3, e: 4,
+      };
       const idx = keyMap[e.key.toLowerCase()];
       if (idx !== undefined && state.question?.options[idx]) {
         state.handleSelect(state.question.options[idx].id);
@@ -994,7 +997,7 @@ export default function QuizPlay() {
                 exit={{ opacity: 0, height: 0 }}
                 className="relative z-10 mt-4 flex flex-wrap gap-2 overflow-hidden"
               >
-                {['1-4 / A-D selectează opțiunea', 'Enter / Space confirmă sau continuă', 'H deschide indiciul'].map((hint) => (
+                {['1-5 / A-E selectează opțiunea', 'Enter / Space confirmă sau continuă', 'H deschide indiciul'].map((hint) => (
                   <span
                     key={hint}
                     className="rounded-full border border-white/16 bg-white/12 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/82"

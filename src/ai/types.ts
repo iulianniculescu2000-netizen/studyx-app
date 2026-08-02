@@ -152,6 +152,8 @@ export interface AIQuestionRequest {
   questionType?: 'single' | 'multiple';
   /** Optional mix of question shapes to spread across the batch (Task 3). */
   questionTypes?: import('../lib/ai/questionTypes').QuestionType[];
+  /** Which track to generate: rezidențiat (5 options) or plain subject quiz (4). */
+  examStyle?: import('../lib/ai/examStyle').ExamStyle;
   prefetchedContext?: AIContextPayload;
 }
 

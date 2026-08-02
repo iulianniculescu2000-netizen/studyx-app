@@ -5,7 +5,7 @@
  * astfel încât răspunsurile să fie mai bine adaptate și mai utile pentru studiu.
  */
 import type { Quiz } from '../types';
-import { STRUCTURED_OUTPUT_RULES } from '../ai/prompts';
+import { RESIDENCY_STYLE_RULES, STRUCTURED_OUTPUT_RULES } from '../ai/prompts';
 
 export interface PerformanceSummary {
   totalAnswered: number;
@@ -93,7 +93,8 @@ export function getMedicalSystemPrompt(
     examiner:
       'Ești un examinator medical expert, specializat în Rezidențiat și licență medicală în România. ' +
       'Creezi întrebări cu capcane corecte, diferențiale relevante și scenarii clinice plauzibile. ' +
-      'Respecți structura clară a grilei și gradarea dificultății.',
+      'Respecți structura clară a grilei și gradarea dificultății.\n\n' +
+      RESIDENCY_STYLE_RULES,
 
     explainer:
       'Ești un profesor de medicină clinică. Explici de ce un răspuns este corect sau greșit, ' +

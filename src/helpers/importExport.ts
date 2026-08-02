@@ -375,9 +375,9 @@ export function importFromTXT(txtData: string): ImportResult {
       }
 
       // Detectare op\u021biuni
-      if (trimmed.match(/^\s*[A-D]\.\s+/) && currentQuestion) {
-        const optionText = trimmed.replace(/^\s*[A-D]\.\s+/, '');
-        const optionId = trimmed.match(/([A-D])/)?.[1]?.toLowerCase() || 'a';
+      if (trimmed.match(/^\s*[A-E]\.\s+/) && currentQuestion) {
+        const optionText = trimmed.replace(/^\s*[A-E]\.\s+/, '');
+        const optionId = trimmed.match(/([A-E])/)?.[1]?.toLowerCase() || 'a';
         const isCorrect = trimmed.includes('\u2713');
 
         currentQuestion.options.push({

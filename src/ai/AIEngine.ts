@@ -1,6 +1,7 @@
 import type { Difficulty, Question } from '../types';
 import { groqRequest, groqStream } from '../lib/groq';
 import { logAIDebug } from './debug';
+import { DEFAULT_EXAM_STYLE, type ExamStyle } from '../lib/ai/examStyle';
 import { runAIPipeline } from './pipeline';
 import {
   buildExplanationPrompt,
@@ -193,6 +194,7 @@ export class QuestionGenerator {
           request.questionType ?? 'single',
           request.questionTypes,
           request.count ?? 1,
+          request.examStyle ?? DEFAULT_EXAM_STYLE,
         );
         // Self-gated by the localStorage "studyx-ai-debug" flag (see debug.ts).
         logAIDebug('buildQuestionPrompt', { questionTypes: request.questionTypes, count: request.count, prompt });
@@ -252,11 +254,12 @@ export async function generateQuestionsFromTopic(
   difficulty: Difficulty,
   questionType: 'single' | 'multiple',
   profile: UserProfileData | null,
+  examStyle: ExamStyle = DEFAULT_EXAM_STYLE,
 ): Promise<AIQuestionResult> {
   const parsed = await runAIPipeline<QuestionGenerationResponse>({
     retrieve: () => topic,
     generate: async () => {
-      const prompt = buildQuestionPrompt(profile, [], difficulty, undefined, questionType, undefined, count);
+      const prompt = buildQuestionPrompt(profile, [], difficulty, undefined, questionType, undefined, count, examStyle);
       return groqRequest({
         task: 'questions',
         messages: [
