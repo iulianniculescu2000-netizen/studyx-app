@@ -67,6 +67,9 @@ import {
 } from '../lib/ai/agent';
 import { detectChatIntent, shouldApplyIntent } from '../lib/ai/intentRouter';
 import { isFlashcardDeck } from '../lib/deckKind';
+import { DEFAULT_EXAM_STYLE } from '../lib/ai/examStyle';
+import { scoreExamConformance } from '../lib/ai/examConformance';
+import { EXAM_STYLE_META, type ExamStyle } from '../lib/ai/examStyle';
 import { suggestFolderAppearance } from '../lib/folderAppearance';
 import { useAgentJobsStore } from '../store/agentJobsStore';
 import { useQuizChatContextStore } from '../store/quizChatContextStore';
@@ -380,6 +383,8 @@ export default function AIChatDrawer() {
   const [studioPackCount, setStudioPackCount] = useState(4);
   const [studioQuestionsPerPack, setStudioQuestionsPerPack] = useState(12);
   const [studioDifficulty, setStudioDifficulty] = useState<StudioDifficulty>('auto');
+  /** Rezidențiat (5 variante) vs grilă simplă de materie (4). */
+  const [studioExamStyle, setStudioExamStyle] = useState<ExamStyle>(DEFAULT_EXAM_STYLE);
   const [studioGenerating, setStudioGenerating] = useState(false);
   const [generatedSummary, setGeneratedSummary] = useState<string | null>(null);
   const [pastedImage, setPastedImage] = useState<string | null>(null);
@@ -643,6 +648,7 @@ export default function AIChatDrawer() {
               folderId: folder?.id ?? null,
               questionCount: questionsPerPack,
               difficulty,
+              examStyle: studioExamStyle,
               activeProfileId,
               existingQuizzes: quizzes,
             });
@@ -656,6 +662,7 @@ export default function AIChatDrawer() {
             packCount,
             questionsPerPack,
             difficulty,
+            examStyle: studioExamStyle,
             activeProfileId,
             existingQuizzes: quizzes,
           });
@@ -718,6 +725,23 @@ export default function AIChatDrawer() {
     agentUndoRef.current.set(jobId, result.undo);
     const failedAll = result.errors.length > 0 && result.createdQuizIds.length === 0;
     jobs.setJobStatus(jobId, failedAll ? 'error' : 'done', result.summary);
+
+    // Measure what was just generated against the real exam, so the student sees
+    // whether the set actually looks like rezidențiat instead of taking it on faith.
+    const createdSets = useQuizStore.getState().quizzes
+      .filter((quiz) => result.createdQuizIds.includes(quiz.id) && !isFlashcardDeck(quiz));
+    const createdQuestions = createdSets.flatMap((quiz) => quiz.questions);
+    if (createdQuestions.length >= 3) {
+      const style: ExamStyle = createdSets.some((quiz) => quiz.tags?.includes(EXAM_STYLE_META.simple.tag))
+        ? 'simple'
+        : 'residency';
+      const report = scoreExamConformance(createdQuestions, style);
+      jobs.setJobConformance(jobId, {
+        score: report.score,
+        label: EXAM_STYLE_META[style].short,
+        issues: report.metrics.filter((metric) => !metric.ok).map((metric) => metric.label),
+      });
+    }
 
     // Close the loop: if the agent created sets, offer to jump straight in.
     if (!failedAll && result.createdQuizIds.length > 0) {
@@ -2040,6 +2064,34 @@ export default function AIChatDrawer() {
                                     }}
                                   >
                                     {entry.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                              Tip de grilă
+                            </span>
+                            <div className="grid grid-cols-2 gap-2">
+                              {(['residency', 'simple'] as ExamStyle[]).map((style) => {
+                                const active = studioExamStyle === style;
+                                const meta = EXAM_STYLE_META[style];
+                                return (
+                                  <button
+                                    key={style}
+                                    onClick={() => setStudioExamStyle(style)}
+                                    title={meta.description}
+                                    className="rounded-2xl px-3 py-2 text-left"
+                                    style={{
+                                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
+                                      border: `1px solid ${active ? 'transparent' : theme.border}`,
+                                      color: active ? '#fff' : theme.text,
+                                    }}
+                                  >
+                                    <div className="text-xs font-black uppercase tracking-[0.14em]">{meta.short}</div>
+                                    <div className="mt-0.5 text-[10px] font-semibold opacity-80">{meta.description}</div>
                                   </button>
                                 );
                               })}

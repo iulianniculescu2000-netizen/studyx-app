@@ -160,7 +160,9 @@ export class DocumentProcessor {
       // onto two lines in the printed book, so the full string never appears on
       // one line. A distinctive prefix is enough to anchor the chapter.
       const prefix = this.headingPrefix(normalizedHeading);
-      return prefix !== null && normalizedParagraph.includes(prefix);
+      if (prefix !== null && normalizedParagraph.includes(prefix)) return true;
+
+      return this.matchesSquashedTitle(normalizedParagraph, normalizedHeading);
     }) ?? null;
   }
 
@@ -170,6 +172,29 @@ export class DocumentProcessor {
     if (words.length < 6) return null;
     const prefix = words.slice(0, 4).join(' ');
     return prefix.length >= 24 ? prefix : null;
+  }
+
+  /**
+   * Last-resort match for titles the extractor breaks up mid-word.
+   *
+   * Some scanned books yield glyph runs like "AFECTIUNI LE GINECOLOGICE SI
+   * MAMA RE" for "AFECȚIUNI GINECOLOGICE ȘI MAMARE" — spaces inside words plus
+   * an inflected ending. Comparing with all whitespace removed repairs the
+   * split words, and requiring every significant word of the title to appear in
+   * order keeps this from matching unrelated lines.
+   */
+  private matchesSquashedTitle(normalizedParagraph: string, normalizedHeading: string): boolean {
+    const words = normalizedHeading.split(' ').filter((word) => word.length >= 5);
+    if (words.length < 2) return false;
+
+    const squashedLine = normalizedParagraph.replace(/\s+/g, '');
+    let cursor = 0;
+    for (const word of words) {
+      const at = squashedLine.indexOf(word, cursor);
+      if (at === -1) return false;
+      cursor = at + word.length;
+    }
+    return true;
   }
 
   /**

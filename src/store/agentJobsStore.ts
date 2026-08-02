@@ -22,6 +22,14 @@ export interface AgentJobStep {
   params?: AgentJobStepParams;
 }
 
+/** How closely a generated set matches the real exam (see examConformance). */
+export interface AgentJobConformance {
+  score: number;
+  label: string;
+  /** Metrics that missed their target, already phrased for the user. */
+  issues: string[];
+}
+
 export interface AgentJob {
   id: string;
   command: string;
@@ -30,12 +38,14 @@ export interface AgentJob {
   createdAt: number;
   finishedAt?: number;
   summary?: string;
+  conformance?: AgentJobConformance;
 }
 
 interface AgentJobsStore {
   jobs: AgentJob[];
   createJob: (command: string, steps: AgentJobStep[], status?: AgentJobStatus) => string;
   setJobStatus: (jobId: string, status: AgentJobStatus, summary?: string) => void;
+  setJobConformance: (jobId: string, conformance: AgentJobConformance) => void;
   setStepStatus: (jobId: string, stepId: string, status: AgentStepStatus, detail?: string) => void;
   setSteps: (jobId: string, steps: AgentJobStep[]) => void;
   updateStep: (jobId: string, stepId: string, patch: Partial<AgentJobStep>) => void;
@@ -64,6 +74,10 @@ export const useAgentJobsStore = create<AgentJobsStore>((set) => ({
       summary: summary ?? job.summary,
       finishedAt: status === 'done' || status === 'error' || status === 'cancelled' ? Date.now() : job.finishedAt,
     })),
+  })),
+
+  setJobConformance: (jobId, conformance) => set((state) => ({
+    jobs: patchJob(state.jobs, jobId, (job) => ({ ...job, conformance })),
   })),
 
   setStepStatus: (jobId, stepId, status, detail) => set((state) => ({

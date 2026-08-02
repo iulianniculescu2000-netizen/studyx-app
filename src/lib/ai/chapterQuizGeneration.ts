@@ -2,6 +2,7 @@ import { getVaultChunksBySource } from '../../ai/vectorStore';
 import { generateQuizPackagesFromSource } from './batchQuizGeneration';
 import type { Difficulty, Folder, Quiz } from '../../types';
 import type { QuestionType } from './questionTypes';
+import type { ExamStyle } from './examStyle';
 
 /** Same window size `studioGeneration.ts`'s `buildStudioContextPayload` uses per pack —
  *  sizing pack count off it means the generation calls collectively "see" the whole
@@ -18,6 +19,8 @@ interface ChapterGenerationOptions {
   folder: Folder | null;
   folderId: string | null;
   questionCount: number;
+  /** Rezidențiat (5 variante) sau grilă simplă de materie (4). */
+  examStyle?: ExamStyle;
   difficulty: Difficulty | 'auto';
   activeProfileId: string | null;
   questionType?: 'single' | 'multiple';
@@ -55,6 +58,7 @@ export async function generateQuizFromChapter({
   activeProfileId,
   questionType,
   questionTypes,
+  examStyle,
   existingQuizzes = [],
 }: ChapterGenerationOptions): Promise<ChapterGenerationResult> {
   const allChunks = await getVaultChunksBySource(sourceId);
@@ -80,6 +84,7 @@ export async function generateQuizFromChapter({
     difficulty,
     questionType,
     questionTypes,
+    examStyle,
     activeProfileId,
     existingQuizzes,
     chunks: chapterChunks,

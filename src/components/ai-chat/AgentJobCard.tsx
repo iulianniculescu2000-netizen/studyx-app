@@ -1,4 +1,4 @@
-import { Check, Loader2, X, AlertTriangle, RotateCcw, Sparkles, Minus, Plus } from 'lucide-react';
+import { Check, Loader2, X, AlertTriangle, RotateCcw, Sparkles, Minus, Plus, Target } from 'lucide-react';
 import { useAgentJobsStore, type AgentJobStep, type AgentJobStepParams } from '../../store/agentJobsStore';
 import type { Theme } from '../../theme/themes';
 
@@ -111,6 +111,13 @@ function StepParamEditor({
   );
 }
 
+/** Green when the batch matches the exam, amber when it drifts, red when it doesn't. */
+function conformanceColor(score: number, theme: Theme) {
+  if (score >= 83) return theme.success;
+  if (score >= 50) return theme.warning;
+  return theme.danger;
+}
+
 export default function AgentJobCard({
   jobId,
   theme,
@@ -180,6 +187,31 @@ export default function AgentJobCard({
           );
         })}
       </div>
+
+      {job.conformance && (
+        <div
+          className="mt-3 flex items-start gap-2 rounded-2xl px-3 py-2"
+          style={{
+            background: `${conformanceColor(job.conformance.score, theme)}12`,
+            border: `1px solid ${conformanceColor(job.conformance.score, theme)}30`,
+          }}
+          title={job.conformance.issues.length > 0
+            ? `Sub țintă: ${job.conformance.issues.join(', ')}`
+            : 'Toate metricile sunt în ținta măsurată pe subiectele reale.'}
+        >
+          <Target size={12} className="mt-0.5 flex-shrink-0" style={{ color: conformanceColor(job.conformance.score, theme) }} />
+          <div className="min-w-0">
+            <div className="text-[11px] font-black" style={{ color: conformanceColor(job.conformance.score, theme) }}>
+              {job.conformance.score}/100 · seamănă cu examenul ({job.conformance.label})
+            </div>
+            {job.conformance.issues.length > 0 && (
+              <div className="mt-0.5 text-[10px] font-medium" style={{ color: theme.text3 }}>
+                Sub țintă: {job.conformance.issues.join(' · ')}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {awaiting && (
         <div className="mt-3 flex items-center gap-2">
