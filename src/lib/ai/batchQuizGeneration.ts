@@ -4,6 +4,7 @@ import { getVaultChunksBySource } from '../../ai/vectorStore';
 import type { ChunkRecord } from '../../ai/types';
 import type { Difficulty, Folder, Quiz } from '../../types';
 import type { QuestionType } from './questionTypes';
+import { DEFAULT_EXAM_STYLE, EXAM_STYLE_META, examStyleTags, type ExamStyle } from './examStyle';
 import {
   STUDIO_AI_BATCH_SIZE,
   STUDIO_MAX_PACK_COUNT,
@@ -27,6 +28,8 @@ interface BatchGenerationOptions {
   difficulty: BatchDifficulty;
   questionType?: 'single' | 'multiple';
   questionTypes?: QuestionType[];
+  /** Rezidențiat (5 variante A-E) sau grilă simplă de materie (4, A-D). */
+  examStyle?: ExamStyle;
   activeProfileId: string | null;
   existingQuizzes?: Quiz[];
   /** Skip the vault fetch and use this chunk set instead (e.g. one chapter's chunks). */
@@ -72,6 +75,7 @@ export async function generateQuizPackagesFromSource({
   difficulty,
   questionType = 'single',
   questionTypes,
+  examStyle = DEFAULT_EXAM_STYLE,
   activeProfileId,
   existingQuizzes = [],
   chunks: chunksOverride,
@@ -135,6 +139,7 @@ export async function generateQuizPackagesFromSource({
           mode: 'standard',
           questionType,
           questionTypes,
+          examStyle,
         });
 
         result.questions
@@ -216,8 +221,8 @@ export async function generateQuizPackagesFromSource({
         id: uid(),
         title: `${titleLabel} · ${titleSuffix}`,
         description: titleContext
-          ? `Generat de AI Studio din capitolul "${titleContext}" al documentului "${sourceName}", cu ${dedupedQuestions.length} întrebări și dificultate ${targetDifficulty}.`
-          : `Generat de AI Studio din documentul "${sourceName}" cu ${dedupedQuestions.length} întrebări și dificultate ${targetDifficulty}.`,
+          ? `Generat de AI Studio din capitolul "${titleContext}" al documentului "${sourceName}", cu ${dedupedQuestions.length} întrebări, dificultate ${targetDifficulty} · ${EXAM_STYLE_META[examStyle].description}.`
+          : `Generat de AI Studio din documentul "${sourceName}" cu ${dedupedQuestions.length} întrebări, dificultate ${targetDifficulty} · ${EXAM_STYLE_META[examStyle].description}.`,
         emoji: folder?.emoji ?? '\u{1F9E0}',
         category: folder?.name ?? 'AI Studio',
         kind: 'quiz',
@@ -228,7 +233,11 @@ export async function generateQuizPackagesFromSource({
         updatedAt: Date.now(),
         shuffleQuestions: true,
         shuffleAnswers: true,
-        tags: titleContext ? ['ai-studio', 'chapter-pack', sourceName, titleContext] : ['ai-studio', 'document-pack', sourceName],
+        tags: [
+          ...examStyleTags(examStyle),
+          'ai-studio',
+          ...(titleContext ? ['chapter-pack', sourceName, titleContext] : ['document-pack', sourceName]),
+        ],
       });
     }
   }

@@ -978,6 +978,7 @@ export async function executeAgentPlan(
             questionsPerPack,
             difficulty: (step.difficulty ?? 'auto') as Difficulty | 'auto',
             questionType: step.questionType ?? 'single',
+            examStyle: step.examStyle ?? DEFAULT_EXAM_STYLE,
             activeProfileId,
             existingQuizzes: useQuizStore.getState().quizzes,
           });
