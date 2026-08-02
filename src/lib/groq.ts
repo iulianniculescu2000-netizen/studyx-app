@@ -738,7 +738,7 @@ ${chunk.slice(0, 5000)}
 ---
 
 Format (${needed} obiecte):
-[{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""${typeFormatField}}]`;
+[{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false},{"text":"E","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""${typeFormatField}}]`;
     logAIDebug('generateQuestionsFromText.prompt', { questionTypes, needed, userPrompt });
 
     let raw = '';
@@ -793,7 +793,7 @@ TEXT:
 ${chunks[0].slice(0, 5000)}
 ---
 
-Format: [{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false}],"explanation":"...","tags":[],"reference":""}]`;
+Format: [{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false},{"text":"E","isCorrect":false}],"explanation":"...","tags":[],"reference":""}]`;
 
     try {
       const regenRaw = await groqChat([
@@ -833,7 +833,7 @@ export async function generateClinicalCase(
 STRUCTURA OBLIGATORIE:
 - "text": istoricul pacientului detaliat (sex, vârstă, simptome, analize) + întrebarea clinică
   Ex: "Pacient 45 ani, bărbat, dispnee 3 săptămâni, edeme gambiere. FCC=110. Rx: cardiomegalie. Diagnostic?"
-- "options": 4 opțiuni, un singur răspuns corect
+- "options": 5 opțiuni (A-E), un singur răspuns corect — formatul de la rezidențiat
 - "explanation": argumentare medicală (3-4 fraze)
 - "tags": 3-5 cuvinte cheie
 - "reference": Harrison/Gomella sau ""
@@ -844,7 +844,7 @@ ${cleanText}
 ---
 
 Format JSON pur (${count} cazuri):
-[{"text":"Pacient...?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""}]`;
+[{"text":"Pacient...?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false},{"text":"E","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""}]`;
 
   let raw = '';
   for (let attempt = 0; attempt < 3; attempt++) {
