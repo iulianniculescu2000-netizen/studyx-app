@@ -16,6 +16,9 @@ import MagneticButton from '../components/dashboard/MagneticButton';
 import DashboardAIStudyBuddy from '../components/dashboard/DashboardAIStudyBuddy';
 import DashboardStatCard from '../components/dashboard/DashboardStatCard';
 import TodayProgressCard from '../components/dashboard/TodayProgressCard';
+import DashboardTipStrip from '../components/dashboard/DashboardTipStrip';
+import { useAIStore } from '../store/aiStore';
+import { isFlashcardDeck } from '../lib/deckKind';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useCountUp } from '../hooks/useCountUp';
 
@@ -211,7 +214,8 @@ export default function Dashboard() {
   const compact = typeof window !== 'undefined' && (window.innerHeight < 860 || window.innerWidth < 1280);
   const { username } = useUserStore();
   const { quizzes, sessions, _hasHydrated } = useQuizStore();
-  const { streak, getAccuracy, totalStudyTime } = useStatsStore();
+  const { streak, getAccuracy, totalStudyTime, getDueQuestions, questionStats } = useStatsStore();
+  const knowledgeSources = useAIStore((state) => state.knowledgeSources);
   const startTutorial = useTutorialStore((state) => state.startTutorial);
   const [hour, setHour] = useState(new Date().getHours());
 
@@ -233,6 +237,16 @@ export default function Dashboard() {
     const intervalId = setInterval(() => setHour(new Date().getHours()), 60000);
     return () => clearInterval(intervalId);
   }, []);
+
+  // What the tip strip is allowed to talk about: no chapter tips without a
+  // library, no mistake tips before anything was answered wrong.
+  const tipContext = useMemo(() => ({
+    hasQuizzes: quizzes.some((quiz) => !isFlashcardDeck(quiz)),
+    hasFlashcards: quizzes.some((quiz) => isFlashcardDeck(quiz)),
+    hasLibrary: knowledgeSources.some((source) => source.indexStatus === 'ready'),
+    hasMistakes: Object.values(questionStats ?? {}).some((stat) => (stat?.timesWrong ?? 0) > 0),
+    dueCount: getDueQuestions().length,
+  }), [quizzes, knowledgeSources, questionStats, getDueQuestions]);
 
   const recentQuizzes = useMemo(
     () => [...quizzes]
@@ -259,6 +273,7 @@ export default function Dashboard() {
     <DashboardErrorBoundary>
       <DashboardShell compact={compact}>
         <DashboardHero compact={compact} greeting={greeting} username={username ?? ''} />
+        <DashboardTipStrip context={tipContext} />
         <DashboardAIStudyBuddy />
 
         <div className={`shell-stage-panel grid grid-cols-2 ${compact ? 'mb-8 gap-4 p-4 xl:grid-cols-4' : 'mb-12 gap-5 p-5 md:grid-cols-4'}`}>
