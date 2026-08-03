@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
 import {
   ArrowLeft,
   ArrowRight,
@@ -29,6 +29,7 @@ import {
 import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
 import { useUserStore } from '../store/userStore';
+import { useOverlayFlag } from '../hooks/useOverlayFlag';
 
 const WHATS_NEW_VERSION = '2.1.0';
 // Bump the suffix when the tour content changes within the same app version, so
@@ -229,41 +230,65 @@ function RealPredictionsDemo({ theme }: { theme: Theme }) {
   );
 }
 
+/**
+ * The icons used to "orbit" by animating x/y between three keyframes with an
+ * easeInOut curve — which means they slowed to a stop and reversed twice per
+ * cycle. That reads as stutter, not motion. A continuous rotation of the whole
+ * ring (linear, one transform per element) is both genuinely smooth and cheaper
+ * for the compositor; each icon counter-rotates so it stays upright.
+ */
 function HeroDemo({ theme }: { theme: Theme }) {
   const icons = [Bot, ImageIcon, Pencil, Quote, Zap, Wand2];
+  const radiusX = 92;
+  const radiusY = 58;
+
   return (
     <DemoFrame theme={theme}>
       <div className="relative flex h-full w-full items-center justify-center">
+        {/* Glow pulses on opacity only; scaling a large box-shadow re-rasters it every frame. */}
         <motion.div
-          animate={{ scale: [1, 1.07, 1] }}
-          transition={{ repeat: Infinity, duration: 3 }}
+          animate={{ opacity: [0.35, 0.75, 0.35] }}
+          transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+          className="absolute h-[120px] w-[120px] rounded-full"
+          style={{ background: theme.accent, filter: 'blur(38px)', willChange: 'opacity' }}
+        />
+        <div
           className="z-10 flex h-[84px] w-[84px] items-center justify-center rounded-[26px] text-white"
-          style={{
-            background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
-            boxShadow: `0 22px 50px ${theme.accent}55`,
-          }}
+          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
         >
           <Sparkles size={38} />
+        </div>
+
+        <motion.div
+          className="absolute inset-0"
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 26, ease: 'linear' }}
+          style={{ willChange: 'transform' }}
+        >
+          {icons.map((Icon, i) => {
+            const angle = (i / icons.length) * Math.PI * 2;
+            return (
+              <motion.div
+                key={i}
+                className="absolute left-1/2 top-1/2 flex h-10 w-10 items-center justify-center rounded-[13px] border"
+                style={{
+                  marginLeft: -20,
+                  marginTop: -20,
+                  x: Math.cos(angle) * radiusX,
+                  y: Math.sin(angle) * radiusY,
+                  background: theme.surface2,
+                  borderColor: theme.border,
+                  color: theme.accent,
+                  willChange: 'transform',
+                }}
+                animate={{ rotate: -360 }}
+                transition={{ repeat: Infinity, duration: 26, ease: 'linear' }}
+              >
+                <Icon size={17} />
+              </motion.div>
+            );
+          })}
         </motion.div>
-        {icons.map((Icon, i) => {
-          const angle = (i / icons.length) * Math.PI * 2;
-          const radius = 92;
-          return (
-            <motion.div
-              key={i}
-              animate={{
-                x: [Math.cos(angle) * radius, Math.cos(angle + 0.5) * radius, Math.cos(angle) * radius],
-                y: [Math.sin(angle) * radius * 0.62, Math.sin(angle + 0.5) * radius * 0.62, Math.sin(angle) * radius * 0.62],
-                opacity: [0.55, 1, 0.55],
-              }}
-              transition={{ repeat: Infinity, duration: 6 + i * 0.6, ease: 'easeInOut' }}
-              className="absolute flex h-10 w-10 items-center justify-center rounded-[13px] border"
-              style={{ background: theme.surface2, borderColor: theme.border, color: theme.accent }}
-            >
-              <Icon size={17} />
-            </motion.div>
-          );
-        })}
       </div>
     </DemoFrame>
   );
@@ -660,13 +685,34 @@ function CalibrationDemo({ theme }: { theme: Theme }) {
   );
 }
 
-/** The conformance score that appears after every generated set. */
+/**
+ * The conformance score that appears after every generated set.
+ *
+ * The ring used to be driven by a setInterval ticking React state every 90ms —
+ * about eleven steps a second, which looks exactly as jerky as it sounds. It is
+ * now a motion value animated at frame rate; the number is written straight to
+ * the DOM node on each update so counting up doesn't re-render the component
+ * sixty times a second.
+ */
 function ConformanceDemo({ theme }: { theme: Theme }) {
-  const [score, setScore] = useState(0);
+  const score = useMotionValue(0);
+  const dash = useTransform(score, (value) => `${(value / 100) * 264} 264`);
+  const color = useTransform(score, [0, 82, 83, 100], [theme.warning, theme.warning, theme.success, theme.success]);
+  const numberRef = useRef<HTMLSpanElement>(null);
+
   useEffect(() => {
-    const id = window.setInterval(() => setScore((value) => (value >= 100 ? 0 : Math.min(100, value + 7))), 90);
-    return () => window.clearInterval(id);
-  }, []);
+    const controls = animate(score, 100, {
+      duration: 2.4,
+      ease: 'easeOut',
+      repeat: Infinity,
+      repeatType: 'loop',
+      repeatDelay: 1,
+    });
+    const stop = score.on('change', (value) => {
+      if (numberRef.current) numberRef.current.textContent = String(Math.round(value));
+    });
+    return () => { controls.stop(); stop(); };
+  }, [score]);
 
   return (
     <DemoFrame theme={theme}>
@@ -674,14 +720,14 @@ function ConformanceDemo({ theme }: { theme: Theme }) {
         <div className="relative mb-3 flex h-[92px] w-[92px] items-center justify-center">
           <svg viewBox="0 0 100 100" className="absolute inset-0 -rotate-90">
             <circle cx="50" cy="50" r="42" fill="none" stroke={theme.border} strokeWidth="8" />
-            <circle
+            <motion.circle
               cx="50" cy="50" r="42" fill="none"
-              stroke={score >= 83 ? theme.success : theme.warning}
+              stroke={color}
               strokeWidth="8" strokeLinecap="round"
-              strokeDasharray={`${(score / 100) * 264} 264`}
+              style={{ strokeDasharray: dash }}
             />
           </svg>
-          <span className="text-[22px] font-black" style={{ color: score >= 83 ? theme.success : theme.warning }}>{score}</span>
+          <motion.span ref={numberRef} className="text-[22px] font-black" style={{ color }}>0</motion.span>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] font-black" style={{ color: theme.text2 }}>
           <Target size={12} style={{ color: theme.accent }} />
@@ -898,6 +944,7 @@ export default function WhatsNewTour() {
   const tutorialActive = useTutorialStore((state) => state.active);
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
+  useOverlayFlag(open);
   const [direction, setDirection] = useState(1);
 
   const slide = SLIDES[index];

@@ -774,3 +774,11 @@ button.citation-pill:hover {
     display: none !important;
   }
 }
+
+/* While a fullscreen overlay (tur de noutăți, tutorial) is open, the ambient
+   orbs sit behind its backdrop-filter. Anything moving back there forces the
+   blurred backdrop to be recomputed every frame, which is what made the tour
+   animations stutter. The orbs are invisible under the overlay anyway. */
+:root[data-overlay="open"] .animated-background-orb {
+  display: none;
+}

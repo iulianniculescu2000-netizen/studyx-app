@@ -8,6 +8,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore, TOTAL_STEPS } from '../store/tutorialStore';
 import { useNavigate } from 'react-router-dom';
 import { useViewportProfile } from '../hooks/useViewportProfile';
+import { useOverlayFlag } from '../hooks/useOverlayFlag';
 
 interface TutorialStep {
   id: string;
@@ -467,6 +468,7 @@ export default function Tutorial({ profileId }: { profileId: string }) {
   const theme = useTheme();
   const navigate = useNavigate();
   const { active, currentStep, nextStep, prevStep, skipTutorial, completeTutorial } = useTutorialStore();
+  useOverlayFlag(active);
   const skip = () => skipTutorial(profileId);
   const complete = () => completeTutorial(profileId);
 
