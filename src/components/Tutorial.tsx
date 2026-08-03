@@ -159,8 +159,8 @@ const STEPS: TutorialStep[] = [
   },
   {
     id: 'ai_setup',
-    title: 'Activează AI-ul — gratuit',
-    description: 'StudyX suportă doi provideri gratuiți: Groq (Llama, foarte rapid) și Google Gemini. Din Setări → AI, lipești o cheie API gratuită de la console.groq.com sau Google AI Studio și AI-ul e activ — generare grile, chat, explicații, tot.',
+    title: 'Activează AI-ul — gratuit, cu toate cele trei chei',
+    description: 'StudyX merge pe trei provideri gratuiți: Groq (foarte rapid), Google Gemini și Cerebras (1.000.000 tokeni/zi). Din Setări → AI lipești cheile — fără card, doar cu un cont. Pune-le pe toate trei: fiecare are limita ei zilnică, iar când una se termină aplicația trece automat pe următoarea și continuă de unde ai rămas.',
     icon: <Bot size={22} />,
     target: '[data-tutorial="nav-settings"]',
     targetPadding: 6,

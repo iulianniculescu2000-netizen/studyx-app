@@ -78,6 +78,7 @@ import { getProfileSummaryText, getWeakTopicsForProfile } from '../ai/UserProfil
 import type { Folder, Question, Quiz } from '../types';
 import AgentJobCard from './ai-chat/AgentJobCard';
 import AIOrb from './ai-chat/AIOrb';
+import FreeKeysNotice from './ai-chat/FreeKeysNotice';
 import {
   CHAT_MODES,
   buildFollowUpSuggestions,
@@ -328,6 +329,7 @@ export default function AIChatDrawer() {
   const addQuiz = useQuizStore((state) => state.addQuiz);
   const knowledgeSources = useAIStore((state) => state.knowledgeSources);
   const hasKey = useAIStore((state) => state.hasKey);
+  const providerKeys = useAIStore((state) => state.providerKeys);
   const recordAIInteraction = useAIStore((state) => state.recordAIInteraction);
   const memoryContext = useAIStore((state) => (
     activeProfileId ? state.getAIMemoryContext(activeProfileId) : ''
@@ -1492,6 +1494,11 @@ export default function AIChatDrawer() {
     <div className={compact ? 'space-y-4' : 'space-y-5'} onClick={handleZoomableClick}>
       {threadMessages.length === 0 ? (
         <div className={`text-center ${compact ? 'py-6' : 'py-8'}`}>
+          <FreeKeysNotice
+            theme={theme}
+            configuredCount={Object.values(providerKeys).filter((key) => (key ?? '').trim().length > 0).length}
+            onNavigate={closeChat}
+          />
           <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mb-5 text-5xl">
             🧠
           </motion.div>

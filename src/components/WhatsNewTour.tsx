@@ -17,8 +17,10 @@ import {
   Pencil,
   Plus,
   Quote,
+  KeyRound,
   Rocket,
   Sparkles,
+  Target,
   TrendingUp,
   Wand2,
   X,
@@ -28,10 +30,10 @@ import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
 import { useUserStore } from '../store/userStore';
 
-const WHATS_NEW_VERSION = '2.0.0';
+const WHATS_NEW_VERSION = '2.1.0';
 // Bump the suffix when the tour content changes within the same app version, so
 // users who already dismissed the previous tour see the new highlights once more.
-const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-v2:seen`;
+const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-v21:seen`;
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
 export const WHATS_NEW_OPEN_EVENT = 'studyx:whats-new:open';
@@ -607,6 +609,173 @@ function BookIndexingDemo({ theme }: { theme: Theme }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+/** Real exam questions have five options; the app used to ask for four. */
+function CalibrationDemo({ theme }: { theme: Theme }) {
+  const [after, setAfter] = useState(false);
+  useEffect(() => {
+    const id = window.setInterval(() => setAfter((value) => !value), 2200);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const letters = after ? ['A', 'B', 'C', 'D', 'E'] : ['A', 'B', 'C', 'D'];
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-[300px]">
+        <div className="mb-2 flex items-center gap-2">
+          <span
+            className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em]"
+            style={{ background: after ? `${theme.success}20` : `${theme.warning}20`, color: after ? theme.success : theme.warning }}
+          >
+            {after ? 'ca la rezidențiat' : 'înainte'}
+          </span>
+          <span className="text-[10px] font-bold" style={{ color: theme.text3 }}>
+            {after ? '5 variante (A-E)' : '4 variante'}
+          </span>
+        </div>
+        <div className="mb-2 text-[11px] font-bold" style={{ color: theme.text2 }}>
+          Agentul etiologic al sifilisului este:
+        </div>
+        <div className="space-y-1">
+          {letters.map((letter, index) => (
+            <motion.div
+              key={letter}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.05 }}
+              className="flex items-center gap-2 rounded-lg px-2 py-1"
+              style={{
+                background: index === 1 ? `${theme.success}14` : theme.surface,
+                border: `1px solid ${index === 1 ? `${theme.success}40` : theme.border}`,
+              }}
+            >
+              <span className="text-[9px] font-black" style={{ color: index === 1 ? theme.success : theme.text3 }}>{letter}</span>
+              <span className="h-1.5 flex-1 rounded-full" style={{ background: index === 1 ? `${theme.success}55` : theme.border }} />
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** The conformance score that appears after every generated set. */
+function ConformanceDemo({ theme }: { theme: Theme }) {
+  const [score, setScore] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setScore((value) => (value >= 100 ? 0 : Math.min(100, value + 7))), 90);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="flex w-[280px] flex-col items-center">
+        <div className="relative mb-3 flex h-[92px] w-[92px] items-center justify-center">
+          <svg viewBox="0 0 100 100" className="absolute inset-0 -rotate-90">
+            <circle cx="50" cy="50" r="42" fill="none" stroke={theme.border} strokeWidth="8" />
+            <circle
+              cx="50" cy="50" r="42" fill="none"
+              stroke={score >= 83 ? theme.success : theme.warning}
+              strokeWidth="8" strokeLinecap="round"
+              strokeDasharray={`${(score / 100) * 264} 264`}
+            />
+          </svg>
+          <span className="text-[22px] font-black" style={{ color: score >= 83 ? theme.success : theme.warning }}>{score}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px] font-black" style={{ color: theme.text2 }}>
+          <Target size={12} style={{ color: theme.accent }} />
+          seamănă cu examenul
+        </div>
+        <div className="mt-1 text-[9px] font-semibold" style={{ color: theme.text3 }}>
+          măsurat pe subiectele oficiale 2021-2024
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** Three free keys, and the automatic switch when one runs out. */
+function FreeKeysDemo({ theme }: { theme: Theme }) {
+  const providers = ['Groq', 'Gemini', 'Cerebras'];
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setActive((value) => (value + 1) % providers.length), 1600);
+    return () => window.clearInterval(id);
+  }, [providers.length]);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-[300px] space-y-2">
+        {providers.map((name, index) => {
+          const isActive = index === active;
+          const exhausted = index < active;
+          return (
+            <motion.div
+              key={name}
+              animate={{ scale: isActive ? 1.03 : 1 }}
+              className="flex items-center gap-2 rounded-xl px-3 py-2"
+              style={{
+                background: isActive ? `${theme.success}14` : theme.surface,
+                border: `1px solid ${isActive ? `${theme.success}45` : theme.border}`,
+              }}
+            >
+              <KeyRound size={12} style={{ color: isActive ? theme.success : theme.text3 }} />
+              <span className="text-[11px] font-black" style={{ color: isActive ? theme.text : theme.text3 }}>{name}</span>
+              <span className="ml-auto text-[9px] font-bold" style={{ color: isActive ? theme.success : theme.text3 }}>
+                {isActive ? 'în lucru' : exhausted ? 'limită atinsă' : 'în așteptare'}
+              </span>
+            </motion.div>
+          );
+        })}
+        <div className="pt-1 text-center text-[9px] font-semibold" style={{ color: theme.text3 }}>
+          când una se termină, StudyX trece singur pe următoarea
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** The consistency map on the dashboard. */
+function ConsistencyDemo({ theme }: { theme: Theme }) {
+  const [seed, setSeed] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setSeed((value) => value + 1), 2400);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const squares = useMemo(
+    () => Array.from({ length: 7 * 14 }, (_, index) => ((index * 7 + seed * 3) % 11) / 10),
+    [seed],
+  );
+
+  return (
+    <DemoFrame theme={theme}>
+      <div>
+        <div className="mb-2 text-center text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+          harta consistenței
+        </div>
+        <div className="grid grid-flow-col grid-rows-7 gap-[3px]">
+          {squares.map((value, index) => (
+            <motion.span
+              key={index}
+              initial={{ opacity: 0.3 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: (index % 14) * 0.01 }}
+              className="h-[10px] w-[10px] rounded-[3px]"
+              style={{
+                background: value < 0.35
+                  ? (theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)')
+                  : `color-mix(in srgb, ${theme.accent} ${Math.round(value * 100)}%, transparent)`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
 type Slide = {
   id: string;
   badge: string;
@@ -620,9 +789,40 @@ const SLIDES: Slide[] = [
   {
     id: 'hero',
     badge: `Versiunea ${WHATS_NEW_VERSION}`,
-    title: 'StudyX 2.0 — cel mai mare update de până acum',
-    description: 'AI-ul îți desenează scheme adevărate, îți explică pe secțiuni în loc de pereți de text, iar manualele mari de rezidențiat sunt citite până la ultima pagină și indexate pe capitole. Plus secțiunea Rezidențiat, import din Anki, grile din poză și zeci de reparații la lucruri care nu funcționau corect.',
+    title: 'StudyX 2.1 — grile calibrate pe examenul real',
+    description: 'Am măsurat subiectele oficiale de rezidențiat din 2021-2024 și două culegeri românești, apoi am adus generarea la forma lor: cinci variante, enunțuri scurte, distractori din aceeași categorie. În plus, îți arătăm cât de mult seamănă fiecare set generat cu examenul — și poți alege între grile de rezidențiat și grile simple, pentru materiile din facultate.',
     Demo: HeroDemo,
+  },
+  {
+    id: 'calibration',
+    badge: 'Calibrat pe examen',
+    title: 'Grilele au acum forma subiectelor reale',
+    description: 'Generatorul cerea patru variante; examenul are cinci (A-E). Am corectat asta și restul formei: enunț scurt completat de variante, opțiuni din aceeași categorie logică, abrevieri explicitate, praguri și criterii cu nume, iar cazurile clinice rare — cât apar la examen, nu la fiecare întrebare.',
+    Demo: CalibrationDemo,
+    tip: 'Ai două fire: „fă-mi grile de rezidențiat" (5 variante) sau „grile simple pentru materie" (4 variante).',
+  },
+  {
+    id: 'conformance',
+    badge: 'Scor de conformitate',
+    title: 'Vezi cât de mult seamănă setul cu examenul',
+    description: 'După fiecare generare primești un scor din 100, calculat față de cifrele reale ale examenului: număr de variante, enunțuri completabile, lungimi, enunțuri negative, cazuri clinice. Dacă ceva e sub țintă, îți spune exact ce.',
+    Demo: ConformanceDemo,
+  },
+  {
+    id: 'free-keys',
+    badge: 'Chei gratuite',
+    title: 'Pune toate cele trei chei gratuite',
+    description: 'StudyX merge pe nivelurile gratuite de la Groq, Google Gemini și Cerebras — fără card, doar cu un cont. Când una atinge limita zilnică, aplicația trece automat pe următoarea și continuă de unde ai rămas. Cu toate trei salvate, practic nu mai rămâi blocat.',
+    Demo: FreeKeysDemo,
+    tip: 'Setări → AI. Îți explicăm din nou și în chat, prima dată când deschizi asistentul.',
+  },
+  {
+    id: 'consistency',
+    badge: 'Dashboard',
+    title: 'Harta consistenței și o temă caldă de noapte',
+    description: 'Un pătrat pentru fiecare zi din ultimele 18 săptămâni: vezi dintr-o privire cum arată luna ta, nu doar streak-ul de azi. Iar „Ambră Nocturnă" e o temă fără albastru, pentru cine învață noaptea târziu.',
+    Demo: ConsistencyDemo,
+    tip: 'Fâșia „Știai că" de pe Dashboard îți arată pe rând ce mai poate face aplicația.',
   },
   {
     id: 'drawn-schemas',
@@ -645,7 +845,7 @@ const SLIDES: Slide[] = [
     title: 'Kumar, Lawrence și Sinopsis sunt citite complet',
     description: 'Manualele mari se opreau după câteva secunde de citire și se pierdeau în întregime. Acum sunt parcurse pagină cu pagină, până la ultima, iar fiecare fragment știe din ce capitol vine — deci poți cere grile sau explicații pe capitol.',
     Demo: BookIndexingDemo,
-    tip: 'Reimportă cărțile adăugate înainte de 2.0 ca să primească și ele capitolele.',
+    tip: 'Reimportă cărțile adăugate înainte de 2.1 ca să primească și ele capitolele.',
   },
   {
     id: 'grile-scan',
