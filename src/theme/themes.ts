@@ -156,6 +156,39 @@ export const THEMES: Record<string, Theme> = {
     gridColor: 'rgba(47, 129, 247, 0.06)',
     isDark: true,
   },
+
+  /**
+   * Warm, low-blue dark theme for the hours when most of this app is actually
+   * used — late, before an exam. Every other theme here is cool (blue, teal,
+   * violet); this one drops the blue channel almost entirely so a long reading
+   * session at 2 AM is easier on the eyes.
+   */
+  amber: {
+    id: 'amber',
+    name: 'Ambr\u0103 Nocturn\u0103',
+    emoji: '\u{1F56F}\u{FE0F}',
+    bg: '#16110C',
+    surface: 'rgba(255, 176, 84, 0.09)',
+    surface2: 'rgba(255, 176, 84, 0.16)',
+    modalBg: 'rgba(22, 17, 12, 0.97)',
+    border: 'rgba(255, 176, 84, 0.20)',
+    border2: 'rgba(255, 176, 84, 0.36)',
+    text: '#F7EBDC',
+    text2: '#D8C3A8',
+    text3: '#9A876F',
+    accent: '#F0A44A',
+    accent2: '#E0705A',
+    success: '#8FBF6B',
+    danger: '#E86A5B',
+    warning: '#E8B44A',
+    navBg: 'rgba(22, 17, 12, 0.94)',
+    orb1: 'rgba(240, 164, 74, 0.26)',
+    orb2: 'rgba(224, 112, 90, 0.20)',
+    orb3: 'rgba(143, 191, 107, 0.10)',
+    inputBg: 'rgba(22, 17, 12, 0.72)',
+    gridColor: 'rgba(240, 164, 74, 0.06)',
+    isDark: true,
+  },
 };
 
 export const AUTO_THEME_ENTRY = {

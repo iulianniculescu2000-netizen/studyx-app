@@ -17,6 +17,7 @@ import DashboardAIStudyBuddy from '../components/dashboard/DashboardAIStudyBuddy
 import DashboardStatCard from '../components/dashboard/DashboardStatCard';
 import TodayProgressCard from '../components/dashboard/TodayProgressCard';
 import DashboardTipStrip from '../components/dashboard/DashboardTipStrip';
+import StudyConsistencyMap from '../components/dashboard/StudyConsistencyMap';
 import { useAIStore } from '../store/aiStore';
 import { isFlashcardDeck } from '../lib/deckKind';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
@@ -281,6 +282,7 @@ export default function Dashboard() {
         </div>
 
         {quizzes.length > 0 && <TodayProgressCard />}
+        <StudyConsistencyMap compact={compact} />
         <DashboardActions compact={compact} />
         <RecentQuizzesSection recentQuizzes={recentQuizzes} onStartTutorial={startTutorial} />
       </DashboardShell>
