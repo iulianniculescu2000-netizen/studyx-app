@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Bot,
   Brain,
+  ChevronDown,
   Cpu,
   Database,
   Gauge,
@@ -15,7 +16,6 @@ import {
 } from 'lucide-react';
 import BackupExport from '../components/BackupExport';
 import AISettings from '../components/AISettings';
-import { useViewportProfile } from '../hooks/useViewportProfile';
 import { detectDeviceCapabilities } from '../lib/deviceTier';
 import { getHealthBadgeLabel } from '../lib/healthReporter';
 import { runStartupHealthCheck } from '../lib/startupHealthCheck';
@@ -242,11 +242,12 @@ export default function Settings() {
   const lastCheckedAt = useDiagnosticsStore((state) => state.lastCheckedAt);
   const setHealthReport = useDiagnosticsStore((state) => state.setHealthReport);
   const clearDiagnostics = useDiagnosticsStore((state) => state.clearDiagnostics);
-  const { compact, mobile, shortHeight, uiScale } = useViewportProfile();
 
   const [showBackup, setShowBackup] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [uiTab, setUiTab] = useState<'ui2' | 'ui1'>(themeId === 'glass' ? 'ui2' : 'ui1');
   const deviceInfo = detectDeviceCapabilities();
 
   // A rollback snapshot is written before every content-pack install. Until now
@@ -275,7 +276,57 @@ export default function Settings() {
     }
   };
 
-  const themeCardHeight = mobile ? 132 : shortHeight ? 140 : compact ? 156 : 180;
+  const themeDescription = (id: string) => (
+    id === 'auto' ? 'Se adaptează sistemului' :
+    id === 'obsidian' ? 'Negru mat, iOS accent' :
+    id === 'bigsur' ? 'macOS luminos, curat' :
+    id === 'pearl' ? 'Cald, terracotta' :
+    id === 'aurora' ? 'Violet profund' :
+    id === 'midnight' ? 'GitHub dark, albastru' :
+    id === 'amber' ? 'Cald, seară' :
+    id === 'glass' ? 'Iconițe, hero unic, glass violet-cyan' :
+    'Previzualizare temă'
+  );
+
+  const activeThemeEntry = THEME_LIST.find((entry) => entry.id === themeId) ?? THEME_LIST[0];
+  const ui2Entries = THEME_LIST.filter((entry) => entry.id === 'glass');
+  const ui1Entries = THEME_LIST.filter((entry) => entry.id !== 'glass');
+
+  const renderThemeRow = (entry: typeof THEME_LIST[number]) => {
+    const active = themeId === entry.id;
+    return (
+      <motion.button
+        key={entry.id}
+        onClick={() => setTheme(entry.id as ThemeId)}
+        whileTap={{ scale: 0.98 }}
+        className="flex w-full items-center gap-3 rounded-[16px] px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+        style={{ background: active ? `${theme.accent}14` : 'transparent' }}
+      >
+        <span
+          className="h-8 w-8 flex-shrink-0 rounded-full border-2 flex items-center justify-center text-sm"
+          style={{
+            background: entry.id === 'auto' ? '#F2F2F7' : entry.bg,
+            borderColor: active ? theme.accent : 'transparent',
+          }}
+        >
+          {entry.emoji}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold leading-tight" style={{ color: theme.text }}>{entry.name}</span>
+          <span className="block text-[11px] font-medium opacity-60" style={{ color: theme.text3 }}>{themeDescription(entry.id)}</span>
+        </span>
+        {active && (
+          <motion.span
+            layoutId="settings-theme-active"
+            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-black"
+            style={{ background: `${theme.accent}18`, color: theme.accent }}
+          >
+            ✓
+          </motion.span>
+        )}
+      </motion.button>
+    );
+  };
 
   const handleReset = async () => {
     await window.electronAPI?.hardReset();
@@ -304,66 +355,87 @@ export default function Settings() {
         </motion.div>
 
         <Section title="Aparență" delay={0.1}>
-          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-            {THEME_LIST.map((entry) => (
-              <motion.button
-                key={entry.id}
-                onClick={() => setTheme(entry.id as ThemeId)}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="group relative flex flex-col items-start justify-between overflow-hidden rounded-[24px] border-2 p-4 text-left transition-all"
-                style={{
-                  background: entry.id === 'auto' ? '#F2F2F7' : entry.bg,
-                  borderColor: themeId === entry.id ? theme.accent : 'transparent',
-                  boxShadow: themeId === entry.id ? `0 8px 24px ${theme.accent}25` : 'none',
-                  minHeight: `${themeCardHeight}px`,
-                  padding: `${Math.max(14, Math.round(16 * uiScale))}px`,
-                }}
-              >
-                <div
-                  className="pointer-events-none absolute inset-x-0 top-0 h-16 opacity-60"
-                  style={{
-                    background: entry.id === 'auto'
-                      ? 'linear-gradient(180deg, rgba(0,0,0,0.06), transparent)'
-                      : 'linear-gradient(180deg, rgba(255,255,255,0.1), transparent)',
-                  }}
-                />
-                <div
-                  className="relative z-10 flex h-11 w-11 items-center justify-center rounded-2xl text-2xl"
-                  style={{ background: entry.id === 'auto' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }}
-                >
-                  {entry.emoji}
-                </div>
-                <div className="relative z-10 mt-auto">
-                  <div className="text-sm font-black leading-tight" style={{ color: entry.id === 'auto' ? '#000' : entry.text }}>
-                    {entry.name}
-                  </div>
-                  <div className="mt-1 text-[11px] font-semibold opacity-70" style={{ color: entry.id === 'auto' ? '#111' : entry.text }}>
-                    {entry.id === 'auto' ? 'Se adaptează sistemului' :
-                     entry.id === 'obsidian' ? 'Negru mat, iOS accent' :
-                     entry.id === 'bigsur' ? 'macOS luminos, curat' :
-                     entry.id === 'pearl' ? 'Cald, terracotta' :
-                     entry.id === 'aurora' ? 'Violet profund' :
-                     entry.id === 'midnight' ? 'GitHub dark, albastru' :
-                     'Previzualizare temă'}
-                  </div>
-                </div>
-                {themeId === entry.id && (
-                  <motion.div
-                    layoutId="theme-active"
-                    className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-black"
-                    style={{ background: `${theme.accent}18`, borderColor: `${theme.accent}35`, color: theme.accent }}
-                  >
-                    ✓
-                  </motion.div>
+          {/* Compact Apple-style row instead of the old wall of big theme cards —
+              one row shows the active theme, a click opens a grouped list (UI 2.0 / UI 1.0). */}
+          <motion.button
+            onClick={() => setThemePickerOpen((v) => !v)}
+            whileTap={{ scale: 0.99 }}
+            className="glass-panel flex w-full items-center gap-3 rounded-[20px] px-4 py-3.5 text-left"
+            aria-expanded={themePickerOpen}
+          >
+            <span
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] text-lg"
+              style={{ background: activeThemeEntry.id === 'auto' ? '#F2F2F7' : activeThemeEntry.bg, border: `2px solid ${theme.accent}` }}
+            >
+              {activeThemeEntry.emoji}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>Temă</span>
+              <span className="flex items-center gap-1.5 text-sm font-bold" style={{ color: theme.text }}>
+                {activeThemeEntry.name}
+                {activeThemeEntry.id === 'glass' && (
+                  <span className="rounded-full px-1.5 py-0.5 text-[8.5px] font-black uppercase tracking-wider" style={{ background: `${theme.accent}18`, color: theme.accent }}>UI 2.0</span>
                 )}
-              </motion.button>
-            ))}
-          </div>
+              </span>
+            </span>
+            <motion.span animate={{ rotate: themePickerOpen ? 180 : 0 }} transition={{ duration: 0.18 }} style={{ color: theme.text3 }}>
+              <ChevronDown size={16} />
+            </motion.span>
+          </motion.button>
+
+          <AnimatePresence initial={false}>
+            {themePickerOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="glass-panel mt-2 rounded-[20px] p-2">
+                  {/* Apple-style segmented control */}
+                  <div className="relative mb-2 flex items-center gap-1 rounded-[14px] p-1" style={{ background: theme.surface2 }}>
+                    {([{ id: 'ui2', label: 'UI II' }, { id: 'ui1', label: 'UI I' }] as const).map((seg) => (
+                      <button
+                        key={seg.id}
+                        onClick={() => setUiTab(seg.id)}
+                        className="relative flex-1 rounded-[11px] py-2 text-center text-[11.5px] font-black uppercase tracking-[0.08em] transition-colors"
+                        style={{ color: uiTab === seg.id ? '#fff' : theme.text3 }}
+                      >
+                        {uiTab === seg.id && (
+                          <motion.span
+                            layoutId="settings-ui-tab-thumb"
+                            className="absolute inset-0 rounded-[11px]"
+                            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                            transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                          />
+                        )}
+                        <span className="relative z-10 inline-flex items-center gap-1.5">
+                          {seg.label}
+                          {seg.id === 'ui2' && (
+                            <span
+                              className="rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider"
+                              style={{ background: uiTab === seg.id ? 'rgba(255,255,255,0.22)' : `${theme.accent}18`, color: uiTab === seg.id ? '#fff' : theme.accent }}
+                            >
+                              Nou
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="space-y-0.5">
+                    {(uiTab === 'ui2' ? ui2Entries : ui1Entries).map(renderThemeRow)}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </Section>
 
         <Section title="Stabilitate & Performanță" delay={0.15}>
-          <div className="mb-5 rounded-[24px] border p-4" style={{ background: theme.surface2, borderColor: theme.border }}>
+          <div className="glass-panel mb-5 rounded-[24px] p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-bold" style={{ color: theme.text }}>

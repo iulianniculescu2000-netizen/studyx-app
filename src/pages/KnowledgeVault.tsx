@@ -99,8 +99,7 @@ function FolderTile({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.04 + index * 0.04 }}
-      className="group relative flex cursor-pointer flex-col gap-3 rounded-[24px] p-5 transition-all hover:-translate-y-0.5"
-      style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+      className="glass-panel premium-shadow group relative flex cursor-pointer flex-col gap-3 rounded-[24px] p-5 transition-all hover:-translate-y-0.5"
       onClick={onOpen}
     >
       <div className="flex items-center justify-between">
@@ -639,7 +638,6 @@ export default function KnowledgeVault() {
               <div
                 key={item.label}
                 className="premium-shadow rounded-[24px] p-5 glass-panel"
-                style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
               >
                 <div className="mb-3 flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: `${item.color}15`, color: item.color }}>
@@ -664,8 +662,7 @@ export default function KnowledgeVault() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 onClick={() => setActiveFolderId('__unfiled__')}
-                className="group flex flex-col gap-3 rounded-[24px] p-5 text-left transition-all hover:-translate-y-0.5"
-                style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+                className="glass-panel premium-shadow group flex flex-col gap-3 rounded-[24px] p-5 text-left transition-all hover:-translate-y-0.5"
               >
                 <div className="flex items-center justify-between">
                   <div
@@ -852,7 +849,6 @@ export default function KnowledgeVault() {
                         exit={{ opacity: 0, scale: 0.95 }}
                         transition={{ delay: index * 0.02 }}
                         className="group premium-shadow flex flex-wrap items-start gap-4 rounded-[22px] p-4 glass-panel"
-                        style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
                       >
                         <div
                           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-inner"
@@ -1062,7 +1058,7 @@ export default function KnowledgeVault() {
                 ) : (
                   <>
                     {selectedSource.indexStatus === 'ready' && sourceChapters.length > 0 && (
-                      <div className="mb-5 rounded-[28px] p-5" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+                      <div className="glass-panel mb-5 rounded-[28px] p-5">
                         <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
                           <Layers3 size={13} /> Capitole detectate
                         </div>
@@ -1070,8 +1066,7 @@ export default function KnowledgeVault() {
                           {sourceChapters.map((chapter) => (
                             <div
                               key={chapter.heading}
-                              className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
-                              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+                              className="glass-panel flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
                             >
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-bold" style={{ color: theme.text }}>{chapter.label}</div>
@@ -1089,7 +1084,7 @@ export default function KnowledgeVault() {
                         </div>
                       </div>
                     )}
-                    <div className="rounded-[28px] p-6" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+                    <div className="glass-panel rounded-[28px] p-6">
                       <pre className="whitespace-pre-wrap break-words text-sm leading-7" style={{ color: theme.text, fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
                         {readerContent}
                       </pre>

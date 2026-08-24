@@ -1,5 +1,5 @@
 import { idbGet, idbSet, idbRemove } from '../lib/idb';
-import { embedText, cosineSimilarity } from './embeddings';
+import { embedBatch, embedText, cosineSimilarity } from './embeddings';
 import type { ChunkRecord } from './types';
 
 const VECTOR_INDEX_KEY = 'studyx-vectors-index-v2';
@@ -70,8 +70,13 @@ export async function addChunksToVault(
 
     for (let index = 0; index < chunks.length; index += batchSize) {
       const batch = chunks.slice(index, index + batchSize);
+      // One batched embedding call per chunk batch instead of one request per
+      // chunk — matters when a Google key is configured, since that's real
+      // network round-trips (hundreds of chunks would otherwise mean hundreds
+      // of requests to index a single document).
+      const batchEmbeddings = await embedBatch(batch.map((chunk) => chunk.text));
 
-      for (const chunk of batch) {
+      batch.forEach((chunk, i) => {
         // Extract a meaningful topic: prefer first phrase before colon/newline over raw first N words
         const rawFirstLine = chunk.text.trim().split('\n')[0].trim();
         const phraseMatch = rawFirstLine.match(/^([^:.\-–—]{6,50})/);
@@ -86,13 +91,13 @@ export async function addChunksToVault(
           sourceId,
           text: chunk.text,
           source: sourceName,
-          embedding: embedText(chunk.text),
+          embedding: batchEmbeddings[i],
           topic: derivedTopic,
           difficulty: 'medium',
           createdAt: Date.now(),
           ...(chunk.heading ? { heading: chunk.heading } : {}),
         });
-      }
+      });
 
       const processed = Math.min(index + batch.length, total);
       options.onProgress?.({
@@ -141,7 +146,7 @@ export async function searchVault(query: string, k = 5): Promise<ChunkRecord[]> 
   const all = await getVaultChunks();
   if (all.length === 0) return [];
 
-  const queryVector = embedText(query);
+  const queryVector = await embedText(query);
   return all
     .map((chunk) => ({ chunk, score: cosineSimilarity(queryVector, chunk.embedding) }))
     .sort((a, b) => b.score - a.score)

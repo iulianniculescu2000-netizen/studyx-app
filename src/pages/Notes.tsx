@@ -166,8 +166,7 @@ export default function Notes() {
         {enriched.length === 0 && (
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.15 }}
-            className="text-center py-20 rounded-3xl"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+            className="glass-panel premium-shadow text-center py-20 rounded-3xl">
             <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center"
               style={{ background: `${theme.warning}15` }}>
               <StickyNote size={28} style={{ color: theme.warning }} />
@@ -189,8 +188,7 @@ export default function Notes() {
         {/* No search results */}
         {enriched.length > 0 && filtered.length === 0 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="text-center py-16 rounded-3xl"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+            className="glass-panel premium-shadow text-center py-16 rounded-3xl">
             <div className="text-4xl mb-3">🔍</div>
             <p style={{ color: theme.text3 }}>Nicio notiță nu corespunde căutării.</p>
           </motion.div>
@@ -236,8 +234,7 @@ export default function Notes() {
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.15 + gi * 0.06 + ni * 0.04 }}
-                      className="group rounded-2xl p-4 relative"
-                      style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+                      className="group glass-panel rounded-2xl p-4 relative"
                     >
                       {/* Question text + link to quiz detail */}
                       {n.question && (
@@ -295,7 +292,8 @@ export default function Notes() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setConfirmDelete(n.questionId)}
-                            className="absolute top-3 right-3 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Șterge notița"
+                            className="absolute top-3 right-3 p-1.5 rounded-lg opacity-40 hover:opacity-100 group-hover:opacity-100 transition-opacity"
                             style={{ color: theme.text3 }}>
                             <Trash2 size={13} />
                           </motion.button>

@@ -23,6 +23,17 @@ export interface Theme {
   inputBg: string;
   gridColor: string;
   isDark: boolean;
+  /**
+   * Optional overrides for the `--glass-panel`/`--glass-panel-strong`/`--glass-border`
+   * CSS variables ThemeContext computes. Every other theme gets those derived
+   * from a flat `isDark` branch (same neutral grey glass for any dark theme) —
+   * a theme that wants its own hue in the glass itself (not just in bg/accent)
+   * sets these instead of falling through to the generic grey.
+   */
+  glassPanel?: string;
+  glassPanelStrong?: string;
+  glassBorder?: string;
+  glassHighlight?: string;
 }
 
 export const THEMES: Record<string, Theme> = {
@@ -155,6 +166,44 @@ export const THEMES: Record<string, Theme> = {
     inputBg: 'rgba(13, 17, 23, 0.72)',
     gridColor: 'rgba(47, 129, 247, 0.06)',
     isDark: true,
+  },
+
+  /**
+   * Signature "Glass" concept theme — near-black with a violet cast instead of
+   * neutral grey, violet→cyan accent duo (matched chroma/lightness, hue-only
+   * variation), and its own tinted glass recipe via glassPanel/glassBorder so
+   * panels read as *this* theme's glass, not the generic dark-glass every
+   * other dark theme shares.
+   */
+  glass: {
+    id: 'glass',
+    name: 'Glass',
+    emoji: '\u{1FA9F}',
+    bg: '#0E0B15',
+    surface: 'rgba(167, 139, 250, 0.07)',
+    surface2: 'rgba(167, 139, 250, 0.13)',
+    modalBg: 'rgba(14, 11, 21, 0.97)',
+    border: 'rgba(167, 139, 250, 0.18)',
+    border2: 'rgba(167, 139, 250, 0.34)',
+    text: '#F5F3FF',
+    text2: '#C9C2DE',
+    text3: '#8B84A3',
+    accent: '#A78BFA',
+    accent2: '#22D3EE',
+    success: '#4ADE80',
+    danger: '#F87171',
+    warning: '#FBBF24',
+    navBg: 'rgba(14, 11, 21, 0.90)',
+    orb1: 'rgba(167, 139, 250, 0.30)',
+    orb2: 'rgba(34, 211, 238, 0.20)',
+    orb3: 'rgba(139, 92, 246, 0.16)',
+    inputBg: 'rgba(14, 11, 21, 0.72)',
+    gridColor: 'rgba(167, 139, 250, 0.055)',
+    isDark: true,
+    glassPanel: 'linear-gradient(180deg, rgba(48, 38, 74, 0.60), rgba(20, 15, 32, 0.62))',
+    glassPanelStrong: 'linear-gradient(180deg, rgba(58, 46, 88, 0.72), rgba(22, 17, 36, 0.80))',
+    glassBorder: 'rgba(199, 178, 255, 0.16)',
+    glassHighlight: 'rgba(199, 178, 255, 0.10)',
   },
 
   /**

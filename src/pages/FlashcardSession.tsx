@@ -3,11 +3,12 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft, Check, Brain,
-  Sparkles, Trophy, Loader2, Bot,
+  Sparkles, Trophy, Loader2, Bot, Undo2,
 } from 'lucide-react';
 import { useAIStore } from '../store/aiStore';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
+import type { QuestionStat } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useViewportProfile } from '../hooks/useViewportProfile';
@@ -134,6 +135,16 @@ export default function FlashcardSession() {
 
   const startTime = useRef(Date.now());
   const answerScrollRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Single-level undo for the last rating. Re-calling recordAnswer for a
+   * "changed my mind" re-rate would double-count the SM-2 review (it mutates
+   * timesCorrect/timesWrong and recomputes the interval from the CURRENT
+   * stat each time) — so instead of re-invoking the algorithm, this snapshots
+   * the question's stat right before rating it and restores that exact
+   * snapshot on undo, then lets the real rating flow run again cleanly.
+   */
+  const lastRatingSnapshotRef = useRef<{ key: string; prevStat: QuestionStat | undefined } | null>(null);
+  const [canUndoRating, setCanUndoRating] = useState(false);
 
   useEffect(() => {
     const shouldResetForRoute = activeRouteKey !== sessionRouteKey;
@@ -149,6 +160,8 @@ export default function FlashcardSession() {
     setElapsed(0);
     setAiExplanation(null);
     setAiLoading(false);
+    lastRatingSnapshotRef.current = null;
+    setCanUndoRating(false);
     startTime.current = Date.now();
     setActiveRouteKey(sessionRouteKey);
   }, [activeRouteKey, cards.length, initialCards, sessionRouteKey]);
@@ -160,6 +173,10 @@ export default function FlashcardSession() {
   const handleRating = useCallback((rating: Rating) => {
     if (!cards[currentIdx]) return;
     const { question, quiz } = cards[currentIdx];
+
+    const key = `${quiz.id}:${question.id}`;
+    lastRatingSnapshotRef.current = { key, prevStat: useStatsStore.getState().questionStats[key] };
+    setCanUndoRating(true);
 
     const isCorrect = rating !== 'hard';
     recordAnswer(quiz.id, question.id, isCorrect);
@@ -177,6 +194,27 @@ export default function FlashcardSession() {
       setSessionDone(true);
     }
   }, [cards, currentIdx, recordAnswer, recordStudySession, getElapsedSeconds]);
+
+  // Restore the exact pre-rating stat snapshot (not a second recordAnswer call —
+  // see the ref comment above) and drop back onto the card you just rated, still
+  // flipped, so a misclick has a real way out instead of being permanent.
+  const handleUndoLastRating = useCallback(() => {
+    const snapshot = lastRatingSnapshotRef.current;
+    if (!snapshot || currentIdx === 0) return;
+    useStatsStore.setState((s) => {
+      const next = { ...s.questionStats };
+      if (snapshot.prevStat) next[snapshot.key] = snapshot.prevStat;
+      else delete next[snapshot.key];
+      return { questionStats: next };
+    });
+    lastRatingSnapshotRef.current = null;
+    setCanUndoRating(false);
+    setRatings((prev) => prev.slice(0, -1));
+    setAiExplanation(null);
+    setCurrentIdx((index) => index - 1);
+    setFlipped(true);
+    setCardKey((key) => key + 1);
+  }, [currentIdx]);
 
   const handleExplain = async () => {
     if (aiLoading || !cards[currentIdx]) return;
@@ -210,11 +248,16 @@ export default function FlashcardSession() {
         if (event.key === '2') { event.preventDefault(); handleRating('good'); }
         if (event.key === '3') { event.preventDefault(); handleRating('easy'); }
       }
+
+      if (event.key.toLowerCase() === 'u' && canUndoRating && currentIdx > 0) {
+        event.preventDefault();
+        handleUndoLastRating();
+      }
     };
 
     window.addEventListener('keydown', handleKeys);
     return () => window.removeEventListener('keydown', handleKeys);
-  }, [flipped, handleRating, sessionDone]);
+  }, [flipped, handleRating, sessionDone, canUndoRating, currentIdx, handleUndoLastRating]);
 
   useEffect(() => {
     if (!flipped) return;
@@ -412,6 +455,16 @@ export default function FlashcardSession() {
               </div>
 
               <div className={`flex shrink-0 items-center gap-2 ${mobile ? 'w-full justify-between' : ''}`}>
+                {canUndoRating && currentIdx > 0 && (
+                  <button
+                    onClick={handleUndoLastRating}
+                    title="Anulează ultima evaluare și revino la cardul anterior"
+                    className={`press-feedback inline-flex shrink-0 items-center gap-1.5 rounded-full font-black uppercase tracking-[0.16em] ${denseLayout ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-[11px]'}`}
+                    style={{ background: `${theme.warning}12`, color: theme.warning, border: `1px solid ${theme.warning}28` }}
+                  >
+                    <Undo2 size={13} /> Anulează
+                  </button>
+                )}
                 <span className="rounded-full px-3 py-1.5 text-[11px] font-black tabular-nums" style={{ background: `${theme.accent}14`, color: theme.accent, border: `1px solid ${theme.accent}24` }}>
                   {currentIdx + 1} / {cards.length}
                 </span>

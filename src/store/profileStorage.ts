@@ -261,6 +261,41 @@ export async function saveProfileNamespace(profileId: string, namespace: Profile
   await write(profileId, namespace, snapshotFor(namespace));
 }
 
+/**
+ * Synchronous, best-effort flush of every namespace straight to localStorage.
+ *
+ * The normal path (`write()`) always crosses at least one microtask boundary
+ * (`await previousLock` yields even when the lock is already resolved), and on
+ * top of that autosave itself waits 2.8s debounce + up to 2.4s of idle-task
+ * deferral before it even attempts a write (`useProfileLifecycle.ts`) — a
+ * multi-second window where a recent change (e.g. a quiz the AI agent just
+ * created) exists only in memory. `pagehide`/`visibilitychange` handlers fire
+ * on reload/close, but the browser does not wait for async work started in
+ * them to finish, so the async flush they trigger is not a reliable safety
+ * net on its own. This bypasses the lock, the Electron disk-save round trip,
+ * and the unchanged-snapshot dedupe check — call it first, synchronously,
+ * before doing anything else in an unload handler; the (still-async)
+ * `saveProfileData` can run after for its normal error toasts / disk save,
+ * since the matching cached snapshot makes it a no-op if this already wrote
+ * the same data.
+ */
+export function flushProfileDataSync(profileId: string) {
+  const namespaces: ProfileNamespace[] = ['quizzes', 'folders', 'stats', 'notes'];
+  for (const ns of namespaces) {
+    try {
+      const serialized = JSON.stringify(snapshotFor(ns));
+      const cacheKey = `${profileId}:${ns}`;
+      if (lastSerializedSnapshot.get(cacheKey) === serialized) continue;
+      localStorage.setItem(LS_KEY(profileId, ns), serialized);
+      lastSerializedSnapshot.set(cacheKey, serialized);
+    } catch (err) {
+      // Best-effort on the way out — nothing more we can do synchronously;
+      // the async path still surfaces quota/write errors during normal use.
+      console.error(`[Storage] Sync flush failed for "${ns}":`, err);
+    }
+  }
+}
+
 /** Save all current store state for a profile */
 export async function saveProfileData(profileId: string) {
   await Promise.all([

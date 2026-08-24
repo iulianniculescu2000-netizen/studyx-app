@@ -85,7 +85,7 @@ export async function retrieveRelevantChunks(
   if (allChunks.length === 0) return [];
 
   // ─── Pregătire date ───────────────────────────────────────────────────────
-  const queryEmbedding = embedText(query);
+  const queryEmbedding = await embedText(query);
   const queryTokens = tokenize(query);
 
   // Derived from measured accuracy, NOT from the mistake list: this used to read

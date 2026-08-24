@@ -20,10 +20,10 @@ const chunks = [
 vi.mock('./vectorStore', async () => {
   const { embedText } = await import('./embeddings');
   return {
-    getVaultChunks: async () => chunks.map((chunk) => ({
+    getVaultChunks: async () => Promise.all(chunks.map(async (chunk) => ({
       ...chunk,
-      embedding: embedText(chunk.text),
-    })),
+      embedding: await embedText(chunk.text),
+    }))),
   };
 });
 

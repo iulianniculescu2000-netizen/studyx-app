@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain, Sparkles, Loader2, RefreshCw, Award } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain, Sparkles, Loader2, RefreshCw, Award, ArrowRight } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
@@ -47,6 +47,7 @@ function ChartSkeleton({ height = 180 }: { height?: number }) {
 
 export default function Stats() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const { calmMotion } = useAdaptiveMotion();
   const compact = typeof window !== 'undefined' && (window.innerHeight < 860 || window.innerWidth < 1280);
   const { quizzes, sessions } = useQuizStore();
@@ -622,19 +623,26 @@ export default function Stats() {
                   {weakQuestions.map(ws => {
                     const quiz = quizzes.find(q => q.id === ws.quizId);
                     const question = quiz?.questions.find(q => q.id === ws.questionId);
-                    if (!question) return null;
+                    if (!question || !quiz) return null;
                     const acc = Math.round(ws.timesCorrect / (ws.timesCorrect + ws.timesWrong) * 100);
                     return (
-                      <div key={ws.questionId} className="flex items-start gap-3 p-3 rounded-xl"
+                      <button
+                        key={ws.questionId}
+                        onClick={() => navigate(`/play/${quiz.id}`, { state: { wrongQuestionsOnly: [ws.questionId] } })}
+                        title="Exersează doar această întrebare"
+                        className="premium-card-hover flex w-full items-start gap-3 rounded-xl p-3 text-left transition-all"
                         style={{ background: `${theme.danger}08`, border: `1px solid ${theme.danger}20` }}>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate" style={{ color: theme.text }}>{question.text}</p>
                           <p className="text-xs mt-0.5" style={{ color: theme.text3 }}>
-                            {quiz?.title} · {ws.timesCorrect}/{ws.timesCorrect + ws.timesWrong} corecte
+                            {quiz.title} · {ws.timesCorrect}/{ws.timesCorrect + ws.timesWrong} corecte
                           </p>
                         </div>
-                        <span className="text-sm font-bold flex-shrink-0" style={{ color: theme.danger }}>{acc}%</span>
-                      </div>
+                        <span className="flex flex-shrink-0 items-center gap-2">
+                          <span className="text-sm font-bold" style={{ color: theme.danger }}>{acc}%</span>
+                          <ArrowRight size={14} style={{ color: theme.text3 }} />
+                        </span>
+                      </button>
                     );
                   })}
                 </div>

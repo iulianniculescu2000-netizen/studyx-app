@@ -5,9 +5,15 @@ import { addChunksToVault, clearVault, removeChunksBySource, searchVault } from 
 import { matchBookByName } from '../data/residencyCurriculum';
 
 export type AIModel =
+  // Deprecated by Groq (2026-08-16, see console.groq.com/docs/deprecations) —
+  // kept in the union only so already-persisted state still type-checks;
+  // `normalizeProviderModel` migrates any of these to the current default the
+  // next time the store rehydrates. Never offer them in PROVIDER_MODELS again.
   | 'llama-3.3-70b-versatile'
   | 'llama-3.1-8b-instant'
   | 'mixtral-8x7b-32768'
+  | 'openai/gpt-oss-120b'
+  | 'openai/gpt-oss-20b'
   | 'gemini-2.5-flash'
   | 'gemini-2.0-flash'
   | 'gemini-2.5-pro'
@@ -148,9 +154,9 @@ export interface AIActions {
   reset: () => void;
 }
 
-const DEFAULT_MODEL: AIModel = 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL: AIModel = 'openai/gpt-oss-120b';
 const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
-  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+  groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
   google: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
   cerebras: ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507', 'zai-glm-4.7'],
 };
@@ -170,6 +176,7 @@ function isValidProviderKey(provider: AIProvider, apiKey: string) {
 function getDefaultModelForProvider(provider: AIProvider): AIModel {
   if (provider === 'google') return 'gemini-2.5-flash';
   if (provider === 'cerebras') return 'gpt-oss-120b';
+  // groq
   return DEFAULT_MODEL;
 }
 

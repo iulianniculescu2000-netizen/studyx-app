@@ -379,7 +379,7 @@ export default function QuizCreate() {
               exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
 
               {/* Tab switcher: Manual / AI */}
-              <div className="flex gap-1 mb-5 p-1.5 rounded-2xl glass-panel" style={{ background: theme.surface }}>
+              <div className="flex gap-1 mb-5 p-1.5 rounded-2xl glass-panel">
                 {[
                   { id: 'manual' as const, label: 'Manual', icon: <Pencil size={13} /> },
                   { id: 'ai' as const, label: 'Generează cu AI', icon: <Bot size={13} /> },

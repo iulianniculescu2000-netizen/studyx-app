@@ -96,6 +96,7 @@ export async function generateQuizPackagesFromSource({
   const warnings: string[] = [];
   let aiQuestionCount = 0;
   let fallbackQuestionCount = 0;
+  let medicallyFlaggedCount = 0;
   const globalSeenQuestionSignatures = new Set(
     existingQuizzes.flatMap((quiz) => quiz.questions.map(questionSignature)),
   );
@@ -109,13 +110,14 @@ export async function generateQuizPackagesFromSource({
     // rather than the AI. Counting them by sniffing for an `isFallback` field
     // never worked — the builder never set one, so the count was always zero and
     // the user was never told a pack was locally generated.
-    | { ok: true; packIndex: number; questions: Quiz['questions']; warning: string | null; fallbackIds: Set<string> }
+    | { ok: true; packIndex: number; questions: Quiz['questions']; warning: string | null; fallbackIds: Set<string>; medicallyFlagged: number }
     | { ok: false; packIndex: number; error: string };
 
   const generatePack = async (packIndex: number): Promise<PackResult> => {
     const packQuestions: Quiz['questions'] = [];
     const seenPackSignatures = new Set<string>(globalSeenQuestionSignatures);
     let aiError: string | null = null;
+    let medicallyFlagged = 0;
 
     for (let offset = 0; offset < normalizedQuestionCount; offset += STUDIO_AI_BATCH_SIZE) {
       const batchCount = Math.min(STUDIO_AI_BATCH_SIZE, normalizedQuestionCount - offset);
@@ -142,6 +144,7 @@ export async function generateQuizPackagesFromSource({
           examStyle,
         });
 
+        medicallyFlagged += result.medicallyFlaggedCount ?? 0;
         result.questions
           .filter((q) => isStudioQuestionQualityAcceptable(q, sourceName))
           .filter((q) => !seenPackSignatures.has(questionSignature(q)))
@@ -172,7 +175,7 @@ export async function generateQuizPackagesFromSource({
       return { ok: false, packIndex, error: aiError ?? 'Nu am reușit să generăm întrebări.' };
     }
 
-    return { ok: true, packIndex, questions: packQuestions, warning: aiError, fallbackIds };
+    return { ok: true, packIndex, questions: packQuestions, warning: aiError, fallbackIds, medicallyFlagged };
   };
 
   // Run packs in batches of PACK_CONCURRENCY.
@@ -213,6 +216,10 @@ export async function generateQuizPackagesFromSource({
         // this case passed completely unreported.
         warnings.push(`Pachetul ${result.packIndex + 1}: ${fbCount} întrebări completate local, AI-ul a returnat prea puține.`);
       }
+      if (result.medicallyFlagged > 0) {
+        medicallyFlaggedCount += result.medicallyFlagged;
+        warnings.push(`Pachetul ${result.packIndex + 1}: ${result.medicallyFlagged} întrebări eliminate de verificarea medicală (răspuns marcat greșit).`);
+      }
 
       const packNumber = result.packIndex + 1;
       const titleSuffix = normalizedPackCount === 1 ? 'Set premium' : `Set premium ${packNumber}`;
@@ -248,6 +255,7 @@ export async function generateQuizPackagesFromSource({
     sourceCount: chunks.length,
     aiQuestionCount,
     fallbackQuestionCount,
+    medicallyFlaggedCount,
     warnings,
     limits: {
       maxPacks: STUDIO_MAX_PACK_COUNT,

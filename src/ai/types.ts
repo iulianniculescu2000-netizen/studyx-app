@@ -161,6 +161,9 @@ export interface AIQuestionResult {
   questions: Question[];
   sources: string[];
   mode: 'standard' | 'exam' | 'tutor';
+  /** How many questions the medical-correctness pass dropped (0 if none/unavailable). */
+  medicallyFlaggedCount?: number;
+  flaggedReasons?: string[];
 }
 
 export interface AINextQuestionState {

@@ -36,6 +36,7 @@ import { useRuntimeStore } from './store/runtimeStore';
 import { beginStartupSession, completeStartupSession, inspectPreviousStartup } from './lib/startupSessionGuard';
 import { useUpdateStore } from './store/updateStore';
 import { migrateLegacyUserMemory } from './ai/UserProfile';
+import { checkModelAvailability } from './lib/ai/modelHealing';
 
 const AIChatDrawer = lazy(() => import('./components/AIChatDrawer'));
 const WhatsNewTour = lazy(() => import('./components/WhatsNewTour'));
@@ -243,6 +244,19 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
 
     return () => cancelIdleTask(handle);
   }, [addToast, safeStartupEnabled, setHealthReport, splashVisible]);
+
+  useEffect(() => {
+    if (splashVisible) return;
+    // Proactive layer of model self-healing (see lib/ai/modelHealing.ts): asks
+    // the configured provider which models are still live and swaps away from
+    // one it has quietly deprecated/decommissioned before the user's next AI
+    // request would have failed on it. Throttled to once/day internally.
+    const handle = scheduleIdleTask(() => { void checkModelAvailability(); }, {
+      dedupeKey: 'model-availability-check',
+      timeoutMs: 2000,
+    });
+    return () => cancelIdleTask(handle);
+  }, [splashVisible]);
 
   if (profiles.length === 0 || (addingProfile && !activeProfileId)) {
     return <Welcome onBack={profiles.length > 0 ? () => setAddingProfile(false) : undefined} />;

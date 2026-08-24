@@ -170,6 +170,8 @@ export interface AgentStep {
   quizId?: string;
   questionId?: string;
   correctOptionIds?: string[];
+  /** Human-readable letter(s) for correctOptionIds ("varianta C"), resolved once at plan time — so the confirm card can show exactly what will change instead of a vague "updating the answer". */
+  correctLabel?: string;
   reasoning?: string;
   groundedIn?: 'course' | 'general' | 'user_claim';
 }
@@ -180,6 +182,15 @@ export interface AgentPlan {
   steps: AgentStep[];
   needsConfirm: boolean;
   confirmReason?: string;
+  /**
+   * True when the message clearly wanted an action but the planner is missing
+   * something it needs to build valid steps (which course, which folder, how
+   * many). `reply` then holds the actual question to ask back — callers must
+   * show it and keep routing the user's next message through the agent
+   * instead of silently falling through to normal chat, or the clarifying
+   * question becomes a dead end.
+   */
+  needsClarification?: boolean;
 }
 
 export interface AgentContext {
@@ -195,6 +206,13 @@ export interface AgentRunResult {
 }
 
 const QUESTION_CONFIRM_THRESHOLD = 80;
+// Freeform-topic generation (no matched library course — the model's own
+// medical knowledge, not grounded in the user's material) is the case most
+// likely to run on a misheard/misread subject. A large batch there is already
+// near the per-request maximum, so it never trips the blanket 80-question
+// threshold above — this catches it separately, before tokens are spent on
+// possibly the wrong topic.
+const TOPIC_CONFIRM_THRESHOLD = 30;
 const DESTRUCTIVE_ACTIONS: AgentActionType[] = ['delete_quiz', 'delete_folder'];
 
 /**
@@ -484,11 +502,20 @@ export async function proposeAnswerCorrection(claim: string, allowGeneralKnowled
     };
   }
 
+  // Resolved from the final (deduped, in-range) correctOptionIds rather than the raw
+  // model output, so the label always matches exactly what execution will apply.
+  const correctLabel = correctOptionIds.length === 1
+    ? `varianta ${String.fromCharCode(65 + ctx.options.findIndex((o) => o.id === correctOptionIds[0]))}`
+    : `variantele ${correctOptionIds
+        .map((id) => String.fromCharCode(65 + ctx.options.findIndex((o) => o.id === id)))
+        .join(', ')}`;
+
   const step: AgentStep = {
     action: 'correct_answer',
     quizId: ctx.quizId,
     questionId: ctx.questionId,
     correctOptionIds,
+    correctLabel,
     reasoning: parsed.reasoning,
     groundedIn: grounded ? 'course' : 'general',
   };
@@ -542,9 +569,12 @@ function buildPlannerPrompt() {
     'Răspunde STRICT cu un singur obiect JSON, fără markdown, fără text în plus.',
     '',
     'Format:',
-    '{"isCommand": true|false, "reply": "confirmare scurtă în română", "steps": [ ...pași... ]}',
+    '{"isCommand": true|false, "needsClarification": true|false, "reply": "confirmare scurtă în română", "steps": [ ...pași... ]}',
     '',
-    'Dacă mesajul NU e o comandă de acțiune (ci o întrebare normală), pune "isCommand": false și "steps": [].',
+    'Dacă mesajul NU e o comandă de acțiune (ci o întrebare normală, conversație), pune "isCommand": false, "needsClarification": false, "reply": "" și "steps": [].',
+    '',
+    'Dacă mesajul CLAR cere o acțiune dar îți lipsește o informație esențială ca să construiești pașii corect (ce curs, ce subiect, ce cantitate, ce folder — și nu poți deduce nimic rezonabil din conversație), pune "isCommand": false, "needsClarification": true, "steps": [] și scrie în "reply" O SINGURĂ întrebare scurtă și directă care cere EXACT informația lipsă (nu reformula toată comanda, nu te scuza). Exemple: userul zice doar "fă-mi grile" fără subiect/curs → reply: "Despre ce curs sau subiect vrei grilele?". Userul zice "mută-l în folder" fără să spună care set → reply: "Care set vrei să-l mut?".',
+    '- NU folosi needsClarification pentru lucruri pe care le poți rezolva singur cu reguli rezonabile (ex. cantitate nespecificată → foloseste implicit; folder nespecificat → rădăcină). Cere clarificare DOAR când ghicitul ar produce cu adevărat rezultatul greșit (subiect/curs lipsă, țintă ambiguă între mai multe opțiuni asemănătoare).',
     '',
     'Acțiuni disponibile (folosește exact aceste nume):',
     '- create_folder: {"action":"create_folder","name":"Nume","parent":"NumeFolderParinte (optional, pt subfolder)"}',
@@ -578,7 +608,7 @@ function buildPlannerPrompt() {
     '- Pentru generare de grile: dacă userul NUMEȘTE un curs/sursă și acesta EXISTĂ în bibliotecă (lista de mai jos), folosește generate_quiz_pack. Dacă userul cere grile pe un SUBIECT/temă generală (nu numește un curs, sau cursul numit nu există), folosește generate_quiz_topic cu "topic" = subiectul cerut — NU pune isCommand:false doar pentru că nu există curs în bibliotecă; AI-ul poate genera din cunoștințe medicale generale.',
     '- Folosește isCommand:false DOAR când mesajul chiar nu e o comandă de acțiune (întrebare normală, conversație), nu când lipsește un curs din bibliotecă.',
     '- "topic" (la generate_quiz_topic și create_flashcards_topic) trebuie să fie MEREU un subiect medical concret. Dacă userul face referire la conversație („despre subiectul discutat", „din tema de mai sus", „despre asta", „ce am vorbit acum"), înlocuiește referința cu subiectul real din mesajele anterioare (ex. „embolia pulmonară"). NU scrie niciodată „subiectul discutat", „tema de mai sus" sau alt text-referință în câmpul "topic".',
-    '- Dacă referința nu poate fi rezolvată din conversație, pune isCommand:false și cere clarificare în "reply".',
+    '- Dacă referința nu poate fi rezolvată din conversație, pune isCommand:false, needsClarification:true și cere clarificare în "reply".',
     '',
     `Cursuri în bibliotecă: ${sources.length ? sources.join(' | ') : '(niciunul)'}`,
     `Foldere grile: ${quizFolderNames.length ? quizFolderNames.join(' | ') : '(niciunul)'}`,
@@ -728,7 +758,7 @@ export async function planAgentCommand(
   const jsonStr = extractJsonObject(raw);
   if (!jsonStr) return { isCommand: false, reply: '', steps: [], needsConfirm: false };
 
-  let parsed: { isCommand?: boolean; reply?: string; steps?: unknown };
+  let parsed: { isCommand?: boolean; needsClarification?: boolean; reply?: string; steps?: unknown };
   try { parsed = JSON.parse(jsonStr); }
   catch { return { isCommand: false, reply: '', steps: [], needsConfirm: false }; }
 
@@ -753,18 +783,32 @@ export async function planAgentCommand(
     }
   }
 
+  // Also covers the *_topic variants (generate_quiz_topic, create_flashcards_topic) —
+  // used whenever the subject isn't a matched library course, which is the common
+  // case for a freeform "fă-mi N grile despre X". They used to be skipped here, so
+  // a literal count the user typed ("100 de grile") got silently overwritten by
+  // whatever the planner guessed, with no confirmation even for a huge request —
+  // clamping happens here too (not just at execution) so the confirm card below
+  // shows the number that will actually be generated, not one that quietly
+  // shrinks again afterward.
   const intent = extractQuizIntent(command);
   if (intent.packCount || intent.questionsPerPack || intent.questionType) {
     for (const step of steps) {
       if (step.action === 'generate_from_mistakes') {
-        if (intent.questionsPerPack !== undefined) step.count = intent.questionsPerPack;
+        if (intent.questionsPerPack !== undefined) step.count = clampStudioQuestionCount(intent.questionsPerPack);
         if (intent.questionType !== undefined) step.questionType = intent.questionType;
-        continue;
+      } else if (step.action === 'generate_quiz_pack') {
+        if (intent.questionsPerPack !== undefined) step.questionsPerPack = clampStudioQuestionCount(intent.questionsPerPack);
+        if (intent.packCount !== undefined) step.packCount = clampStudioPackCount(intent.packCount);
+        if (intent.questionType !== undefined) step.questionType = intent.questionType;
+      } else if (step.action === 'generate_quiz_topic') {
+        // Single-pack mode — a "N seturi" phrasing doesn't apply here (no pack loop),
+        // so only the per-request question count is corrected.
+        if (intent.questionsPerPack !== undefined) step.questionsPerPack = clampStudioQuestionCount(intent.questionsPerPack);
+        if (intent.questionType !== undefined) step.questionType = intent.questionType;
+      } else if (step.action === 'create_flashcards_topic') {
+        if (intent.questionsPerPack !== undefined) step.count = clampStudioQuestionCount(intent.questionsPerPack);
       }
-      if (step.action !== 'generate_quiz_pack') continue;
-      if (intent.questionsPerPack !== undefined) step.questionsPerPack = intent.questionsPerPack;
-      if (intent.packCount !== undefined) step.packCount = intent.packCount;
-      if (intent.questionType !== undefined) step.questionType = intent.questionType;
     }
   }
 
@@ -776,37 +820,62 @@ export async function planAgentCommand(
     (step) => (step.action === 'generate_quiz_topic' || step.action === 'create_flashcards_topic')
       && isReferentialTopic(step.topic),
   );
+  let droppedReferentialTopic = false;
   if (referential.length > 0) {
     const resolved = await resolveDiscussedTopic([...recentTurns, { role: 'user', content: command }]);
     for (const step of referential) {
-      if (resolved) step.topic = resolved;
-      else steps.splice(steps.indexOf(step), 1);
+      if (resolved) {
+        step.topic = resolved;
+      } else {
+        steps.splice(steps.indexOf(step), 1);
+        droppedReferentialTopic = true;
+      }
     }
   }
 
   const isCommand = Boolean(parsed.isCommand) && steps.length > 0;
+  // Dropping an unresolved referential topic can empty out an otherwise valid
+  // plan without the planner itself ever having flagged the ambiguity — treat
+  // that the same as an explicit needsClarification, or the user's "fă-mi
+  // grile despre asta" silently falls through to being answered as chit-chat.
+  const needsClarification = Boolean(parsed.needsClarification) || (droppedReferentialTopic && steps.length === 0);
+  const clarificationReply = typeof parsed.reply === 'string' && parsed.reply.trim()
+    ? parsed.reply
+    : (needsClarification ? 'Despre ce curs sau subiect vrei să continui?' : '');
 
   const totalQuestions = steps
     .reduce((sum, step) => {
       if (step.action === 'generate_quiz_pack') return sum + (step.packCount ?? 1) * (step.questionsPerPack ?? 10);
+      if (step.action === 'generate_quiz_topic') return sum + (step.questionsPerPack ?? 10);
       if (step.action === 'create_flashcards') return sum + (step.count ?? 15);
+      if (step.action === 'create_flashcards_topic') return sum + (step.count ?? 15);
       if (step.action === 'generate_from_mistakes') return sum + (step.count ?? 10);
       return sum;
     }, 0);
   const hasDestructive = steps.some((step) => DESTRUCTIVE_ACTIONS.includes(step.action));
-  const needsConfirm = isCommand && (hasDestructive || totalQuestions > QUESTION_CONFIRM_THRESHOLD);
+  // Below QUESTION_CONFIRM_THRESHOLD in total but still a large ask on a
+  // freeform (ungrounded) topic — surface it before generating, not after,
+  // so a misread subject costs a confirm click instead of a wasted batch.
+  const largeTopicStep = steps.find((step) => (
+    (step.action === 'generate_quiz_topic' && (step.questionsPerPack ?? 10) > TOPIC_CONFIRM_THRESHOLD)
+    || (step.action === 'create_flashcards_topic' && (step.count ?? 15) > TOPIC_CONFIRM_THRESHOLD)
+  ));
+  const needsConfirm = isCommand && (hasDestructive || totalQuestions > QUESTION_CONFIRM_THRESHOLD || Boolean(largeTopicStep));
   const confirmReason = hasDestructive
     ? 'Comanda include ștergeri.'
     : totalQuestions > QUESTION_CONFIRM_THRESHOLD
       ? `Generare mare (~${totalQuestions} întrebări) — poate dura.`
-      : undefined;
+      : largeTopicStep
+        ? `Generare mare pe subiect liber („${largeTopicStep.topic}", ~${largeTopicStep.action === 'generate_quiz_topic' ? largeTopicStep.questionsPerPack : largeTopicStep.count} ${largeTopicStep.action === 'generate_quiz_topic' ? 'întrebări' : 'carduri'}) — verifică tema înainte să generez.`
+        : undefined;
 
   return {
     isCommand,
-    reply: typeof parsed.reply === 'string' ? parsed.reply : '',
+    reply: needsClarification ? clarificationReply : (typeof parsed.reply === 'string' ? parsed.reply : ''),
     steps,
     needsConfirm,
     confirmReason,
+    needsClarification,
   };
 }
 
@@ -835,7 +904,8 @@ export function describeStep(step: AgentStep): string {
     }
     case 'correct_answer': {
       const src = step.groundedIn === 'course' ? 'confirmat din biblioteca ta' : step.groundedIn === 'general' ? 'din cunoștințe medicale generale — verifică' : 'după observația ta';
-      return `Actualizez răspunsul corect al întrebării (${src})`;
+      const answer = step.correctLabel ? ` → devine corectă ${step.correctLabel}` : '';
+      return `Actualizez răspunsul corect al întrebării${answer} (${src})`;
     }
     case 'generate_from_mistakes': {
       const n = clampStudioQuestionCount(step.count ?? 10);
@@ -995,6 +1065,9 @@ export async function executeAgentPlan(
           if (mostlyFallback) {
             errors.push(`„${source.name}": AI-ul nu a răspuns, am folosit generare locală de rezervă (calitate redusă). Verifică cheia AI în Setări.`);
           }
+          if (result.medicallyFlaggedCount > 0) {
+            errors.push(`„${source.name}": ${result.medicallyFlaggedCount} întrebări eliminate de verificarea medicală (răspuns marcat greșit).`);
+          }
           summaryParts.push(`${result.quizzes.length} seturi din „${source.name}"`);
           callbacks.onStep(
             index,
@@ -1047,6 +1120,9 @@ export async function executeAgentPlan(
             step.examStyle ?? DEFAULT_EXAM_STYLE,
           );
           if (result.questions.length === 0) throw new Error(`Nu am putut genera grile despre „${step.topic}".`);
+          if (result.medicallyFlaggedCount) {
+            errors.push(`„${step.topic}": ${result.medicallyFlaggedCount} întrebări eliminate de verificarea medicală (răspuns marcat greșit).`);
+          }
 
           const folder = resolveOrCreateQuizFolder(step.folder);
           const quiz: Quiz = {
@@ -1098,6 +1174,9 @@ export async function executeAgentPlan(
             questionType: step.questionType ?? 'single',
           });
           if (result.questions.length === 0) throw new Error('Nu am putut genera grile din greșeli.');
+          if (result.medicallyFlaggedCount) {
+            errors.push(`Recapitulare greșeli: ${result.medicallyFlaggedCount} întrebări eliminate de verificarea medicală (răspuns marcat greșit).`);
+          }
 
           const folder = resolveOrCreateQuizFolder(step.folder);
           const quiz: Quiz = {

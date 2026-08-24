@@ -37,9 +37,8 @@ const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; 
 
 const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; speed: string }[]> = {
   groq: [
-    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', desc: 'Cel mai inteligent', speed: 'Rapid' },
-    { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B', desc: 'Ultra rapid', speed: 'Instant' },
-    { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', desc: 'Echilibrat, context mare', speed: 'Rapid' },
+    { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B', desc: 'Cel mai inteligent, foarte rapid', speed: 'Rapid' },
+    { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B', desc: 'Ultra rapid', speed: 'Instant' },
   ],
   google: [
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: 'Echilibrat, rapid și inteligent', speed: 'Rapid' },

@@ -106,6 +106,8 @@ export default function QuizPlay() {
   }, []);
   const [mnemonicText, setMnemonicText] = useState<string | null>(null);
   const [mnemonicLoading, setMnemonicLoading] = useState(false);
+  /** Which post-reveal AI panel is showing — explanation and mnemonic used to be able to stack at once. */
+  const [activeAIPanel, setActiveAIPanel] = useState<'explanation' | 'mnemonic'>('explanation');
   const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(null);
   const [analysisQuestionId, setAnalysisQuestionId] = useState<string | null>(null);
   const [nextTopicHint, setNextTopicHint] = useState<string | null>(null);
@@ -205,6 +207,7 @@ export default function QuizPlay() {
     setFeedbackAnim(null);
     setHintLevel(0);
     setHintData(null);
+    setActiveAIPanel('explanation');
   }, [orderedQuestions]);
 
   useEffect(() => {
@@ -340,6 +343,7 @@ export default function QuizPlay() {
     setFeedbackAnim(null);
     setHintLevel(0);
     setHintData(null);
+    setActiveAIPanel('explanation');
   }, []);
 
   const handleSkipQuestion = useCallback(() => {
@@ -417,6 +421,24 @@ export default function QuizPlay() {
       setRevealed(false);
     }
   }, [isLast, answers, finishQuiz, resetAssistiveState]);
+
+  // Go back to review or change an already-answered question — every real exam
+  // simulator allows this before final submission, and this one previously
+  // couldn't: once you picked an answer, it was locked in for the rest of the
+  // session. Restores that question's own recorded selection/reveal state
+  // rather than resetting it, so re-visiting doesn't discard what you already answered.
+  const handleGoPrevious = useCallback(() => {
+    if (currentIdx === 0) return;
+    resetAssistiveState();
+    const prevIdx = currentIdx - 1;
+    const prevQuestion = questionQueue[prevIdx];
+    const prevAnswer = answers[prevQuestion.id];
+    setCurrentIdx(prevIdx);
+    setSelectedNow(prevAnswer ?? []);
+    // Exam mode never reveals correctness mid-session; study/timed modes show
+    // the same reveal state you'd have seen the first time you answered it.
+    setRevealed(!examMode && prevAnswer !== undefined);
+  }, [currentIdx, questionQueue, answers, examMode, resetAssistiveState]);
 
   // Record the self-assessment for the current question, then advance. The ref
   // is updated synchronously so finishQuiz sees the rating of the last card.
@@ -591,9 +613,9 @@ export default function QuizPlay() {
   }, [questionTimer, timedMode, revealed, question, isLast, finishQuiz, answers, selectedNow, TIME_PER_Q]);
 
   // Maintain latest state for keyboard handler without re-binding listener
-  const kbStateRef = useRef({ question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, isMultiple, revealed, examMode });
+  const kbStateRef = useRef({ question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, handleGoPrevious, isMultiple, revealed, examMode, currentIdx });
   useEffect(() => {
-    kbStateRef.current = { question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, isMultiple, revealed, examMode };
+    kbStateRef.current = { question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, handleGoPrevious, isMultiple, revealed, examMode, currentIdx };
   });
 
   // Keyboard shortcuts
@@ -631,6 +653,12 @@ export default function QuizPlay() {
         e.preventDefault();
         if (!state.revealed) { state.confirmSelection(); }
         else if (state.revealed) { state.handleNext(); }
+      }
+      // ArrowLeft to revisit the previous question
+      if (e.key === 'ArrowLeft' && state.currentIdx > 0) {
+        e.preventDefault();
+        state.handleGoPrevious();
+        return;
       }
       // 'H' for Hint
       if (e.key.toLowerCase() === 'h' && !state.revealed && !state.examMode) {
@@ -942,6 +970,23 @@ export default function QuizPlay() {
                     </span>
                   </button>
                 )}
+                {currentIdx > 0 && (
+                  <button
+                    onClick={handleGoPrevious}
+                    title="Revino la întrebarea anterioară pentru a revedea sau schimba răspunsul"
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                    style={{
+                      background: 'rgba(255,255,255,0.10)',
+                      borderColor: 'rgba(255,255,255,0.14)',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <ChevronLeft size={12} />
+                      Anterior
+                    </span>
+                  </button>
+                )}
                 {!examMode && !timedMode && !revealed && (
                   <button
                     onClick={handleSkipQuestion}
@@ -997,7 +1042,7 @@ export default function QuizPlay() {
                 exit={{ opacity: 0, height: 0 }}
                 className="relative z-10 mt-4 flex flex-wrap gap-2 overflow-hidden"
               >
-                {['1-5 / A-E selectează opțiunea', 'Enter / Space confirmă sau continuă', 'H deschide indiciul'].map((hint) => (
+                {['1-5 / A-E selectează opțiunea', 'Enter / Space confirmă sau continuă', '← revine la întrebarea anterioară', 'H deschide indiciul'].map((hint) => (
                   <span
                     key={hint}
                     className="rounded-full border border-white/16 bg-white/12 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/82"
@@ -1185,18 +1230,50 @@ export default function QuizPlay() {
               )}
             </AnimatePresence>
 
-            <AIExplanationPanel
-              aiLoading={aiLoading}
-              aiText={aiText}
-              analysisResult={analysisResult}
-              examMode={examMode}
-                usesRemoteAI={hasKey}
-              nextTopicHint={nextTopicHint}
-              revealed={revealed}
-              onExplain={handleAIExplain}
-              theme={theme}
-            />
+            {/* Explanation and Mnemonic used to be able to stack expanded at once — a single
+                tab switcher keeps one active at a time when both are relevant (wrong answer). */}
+            {revealed && !examMode && wasWrong && (
+              <div className="mb-3 flex items-center gap-2">
+                <button
+                  onClick={() => setActiveAIPanel('explanation')}
+                  className="rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em] transition-all"
+                  style={{
+                    background: activeAIPanel === 'explanation' ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                    color: activeAIPanel === 'explanation' ? '#fff' : theme.text3,
+                    border: `1px solid ${activeAIPanel === 'explanation' ? 'transparent' : theme.border}`,
+                  }}
+                >
+                  Explicație
+                </button>
+                <button
+                  onClick={() => setActiveAIPanel('mnemonic')}
+                  className="rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em] transition-all"
+                  style={{
+                    background: activeAIPanel === 'mnemonic' ? `linear-gradient(135deg, ${theme.warning}, ${theme.warning})` : theme.surface2,
+                    color: activeAIPanel === 'mnemonic' ? '#fff' : theme.text3,
+                    border: `1px solid ${activeAIPanel === 'mnemonic' ? 'transparent' : theme.border}`,
+                  }}
+                >
+                  Mnemonic
+                </button>
+              </div>
+            )}
 
+            {activeAIPanel === 'explanation' && (
+              <AIExplanationPanel
+                aiLoading={aiLoading}
+                aiText={aiText}
+                analysisResult={analysisResult}
+                examMode={examMode}
+                usesRemoteAI={hasKey}
+                nextTopicHint={nextTopicHint}
+                revealed={revealed}
+                onExplain={handleAIExplain}
+                theme={theme}
+              />
+            )}
+
+            {activeAIPanel === 'mnemonic' && (
             <MnemonicPanel
               examMode={examMode}
                 usesRemoteAI={hasKey}
@@ -1233,6 +1310,7 @@ export default function QuizPlay() {
               }}
               theme={theme}
             />
+            )}
 
             <AnimatePresence>
             {revealed && !examMode && hasKey && (

@@ -101,8 +101,7 @@ function BookChapters({ source, theme, calmMotion }: { source: AIKnowledgeSource
       {chapters.map((chapter) => (
         <div
           key={chapter.heading}
-          className="flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4"
-          style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}
+          className="glass-panel flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4"
         >
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
@@ -190,8 +189,7 @@ export default function Residency() {
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="rounded-[28px] p-10 text-center"
-            style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}
+            className="glass-panel premium-shadow rounded-[28px] p-10 text-center"
           >
             <Stethoscope size={32} style={{ color: theme.accent, margin: '0 auto 12px' }} />
             <h2 className="mb-2 text-lg font-black" style={{ color: theme.text }}>Nicio secțiune încă</h2>
@@ -208,7 +206,7 @@ export default function Residency() {
             </motion.button>
           </motion.div>
         ) : books.length === 0 ? (
-          <div className="rounded-[28px] p-10 text-center" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+          <div className="glass-panel premium-shadow rounded-[28px] p-10 text-center">
             <p className="mb-5 text-sm" style={{ color: theme.text3 }}>Secțiunea e goală — adaugă prima carte.</p>
             <Link
               to={addBookHref}
@@ -225,17 +223,16 @@ export default function Residency() {
               const statusLabel = source.indexStatus === 'ready'
                 ? `${source.chunkCount} fragmente indexate`
                 : source.indexStatus === 'indexing'
-                  ? 'Indexare în curs...'
+                  ? `Indexare în curs... ${Math.round(source.indexProgress ?? 0)}%`
                   : 'Eroare la indexare';
               return (
                 <motion.div
                   key={source.id}
                   layout
-                  className="overflow-hidden rounded-[26px] transition-shadow"
+                  className="glass-panel premium-shadow overflow-hidden rounded-[26px] transition-shadow"
                   style={{
-                    background: theme.surface,
-                    border: `1px solid ${expanded ? `${theme.accent}35` : theme.border}`,
-                    boxShadow: expanded ? `0 8px 28px -12px ${theme.accent}30` : 'none',
+                    borderColor: expanded ? `${theme.accent}35` : undefined,
+                    boxShadow: expanded ? `0 8px 28px -12px ${theme.accent}30` : undefined,
                   }}
                 >
                   <button
@@ -259,7 +256,7 @@ export default function Residency() {
                     </motion.div>
                   </button>
                   <AnimatePresence initial={false}>
-                    {expanded && source.indexStatus === 'ready' && (
+                    {expanded && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
@@ -268,7 +265,25 @@ export default function Residency() {
                         className="overflow-hidden border-t px-6"
                         style={{ borderColor: theme.border }}
                       >
-                        <BookChapters source={source} theme={theme} calmMotion={calmMotion} />
+                        {source.indexStatus === 'ready' ? (
+                          <BookChapters source={source} theme={theme} calmMotion={calmMotion} />
+                        ) : source.indexStatus === 'indexing' ? (
+                          <div className="space-y-2.5 py-4">
+                            <p className="text-sm" style={{ color: theme.text3 }}>
+                              Cartea se indexează încă — capitolele apar automat când se termină ({Math.round(source.indexProgress ?? 0)}%).
+                            </p>
+                            <div className="skeleton-block h-14 rounded-2xl" />
+                          </div>
+                        ) : (
+                          <div className="py-4">
+                            <p className="text-sm font-semibold" style={{ color: theme.danger }}>
+                              Indexarea a eșuat{source.indexError ? `: ${source.indexError}` : '.'}
+                            </p>
+                            <p className="mt-1 text-sm" style={{ color: theme.text3 }}>
+                              Șterge cartea din <Link to={addBookHref} className="underline">Bibliotecă</Link> și încarc-o din nou.
+                            </p>
+                          </div>
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>

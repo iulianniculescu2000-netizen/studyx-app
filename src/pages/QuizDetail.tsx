@@ -380,8 +380,7 @@ export default function QuizDetail() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.16 }}
-              className="rounded-3xl p-5 mb-8"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+              className="glass-panel premium-shadow rounded-3xl p-5 mb-8"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -512,8 +511,7 @@ export default function QuizDetail() {
             </motion.button>
           ) : (
             <div
-              className="w-full flex items-center gap-3 p-4 rounded-2xl mb-8"
-              style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}
+              className="glass-panel w-full flex items-center gap-3 p-4 rounded-2xl mb-8"
             >
               <Bot size={18} style={{ color: theme.text3 }} />
               <span className="text-xs font-medium flex-1" style={{ color: theme.text3 }}>
@@ -565,12 +563,7 @@ export default function QuizDetail() {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="rounded-3xl p-6 mb-8"
-            style={{
-              background: theme.surface,
-              border: `1px solid ${theme.border}`,
-              boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
-            }}
+            className="glass-panel premium-shadow rounded-3xl p-6 mb-8"
           >
             <div className="flex items-center justify-between mb-6 gap-4">
               <div>
@@ -604,8 +597,7 @@ export default function QuizDetail() {
                 .map(({ question, actualIndex }) => (
                   <div
                     key={question.id}
-                    className="p-4 rounded-2xl transition-all hover:bg-white/5 border border-transparent hover:border-white/10"
-                    style={{ background: theme.surface2 }}
+                    className="glass-panel p-4 rounded-2xl transition-all hover:bg-white/5 border border-transparent hover:border-white/10"
                   >
                     <div className="flex items-start gap-3">
                       <span className="text-[10px] font-black opacity-30 mt-1" style={{ color: theme.text }}>

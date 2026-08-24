@@ -7,7 +7,7 @@ import {
   Plus, Pencil, Trash2, Check, X, RefreshCw, LogOut,
   PanelLeftOpen, StickyNote, CreditCard,
   Download, ArrowDownCircle, RotateCcw, AlertCircle,
-  Settings, Brain, Database, MessageSquare, Sparkles, Stethoscope,
+  Settings, Brain, Database, Stethoscope,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
@@ -15,14 +15,13 @@ import { useFolderStore } from '../store/folderStore';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useUpdateStore } from '../store/updateStore';
-import { useAIStore } from '../store/aiStore';
-import { useUIStore } from '../store/uiStore';
 import { useToastStore } from '../store/toastStore';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import ConfirmDialog from './ConfirmDialog';
 import Portal from './Portal';
 import Logo from './Logo';
 import ThemedSelect from './ThemedSelect';
+import ThemeQuickSwitcher from './ThemeQuickSwitcher';
 import { isFlashcardDeck } from '../lib/deckKind';
 import { suggestFolderAppearance } from '../lib/folderAppearance';
 import type { QuizColor } from '../types';
@@ -37,6 +36,55 @@ const FOLDER_COLORS: { id: QuizColor; bg: string }[] = [
 ];
 const FOLDER_EMOJIS = ['\u{1F4C1}', '\u{1F4DA}', '\u{1F9E0}', '\u{1F4A1}', '\u{1F52C}', '\u{1F30D}', '\u{1F4BB}', '\u2764\uFE0F', '\u{1F9B4}', '\u{1F48A}', '\u2695\uFE0F', '\u{1F9EA}', '\u{1F4CB}', '\u{1F3AF}', '\u26A1', '\u{1F3E5}'];
 const QUIZ_DRAG_MIME = 'application/x-studyx-quiz-id';
+
+/** Slight "sticker" tilt per nav icon chip \u2014 cycled by index, not random, so it's stable across renders. */
+const NAV_TILTS = [-5, 4, -3, 5, -4];
+
+/**
+ * IconChip \u2014 the reusable pictogram unit for nav items: a small glass slot,
+ * tinted per category from the app's own folder-color palette (`FOLDER_COLORS`)
+ * instead of a new color system. Nudged off-axis at rest, settles upright and
+ * pops slightly on hover; active items get a soft hue-tinted glow instead of a
+ * solid fill, so the accent doesn't fight the per-item color underneath.
+ * Items with no `hue` (e.g. Settings) render as a neutral, un-tilted slot \u2014
+ * content is colorful, tools stay quiet.
+ */
+function IconChip({
+  icon, hue, tiltIndex = 0, active, size,
+}: {
+  icon: React.ReactNode; hue?: string; tiltIndex?: number; active: boolean; size: number;
+}) {
+  const theme = useTheme();
+  const tilt = NAV_TILTS[tiltIndex % NAV_TILTS.length];
+
+  const colorStyle: React.CSSProperties = hue ? {
+    background: active
+      ? `color-mix(in srgb, ${hue} 30%, ${theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)'})`
+      : `color-mix(in srgb, ${hue} 14%, ${theme.isDark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.02)'})`,
+    border: `1px solid color-mix(in srgb, ${hue} ${active ? 55 : 24}%, transparent)`,
+    color: active ? hue : `color-mix(in srgb, ${hue} 68%, ${theme.text2})`,
+    boxShadow: active
+      ? `inset 0 1px 0 rgba(255,255,255,0.12), 0 6px 14px color-mix(in srgb, ${hue} 32%, transparent)`
+      : 'inset 0 1px 0 rgba(255,255,255,0.05)',
+  } : {
+    background: active ? theme.surface2 : 'transparent',
+    border: `1px solid ${active ? theme.border2 : 'transparent'}`,
+    color: active ? theme.text : theme.text3,
+  };
+
+  return (
+    <motion.span
+      initial={{ scale: 0.4, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1, rotate: hue && !active ? tilt : 0 }}
+      whileHover={hue ? { rotate: 0, scale: 1.12, y: -1 } : { scale: 1.06 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 18 }}
+      className="flex items-center justify-center"
+      style={{ width: size, height: size, flexShrink: 0, borderRadius: hue ? '11px 9px 12px 8px' : '10px', ...colorStyle }}
+    >
+      {icon}
+    </motion.span>
+  );
+}
 
 function useCollapsed() {
   const [collapsed, setCollapsed] = useState(() =>
@@ -352,33 +400,47 @@ function NewFolderModal({
   );
 }
 
-/** Active nav indicator - colored left bar */
+/**
+ * Nav row — active state is a soft accent-tinted background, not a solid
+ * gradient fill, so it doesn't fight the per-item hue on the icon chip next
+ * to it (the chip itself carries the "you are here" signal via its glow).
+ */
 function NavItem({
-  to, icon, label, badge, end, collapsed,
+  to, icon, label, badge, end, collapsed, hue, tiltIndex,
 }: {
   to: string; icon: React.ReactNode; label: string; badge?: React.ReactNode;
-  end?: boolean; collapsed: boolean;
+  end?: boolean; collapsed: boolean; hue?: string; tiltIndex?: number;
 }) {
   const theme = useTheme();
   return (
     <NavLink to={to} end={end} style={{ textDecoration: 'none', display: 'block' }}>
       {({ isActive }) => (
         <motion.div
-          whileHover={{ x: collapsed ? 0 : 4, scale: 1.02 }}
+          whileHover={{ x: collapsed ? 0 : 3 }}
           whileTap={{ scale: 0.96 }}
           transition={{ type: "spring", stiffness: 400, damping: 17 }}
           className="relative flex items-center transition-all press-feedback"
-          style={{
-            gap: collapsed ? 0 : 10,
-            padding: collapsed ? '10px' : '6px 10px',
-            justifyContent: collapsed ? 'center' as const : 'flex-start' as const,
-            background: isActive ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
-            color: isActive ? '#ffffff' : theme.text2,
-            fontSize: 14,
-            fontWeight: isActive ? 700 : 500,
+          style={collapsed ? {
+            width: 44,
+            height: 44,
+            margin: '0 auto',
+            justifyContent: 'center',
+            background: isActive ? 'var(--accent-soft)' : 'transparent',
+            border: `1px solid ${isActive ? `${theme.accent}40` : 'transparent'}`,
+            color: isActive ? theme.text : theme.text3,
             cursor: 'pointer',
-            borderRadius: '12px',
-            boxShadow: isActive ? `0 10px 22px ${theme.accent}24` : 'none',
+            borderRadius: '14px',
+          } : {
+            gap: 10,
+            padding: '6px 10px',
+            justifyContent: 'flex-start' as const,
+            background: isActive ? 'var(--accent-soft)' : 'transparent',
+            border: `1px solid ${isActive ? `${theme.accent}30` : 'transparent'}`,
+            color: isActive ? theme.text : theme.text2,
+            fontSize: 13.5,
+            fontWeight: isActive ? 700 : 600,
+            cursor: 'pointer',
+            borderRadius: '13px',
           }}
           onMouseEnter={(e) => {
             if (!isActive) {
@@ -391,18 +453,7 @@ function NavItem({
             }
           }}
         >
-          {/* Active indicator bar */}
-          {isActive && (
-            <motion.div
-              layoutId="nav-active-indicator"
-              className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 rounded-full"
-              style={{ background: theme.accent, boxShadow: `0 0 10px ${theme.accent}60` }}
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            />
-          )}
-          <span style={{ flexShrink: 0, filter: isActive ? `drop-shadow(0 0 8px ${theme.accent}40)` : 'none' }}>
-            {icon}
-          </span>
+          <IconChip icon={icon} hue={hue} tiltIndex={tiltIndex} active={isActive} size={collapsed ? 30 : 27} />
           {!collapsed && (
             <>
               <span className="flex-1 truncate">{label}</span>
@@ -422,10 +473,7 @@ export default function Sidebar() {
   const { username, logout } = useUserStore();
   const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
   const { quizzes, bulkDeleteQuizzes, moveToFolder } = useQuizStore();
-  const { streak, getDueQuestions, getWeakQuestions, questionStats } = useStatsStore();
-  const aiReady = useAIStore((state) => state.hasKey);
-  const knowledgeSourceCount = useAIStore((state) => state.knowledgeSources.length);
-  const setChatOpen = useUIStore((state) => state.setChatOpen);
+  const { streak, getDueQuestions, questionStats } = useStatsStore();
   const addToast = useToastStore((state) => state.addToast);
   const [storedCollapsed, toggleCollapsed] = useCollapsed();
   const { mobile } = useViewportProfile();
@@ -448,8 +496,15 @@ export default function Sidebar() {
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
   const dueCount = getDueQuestions().length;
-  const weakCount = getWeakQuestions(8).length;
   const avatarLetter = username?.charAt(0).toUpperCase() ?? '?';
+  // Same "cleared vs. still due today" ratio the Dashboard hero ring shows —
+  // reusing it here (smaller) so the two rings read as the same signal, not two.
+  const ringTotalToday = Math.max(dueCount, 10);
+  const ringCompletedToday = Math.max(0, ringTotalToday - dueCount);
+  const ringPercent = Math.round((ringCompletedToday / ringTotalToday) * 100);
+  const ringRadius = 13;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset = ringCircumference * (1 - ringPercent / 100);
 
   const totalAnswered = Object.values(questionStats).reduce((a, s) => a + s.timesCorrect + s.timesWrong, 0);
   const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT LA MEDICINĂ';
@@ -561,21 +616,6 @@ export default function Sidebar() {
     addToast(`Am mutat "${quiz.title}" in ${folderName}.`, 'success', 2600);
   };
 
-  const openCoachChat = () => {
-    setChatOpen(true);
-    window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
-      detail: {
-        open: true,
-        view: 'chat', // the coach talks; it must not open the Studio pane
-        mode: weakCount > 0 ? 'test' : 'summarize',
-        resetConversation: true,
-        prompt: weakCount > 0
-          ? 'Ajută-mă cu un plan clar pentru punctele mele slabe și începe cu un mini-test scurt pe tema cea mai vulnerabilă.'
-          : 'Fă-mi un plan clar și scurt pentru studiul de azi, în funcție de progresul meu și de ce merită repetat acum.',
-      },
-    }));
-  };
-
   const visibleFolders = useMemo(() => {
     const byParent = new Map<string, typeof folders>();
     folders.forEach((folder) => {
@@ -642,7 +682,7 @@ export default function Sidebar() {
             </div>
           </Tip>
         ) : (
-          <div className="luxe-card flex items-center gap-3 rounded-[24px] px-3.5 py-3.5">
+          <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-base flex-shrink-0 shadow-lg"
               style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
@@ -679,82 +719,51 @@ export default function Sidebar() {
         aria-label="Navigare principala"
         className={`flex-1 overflow-y-auto ${compact ? 'px-1.5 pb-1.5 pt-1.5' : 'px-2 pb-2 pt-2'} space-y-0.5 overflow-x-hidden`}
       >
-        {!collapsed && (
-          <div className="mb-3 px-1">
-            <div
-              className="editorial-hero luxe-card rounded-[26px] px-4 py-4"
-              style={{
-                background: theme.isDark
-                  ? 'linear-gradient(135deg, rgba(90,136,255,0.12), rgba(255,255,255,0.03))'
-                  : 'linear-gradient(135deg, rgba(255,255,255,0.92), rgba(245,249,253,0.82))',
-                border: `1px solid ${theme.border}`,
-              }}
-            >
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div>
-                  <div className="secondary-label font-black tracking-[0.18em]" style={{ color: theme.text3 }}>
-                    STUDY PULSE
-                  </div>
-                  <div className="mt-1 text-sm font-bold leading-tight" style={{ color: theme.text }}>
-                    {dueCount > 0
-                      ? `${dueCount} itemi așteaptă recapitularea de azi`
-                      : weakCount > 0
-                        ? 'Poți transforma punctele slabe în progres rapid'
-                        : 'Ritmul arată bine. Păstrează consistența.'}
-                  </div>
-                </div>
-                <div
-                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[16px]"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 14px 24px ${theme.accent}28` }}
-                >
-                  <Sparkles size={16} color="#fff" />
-                </div>
+        {/*
+          Replaces the old "Study Pulse" card (gradient hero, 3 chips, 2 buttons)
+          that duplicated info already shown twice more in this same sidebar —
+          streak in the user row above, due-count as badges on Recapitulare/
+          Sesiune zilnică below. One ring, same signal as the Dashboard hero's
+          progress ring, click goes straight to today's session.
+        */}
+        {collapsed ? (
+          <Tip label={dueCount > 0 ? `${dueCount} de recapitulat azi` : 'Recapitulări la zi'}>
+            <button type="button" onClick={() => navigate('/daily-review')} aria-label="Sesiune zilnica" className="mb-2.5 flex w-full items-center justify-center rounded-2xl p-2 press-feedback" style={{ background: 'var(--accent-soft)', border: `1px solid ${theme.accent}24` }}>
+              <svg width={30} height={30} viewBox="0 0 40 40" style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
+                <circle cx="20" cy="20" r={ringRadius} fill="none" stroke={theme.surface2} strokeWidth="5" />
+                <motion.circle cx="20" cy="20" r={ringRadius} fill="none" stroke={theme.accent2} strokeWidth="5" strokeLinecap="round" strokeDasharray={ringCircumference} initial={false} animate={{ strokeDashoffset: ringOffset }} transition={{ duration: 0.6, ease: 'easeOut' }} />
+              </svg>
+            </button>
+          </Tip>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate('/daily-review')}
+            className="mb-2.5 flex w-full items-center gap-2.5 rounded-2xl px-2.5 py-2 text-left press-feedback"
+            style={{ background: 'var(--accent-soft)', border: `1px solid ${theme.accent}24` }}
+          >
+            <svg width={34} height={34} viewBox="0 0 40 40" style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
+              <circle cx="20" cy="20" r={ringRadius} fill="none" stroke={theme.surface2} strokeWidth="5" />
+              <motion.circle cx="20" cy="20" r={ringRadius} fill="none" stroke={theme.accent2} strokeWidth="5" strokeLinecap="round" strokeDasharray={ringCircumference} initial={false} animate={{ strokeDashoffset: ringOffset }} transition={{ duration: 0.6, ease: 'easeOut' }} />
+            </svg>
+            <div className="min-w-0">
+              <div className="truncate text-[11.5px] font-bold" style={{ color: theme.text }}>
+                {dueCount > 0 ? `${dueCount} de recapitulat` : 'Recapitulări la zi'}
               </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="premium-chip rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
-                  {streak.currentStreak} {streak.currentStreak === 1 ? 'zi' : 'zile'} streak
-                </span>
-                <span className="premium-chip rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
-                  {weakCount} puncte slabe
-                </span>
-                <span className="premium-chip rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
-                  {knowledgeSourceCount} surse AI
-                </span>
-              </div>
-
-              <div className={`mt-4 grid gap-2 ${compact ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                <button
-                  onClick={openCoachChat}
-                  className="premium-card-hover press-feedback flex items-center justify-center gap-2 rounded-[18px] px-3 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
-                  style={{
-                    background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
-                    boxShadow: `0 14px 26px ${theme.accent}26`,
-                  }}
-                >
-                  <MessageSquare size={14} />
-                  {aiReady ? 'Coach AI' : 'Start AI'}
-                </button>
-                <button
-                  onClick={() => navigate('/vault')}
-                  className="premium-card-hover press-feedback flex items-center justify-center gap-2 rounded-[18px] px-3 py-3 text-[11px] font-black uppercase tracking-[0.14em]"
-                  style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text }}
-                >
-                  <Database size={14} />
-                  Vault
-                </button>
+              <div className="text-[9.5px] font-semibold" style={{ color: theme.text3 }}>
+                {ringPercent}% din azi, gata
               </div>
             </div>
-          </div>
+          </button>
         )}
 
         {collapsed ? (
           <>
             <Tip label="Dashboard">
-              <NavItem to="/" icon={<LayoutDashboard size={17} />} label="Dashboard" end collapsed />
+              <NavItem to="/" icon={<LayoutDashboard size={17} />} label="Dashboard" end collapsed hue="#0A84FF" tiltIndex={0} />
             </Tip>
             <Tip label={`Toate grilele (${activeQuizCount})`}>
-              <NavItem to="/quizzes" icon={<BookOpen size={17} />} label="Toate grilele" collapsed />
+              <NavItem to="/quizzes" icon={<BookOpen size={17} />} label="Toate grilele" collapsed hue="#5E5CE6" tiltIndex={1} />
             </Tip>
             <Tip label={`Recapitulare${dueCount > 0 ? ` (${dueCount})` : ''}`}>
               <div data-tutorial="nav-review">
@@ -771,6 +780,8 @@ export default function Sidebar() {
                   }
                   label="Recapitulare"
                   collapsed
+                  hue="#FF9F0A"
+                  tiltIndex={2}
                 />
               </div>
             </Tip>
@@ -789,48 +800,54 @@ export default function Sidebar() {
                   }
                   label="Sesiune zilnică"
                   collapsed
+                  hue="#FF375F"
+                  tiltIndex={3}
                 />
               </div>
             </Tip>
             <Tip label="Statistici">
               <div data-tutorial="nav-stats">
-                <NavItem to="/stats" icon={<BarChart3 size={17} />} label="Statistici" collapsed />
+                <NavItem to="/stats" icon={<BarChart3 size={17} />} label="Statistici" collapsed hue="#5AC8FA" tiltIndex={4} />
               </div>
             </Tip>
+
+            {/* zone divider: Studiu ↑ / Resurse ↓ — a text label wouldn't fit collapsed, so a hairline stands in for it */}
+            <div className="my-1.5 mx-3" style={{ height: 1, background: theme.border }} />
+
             <Tip label="Notițe">
               <div data-tutorial="nav-notes">
-                <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notițe" collapsed />
+                <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notițe" collapsed hue="#30D158" tiltIndex={1} />
               </div>
             </Tip>
             <Tip label="Biblioteca AI">
               <div data-tutorial="nav-vault">
-                <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} />
+                <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} hue="#0A84FF" tiltIndex={0} />
               </div>
             </Tip>
             <Tip label="Rezidențiat">
               <div>
-                <NavItem to="/rezidentiat" icon={<Stethoscope size={17} />} label="Rezidențiat" collapsed />
+                <NavItem to="/rezidentiat" icon={<Stethoscope size={17} />} label="Rezidențiat" collapsed hue="#FF453A" tiltIndex={2} />
               </div>
             </Tip>
             <Tip label="Flashcarduri">
               <div data-tutorial="nav-flashcards">
-                <NavItem to="/flashcards" icon={<CreditCard size={17} />} label="Flashcarduri" collapsed />
-              </div>
-            </Tip>
-            <Tip label="Setări">
-              <div>
-                <NavItem to="/settings" icon={<Settings size={17} />} label="Setări" collapsed />
+                <NavItem to="/flashcards" icon={<CreditCard size={17} />} label="Flashcarduri" collapsed hue="#5E5CE6" tiltIndex={3} />
               </div>
             </Tip>
           </>
         ) : (
           <>
-            <NavItem to="/" icon={<LayoutDashboard size={16} />} label="Dashboard" end collapsed={false} />
+            <div className="mb-1 px-2.5 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3, opacity: 0.55 }}>
+              Studiu
+            </div>
+            <NavItem to="/" icon={<LayoutDashboard size={16} />} label="Dashboard" end collapsed={false} hue="#0A84FF" tiltIndex={0} />
             <NavItem
               to="/quizzes"
               icon={<BookOpen size={16} />}
               label="Toate grilele"
               collapsed={false}
+              hue="#5E5CE6"
+              tiltIndex={1}
               badge={
                 <div className="flex gap-1.5 items-center">
                   {newQuizCount > 0 && (
@@ -849,6 +866,8 @@ export default function Sidebar() {
                 icon={<RefreshCw size={16} />}
                 label="Recapitulare"
                 collapsed={false}
+                hue="#FF9F0A"
+                tiltIndex={2}
                 badge={dueCount > 0 ? (
                   <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
                     style={{ background: `${theme.warning}28`, color: theme.warning }}>
@@ -863,6 +882,8 @@ export default function Sidebar() {
                 icon={<Brain size={16} />}
                 label="Sesiune zilnică"
                 collapsed={false}
+                hue="#FF375F"
+                tiltIndex={3}
                 badge={dueCount > 0 ? (
                   <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
                     style={{ background: `${theme.accent}28`, color: theme.accent }}>
@@ -871,25 +892,28 @@ export default function Sidebar() {
                 ) : undefined}
               />
             </div>
-            <div data-tutorial="nav-stats"><NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} /></div>
+            <div data-tutorial="nav-stats"><NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} hue="#5AC8FA" tiltIndex={4} /></div>
+
+            <div className="mb-1 mt-4 px-2.5 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3, opacity: 0.55 }}>
+              Resurse
+            </div>
             <div data-tutorial="nav-notes">
-              <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notițe" collapsed={false} />
+              <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notițe" collapsed={false} hue="#30D158" tiltIndex={1} />
             </div>
 
             <div data-tutorial="nav-vault">
-              <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} />
+              <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} hue="#0A84FF" tiltIndex={0} />
             </div>
-            <NavItem to="/rezidentiat" icon={<Stethoscope size={16} />} label="Rezidențiat" collapsed={false} />
+            <NavItem to="/rezidentiat" icon={<Stethoscope size={16} />} label="Rezidențiat" collapsed={false} hue="#FF453A" tiltIndex={2} />
             <div data-tutorial="nav-flashcards">
               <NavItem
                 to="/flashcards"
                 icon={<CreditCard size={16} />}
                 label="Flashcarduri"
                 collapsed={false}
+                hue="#5E5CE6"
+                tiltIndex={3}
               />
-            </div>
-            <div data-tutorial="nav-settings">
-              <NavItem to="/settings" icon={<Settings size={16} />} label="Setări" collapsed={false} />
             </div>
 
             {/* Folders section */}
@@ -1123,6 +1147,20 @@ export default function Sidebar() {
             </button>
           </Tip>
         )}
+
+        {/* Settings — pinned here, separate from the Studiu/Resurse zones above */}
+        <div data-tutorial="nav-settings">
+          {collapsed ? (
+            <Tip label="Setări">
+              <NavItem to="/settings" icon={<Settings size={17} />} label="Setări" collapsed />
+            </Tip>
+          ) : (
+            <NavItem to="/settings" icon={<Settings size={16} />} label="Setări" collapsed={false} />
+          )}
+        </div>
+
+        {/* Quick UI-version / theme switcher */}
+        <ThemeQuickSwitcher collapsed={collapsed} />
 
         {/* Update button */}
         <UpdateButton

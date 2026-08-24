@@ -124,6 +124,7 @@ export default function AgentJobCard({
   onConfirm,
   onCancel,
   onUndo,
+  onRetry,
   onEditParams,
 }: {
   jobId: string;
@@ -131,6 +132,7 @@ export default function AgentJobCard({
   onConfirm: () => void;
   onCancel: () => void;
   onUndo: () => void;
+  onRetry?: () => void;
   onEditParams?: (stepId: string, patch: Partial<AgentJobStepParams>) => void;
 }) {
   const job = useAgentJobsStore((state) => state.jobs.find((entry) => entry.id === jobId));
@@ -246,6 +248,17 @@ export default function AgentJobCard({
         >
           <RotateCcw size={12} />
           Anulează acțiunile (Undo)
+        </button>
+      )}
+
+      {errored && onRetry && (
+        <button
+          onClick={onRetry}
+          className="mt-3 flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-black uppercase tracking-wider text-white"
+          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+        >
+          <RotateCcw size={12} />
+          Reîncearcă
         </button>
       )}
     </div>

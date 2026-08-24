@@ -180,13 +180,11 @@ export default function DailyReview() {
 
           {/* Stats cards */}
           <div className="grid grid-cols-2 gap-3 mb-8">
-            <div className="rounded-2xl p-4 text-left"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+            <div className="glass-panel rounded-2xl p-4 text-left">
               <p className="text-2xl font-bold" style={{ color: theme.accent }}>{items.length}</p>
               <p className="text-xs mt-0.5" style={{ color: theme.text3 }}>Întrebări de azi</p>
             </div>
-            <div className="rounded-2xl p-4 text-left"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+            <div className="glass-panel rounded-2xl p-4 text-left">
               <p className="text-2xl font-bold" style={{ color: theme.accent2 }}>
                 {Math.ceil(items.length / 2)}
                 <span className="text-sm font-medium ml-0.5">
@@ -332,8 +330,7 @@ export default function DailyReview() {
             transition={{ duration: 0.22 }}
           >
             {/* Question card */}
-            <div className="rounded-2xl p-5 mb-4"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+            <div className="glass-panel premium-shadow rounded-2xl p-5 mb-4">
               <p className="text-xs font-medium mb-3 truncate" style={{ color: theme.text3 }}>
                 📚 {current.quizTitle}
               </p>

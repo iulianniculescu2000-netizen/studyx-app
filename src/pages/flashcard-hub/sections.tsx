@@ -440,8 +440,7 @@ export function FlashcardHubActions({
         data-tutorial="flashcard-hub"
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-5 flex flex-wrap items-center gap-x-7 gap-y-3 rounded-2xl px-4 py-3"
-        style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+        className="glass-panel mb-5 flex flex-wrap items-center gap-x-7 gap-y-3 rounded-2xl px-4 py-3"
       >
         {stats.map((stat) => (
           <div key={stat.label} className="flex items-center gap-2.5">
@@ -460,10 +459,9 @@ export function FlashcardHubActions({
         initial={{ opacity: 0, scale: 0.99 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.06 }}
-        className="mb-4 rounded-[24px] p-5"
+        className="glass-panel mb-4 rounded-[24px] p-5"
         style={{
-          background: theme.surface,
-          border: `1.5px solid ${theme.accent2}40`,
+          borderColor: `${theme.accent2}40`,
         }}
       >
         <div className="flex items-center gap-2.5 mb-4">
@@ -749,8 +747,7 @@ function EditDeckModal({
         initial={{ scale: 0.95, y: 24 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.95, y: 20 }}
-        className="w-full max-w-xl rounded-[28px] p-6 shadow-2xl"
-        style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+        className="glass-panel premium-shadow w-full max-w-xl rounded-[28px] p-6"
       >
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-[15px] font-black" style={{ color: theme.text }}>Editează deck</h2>
@@ -864,8 +861,7 @@ function DeckRow({ deck, theme, index }: { deck: FlashcardDeckSummary; theme: Th
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.04 * index, ease: [0.16, 1, 0.3, 1] }}
         whileHover={{ y: -2 }}
-        className="relative overflow-hidden rounded-2xl p-4"
-        style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+        className="glass-panel premium-shadow relative overflow-hidden rounded-2xl p-4"
       >
         <div className="absolute inset-y-0 left-0 w-1" style={{ background: deck.accentColor }} />
         <div className="flex flex-col gap-4 sm:ml-1.5 sm:flex-row sm:items-center">
@@ -969,8 +965,7 @@ export function FlashcardDeckGrid({ decks, folders, theme }: FlashcardDeckGridPr
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.2 }}
-        className="rounded-3xl py-16 text-center"
-        style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+        className="glass-panel premium-shadow rounded-3xl py-16 text-center"
       >
         <div className="mb-3 text-5xl">🃏</div>
         <h3 className="mb-2 text-lg font-semibold" style={{ color: theme.text }}>Niciun deck încă</h3>

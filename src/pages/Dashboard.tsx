@@ -13,26 +13,14 @@ import MagicImportCard from '../components/MagicImportCard';
 import QuizCard from '../components/QuizCard';
 import DashboardErrorBoundary from '../components/dashboard/DashboardErrorBoundary';
 import MagneticButton from '../components/dashboard/MagneticButton';
-import DashboardAIStudyBuddy from '../components/dashboard/DashboardAIStudyBuddy';
-import DashboardStatCard from '../components/dashboard/DashboardStatCard';
-import TodayProgressCard from '../components/dashboard/TodayProgressCard';
+import DashboardHeroCard from '../components/dashboard/DashboardHeroCard';
+import DashboardStatStrip, { type DashboardStat } from '../components/dashboard/DashboardStatStrip';
 import DashboardTipStrip from '../components/dashboard/DashboardTipStrip';
 import StudyConsistencyMap from '../components/dashboard/StudyConsistencyMap';
 import { useAIStore } from '../store/aiStore';
 import { isFlashcardDeck } from '../lib/deckKind';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useCountUp } from '../hooks/useCountUp';
-
-type DashboardStat = {
-  label: string;
-  numeric: number;
-  display?: string;
-  suffix: string;
-  color: string;
-  /** Real week-over-week change; null when there's no previous week to compare. */
-  delta?: number | null;
-  deltaUnit?: '%' | 'pp';
-};
 
 function DashboardLoading({ compact }: { compact: boolean }) {
   return (
@@ -275,13 +263,8 @@ export default function Dashboard() {
       <DashboardShell compact={compact}>
         <DashboardHero compact={compact} greeting={greeting} username={username ?? ''} />
         <DashboardTipStrip context={tipContext} />
-        <DashboardAIStudyBuddy />
-
-        <div className={`shell-stage-panel grid grid-cols-2 ${compact ? 'mb-8 gap-4 p-4 xl:grid-cols-4' : 'mb-12 gap-5 p-5 md:grid-cols-4'}`}>
-          {stats.map((stat, index) => <DashboardStatCard key={stat.label} {...stat} delay={0.1 + index * 0.05} />)}
-        </div>
-
-        {quizzes.length > 0 && <TodayProgressCard />}
+        <DashboardHeroCard />
+        <DashboardStatStrip stats={stats} />
         <StudyConsistencyMap compact={compact} />
         <DashboardActions compact={compact} />
         <RecentQuizzesSection recentQuizzes={recentQuizzes} onStartTutorial={startTutorial} />

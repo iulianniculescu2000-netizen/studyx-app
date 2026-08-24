@@ -7,6 +7,7 @@ import { extractJsonArrayLenient } from './jsonExtract';
 import { logDiagnosticEvent } from '../store/diagnosticsStore';
 import { useToastStore } from '../store/toastStore';
 import { buildQuestionTypeInstruction, type QuestionType } from './ai/questionTypes';
+import { healPrimaryModelChoice, isModelUnavailableError, nextCandidateModel } from './ai/modelHealing';
 
 /**
  * Providers don't agree on an error shape: Groq/Google follow the OpenAI
@@ -123,7 +124,7 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
 
 /** Default model to use when we fall back to another provider mid-request. */
 const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras', string> = {
-  groq: 'llama-3.3-70b-versatile',
+  groq: 'openai/gpt-oss-120b',
   google: 'gemini-2.5-flash',
   cerebras: 'gpt-oss-120b',
 };
@@ -268,7 +269,7 @@ export async function validateApiKey(
 
   const config = getProviderConfig(provider);
   const testModel =
-    provider === 'google' ? 'gemini-2.0-flash' : provider === 'cerebras' ? 'gpt-oss-120b' : 'llama-3.1-8b-instant';
+    provider === 'google' ? 'gemini-2.0-flash' : provider === 'cerebras' ? 'gpt-oss-120b' : 'openai/gpt-oss-20b';
 
   try {
     const res = await fetch(config.endpoint, {
@@ -487,6 +488,29 @@ export async function groqRequest({
       } catch (error: unknown) {
         lastError = error instanceof Error ? error.message : String(error);
         logAIDebug('groq:providerFailed', { provider: link.provider, error: lastError });
+
+        // The model itself is gone (provider deprecated/decommissioned it), not
+        // just rate-limited or down — retry immediately on a known-good model
+        // for this SAME provider before giving up on it and moving to the next
+        // provider in the chain. A dead model would otherwise fail every future
+        // request forever, indistinguishable from the whole provider being down.
+        if (isModelUnavailableError(lastError)) {
+          const altModel = nextCandidateModel(link.provider, link.model);
+          if (altModel) {
+            try {
+              const healedResult = await attemptOnProvider(
+                cfg, { ...link, model: altModel }, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal,
+              );
+              trackProviderOutcome(link.provider, primaryProvider, cfg.name);
+              healPrimaryModelChoice(link.provider, primaryProvider, link.model, altModel, cfg.name);
+              return healedResult;
+            } catch (healError: unknown) {
+              lastError = healError instanceof Error ? healError.message : String(healError);
+              logAIDebug('groq:healAttemptFailed', { provider: link.provider, altModel, error: lastError });
+            }
+          }
+        }
+
         if (next) {
           logDiagnosticEvent({
             area: 'ai',

@@ -65,6 +65,7 @@ export default function GlobalSearch() {
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsContainerRef = useRef<HTMLDivElement>(null);
 
   const quickActions = useMemo<QuickAction[]>(() => [
     { id: 'new-quiz', label: 'Creează grilă nouă', sub: 'Ajungi direct în editorul de grile', href: '/create', icon: 'quiz' },
@@ -226,6 +227,12 @@ export default function GlobalSearch() {
     setActiveIdx(0);
   };
 
+  useEffect(() => {
+    resultsContainerRef.current
+      ?.querySelector('[data-result-active="true"]')
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [safeActiveIdx]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -291,7 +298,7 @@ export default function GlobalSearch() {
                 </div>
               </div>
 
-              <div className="custom-scrollbar max-h-[min(62vh,540px)] overflow-y-auto">
+              <div ref={resultsContainerRef} className="custom-scrollbar max-h-[min(62vh,540px)] overflow-y-auto">
                 {query.trim().length === 0 ? (
                   <div className="px-4 py-5 sm:px-5">
                     <div className="mb-4 flex items-center justify-center gap-1.5" style={{ color: theme.text3 }}>
@@ -424,6 +431,7 @@ function ResultRow({
     <button
       onClick={onSelect}
       onMouseEnter={onHover}
+      data-result-active={isActive}
       className="press-feedback w-full rounded-[22px] px-4 py-3 text-left transition-all sm:px-5"
       style={{
         background: isActive ? `linear-gradient(135deg, ${theme.surface2}, ${theme.surface})` : 'transparent',

@@ -26,7 +26,7 @@ describe('App Boot Smoke Tests', () => {
     const { result } = renderHook(() => useAIStore());
     
     expect(result.current.apiKey).toBe('');
-    expect(result.current.model).toBe('llama-3.3-70b-versatile');
+    expect(result.current.model).toBe('openai/gpt-oss-120b');
     expect(result.current.knowledgeSources).toEqual([]);
     expect(typeof result.current.isHydrated).toBe('boolean');
   });
@@ -70,11 +70,11 @@ describe('App Boot Smoke Tests', () => {
     
     act(() => {
       aiResult.current.setApiKey('test-api-key');
-      aiResult.current.setModel('llama-3.1-8b-instant');
+      aiResult.current.setModel('openai/gpt-oss-20b');
     });
-    
+
     expect(aiResult.current.apiKey).toBe('test-api-key');
-    expect(aiResult.current.model).toBe('llama-3.1-8b-instant');
+    expect(aiResult.current.model).toBe('openai/gpt-oss-20b');
   });
 
   it('should handle quiz creation safely', () => {

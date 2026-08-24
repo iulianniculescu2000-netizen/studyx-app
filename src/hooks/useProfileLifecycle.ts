@@ -3,7 +3,7 @@ import { useFolderStore } from '../store/folderStore';
 import { useNotesStore } from '../store/notesStore';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
-import { loadProfileData, saveProfileData, saveProfileNamespace } from '../store/profileStorage';
+import { flushProfileDataSync, loadProfileData, saveProfileData, saveProfileNamespace } from '../store/profileStorage';
 import { cancelIdleTask, scheduleIdleTask } from '../lib/idleTaskScheduler';
 
 type AddToast = (message: string, type?: 'success' | 'error' | 'warning' | 'info', duration?: number) => void;
@@ -108,6 +108,13 @@ export function useProfileLifecycle({
 
     const flushPending = async () => {
       namespaces.forEach(clearScheduledSave);
+      // Guaranteed synchronous safety net FIRST: pagehide/reload/close does
+      // not wait for async work, so anything that must survive the page
+      // going away has to land in localStorage before this function does
+      // anything else. The async saveProfileData below still runs after (its
+      // normal error toasts + Electron disk save) — the matching cached
+      // snapshot makes it a cheap no-op when the sync flush already wrote it.
+      if (activeProfileId) flushProfileDataSync(activeProfileId);
       // Every caller fires this as `void flushPending()` (unload/visibility
       // paths), so a rejected save must be absorbed here. The user is already
       // warned by the toast profileStorage raises.

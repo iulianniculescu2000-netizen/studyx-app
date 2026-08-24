@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Bot,
   BookOpen,
-  Check,
   ChevronDown,
   Copy,
   CreditCard,
@@ -16,6 +15,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
   RotateCcw,
@@ -23,6 +23,7 @@ import {
   Sparkles,
   Square,
   Target,
+  Trash2,
   Wand2,
   X,
 } from 'lucide-react';
@@ -32,53 +33,31 @@ import { useUserStore } from '../store/userStore';
 import { useStatsStore } from '../store/statsStore';
 import { useQuizStore } from '../store/quizStore';
 import { useAIStore } from '../store/aiStore';
-import { useFolderStore } from '../store/folderStore';
 import { useToastStore } from '../store/toastStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildPerformanceSummary, buildUserContextString } from '../lib/aiContext';
-import { isDocumentHidden } from '../lib/asyncGuard';
-import { generateQuizPackagesFromSource } from '../lib/ai/batchQuizGeneration';
-import { generateQuizFromChapter, WHOLE_DOCUMENT_HEADING } from '../lib/ai/chapterQuizGeneration';
-import { useSourceChapters } from '../hooks/useSourceChapters';
+import { WHOLE_DOCUMENT_HEADING } from '../lib/ai/chapterQuizGeneration';
 import {
   STUDIO_MAX_PACK_COUNT,
   STUDIO_MAX_QUESTIONS_PER_PACK,
   clampStudioPackCount,
   clampStudioQuestionCount,
 } from '../lib/ai/studioGeneration';
-import {
-  buildStudioCommandHelp,
-  parseStudioChatCommand,
-  resolveStudioFolderFromCommand,
-  resolveStudioSourceFromCommand,
-} from '../lib/ai/studioChatCommands';
-import {
-  describeStep,
-  executeAgentPlan,
-  isRetryPhrase,
-  looksLikeAgentCommand,
-  looksLikeAnswerDispute,
-  grantsGeneralKnowledgePermission,
-  planAgentCommand,
-  proposeAnswerCorrection,
-  type AgentPlan,
-  type AgentStep,
-} from '../lib/ai/agent';
 import { detectChatIntent, shouldApplyIntent } from '../lib/ai/intentRouter';
-import { isFlashcardDeck } from '../lib/deckKind';
-import { DEFAULT_EXAM_STYLE } from '../lib/ai/examStyle';
-import { scoreExamConformance } from '../lib/ai/examConformance';
 import { EXAM_STYLE_META, type ExamStyle } from '../lib/ai/examStyle';
-import { suggestFolderAppearance } from '../lib/folderAppearance';
-import { useAgentJobsStore } from '../store/agentJobsStore';
-import { useQuizChatContextStore } from '../store/quizChatContextStore';
-import { desktopNotify } from '../lib/desktopNotify';
 import { getProfileSummaryText, getWeakTopicsForProfile } from '../ai/UserProfile';
-import type { Folder, Question, Quiz } from '../types';
+import type { Question, Quiz } from '../types';
+import GlassCard from './ui/GlassCard';
 import AgentJobCard from './ai-chat/AgentJobCard';
 import AIOrb from './ai-chat/AIOrb';
 import FreeKeysNotice from './ai-chat/FreeKeysNotice';
+import StudioSelect from './ai-chat/StudioSelect';
+import { diversifyChunks, extractRelevantExcerpt } from './ai-chat/chatHelpers';
+import { CHAT_STORAGE_KEY, useChatMessages } from './ai-chat/useChatMessages';
+import { useScopedSource } from './ai-chat/useScopedSource';
+import { useAgentCommands } from './ai-chat/useAgentCommands';
+import { useStudioGeneration } from './ai-chat/useStudioGeneration';
 import {
   CHAT_MODES,
   buildFollowUpSuggestions,
@@ -123,201 +102,6 @@ const CONVERSATION_SUMMARY_THRESHOLD = 12;
 const CONVERSATION_RECENT_KEEP = 6;
 
 type DrawerView = 'chat' | 'studio';
-type StudioDifficulty = 'auto' | 'easy' | 'medium' | 'hard';
-type StudioOption = {
-  value: string;
-  label: string;
-  hint?: string;
-};
-
-function diversifyChunks<T extends { source: string; score: number }>(
-  chunks: T[],
-  limit: number,
-): T[] {
-  const bySource = new Map<string, T[]>();
-  for (const chunk of chunks) {
-    const group = bySource.get(chunk.source) ?? [];
-    group.push(chunk);
-    bySource.set(chunk.source, group);
-  }
-  const result: T[] = [];
-  for (const group of bySource.values()) {
-    if (result.length >= Math.min(3, limit)) break;
-    result.push(group[0]);
-  }
-  for (const chunk of chunks) {
-    if (result.length >= limit) break;
-    if (!result.includes(chunk)) result.push(chunk);
-  }
-  return result;
-}
-
-function extractRelevantExcerpt(chunkText: string, query: string, maxLen = 220): string {
-  const clean = chunkText.replace(/\s+/g, ' ').trim();
-  const sentences = clean.match(/[^.!?]+[.!?]*/g) ?? [clean];
-  const queryWords = new Set(
-    query.toLowerCase().split(/\s+/).filter((w) => w.length > 3),
-  );
-  let bestSentence = sentences[0];
-  let bestScore = -1;
-  for (const sentence of sentences) {
-    const lower = sentence.toLowerCase();
-    const matches = [...queryWords].filter((w) => lower.includes(w)).length;
-    if (matches > bestScore) {
-      bestScore = matches;
-      bestSentence = sentence;
-    }
-  }
-  const idx = clean.indexOf(bestSentence);
-  if (idx >= 0) {
-    return clean.slice(Math.max(0, idx - 10), idx + bestSentence.length + 60).slice(0, maxLen);
-  }
-  return clean.slice(0, maxLen);
-}
-
-function formatFolderPath(folders: Folder[], folder: Folder) {
-  const byId = new Map(folders.map((item) => [item.id, item]));
-  const names = [folder.name];
-  let parent = folder.parentId ? byId.get(folder.parentId) : undefined;
-  const guard = new Set([folder.id]);
-  while (parent && !guard.has(parent.id)) {
-    guard.add(parent.id);
-    names.unshift(parent.name);
-    parent = parent.parentId ? byId.get(parent.parentId) : undefined;
-  }
-  return names.join(' / ');
-}
-
-function StudioSelect({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-  theme,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: StudioOption[];
-  placeholder: string;
-  theme: ReturnType<typeof useTheme>;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const selected = options.find((option) => option.value === value) ?? null;
-  const isDisabled = options.length === 0;
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-      }
-    };
-
-    window.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('keydown', handleEscape);
-    return () => {
-      window.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="relative">
-      <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-        {label}
-      </span>
-      <button
-        type="button"
-        onClick={() => {
-          if (!isDisabled) {
-            setOpen((current) => !current);
-          }
-        }}
-        disabled={isDisabled}
-        className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all"
-        style={{
-          background: theme.surface,
-          borderColor: open ? `${theme.accent}55` : theme.border,
-          color: theme.text,
-          boxShadow: open ? `0 0 0 1px ${theme.accent}20` : 'none',
-          opacity: isDisabled ? 0.55 : 1,
-        }}
-      >
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">
-            {selected?.label ?? placeholder}
-          </div>
-          <div className="mt-0.5 truncate text-[11px]" style={{ color: theme.text3 }}>
-            {selected?.hint ?? (isDisabled ? 'Nu există opțiuni disponibile.' : 'Apasă pentru a alege.')}
-          </div>
-        </div>
-        <motion.div animate={{ rotate: open ? 180 : 0 }} style={{ color: theme.text3 }}>
-          <ChevronDown size={16} />
-        </motion.div>
-      </button>
-
-      <AnimatePresence>
-        {open && !isDisabled && (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.98 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
-            className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 rounded-[22px] border p-2 shadow-2xl"
-            style={{
-              background: theme.isDark ? 'rgba(22,22,30,0.96)' : 'rgba(255,255,255,0.96)',
-              borderColor: theme.border,
-              backdropFilter: 'blur(18px) saturate(155%)',
-            }}
-          >
-            <div className="custom-scrollbar max-h-56 space-y-1 overflow-y-auto">
-              {options.map((option) => {
-                const active = option.value === value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => {
-                      onChange(option.value);
-                      setOpen(false);
-                    }}
-                    className="flex w-full items-center gap-3 rounded-[18px] px-3 py-2.5 text-left transition-all"
-                    style={{
-                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
-                      color: active ? '#fff' : theme.text,
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold">
-                        {option.label}
-                      </div>
-                      {option.hint && (
-                        <div className="mt-0.5 truncate text-[11px]" style={{ color: active ? 'rgba(255,255,255,0.76)' : theme.text3 }}>
-                          {option.hint}
-                        </div>
-                      )}
-                    </div>
-                    {active && <Check size={15} />}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 export default function AIChatDrawer() {
   const theme = useTheme();
@@ -337,8 +121,6 @@ export default function AIChatDrawer() {
   const memoryInteractions = useAIStore((state) =>
     activeProfileId ? (state.studyMemory[activeProfileId]?.interactions ?? 0) : 0
   );
-  const folders = useFolderStore((state) => state.folders);
-  const addFolder = useFolderStore((state) => state.addFolder);
   const addToast = useToastStore((state) => state.addToast);
   const questionStats = useStatsStore((state) => state.questionStats);
   const streak = useStatsStore((state) => state.streak);
@@ -348,64 +130,89 @@ export default function AIChatDrawer() {
   const { calmMotion, performanceLite } = useAdaptiveMotion();
   const { mobile } = useViewportProfile();
 
-  // Cache context chunks per (text+sourceId) within a session to avoid redundant vault lookups.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const contextCacheRef = useRef<Map<string, any[]>>(new Map());
-
-  // v2: bumped to clear old messages with malformed citation.topic === citation.source
-  const CHAT_STORAGE_KEY = 'studyx:chat:messages:v2';
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    try {
-      const stored = localStorage.getItem('studyx:chat:messages:v2');
-      if (!stored) return [];
-      return JSON.parse(stored) as ChatMessage[];
-    } catch {
-      return [];
-    }
-  });
+  const { scopedSource, setScopedSource, contextCacheRef } = useScopedSource();
+  const { messages, setMessages, messagesRef, chatEndRef } = useChatMessages({ open, calmMotion });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [thinkingPhase, setThinkingPhase] = useState<string | null>(null);
   const [mode, setMode] = useState<ChatMode>('grounded');
   const [manualMode, setManualMode] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
-  // Per-job "open the result" CTA so the agent closes the create→study loop.
-  const [agentResults, setAgentResults] = useState<Record<string, { route: string; label: string }>>({});
   const navigate = useNavigate();
-  const [scopedSource, setScopedSource] = useState<{ id: string; name: string } | null>(null);
   const [activeCitationKey, setActiveCitationKey] = useState<string | null>(null);
   const [view, setView] = useState<DrawerView>('chat');
   /** Chat sheet widened to studio size — schemas and tables need the room. */
   const [wideChat, setWideChat] = useState(false);
+  /** Secondary header controls (widen, regenerate, clear) live behind one "⋯" instead of competing icons. */
+  const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
   /** Markup of a schema/table opened full-screen from a message. */
   const [zoomedBlock, setZoomedBlock] = useState<string | null>(null);
-  const [studioSourceId, setStudioSourceId] = useState<string>('');
-  const [studioHeading, setStudioHeading] = useState<string>(WHOLE_DOCUMENT_HEADING);
-  const [studioFolderId, setStudioFolderId] = useState<string>('__uncategorized__');
-  const [studioPackCount, setStudioPackCount] = useState(4);
-  const [studioQuestionsPerPack, setStudioQuestionsPerPack] = useState(12);
-  const [studioDifficulty, setStudioDifficulty] = useState<StudioDifficulty>('auto');
-  /** Rezidențiat (5 variante) vs grilă simplă de materie (4). */
-  const [studioExamStyle, setStudioExamStyle] = useState<ExamStyle>(DEFAULT_EXAM_STYLE);
-  const [studioGenerating, setStudioGenerating] = useState(false);
-  const [generatedSummary, setGeneratedSummary] = useState<string | null>(null);
   const [pastedImage, setPastedImage] = useState<string | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   // Set when the user hits Stop — lets non-abortable generators (flashcards /
   // grile) discard their result instead of surprising the user after a stop.
   const generationAbortedRef = useRef(false);
-  const pendingAgentPlansRef = useRef<Map<string, AgentPlan>>(new Map());
-  // Last genuine agent command, so a follow-up "mai încearcă" re-runs it instead
-  // of letting the planner invent a new (wrong) request from "mai încearcă".
-  const lastAgentCommandRef = useRef<string>('');
-  const agentUndoRef = useRef<Map<string, (() => void) | null>>(new Map());
   // Running compressed summary of older turns + how many messages it covers.
   const conversationSummaryRef = useRef<string>('');
   const summaryCoveredCountRef = useRef<number>(0);
   const summarizingRef = useRef<boolean>(false);
-  const messagesRef = useRef<ChatMessage[]>([]);
+
+  const readySources = useMemo(
+    () => knowledgeSources.filter((source) => source.indexStatus === 'ready'),
+    [knowledgeSources],
+  );
+
+  const {
+    setStudioSourceId,
+    studioHeading, setStudioHeading,
+    studioFolderId, setStudioFolderId,
+    studioPackCount, setStudioPackCount,
+    studioQuestionsPerPack, setStudioQuestionsPerPack,
+    studioDifficulty, setStudioDifficulty,
+    studioExamStyle, setStudioExamStyle,
+    studioGenerating, setStudioGenerating,
+    generatedSummary,
+    selectedStudioSourceId,
+    selectedStudioSource,
+    selectedStudioFolder,
+    studioChapterOptions,
+    studioSourceOptions,
+    studioFolderOptions,
+    tryHandleStudioCommand,
+    tryHandleFlashcardCommand,
+    handleGeneratePackages,
+  } = useStudioGeneration({
+    readySources,
+    hasKey,
+    activeProfileId,
+    scopedSource,
+    setScopedSource,
+    contextCacheRef,
+    setMessages,
+    setThinkingPhase,
+    setView,
+    generationAbortedRef,
+    loadAIChatRuntime,
+  });
+
+  const {
+    agentResults,
+    runAgentJob,
+    tryHandleAgentCommand,
+    tryHandleAnswerDispute,
+    cancelAgentJob,
+    editAgentStepParams,
+    undoAgentJob,
+    retryAgentJob,
+  } = useAgentCommands({
+    hasKey,
+    messagesRef,
+    setMessages,
+    setThinkingPhase,
+    studioPackCount,
+    studioQuestionsPerPack,
+  });
 
   const activeModeConfig = useMemo(
     () => CHAT_MODES.find((entry) => entry.id === mode) ?? CHAT_MODES[0],
@@ -448,52 +255,6 @@ export default function AIChatDrawer() {
     return 'grounded';
   }, [performanceSummary.dueCount, scopedSource]);
 
-  const readySources = useMemo(
-    () => knowledgeSources.filter((source) => source.indexStatus === 'ready'),
-    [knowledgeSources],
-  );
-
-  const selectedStudioSourceId = studioSourceId || scopedSource?.id || readySources[0]?.id || '';
-  const selectedStudioSource = readySources.find((source) => source.id === selectedStudioSourceId) ?? null;
-  const { chapters: studioChapters } = useSourceChapters(selectedStudioSourceId || null);
-  const studioChapterOptions = useMemo(() => [
-    { value: WHOLE_DOCUMENT_HEADING, label: 'Tot documentul' },
-    ...studioChapters
-      .filter((chapter) => chapter.heading !== WHOLE_DOCUMENT_HEADING)
-      .map((chapter) => ({ value: chapter.heading, label: `${chapter.label} (${chapter.chunkCount})` })),
-  ], [studioChapters]);
-  const selectedStudioFolder = studioFolderId === '__uncategorized__'
-    ? null
-    : folders.find((folder) => folder.id === studioFolderId) ?? null;
-  const studioSourceOptions = useMemo<StudioOption[]>(
-    () => readySources.map((source) => ({
-      value: source.id,
-      label: source.name,
-      hint: `${source.chunkCount ?? 0} fragmente indexate`,
-    })),
-    [readySources],
-  );
-  const studioFolderOptions = useMemo<StudioOption[]>(
-    () => [
-      {
-        value: '__uncategorized__',
-        label: 'Neclasificate',
-        hint: 'Grilele rămân fără folder dedicat.',
-      },
-      ...folders.map((folder) => ({
-        value: folder.id,
-        label: `${folder.emoji} ${formatFolderPath(folders, folder)}`,
-        hint: 'Salvează pachetele direct în acest folder.',
-      })),
-    ],
-    [folders],
-  );
-
-  useEffect(() => {
-    if (!selectedStudioSourceId && readySources[0]) {
-      setStudioSourceId(readySources[0].id);
-    }
-  }, [readySources, selectedStudioSourceId]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -546,23 +307,7 @@ export default function AIChatDrawer() {
 
     window.addEventListener('studyx:ai-prompt', handler as EventListener);
     return () => window.removeEventListener('studyx:ai-prompt', handler as EventListener);
-  }, [setChatOpen]);
-
-  useEffect(() => {
-    if (open) {
-      chatEndRef.current?.scrollIntoView({ behavior: calmMotion ? 'auto' : 'smooth' });
-    }
-  }, [messages, open, calmMotion]);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-    try {
-      const toSave = messages.slice(-60);
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toSave));
-    } catch {
-      // quota exceeded — ignore
-    }
-  }, [CHAT_STORAGE_KEY, messages]);
+  }, [contextCacheRef, setChatOpen, setMessages, setScopedSource, setStudioHeading, setStudioSourceId]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -604,498 +349,6 @@ export default function AIChatDrawer() {
       recencyBoost: 0,
       weaknessBoost: 0,
     }));
-  };
-
-  const runStudioGeneration = async ({
-    source,
-    folder,
-    packCount,
-    questionsPerPack,
-    difficulty,
-    heading = WHOLE_DOCUMENT_HEADING,
-    announceInChat = true,
-    forceChatView = true,
-    announceMode = 'summarize',
-  }: {
-    source: NonNullable<typeof selectedStudioSource>;
-    folder: typeof selectedStudioFolder;
-    packCount: number;
-    questionsPerPack: number;
-    difficulty: StudioDifficulty;
-    heading?: string;
-    announceInChat?: boolean;
-    forceChatView?: boolean;
-    announceMode?: ChatMode;
-  }) => {
-    generationAbortedRef.current = false;
-    setStudioGenerating(true);
-    setGeneratedSummary(null);
-    setStudioSourceId(source.id);
-    setScopedSource({ id: source.id, name: source.name });
-    setStudioFolderId(folder?.id ?? '__uncategorized__');
-    setStudioPackCount(packCount);
-    setStudioQuestionsPerPack(questionsPerPack);
-    setStudioDifficulty(difficulty);
-
-    const isChapterScoped = heading !== WHOLE_DOCUMENT_HEADING;
-
-    try {
-      const result = isChapterScoped
-        ? await (async () => {
-            const chapterResult = await generateQuizFromChapter({
-              sourceId: source.id,
-              sourceName: source.name,
-              heading,
-              folder,
-              folderId: folder?.id ?? null,
-              questionCount: questionsPerPack,
-              difficulty,
-              examStyle: studioExamStyle,
-              activeProfileId,
-              existingQuizzes: quizzes,
-            });
-            return { ...chapterResult, quizzes: [chapterResult.quiz] };
-          })()
-        : await generateQuizPackagesFromSource({
-            sourceId: source.id,
-            sourceName: source.name,
-            folder,
-            folderId: folder?.id ?? null,
-            packCount,
-            questionsPerPack,
-            difficulty,
-            examStyle: studioExamStyle,
-            activeProfileId,
-            existingQuizzes: quizzes,
-          });
-
-      if (generationAbortedRef.current) return false; // user pressed Stop — discard
-
-      result.quizzes.forEach((quiz) => addQuiz(quiz));
-
-      const folderLabel = folder?.name ?? 'Neclasificate';
-      const sourceLabel = isChapterScoped ? `${source.name} · ${heading}` : source.name;
-      const summary = result.fallbackQuestionCount > 0
-        ? `Am generat ${result.quizzes.length} pachete din "${sourceLabel}" și le-am trimis în folderul "${folderLabel}". ${result.aiQuestionCount} întrebări au venit din AI, iar ${result.fallbackQuestionCount} au fost completate inteligent din document pentru stabilitate. Dificultate folosită: ${result.difficulty}.`
-        : `Am generat ${result.quizzes.length} pachete din "${sourceLabel}" și le-am trimis în folderul "${folderLabel}". Dificultate folosită: ${result.difficulty}.`;
-      const fullSummary = result.warnings.length > 0
-        ? `${summary}\n\nNotă: ${result.warnings[0]}`
-        : summary;
-
-      setGeneratedSummary(fullSummary);
-      if (announceInChat) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: fullSummary, mode: announceMode }]);
-      }
-      addToast(
-        result.fallbackQuestionCount > 0
-          ? `${result.quizzes.length} pachete generate. Am completat inteligent și local ce nu a livrat AI-ul.`
-          : `${result.quizzes.length} pachete generate cu succes.`,
-        'success',
-      );
-      if (forceChatView) {
-        setView('chat');
-      }
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Generarea pachetelor a eșuat.';
-      addToast(message, 'error');
-      if (announceInChat) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${message}`, mode: announceMode }]);
-      }
-      return false;
-    } finally {
-      setStudioGenerating(false);
-    }
-  };
-
-  const runAgentJob = async (jobId: string) => {
-    const plan = pendingAgentPlansRef.current.get(jobId);
-    if (!plan) return;
-    const jobs = useAgentJobsStore.getState();
-    jobs.setJobStatus(jobId, 'running');
-
-    const result = await executeAgentPlan(
-      plan,
-      { defaultPackCount: studioPackCount, defaultQuestionsPerPack: studioQuestionsPerPack },
-      {
-        onStep: (index, status, detail) => {
-          useAgentJobsStore.getState().setStepStatus(jobId, `s${index}`, status, detail);
-        },
-      },
-    );
-
-    agentUndoRef.current.set(jobId, result.undo);
-    const failedAll = result.errors.length > 0 && result.createdQuizIds.length === 0;
-    jobs.setJobStatus(jobId, failedAll ? 'error' : 'done', result.summary);
-
-    // Measure what was just generated against the real exam, so the student sees
-    // whether the set actually looks like rezidențiat instead of taking it on faith.
-    const createdSets = useQuizStore.getState().quizzes
-      .filter((quiz) => result.createdQuizIds.includes(quiz.id) && !isFlashcardDeck(quiz));
-    const createdQuestions = createdSets.flatMap((quiz) => quiz.questions);
-    if (createdQuestions.length >= 3) {
-      const style: ExamStyle = createdSets.some((quiz) => quiz.tags?.includes(EXAM_STYLE_META.simple.tag))
-        ? 'simple'
-        : 'residency';
-      const report = scoreExamConformance(createdQuestions, style);
-      jobs.setJobConformance(jobId, {
-        score: report.score,
-        label: EXAM_STYLE_META[style].short,
-        issues: report.metrics.filter((metric) => !metric.ok).map((metric) => metric.label),
-      });
-    }
-
-    // Close the loop: if the agent created sets, offer to jump straight in.
-    if (!failedAll && result.createdQuizIds.length > 0) {
-      const firstId = result.createdQuizIds[0];
-      const created = useQuizStore.getState().quizzes.find((q) => q.id === firstId);
-      const isFlashcard = created ? isFlashcardDeck(created) : false;
-      const many = result.createdQuizIds.length > 1;
-      setAgentResults((prev) => ({
-        ...prev,
-        [jobId]: {
-          route: isFlashcard ? `/flashcards/session/${firstId}?mode=all` : `/play/${firstId}`,
-          label: isFlashcard ? 'Începe sesiunea' : many ? 'Începe primul set' : 'Începe acum',
-        },
-      }));
-    }
-
-    // If the plan generated a study plan text, surface it in chat now (after execution)
-    const studyPlanText = plan.reply && plan.steps.some(s => s.action === 'create_study_plan') ? plan.reply : null;
-    pendingAgentPlansRef.current.delete(jobId);
-
-    addToast(result.summary, failedAll ? 'error' : result.errors.length ? 'warning' : 'success');
-    if (isDocumentHidden() || !open) {
-      void desktopNotify('StudyX — agent', result.summary);
-    }
-
-    if (studyPlanText && !failedAll) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: studyPlanText }]);
-    }
-  };
-
-  /**
-   * Turns an AgentPlan into a chat message: a confirm-card job when it proposes
-   * steps, or just the plain reply when it doesn't (e.g. "no course found, want
-   * me to guess?"). Shared by the folder/generation planner and the in-quiz
-   * answer-dispute flow so both render through the same AgentJobCard UI.
-   * Returns the created job id, or null when no job was created.
-   */
-  const presentAgentPlan = (plan: AgentPlan, originalText: string, activeMode: ChatMode): string | null => {
-    if (plan.steps.length === 0) {
-      if (plan.reply) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: plan.reply, mode: activeMode }]);
-      }
-      return null;
-    }
-
-    const steps = plan.steps.map((step, index) => ({
-      id: `s${index}`,
-      label: describeStep(step),
-      status: 'pending' as const,
-      action: step.action,
-      params: {
-        packCount: step.packCount,
-        questionsPerPack: step.questionsPerPack,
-        count: step.count,
-        difficulty: step.difficulty,
-        questionType: step.questionType,
-      },
-    }));
-    const jobId = useAgentJobsStore.getState().createJob(
-      originalText,
-      steps,
-      plan.needsConfirm ? 'awaiting-confirm' : 'running',
-    );
-    if (plan.needsConfirm) {
-      useAgentJobsStore.getState().setJobStatus(jobId, 'awaiting-confirm', plan.confirmReason);
-    }
-    pendingAgentPlansRef.current.set(jobId, plan);
-
-    setMessages((prev) => [...prev, {
-      role: 'assistant',
-      content: plan.reply || (plan.needsConfirm ? 'Am pregătit un plan. Confirmă ca să îl execut.' : 'Execut planul...'),
-      mode: activeMode,
-      agentJobId: jobId,
-    }]);
-
-    return jobId;
-  };
-
-  const tryHandleAgentCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
-    if (!hasKey) return false;
-
-    // "mai încearcă" → re-run the last real command (same course/count). If there
-    // is nothing to retry, let it fall through to normal chat.
-    const retry = isRetryPhrase(text);
-    let commandText = text;
-    if (retry) {
-      if (!lastAgentCommandRef.current) return false;
-      commandText = lastAgentCommandRef.current;
-    } else if (!looksLikeAgentCommand(text)) {
-      return false;
-    } else {
-      // Remember this genuine command so a later "mai încearcă" can repeat it.
-      lastAgentCommandRef.current = text;
-    }
-
-    // Give the planner the recent thread so partial follow-ups resolve in context.
-    const history = messagesRef.current
-      .filter((message) => !message.agentJobId && message.content.trim())
-      .slice(-6)
-      .map(({ role, content }) => ({ role, content }));
-
-    setThinkingPhase(retry ? 'Reiau comanda anterioară…' : 'Analizez comanda…');
-    let plan: AgentPlan;
-    try {
-      plan = await planAgentCommand(commandText, history);
-    } catch {
-      return false;
-    }
-    if (!plan.isCommand || plan.steps.length === 0) return false;
-
-    const jobId = presentAgentPlan(plan, text, activeMode);
-    if (jobId && !plan.needsConfirm) {
-      await runAgentJob(jobId);
-    }
-    return true;
-  };
-
-  /**
-   * "Cred că e corect și varianta C" while looking at a quiz question — checks
-   * the library first, proposes a correction (confirm-card) if warranted, and
-   * NEVER falls back to general medical knowledge unless the student explicitly
-   * allowed it in this same message (grantsGeneralKnowledgePermission).
-   */
-  const tryHandleAnswerDispute = async (text: string, activeMode: ChatMode): Promise<boolean> => {
-    if (!hasKey) return false;
-    if (!useQuizChatContextStore.getState().context) return false;
-    if (!looksLikeAnswerDispute(text)) return false;
-
-    setThinkingPhase('Verific afirmația ta…');
-    let plan: AgentPlan;
-    try {
-      plan = await proposeAnswerCorrection(text, grantsGeneralKnowledgePermission(text));
-    } catch {
-      return false;
-    }
-    if (!plan.isCommand) return false;
-
-    const jobId = presentAgentPlan(plan, text, activeMode);
-    if (jobId && !plan.needsConfirm) {
-      await runAgentJob(jobId);
-    }
-    return true;
-  };
-
-  const cancelAgentJob = (jobId: string) => {
-    pendingAgentPlansRef.current.delete(jobId);
-    useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Anulat de utilizator.');
-  };
-
-  // Lets the confirm card tweak count/difficulty/type before execution instead of
-  // forcing a cancel + retype when the planner guessed a parameter wrong.
-  const editAgentStepParams = (jobId: string, stepId: string, patch: Partial<AgentStep>) => {
-    const plan = pendingAgentPlansRef.current.get(jobId);
-    if (!plan) return;
-    const index = Number(stepId.slice(1));
-    const step = plan.steps[index];
-    if (!step) return;
-    const updated = { ...step, ...patch };
-    plan.steps[index] = updated;
-    useAgentJobsStore.getState().updateStep(jobId, stepId, {
-      label: describeStep(updated),
-      params: {
-        packCount: updated.packCount,
-        questionsPerPack: updated.questionsPerPack,
-        count: updated.count,
-        difficulty: updated.difficulty,
-        questionType: updated.questionType,
-      },
-    });
-  };
-
-  const undoAgentJob = (jobId: string) => {
-    const undo = agentUndoRef.current.get(jobId);
-    if (!undo) return;
-    undo();
-    agentUndoRef.current.delete(jobId);
-    useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Acțiunile au fost anulate (undo).');
-    addToast('Am anulat acțiunile agentului.', 'info');
-  };
-
-  const tryHandleStudioCommand = async (text: string, activeMode: ChatMode) => {
-    const parsed = parseStudioChatCommand(text);
-    if (!parsed.shouldGenerate) return false;
-
-    setView('studio');
-
-    if (readySources.length === 0) {
-      const message = `Nu ai încă documente indexate în Biblioteca AI, deci nu am din ce să generez grile.\n\nÎncarcă un curs în Bibliotecă și apoi poți scrie direct aici comanda.\n\n${buildStudioCommandHelp([], folders)}`;
-      setMessages((prev) => [...prev, { role: 'assistant', content: message, mode: activeMode }]);
-      addToast('Încarcă mai întâi un curs în Biblioteca AI.', 'warning');
-      return true;
-    }
-
-    const scopedReadySource = scopedSource
-      ? readySources.find((entry) => entry.id === scopedSource.id) ?? null
-      : null;
-    const source = resolveStudioSourceFromCommand(text, readySources, scopedReadySource);
-    if (!source) {
-      const sourceList = readySources.slice(0, 6).map((entry) => `- ${entry.name}`).join('\n');
-      const message = `Am înțeles că vrei să generez pachete de grile, dar nu e clar din ce document.\n\nSpune-mi explicit cursul sau documentul dorit. Exemple disponibile acum:\n${sourceList}\n\n${buildStudioCommandHelp(readySources, folders)}`;
-      setMessages((prev) => [...prev, { role: 'assistant', content: message, mode: activeMode }]);
-      addToast('Spune-mi și documentul din care vrei să generez.', 'warning');
-      return true;
-    }
-
-    const folderResolution = resolveStudioFolderFromCommand(text, folders, selectedStudioFolder);
-    let targetFolder = selectedStudioFolder;
-
-    if (folderResolution.kind === 'existing') {
-      targetFolder = folderResolution.folder;
-    } else if (folderResolution.kind === 'create') {
-      const appearance = suggestFolderAppearance(folderResolution.name);
-      const id = addFolder(folderResolution.name, appearance.emoji, appearance.color);
-      targetFolder = {
-        id,
-        name: folderResolution.name,
-        emoji: appearance.emoji,
-        color: appearance.color,
-        createdAt: Date.now(),
-      };
-      addToast(`Am creat folderul ${appearance.emoji} "${folderResolution.name}".`, 'success');
-    } else {
-      targetFolder = null;
-    }
-
-    const nextPackCount = clampStudioPackCount(parsed.packCount ?? studioPackCount);
-    const nextQuestionCount = clampStudioQuestionCount(parsed.questionsPerPack ?? studioQuestionsPerPack);
-    const nextDifficulty = parsed.difficulty ?? studioDifficulty;
-
-    await runStudioGeneration({
-      source,
-      folder: targetFolder,
-      packCount: nextPackCount,
-      questionsPerPack: nextQuestionCount,
-      difficulty: nextDifficulty,
-      announceInChat: true,
-      forceChatView: true,
-      announceMode: activeMode,
-    });
-
-    return true;
-  };
-
-  // Deterministic flashcard generator for the chat — mirrors the grile studio
-  // command but builds a flashcard deck. Runs WITHOUT the LLM planner, so
-  // "fă-mi 3 flashcarduri din X" works even when the planner is rate-limited.
-  const tryHandleFlashcardCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
-    const wantsFlashcards = /\b(flash\s?carduri|flash\s?card|fi[șs]e|carduri)\b/i.test(text);
-    const wantsGeneration = /\b(f[ăa]|f[ăa][- ]?mi|genereaz[ăa]|cre(?:e|ea)z[ăa]?|creaz[ăa]?|vreau|preg[ăa]te|construie)\b/i.test(text);
-    if (!wantsFlashcards || !wantsGeneration) return false;
-
-    if (!hasKey) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Pentru flashcarduri AI ai nevoie de o cheie în Setări AI.', mode: activeMode }]);
-      addToast('Adaugă o cheie AI în Setări.', 'warning');
-      return true;
-    }
-    if (readySources.length === 0) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Nu ai încă cursuri indexate în Biblioteca AI. Încarcă un curs și apoi cere-mi flashcarduri din el.', mode: activeMode }]);
-      addToast('Încarcă mai întâi un curs în Biblioteca AI.', 'warning');
-      return true;
-    }
-
-    const scopedReadySource = scopedSource
-      ? readySources.find((entry) => entry.id === scopedSource.id) ?? null
-      : null;
-    const source = resolveStudioSourceFromCommand(text, readySources, scopedReadySource);
-    if (!source) {
-      const sourceList = readySources.slice(0, 6).map((entry) => `- ${entry.name}`).join('\n');
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Din ce curs vrei flashcardurile? Exemple disponibile:\n${sourceList}`, mode: activeMode }]);
-      addToast('Spune-mi din ce curs să fac flashcardurile.', 'warning');
-      return true;
-    }
-
-    const folderResolution = resolveStudioFolderFromCommand(text, folders, selectedStudioFolder);
-    let targetFolder = selectedStudioFolder;
-    if (folderResolution.kind === 'existing') {
-      targetFolder = folderResolution.folder;
-    } else if (folderResolution.kind === 'create') {
-      const appearance = suggestFolderAppearance(folderResolution.name);
-      const id = addFolder(folderResolution.name, appearance.emoji, appearance.color);
-      targetFolder = { id, name: folderResolution.name, emoji: appearance.emoji, color: appearance.color, createdAt: Date.now() };
-      addToast(`Am creat folderul ${appearance.emoji} "${folderResolution.name}".`, 'success');
-    } else {
-      targetFolder = null;
-    }
-
-    const countMatch = text
-      .normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .match(/(\d+)\s*(?:de\s+)?(?:flash\s?carduri|flash\s?card|carduri|fise|card)/i);
-    const count = Math.max(1, Math.min(60, countMatch ? Number(countMatch[1]) : 15));
-
-    setThinkingPhase(`Generez ${count} flashcarduri din „${source.name}"…`);
-    try {
-      const { notesToFlashcards } = await import('../lib/groq');
-      const { getVaultChunksBySource } = await loadAIChatRuntime();
-      const chunks = await getVaultChunksBySource(source.id);
-      let sourceText = '';
-      for (const chunk of chunks) {
-        sourceText += (sourceText ? '\n\n' : '') + chunk.text;
-        if (sourceText.length > 24000) break;
-      }
-      if (sourceText.trim().length < 80) {
-        throw new Error('Cursul nu are destul text indexat pentru flashcarduri.');
-      }
-
-      const existingFronts = quizzes
-        .filter((quiz) => (quiz.tags ?? []).some((tag) => /flashcard|deck|anki/i.test(tag)))
-        .flatMap((quiz) => quiz.questions.map((question) => question.text));
-      const pairs = await notesToFlashcards(sourceText, { count, sourceName: source.name, avoidFronts: existingFronts });
-      if (generationAbortedRef.current) return true; // user pressed Stop — drop the result
-      if (pairs.length === 0) throw new Error('Nu am putut genera flashcarduri din acest curs.');
-
-      const deckId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-      const questions: Question[] = pairs.map((pair) => ({
-        id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
-        text: pair.front.trim(),
-        multipleCorrect: false,
-        difficulty: 'medium',
-        explanation: '',
-        options: [{ id: 'a', text: pair.back.trim(), isCorrect: true }],
-      }));
-
-      addQuiz({
-        id: deckId,
-        title: `Flashcarduri · ${source.name.replace(/\.[^.]+$/, '')}`,
-        description: `${questions.length} flashcarduri AI generate din „${source.name}".`,
-        emoji: '🃏',
-        color: targetFolder?.color ?? 'purple',
-        category: targetFolder?.name ?? 'AI Flashcards',
-        kind: 'flashcard',
-        folderId: targetFolder?.id ?? null,
-        shuffleQuestions: true,
-        shuffleAnswers: false,
-        tags: ['flashcard', 'ai', 'chat'],
-        questions,
-        createdAt: Date.now(),
-      });
-
-      const folderNote = targetFolder ? ` în folderul „${targetFolder.name}"` : '';
-      setMessages((prev) => [...prev, {
-        role: 'assistant',
-        content: `✅ Am creat **${questions.length} flashcarduri** din „${source.name}"${folderNote}. Apasă pentru a începe sesiunea.`,
-        mode: activeMode,
-        openRoute: { route: `/flashcards/session/${deckId}?mode=all`, label: 'Începe flashcardurile' },
-      }]);
-      addToast(`${questions.length} flashcarduri generate.`, 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Generarea flashcardurilor a eșuat.';
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${message}`, mode: activeMode }]);
-      addToast(message, 'error');
-    }
-    return true;
   };
 
   const stopGeneration = () => {
@@ -1160,7 +413,7 @@ export default function AIChatDrawer() {
       }
     }
     const imageSnapshot = pastedImage;
-    const userMsg: ChatMessage = { role: 'user', content: text || '📷 Imagine atașată', mode: activeMode };
+    const userMsg: ChatMessage = { role: 'user', content: text || '📷 Imagine atașată', mode: activeMode, ...(imageSnapshot ? { hadImage: true } : {}) };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setPastedImage(null);
@@ -1316,30 +569,22 @@ export default function AIChatDrawer() {
     } catch (err: unknown) {
       if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) return;
       const errorMessage = err instanceof Error ? err.message : 'Nu am putut genera un răspuns.';
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${errorMessage}` }]);
+      setMessages((prev) => {
+        // The streaming path already pushed an empty assistant placeholder
+        // (line ~522) before the request could fail — if it never received a
+        // single chunk, filling IT with the error avoids leaving a blank
+        // bubble sitting above a second, separate error message.
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant' && !last.content) {
+          return [...prev.slice(0, -1), { ...last, content: `Eroare: ${errorMessage}` }];
+        }
+        return [...prev, { role: 'assistant', content: `Eroare: ${errorMessage}` }];
+      });
     } finally {
       streamAbortRef.current = null;
       setLoading(false);
       setThinkingPhase(null);
     }
-  };
-
-  const handleGeneratePackages = async () => {
-    if (!selectedStudioSource) {
-      addToast('Alege mai întâi un document din bibliotecă.', 'warning');
-      return;
-    }
-
-    await runStudioGeneration({
-      source: selectedStudioSource,
-      folder: selectedStudioFolder,
-      packCount: studioPackCount,
-      questionsPerPack: studioQuestionsPerPack,
-      difficulty: studioDifficulty,
-      heading: studioHeading,
-      announceInChat: true,
-      forceChatView: true,
-    });
   };
 
   const closeChat = () => {
@@ -1349,6 +594,14 @@ export default function AIChatDrawer() {
     setManualMode(false);
     setView('chat');
     contextCacheRef.current.clear();
+  };
+
+  const clearConversation = () => {
+    setMessages([]);
+    setActiveCitationKey(null);
+    conversationSummaryRef.current = '';
+    summaryCoveredCountRef.current = 0;
+    try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* ignore */ }
   };
 
   // ── Per-response actions (hover) ───────────────────────────────────────────
@@ -1398,6 +651,12 @@ export default function AIChatDrawer() {
     const prev = messages[index - 1];
     if (prev?.role !== 'user') {
       addToast('Nu găsesc întrebarea de regenerat.', 'warning');
+      return;
+    }
+    // The image itself is never kept in history — resending prev.content alone
+    // would silently drop it and produce a reply about nothing in particular.
+    if (prev.hadImage) {
+      addToast('Nu pot regenera un răspuns pentru o imagine — atașeaz-o din nou și retrimite mesajul.', 'warning');
       return;
     }
     void sendMessage(prev.content, messages[index]?.mode);
@@ -1639,6 +898,7 @@ export default function AIChatDrawer() {
                         onConfirm={() => void runAgentJob(message.agentJobId!)}
                         onCancel={() => cancelAgentJob(message.agentJobId!)}
                         onUndo={() => undoAgentJob(message.agentJobId!)}
+                        onRetry={() => void retryAgentJob(message.agentJobId!)}
                         onEditParams={(stepId, patch) => editAgentStepParams(message.agentJobId!, stepId, patch)}
                       />
                       {agentResults[message.agentJobId] && (
@@ -1900,19 +1160,81 @@ export default function AIChatDrawer() {
                     })}
                   </div>
 
-                  {view === 'chat' && !mobile && (
+                  <div className="relative">
                     <motion.button
                       whileHover={calmMotion ? undefined : { scale: 1.08 }}
                       whileTap={calmMotion ? undefined : { scale: 0.92 }}
-                      onClick={() => setWideChat((value) => !value)}
-                      aria-label={wideChat ? 'Îngustează chatul' : 'Lățește chatul'}
-                      title={wideChat ? 'Îngustează chatul' : 'Lățește chatul — mai mult spațiu pentru scheme și tabele'}
+                      onClick={() => setOverflowMenuOpen((value) => !value)}
+                      aria-label="Mai multe opțiuni"
+                      title="Mai multe opțiuni"
                       className="rounded-2xl p-2.5 transition-colors hover:bg-white/5 press-feedback"
-                      style={{ color: wideChat ? theme.accent : theme.text3 }}
+                      style={{
+                        color: overflowMenuOpen ? theme.accent : theme.text3,
+                        background: overflowMenuOpen ? `${theme.accent}18` : undefined,
+                      }}
                     >
-                      {wideChat ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                      <MoreHorizontal size={18} />
                     </motion.button>
-                  )}
+
+                    <AnimatePresence>
+                      {overflowMenuOpen && (
+                        <>
+                          <div className="fixed inset-0 z-[10001]" onClick={() => setOverflowMenuOpen(false)} />
+                          <motion.div
+                            initial={calmMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
+                            animate={calmMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                            exit={calmMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
+                            transition={{ duration: calmMotion ? 0.08 : 0.14 }}
+                            className="absolute right-0 top-full z-[10002] mt-2 w-56 overflow-hidden rounded-[18px] border p-1.5"
+                            style={{
+                              background: theme.isDark ? 'rgba(28,26,34,0.96)' : 'rgba(255,255,255,0.97)',
+                              borderColor: theme.border,
+                              backdropFilter: performanceLite ? 'blur(10px)' : 'blur(24px) saturate(160%)',
+                              boxShadow: '0 24px 60px rgba(0,0,0,0.35)',
+                            }}
+                          >
+                            {view === 'chat' && !mobile && (
+                              <button
+                                onClick={() => { setWideChat((value) => !value); setOverflowMenuOpen(false); }}
+                                className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-white/5"
+                                style={{ color: theme.text }}
+                              >
+                                {wideChat ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                                {wideChat ? 'Îngustează chatul' : 'Lățește chatul'}
+                              </button>
+                            )}
+                            {(() => {
+                              const lastAssistantIndex = [...messages].map((m, i) => ({ m, i })).reverse().find(({ m }) => m.role === 'assistant')?.i;
+                              if (lastAssistantIndex === undefined || loading) return null;
+                              return (
+                                <button
+                                  onClick={() => { setOverflowMenuOpen(false); regenerateAnswer(lastAssistantIndex); }}
+                                  className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-white/5"
+                                  style={{ color: theme.text }}
+                                >
+                                  <RotateCcw size={15} />
+                                  Regenerează ultimul răspuns
+                                </button>
+                              );
+                            })()}
+                            {messages.length > 0 && (
+                              <>
+                                <div className="my-1 h-px" style={{ background: theme.border }} />
+                                <button
+                                  onClick={() => { clearConversation(); setOverflowMenuOpen(false); }}
+                                  className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-white/5"
+                                  style={{ color: theme.danger }}
+                                >
+                                  <Trash2 size={15} />
+                                  Golește conversația
+                                </button>
+                              </>
+                            )}
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
 
                   <motion.button
                     whileHover={calmMotion ? undefined : { rotate: 90, scale: 1.08 }}
@@ -1953,10 +1275,7 @@ export default function AIChatDrawer() {
                     </div>
 
                     <div className="custom-scrollbar min-h-0 overflow-y-auto border-l px-5 py-5" style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.02)' }}>
-                      <div
-                        className="rounded-[28px] border p-4"
-                        style={{ background: theme.surface2, borderColor: theme.border }}
-                      >
+                      <GlassCard variant="strong" radius="28px" padding="16px">
                         <div className="mb-3 flex items-center gap-2">
                           <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18`, color: theme.accent }}>
                             <Wand2 size={18} />
@@ -2162,7 +1481,7 @@ export default function AIChatDrawer() {
                             </div>
                           )}
                         </div>
-                      </div>
+                      </GlassCard>
                     </div>
                   </div>
                 ) : (
@@ -2303,19 +1622,6 @@ export default function AIChatDrawer() {
                           </div>
                         )}
                       </div>
-                      {messages.length > 0 && (
-                        <button
-                          onClick={() => {
-                            setMessages([]);
-                            setActiveCitationKey(null);
-                            conversationSummaryRef.current = '';
-                            summaryCoveredCountRef.current = 0;
-                            try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* ignore */ }
-                          }}
-                          className="shrink-0 text-[10px] font-semibold transition-opacity hover:opacity-80"
-                          style={{ color: theme.text3 }}
-                        >Golește</button>
-                      )}
                     </div>
 
                     {view === 'studio' && readySources.length > 0 && (

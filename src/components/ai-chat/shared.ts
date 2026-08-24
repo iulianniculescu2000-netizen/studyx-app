@@ -22,6 +22,14 @@ export type ChatMessage = {
   agentJobId?: string;
   /** When set, renders an "open" CTA that navigates to created content. */
   openRoute?: { route: string; label: string };
+  /**
+   * True when this user message carried a pasted image. The image itself is
+   * never persisted (avoids bloating chat history / localStorage with base64
+   * blobs), so "Regenerează" on the reply can't legitimately resend it — this
+   * flag lets it detect that case and say so instead of silently resending
+   * just the text half of the request.
+   */
+  hadImage?: boolean;
 };
 
 export type RecommendedAction = {

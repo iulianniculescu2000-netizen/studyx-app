@@ -27,6 +27,7 @@ import type {
 } from './types';
 import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile } from './UserProfile';
 import { validateJson } from './validator';
+import { verifyQuestionsMedically } from './medicalJudge';
 
 type ContextChunk = ChunkRecord | RetrievedChunk;
 export type ChatMode = 'grounded' | 'explain' | 'summarize' | 'diagram' | 'test' | 'mnemonic';
@@ -229,10 +230,15 @@ export class QuestionGenerator {
       ),
     });
 
+    const sanitized = sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion));
+    const judged = await verifyQuestionsMedically(sanitized, context.summary);
+
     return {
-      questions: sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion)),
+      questions: judged.questions,
       sources: uniqueSourceList((context.chunks as ContextChunk[] | undefined) ?? []),
       mode: request.mode ?? 'standard',
+      medicallyFlaggedCount: judged.flaggedCount,
+      flaggedReasons: judged.flaggedReasons,
     };
   }
 }
@@ -288,10 +294,15 @@ export async function generateQuestionsFromTopic(
     ),
   });
 
+  const sanitized = sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion));
+  const judged = await verifyQuestionsMedically(sanitized, undefined);
+
   return {
-    questions: sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion)),
+    questions: judged.questions,
     sources: [],
     mode: 'standard',
+    medicallyFlaggedCount: judged.flaggedCount,
+    flaggedReasons: judged.flaggedReasons,
   };
 }
 

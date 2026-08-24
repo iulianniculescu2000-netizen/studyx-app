@@ -110,8 +110,7 @@ export default function FolderView() {
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-6 rounded-2xl p-4"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+            className="glass-panel mb-6 rounded-2xl p-4"
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <input
@@ -186,8 +185,8 @@ export default function FolderView() {
                   <Link
                     key={child.id}
                     to={`/folder/${child.id}`}
-                    className="rounded-2xl p-4 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text }}
+                    className="glass-panel rounded-2xl p-4 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    style={{ color: theme.text }}
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{child.emoji}</span>
@@ -206,8 +205,7 @@ export default function FolderView() {
 
         {folderQuizzes.length === 0 && childFolders.length === 0 ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="text-center py-20 rounded-2xl"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+            className="glass-panel premium-shadow text-center py-20 rounded-2xl">
             <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center"
               style={{ background: `${accentColor}15` }}>
               <span style={{ fontSize: 28 }}>{folder?.emoji ?? '📋'}</span>
