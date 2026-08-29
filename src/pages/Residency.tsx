@@ -13,6 +13,7 @@ import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useSourceChapters } from '../hooks/useSourceChapters';
 import { dispatchDiscussChapter, dispatchGenerateFromChapter } from '../lib/ai/chapterEvents';
 import { importRezidentiatBank, isBankImported, isRezidentiatQuiz, REZIDENTIAT_BANKS, type RezidentiatBankInfo } from '../lib/rezidentiatBank';
+import { importRezidentiatLibraryBook, isLibraryBookImported, REZIDENTIAT_LIBRARY_BOOKS, type RezidentiatLibraryBook } from '../lib/rezidentiatLibrary';
 import RezidentiatTutorial, { REZIDENTIAT_TUTORIAL_OPEN_EVENT } from '../components/RezidentiatTutorial';
 import type { Quiz, QuestionStat } from '../types';
 
@@ -279,6 +280,119 @@ function RealBankAnnounceBubble({ theme, calmMotion }: { theme: Theme; calmMotio
   );
 }
 
+function RealLibraryAnnounceBubble({ theme, calmMotion }: { theme: Theme; calmMotion: boolean }) {
+  const addToast = useToastStore((state) => state.addToast);
+  const knowledgeSources = useAIStore((state) => state.knowledgeSources);
+  const pending = useMemo(
+    () => REZIDENTIAT_LIBRARY_BOOKS.filter((b) => !isLibraryBookImported(b)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [knowledgeSources],
+  );
+  const [importingId, setImportingId] = useState<string | null>(null);
+  const [importingAll, setImportingAll] = useState(false);
+
+  const handleImportOne = async (book: RezidentiatLibraryBook) => {
+    if (importingId || importingAll) return;
+    setImportingId(book.id);
+    try {
+      await importRezidentiatLibraryBook(book);
+      addToast(`${book.label} adăugată în bibliotecă.`, 'success', 5000);
+    } catch (error) {
+      addToast(`Import eșuat: ${error instanceof Error ? error.message : 'eroare necunoscută'}`, 'error', 5000);
+    } finally {
+      setImportingId(null);
+    }
+  };
+
+  const handleImportAll = async () => {
+    if (importingId || importingAll) return;
+    setImportingAll(true);
+    try {
+      for (const book of pending) {
+        await importRezidentiatLibraryBook(book);
+      }
+      addToast(`Gata! ${pending.length} cărți de referință adăugate în bibliotecă.`, 'success', 6000);
+    } catch (error) {
+      addToast(`Import eșuat: ${error instanceof Error ? error.message : 'eroare necunoscută'}`, 'error', 5000);
+    } finally {
+      setImportingAll(false);
+    }
+  };
+
+  if (pending.length === 0) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0, y: -16, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+        className="glass-panel premium-shadow relative mb-6 overflow-hidden rounded-[28px] p-6"
+      >
+        <div
+          className="pointer-events-none absolute -top-16 right-0 h-40 w-40 rounded-full opacity-30 blur-[60px]"
+          style={{ background: theme.accent }}
+        />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div
+              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl text-white"
+              style={{ background: theme.accent, boxShadow: `0 10px 24px ${theme.accent}44` }}
+            >
+              <BookOpen size={19} />
+            </div>
+            <div>
+              <div className="mb-1 text-sm font-black" style={{ color: theme.text }}>
+                {pending.length === 1 ? 'O carte de referință e gata de adăugat 📚' : `${pending.length} cărți de referință sunt gata de adăugat 📚`}
+              </div>
+              <p className="max-w-md text-xs font-medium" style={{ color: theme.text3 }}>
+                Antrenează AI-ul de rezidențiat pe capitolele reale — discuții și grile generate direct din text, calibrate pe capitol.
+              </p>
+            </div>
+          </div>
+          {pending.length > 1 && (
+            <motion.button
+              whileTap={calmMotion ? undefined : { scale: 0.97 }}
+              onClick={handleImportAll}
+              disabled={importingAll || !!importingId}
+              className="flex flex-shrink-0 items-center gap-2 rounded-2xl px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
+              style={{ background: theme.accent, opacity: importingAll ? 0.7 : 1 }}
+            >
+              {importingAll ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+              {importingAll ? 'Import...' : 'Adaugă tot'}
+            </motion.button>
+          )}
+        </div>
+
+        <div className="relative mt-4 space-y-2.5">
+          {pending.map((book) => (
+            <div
+              key={book.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3"
+              style={{ background: theme.surface2 }}
+            >
+              <div className="min-w-0">
+                <div className="text-[13px] font-bold" style={{ color: theme.text }}>{book.label}</div>
+                <div className="text-[11px]" style={{ color: theme.text3 }}>{book.description}</div>
+              </div>
+              <motion.button
+                whileTap={calmMotion ? undefined : { scale: 0.97 }}
+                onClick={() => handleImportOne(book)}
+                disabled={importingAll || !!importingId}
+                className="flex flex-shrink-0 items-center gap-1.5 rounded-xl px-4 py-2 text-[10.5px] font-black uppercase tracking-wider"
+                style={{ background: `${theme.accent}18`, color: theme.accent, opacity: importingId === book.id ? 0.7 : 1 }}
+              >
+                {importingId === book.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {importingId === book.id ? 'Import...' : 'Adaugă'}
+              </motion.button>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 /**
  * Real nested folders now back the imported banks (Rezidențiat → discipline →
  * specialty), so browsing is the app's own FolderView drill-down — no custom
@@ -380,6 +494,7 @@ export default function Residency() {
 
         <RealBankAnnounceBubble theme={theme} calmMotion={calmMotion} />
         <RealBankFolderLink theme={theme} calmMotion={calmMotion} />
+        <RealLibraryAnnounceBubble theme={theme} calmMotion={calmMotion} />
 
         {!residencyFolder ? (
           <motion.div

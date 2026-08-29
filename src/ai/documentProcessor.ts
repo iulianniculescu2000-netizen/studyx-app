@@ -3,6 +3,27 @@
  * Handles complete document reading without truncation
  */
 
+/**
+ * Recurring clinical-note field labels ("Tratament", "Etiologie", "Tablou
+ * clinic"...) that Romanian medical exam-prep books repeat under every single
+ * disease entry. They have the exact shape of a heading (short, no terminal
+ * punctuation, sometimes numbered) but aren't real topics — promoting them
+ * fragments one disease into a dozen fake "chapters" instead of one. Compared
+ * against `normalizeForHeadingMatch(...)` output, so case/diacritics don't
+ * matter here.
+ */
+const GENERIC_MEDICAL_FIELD_LABELS = new Set([
+  'DEFINITIE', 'CAUZE', 'FACTORI DE RISC', 'EPIDEMIOLOGIE', 'ETIOLOGIE',
+  'FIZIOPATOLOGIE', 'PATOGENEZA', 'MORFOPATOLOGIE', 'MECANISM',
+  'MECANISM DE ACTIUNE', 'TABLOU CLINIC', 'SIMPTOME', 'SEMNE',
+  'DIAGNOSTIC', 'DIAGNOSTIC DIFERENTIAL', 'INVESTIGATII', 'EVALUARE',
+  'TRATAMENT', 'UTILIZARE CLINICA', 'EFECTE ADVERSE', 'COMPLICATII',
+  'PROGNOSTIC', 'PROFILAXIE', 'DESCRIERE', 'ANATOMIE', 'FIZIOLOGIE',
+  'TIPURI', 'EXEMPLE', 'PUNCTE', 'PUNCTE CHEIE', 'REZUMAT',
+  'LECTURI SUPLIMENTARE', 'BIBLIOGRAFIE RECOMANDATA', 'INTREBARI',
+  'MODELE DE INTREBARI', 'NORMAL', 'LABORATOR', 'IMAGISTICA',
+]);
+
 export interface DocumentProcessingOptions {
   chunkSize?: number;
   overlap?: number;
@@ -242,11 +263,46 @@ export class DocumentProcessor {
     if (trimmed.length < 3 || trimmed.length > 80) return false;
     if (/[.!?]$/.test(trimmed)) return false;
 
-    if (/^(cap(itolul)?|chapter|partea|sec(ț|t)iunea)\s*[\divxlcIVXLC]+/i.test(trimmed)) return true;
-    if (/^\d+(\.\d+){0,3}\.?\s+[A-ZĂÂÎȘȚ]/.test(trimmed)) return true;
+    // Strip a leading "N." / "N.N" numbering before comparing against the
+    // generic-label blocklist — "6. Tratament" is the same recurring field as
+    // bare "Tratament".
+    const withoutNumbering = trimmed.replace(/^\d+(\.\d+){0,3}\.?\s+/, '');
+    if (GENERIC_MEDICAL_FIELD_LABELS.has(this.normalizeForHeadingMatch(withoutNumbering))) return false;
 
-    const hasLetters = /[a-zA-ZĂÂÎȘȚăâîșț]/.test(trimmed);
-    if (hasLetters && trimmed === trimmed.toUpperCase() && trimmed.length <= 60) return true;
+    if (/^(cap(itolul)?|chapter|partea|sec(ț|t)iunea)\s*[\divxlcIVXLC]+/i.test(trimmed)) return true;
+    if (/^\d+(\.\d+){0,3}\.?\s+[A-ZĂÂÎȘȚ]/.test(trimmed)) {
+      // Same numeric-prefix shape also matches numbered clinical facts under a
+      // disease topic ("2. Etiologie = ...", "3. Tratament= boala este
+      // autolimitată; steroizi topici") — common in exam-prep books structured
+      // as disease → numbered fields. A real numbered heading ("1.2 Diagnostic
+      // diferențial") is a short title: no "=" (field/value marker) and no
+      // internal comma (that's prose, not a title).
+      // Also reject cryptic short fragments ("2. 1/E") — too short to be a
+      // real title once the numbering is removed — and full declarative facts
+      // ("Cel mai frecvent defect cardiac congenital") — real topic names
+      // (disease/drug names) run 1-3 words, a recall-fact reads as a clause.
+      const wordCount = withoutNumbering.split(/\s+/).filter(Boolean).length;
+      return !trimmed.includes('=') && !trimmed.includes(',') && trimmed.length <= 50
+        && withoutNumbering.length >= 6 && wordCount <= 3;
+    }
+
+    // Figure/diagram text ("----LH", "?--DHEA", "47XXX") is mostly digits and
+    // punctuation with a token of letters riding along — trivially "already
+    // uppercase" since it has nothing lowercase to differ from. Counting actual
+    // letters (not just overall length) and rejecting comma/paren clutter
+    // filters that out while keeping real short all-caps titles.
+    const letterCount = (trimmed.match(/[a-zA-ZĂÂÎȘȚăâîșț]/g) ?? []).length;
+    const hasClutter = /[,()]/.test(trimmed);
+    // A running header split by OCR into single letters ("D E R M AT O L O G I
+    // E") reads as one word once collapsed, but as tokens it's mostly
+    // single-character fragments — a shape a real title never has.
+    const tokens = trimmed.split(/\s+/).filter(Boolean);
+    const singleCharTokens = tokens.filter((token) => token.length === 1).length;
+    const looksLetterSpaced = tokens.length >= 3 && singleCharTokens / tokens.length >= 0.5;
+    if (
+      letterCount >= 4 && !hasClutter && !looksLetterSpaced
+      && trimmed === trimmed.toUpperCase() && trimmed.length >= 5 && trimmed.length <= 60
+    ) return true;
 
     return false;
   }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
@@ -55,7 +55,8 @@ import AIOrb from './ai-chat/AIOrb';
 import FreeKeysNotice from './ai-chat/FreeKeysNotice';
 import StudioSelect from './ai-chat/StudioSelect';
 import { diversifyChunks, extractRelevantExcerpt } from './ai-chat/chatHelpers';
-import { CHAT_STORAGE_KEY, useChatMessages, type ChatThread } from './ai-chat/useChatMessages';
+import { CHAT_STORAGE_KEY, useChatMessages } from './ai-chat/useChatMessages';
+import { useChatThread } from './ai-chat/useChatThread';
 import { useScopedSource } from './ai-chat/useScopedSource';
 import { useAgentCommands } from './ai-chat/useAgentCommands';
 import { useStudioGeneration } from './ai-chat/useStudioGeneration';
@@ -132,10 +133,10 @@ export default function AIChatDrawer() {
   const { mobile } = useViewportProfile();
 
   const { scopedSource, setScopedSource, contextCacheRef } = useScopedSource();
-  // Rezidențiat gets its own isolated conversation — keyed off the route so it
-  // stays correct no matter how the drawer was opened (event, orb, shortcut).
-  const location = useLocation();
-  const chatThread: ChatThread = location.pathname.startsWith('/rezidentiat') ? 'rezidentiat' : 'general';
+  // Rezidențiat gets its own isolated conversation, live anywhere inside that
+  // section (the Residency page, its folders, its quizzes) — not just on
+  // the /rezidentiat route itself.
+  const chatThread = useChatThread();
   const { messages, setMessages, messagesRef, chatEndRef } = useChatMessages({ open, calmMotion, thread: chatThread });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
