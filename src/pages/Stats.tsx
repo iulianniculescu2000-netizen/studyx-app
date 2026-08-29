@@ -251,7 +251,7 @@ export default function Stats() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                  style={{ background: theme.accent }}>
                   <Brain size={16} className="text-white" />
                 </div>
                 <div>
@@ -275,7 +275,7 @@ export default function Stats() {
                     onClick={handleGenerateReport}
                     disabled={aiReportLoading}
                     className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60"
-                    style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                    style={{ background: theme.accent }}
                   >
                     {aiReportLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                     {aiReportLoading ? 'Analizez...' : 'Analizează'}
@@ -329,7 +329,7 @@ export default function Stats() {
             </p>
             <Link to="/quizzes"
               className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold text-white shadow-xl"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+              style={{ background: theme.accent }}>
               Începe acum
             </Link>
           </motion.div>
@@ -405,7 +405,7 @@ export default function Stats() {
                     <p className="text-[10px] font-medium leading-snug opacity-60" style={{ color: theme.text }}>{ach.desc}</p>
                     {ach.earned && (
                       <div className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center shadow-lg"
-                        style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                        style={{ background: theme.accent }}>
                         <span className="text-[10px] text-white font-black">✓</span>
                       </div>
                     )}

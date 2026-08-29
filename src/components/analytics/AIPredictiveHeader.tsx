@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Brain } from 'lucide-react';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface AIPredictiveHeaderProps {
   currentLevel: number;
@@ -7,6 +8,7 @@ interface AIPredictiveHeaderProps {
 }
 
 export default function AIPredictiveHeader({ currentLevel, subjects }: AIPredictiveHeaderProps) {
+  const theme = useTheme();
   return (
     <motion.div
       initial={{ opacity: 0, y: -20 }}
@@ -28,24 +30,27 @@ export default function AIPredictiveHeader({ currentLevel, subjects }: AIPredict
         >
           🧠
         </motion.div>
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-500 to-blue-500 bg-clip-text text-transparent">
+        <h1
+          className="text-3xl font-bold"
+          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}
+        >
           AI Predictive Analytics
         </h1>
       </div>
-      <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      <p className="max-w-2xl mx-auto" style={{ color: theme.text3 }}>
         Predicții inteligente pentru examene, identificarea golurilor de cunoștințe și căi de studiu optimizate AI
       </p>
-      
+
       <div className="flex justify-center gap-6 mt-6">
-        <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-          <Brain className="w-4 h-4 text-purple-600" />
-          <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+        <div className="flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: `${theme.accent}14`, border: `1px solid ${theme.accent}25` }}>
+          <Brain className="w-4 h-4" style={{ color: theme.accent }} />
+          <span className="text-sm font-medium" style={{ color: theme.accent }}>
             Nivel {currentLevel}
           </span>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+        <div className="flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
           <span className="text-lg">📚</span>
-          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+          <span className="text-sm font-medium" style={{ color: theme.text2 }}>
             {subjects.length} materii
           </span>
         </div>

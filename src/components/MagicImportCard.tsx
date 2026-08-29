@@ -77,7 +77,7 @@ export default function MagicImportCard() {
       >
         <span
           className="absolute right-4 top-4 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-white"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2 ?? theme.accent})` }}
+          style={{ background: theme.accent }}
         >
           Nou
         </span>
@@ -92,7 +92,7 @@ export default function MagicImportCard() {
             </p>
             <span
               className="mt-3 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-bold text-white"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2 ?? theme.accent})` }}
+              style={{ background: theme.accent }}
             >
               <Camera size={13} /> Începe acum
             </span>

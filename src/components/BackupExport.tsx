@@ -136,7 +136,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
                   className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
                   style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}30` }}>
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"
-                    style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff' }}>
+                    style={{ background: theme.accent, color: '#fff' }}>
                     <Download size={20} />
                   </div>
                   <div>

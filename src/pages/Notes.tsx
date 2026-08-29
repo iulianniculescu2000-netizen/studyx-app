@@ -116,7 +116,7 @@ export default function Notes() {
                 }}
                 className="flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold flex-shrink-0"
                 style={{
-                  background: aiConverting ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                  background: aiConverting ? theme.surface2 : theme.accent,
                   color: aiConverting ? theme.text3 : '#fff',
                   border: `1px solid ${aiConverting ? theme.border : 'transparent'}`,
                 }}>
@@ -179,7 +179,7 @@ export default function Notes() {
             </p>
             <Link to="/quizzes"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+              style={{ background: theme.accent }}>
               <BookOpen size={15} /> Deschide o grilă
             </Link>
           </motion.div>

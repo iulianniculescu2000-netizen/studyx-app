@@ -114,7 +114,7 @@ Comportament:
             <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ borderBottom: `1px solid ${theme.border}` }}>
               <div
                 className="w-8 h-8 rounded-xl flex items-center justify-center"
-                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                style={{ background: theme.accent }}
               >
                 <Bot size={15} className="text-white" />
               </div>
@@ -164,7 +164,7 @@ Comportament:
                     className="max-w-[88%] px-3.5 py-2.5 text-sm leading-relaxed"
                     style={{
                       background: message.role === 'user'
-                        ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`
+                        ? theme.accent
                         : theme.surface2,
                       color: message.role === 'user' ? '#fff' : theme.text,
                       borderRadius: message.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
@@ -215,7 +215,7 @@ Comportament:
                   className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                   style={{
                     background: chatInput.trim() && !chatLoading
-                      ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`
+                      ? theme.accent
                       : theme.surface2,
                     color: chatInput.trim() && !chatLoading ? '#fff' : theme.text3,
                   }}

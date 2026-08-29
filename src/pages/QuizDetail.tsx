@@ -24,6 +24,7 @@ import {
 import QuizImage from '../components/QuizImage';
 import { useAIStore } from '../store/aiStore';
 import { useQuizStore } from '../store/quizStore';
+import { useFolderStore } from '../store/folderStore';
 import { useStatsStore } from '../store/statsStore';
 import { useUIStore } from '../store/uiStore';
 import { HERO_COLOR_MAP } from '../theme/colorMaps';
@@ -69,6 +70,14 @@ export default function QuizDetail() {
   const unlockFloatingUI = useUIStore((state) => state.unlockFloatingUI);
 
   const quiz = quizzes.find((candidate) => candidate.id === id);
+  const folders = useFolderStore((state) => state.folders);
+  // "Back" goes to wherever this quiz actually lives, not always the flat
+  // list — a quiz opened from deep in a nested folder (Rezidențiat and its
+  // subfolders, or any user-made subfolder) used to always bounce to "Toate
+  // grilele", losing the user's place in the tree.
+  const backFolder = quiz?.folderId ? folders.find((f) => f.id === quiz.folderId) : null;
+  const backHref = backFolder ? `/folder/${backFolder.id}` : '/quizzes';
+  const backLabel = backFolder ? backFolder.name : 'Toate grilele';
 
   // A flashcard deck must always study as flashcards — if one is opened via the
   // quiz-detail route (old links, search), send it to its real session.
@@ -282,12 +291,12 @@ export default function QuizDetail() {
         <div className="max-w-2xl mx-auto">
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
             <Link
-              to="/quizzes"
+              to={backHref}
               className="flex items-center gap-1.5 text-sm hover:opacity-80 transition-all"
               style={{ color: theme.text3 }}
             >
               <ChevronLeft size={15} />
-              Toate grilele
+              {backLabel}
             </Link>
           </motion.div>
 
@@ -408,7 +417,7 @@ export default function QuizDetail() {
                     to={`/play/${quiz.id}`}
                     state={{ practiceCount: effectiveQuickCount }}
                     className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                    style={{ background: theme.accent }}
                   >
                     <Play size={14} fill="white" />
                     Pornește {effectiveQuickCount}
@@ -491,7 +500,7 @@ export default function QuizDetail() {
               <div className="flex items-center gap-3">
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                  style={{ background: theme.accent }}
                 >
                   <Bot size={20} className="text-white" />
                 </div>

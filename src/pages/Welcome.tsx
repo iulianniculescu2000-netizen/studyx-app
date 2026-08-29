@@ -16,6 +16,19 @@ export default function Welcome({ onBack }: Props) {
   const [name, setName] = useState('');
   const [step, setStep] = useState<'name' | 'theme'>('name');
   const [error, setError] = useState('');
+  // 'glass' is the only UI 2.0 entry in THEME_LIST — everything else (bigsur,
+  // obsidian, pearl, aurora, midnight, amber, auto) is UI 1.0, same split as
+  // ThemeQuickSwitcher already uses in the sidebar.
+  const [uiGen, setUiGen] = useState<'v2' | 'v1'>(() => (themeId === 'glass' ? 'v2' : 'v1'));
+  const glassEntries = THEME_LIST.filter((entry) => entry.id === 'glass');
+  const legacyEntries = THEME_LIST.filter((entry) => entry.id !== 'glass');
+  const visibleThemes = uiGen === 'v2' ? glassEntries : legacyEntries;
+
+  const handleGenChange = (gen: 'v2' | 'v1') => {
+    setUiGen(gen);
+    if (gen === 'v2') setTheme('glass');
+    else if (themeId === 'glass') setTheme('obsidian');
+  };
 
   const handleNameSubmit = () => {
     const trimmed = name.trim();
@@ -121,7 +134,7 @@ export default function Welcome({ onBack }: Props) {
                           transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                           className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold text-white"
                           style={{
-                            background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
+                            background: theme.accent,
                             boxShadow: `0 6px 20px ${theme.accent}35`,
                           }}>
                           {avatarLetter}
@@ -182,7 +195,7 @@ export default function Welcome({ onBack }: Props) {
                 whileTap={{ scale: 0.97 }}
                 className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-opacity"
                 style={{
-                  background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
+                  background: theme.accent,
                   boxShadow: `0 10px 30px ${theme.accent}35`,
                   opacity: name.trim().length < 2 ? 0.45 : 1,
                 }}>
@@ -228,7 +241,7 @@ export default function Welcome({ onBack }: Props) {
                     }}
                     className="relative w-24 h-24 rounded-full flex items-center justify-center"
                     style={{
-                      background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
+                      background: theme.accent,
                       boxShadow: `0 16px 48px ${theme.accent}45, 0 0 0 4px ${theme.accent}18`,
                     }}>
                     <span className="text-4xl font-black text-white select-none"
@@ -261,13 +274,57 @@ export default function Welcome({ onBack }: Props) {
                 </motion.p>
               </div>
 
+              {/* UI generation switch */}
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="flex justify-center mb-4">
+                <div className="inline-flex rounded-2xl p-1 gap-1"
+                  style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+                  {([
+                    { id: 'v2' as const, label: 'UI II · Glass', hint: 'Nou' },
+                    { id: 'v1' as const, label: 'UI I · Clasic', hint: null },
+                  ]).map((gen) => {
+                    const active = uiGen === gen.id;
+                    return (
+                      <button
+                        key={gen.id}
+                        onClick={() => handleGenChange(gen.id)}
+                        className="relative px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-colors"
+                        style={{ color: active ? '#fff' : theme.text3 }}>
+                        {active && (
+                          <motion.div
+                            layoutId="ui-gen-pill"
+                            className="absolute inset-0 rounded-xl"
+                            style={{ background: theme.accent, boxShadow: `0 6px 18px ${theme.accent}40` }}
+                            transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+                          />
+                        )}
+                        <span className="relative flex items-center gap-1.5">
+                          {gen.id === 'v2' && <Sparkles size={13} />}
+                          {gen.label}
+                          {gen.hint && (
+                            <span className="rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider"
+                              style={{ background: active ? 'rgba(255,255,255,0.25)' : `${theme.accent}18`, color: active ? '#fff' : theme.accent }}>
+                              {gen.hint}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+
               {/* Theme grid */}
               <motion.div
-                initial={{ opacity: 0, y: 16 }}
+                key={uiGen}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.35 }}
-                className="grid grid-cols-2 gap-2.5 mb-5">
-                {THEME_LIST.map((t, i) => {
+                transition={{ delay: 0.05, duration: 0.3 }}
+                className={`grid gap-2.5 mb-5 ${uiGen === 'v2' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {visibleThemes.map((t, i) => {
                   const isActive = themeId === t.id;
                   return (
                     <motion.button
@@ -328,7 +385,7 @@ export default function Welcome({ onBack }: Props) {
                 whileTap={{ scale: 0.97 }}
                 className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
                 style={{
-                  background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
+                  background: theme.accent,
                   boxShadow: `0 10px 30px ${theme.accent}40`,
                 }}>
                 <Sparkles size={17} />

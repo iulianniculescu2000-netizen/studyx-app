@@ -406,7 +406,7 @@ export default function Settings() {
                           <motion.span
                             layoutId="settings-ui-tab-thumb"
                             className="absolute inset-0 rounded-[11px]"
-                            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                            style={{ background: theme.accent }}
                             transition={{ type: 'spring', stiffness: 500, damping: 34 }}
                           />
                         )}
@@ -462,7 +462,7 @@ export default function Settings() {
                   onClick={() => setPerformanceMode(mode)}
                   className="rounded-xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
                   style={{
-                    background: performanceMode === mode ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
+                    background: performanceMode === mode ? theme.accent : theme.surface,
                     color: performanceMode === mode ? '#fff' : theme.text,
                     border: `1px solid ${performanceMode === mode ? 'transparent' : theme.border}`,
                   }}

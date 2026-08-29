@@ -44,7 +44,7 @@ describe('AI store integration', () => {
     useAIStore.getState().setProvider('google');
 
     expect(useAIStore.getState().provider).toBe('google');
-    expect(useAIStore.getState().model).toBe('gemini-2.5-flash');
+    expect(useAIStore.getState().model).toBe('gemini-3.6-flash');
     expect(useAIStore.getState().hasKey).toBe(false);
 
     // Wrong prefix for Google → invalid.

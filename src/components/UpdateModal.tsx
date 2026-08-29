@@ -622,7 +622,7 @@ export default function UpdateModal() {
                                              style={{
                                                width: '100%', padding: '10px 16px', borderRadius: 10, border: 'none',
                                                cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff',
-                                               background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                                               background: theme.accent,
                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                                                boxShadow: `0 4px 12px ${theme.accent}40`,
                                              }}
@@ -644,7 +644,7 @@ export default function UpdateModal() {
                                           </div>
                                           <div style={{ height: 6, borderRadius: 3, background: theme.surface2, overflow: 'hidden' }}>
                                             <motion.div
-                                              style={{ height: '100%', borderRadius: 3, background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                                              style={{ height: '100%', borderRadius: 3, background: theme.accent }}
                                               animate={{ width: `${downloadPercent}%` }}
                                               transition={{ duration: 0.2 }}
                                             />

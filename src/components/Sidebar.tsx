@@ -7,7 +7,7 @@ import {
   Plus, Pencil, Trash2, Check, X, RefreshCw, LogOut,
   PanelLeftOpen, StickyNote, CreditCard,
   Download, ArrowDownCircle, RotateCcw, AlertCircle,
-  Settings, Brain, Database, Stethoscope,
+  Settings, Brain, Database, Stethoscope, Trophy, TrendingUp,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
@@ -23,6 +23,7 @@ import Logo from './Logo';
 import ThemedSelect from './ThemedSelect';
 import ThemeQuickSwitcher from './ThemeQuickSwitcher';
 import { isFlashcardDeck } from '../lib/deckKind';
+import { isRezidentiatQuiz } from '../lib/rezidentiatBank';
 import { suggestFolderAppearance } from '../lib/folderAppearance';
 import type { QuizColor } from '../types';
 
@@ -391,7 +392,7 @@ function NewFolderModal({
               width: '100%', padding: '16px', borderRadius: 18, border: 'none', fontWeight: 900, fontSize: 14,
               textTransform: 'uppercase', letterSpacing: '0.05em',
               cursor: canCreate ? 'pointer' : 'not-allowed', opacity: canCreate ? 1 : 0.5,
-              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff',
+              background: theme.accent, color: '#fff',
               boxShadow: `0 12px 30px ${theme.accent}40`,
             }}>Creează folder</motion.button>
         </div>
@@ -508,13 +509,16 @@ export default function Sidebar() {
 
   const totalAnswered = Object.values(questionStats).reduce((a, s) => a + s.timesCorrect + s.timesWrong, 0);
   const medicalRank = totalAnswered > 1000 ? 'MEDIC PRIMAR' : totalAnswered > 500 ? 'MEDIC SPECIALIST' : totalAnswered > 100 ? 'MEDIC REZIDENT' : 'STUDENT LA MEDICINĂ';
-  const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived && !isFlashcardDeck(q)).length, [quizzes]);
-  const newQuizCount = useMemo(() => quizzes.filter(q => now - q.createdAt < 86400000 * 2).length, [quizzes, now]);
-  const uncategorizedCount = useMemo(() => quizzes.filter(q => !q.folderId).length, [quizzes]);
+  // Rezidențiat content (real bank + exam-style AI packs) is browsed only from
+  // the Rezidențiat page — every sidebar count for "Toate grilele"/folders
+  // stays scoped to the year's coursework, matching what QuizList itself shows.
+  const activeQuizCount = useMemo(() => quizzes.filter(q => !q.archived && !isFlashcardDeck(q) && !isRezidentiatQuiz(q)).length, [quizzes]);
+  const newQuizCount = useMemo(() => quizzes.filter(q => now - q.createdAt < 86400000 * 2 && !isRezidentiatQuiz(q)).length, [quizzes, now]);
+  const uncategorizedCount = useMemo(() => quizzes.filter(q => !q.folderId && !isRezidentiatQuiz(q)).length, [quizzes]);
   const folderQuizCount = useMemo(() => {
     const counts = new Map<string, number>();
     for (const quiz of quizzes) {
-      if (!quiz.folderId) continue;
+      if (!quiz.folderId || isRezidentiatQuiz(quiz)) continue;
       counts.set(quiz.folderId, (counts.get(quiz.folderId) ?? 0) + 1);
     }
     return counts;
@@ -617,8 +621,13 @@ export default function Sidebar() {
   };
 
   const visibleFolders = useMemo(() => {
+    // The "Rezidențiat" quiz folder holds only content already browsable (and
+    // now exclusively so) from the dedicated Rezidențiat page — listing it
+    // here too would show a folder whose quiz count reads 0 (folderQuizCount
+    // excludes rezidențiat quizzes on purpose), which looks like a bug.
+    const regularFolders = folders.filter((folder) => folder.name.trim().toLowerCase() !== 'rezidențiat');
     const byParent = new Map<string, typeof folders>();
-    folders.forEach((folder) => {
+    regularFolders.forEach((folder) => {
       const key = folder.parentId ?? '__root__';
       byParent.set(key, [...(byParent.get(key) ?? []), folder]);
     });
@@ -676,7 +685,7 @@ export default function Sidebar() {
           <Tip label={username ?? ''}>
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-xs mx-auto cursor-pointer shadow-lg"
-              style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
+              style={{ background: theme.accent }}
             >
               {avatarLetter}
             </div>
@@ -685,7 +694,7 @@ export default function Sidebar() {
           <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-base flex-shrink-0 shadow-lg"
-              style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)` }}
+              style={{ background: theme.accent }}
             >
               {avatarLetter}
             </div>
@@ -810,6 +819,12 @@ export default function Sidebar() {
                 <NavItem to="/stats" icon={<BarChart3 size={17} />} label="Statistici" collapsed hue="#5AC8FA" tiltIndex={4} />
               </div>
             </Tip>
+            <Tip label="Realizări">
+              <NavItem to="/gamification" icon={<Trophy size={17} />} label="Realizări" collapsed hue="#FF9F0A" tiltIndex={0} />
+            </Tip>
+            <Tip label="Perspective AI">
+              <NavItem to="/analytics" icon={<TrendingUp size={17} />} label="Perspective AI" collapsed hue="#5E5CE6" tiltIndex={1} />
+            </Tip>
 
             {/* zone divider: Studiu ↑ / Resurse ↓ — a text label wouldn't fit collapsed, so a hairline stands in for it */}
             <div className="my-1.5 mx-3" style={{ height: 1, background: theme.border }} />
@@ -893,6 +908,8 @@ export default function Sidebar() {
               />
             </div>
             <div data-tutorial="nav-stats"><NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} hue="#5AC8FA" tiltIndex={4} /></div>
+            <NavItem to="/gamification" icon={<Trophy size={16} />} label="Realizări" collapsed={false} hue="#FF9F0A" tiltIndex={0} />
+            <NavItem to="/analytics" icon={<TrendingUp size={16} />} label="Perspective AI" collapsed={false} hue="#5E5CE6" tiltIndex={1} />
 
             <div className="mb-1 mt-4 px-2.5 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3, opacity: 0.55 }}>
               Resurse

@@ -69,7 +69,7 @@ export default function FreeKeysNotice({
       <button
         onClick={goToSettings}
         className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] transition-opacity hover:opacity-85"
-        style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff' }}
+        style={{ background: theme.accent, color: '#fff' }}
       >
         {hasNone ? 'Adaugă cheile gratuite' : 'Completează cheile'}
         <ArrowRight size={12} />

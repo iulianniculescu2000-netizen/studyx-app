@@ -23,16 +23,27 @@ async function extractApiErrorMessage(res: Response): Promise<string> {
   const body = await res.json().catch(() => null) as
     | { error?: { message?: string } | string; detail?: string | Array<{ msg?: string }>; message?: string }
     | null;
+  let message: string | null = null;
   if (body) {
-    if (typeof body.error === 'string') return body.error;
-    if (body.error?.message) return body.error.message;
-    if (typeof body.detail === 'string') return body.detail;
-    if (Array.isArray(body.detail) && body.detail.length > 0) {
-      return body.detail.map((d) => d.msg).filter(Boolean).join('; ') || JSON.stringify(body.detail);
+    if (typeof body.error === 'string') message = body.error;
+    else if (body.error?.message) message = body.error.message;
+    else if (typeof body.detail === 'string') message = body.detail;
+    else if (Array.isArray(body.detail) && body.detail.length > 0) {
+      message = body.detail.map((d) => d.msg).filter(Boolean).join('; ') || JSON.stringify(body.detail);
     }
-    if (body.message) return body.message;
+    else if (body.message) message = body.message;
   }
-  return res.statusText || `HTTP ${res.status}`;
+  message ??= res.statusText || `HTTP ${res.status}`;
+
+  // 402 is the one status where the raw provider text (usually terse English,
+  // e.g. Google's "Payment required to access this resource") leaves the user
+  // with no idea what to actually do — unlike 401/403/429, which already get
+  // a clear Romanian message elsewhere. Append actionable guidance instead of
+  // just passing the raw string through to the chat bubble.
+  if (res.status === 402) {
+    return `${message} — cheia API a atins limita gratuită și necesită activarea facturării la provider, sau schimbă providerul din Setări AI.`;
+  }
+  return message;
 }
 
 export type GroqMessagePart =
@@ -125,7 +136,7 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
 /** Default model to use when we fall back to another provider mid-request. */
 const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras', string> = {
   groq: 'openai/gpt-oss-120b',
-  google: 'gemini-2.5-flash',
+  google: 'gemini-3.6-flash',
   cerebras: 'gpt-oss-120b',
 };
 
@@ -268,41 +279,56 @@ export async function validateApiKey(
   if (!cleanKey) return { ok: false, error: 'Cheia este goală.' };
 
   const config = getProviderConfig(provider);
-  const testModel =
-    provider === 'google' ? 'gemini-2.0-flash' : provider === 'cerebras' ? 'gpt-oss-120b' : 'openai/gpt-oss-20b';
+  let testModel =
+    provider === 'google' ? 'gemini-3.6-flash' : provider === 'cerebras' ? 'gpt-oss-120b' : 'openai/gpt-oss-20b';
 
-  try {
-    const res = await fetch(config.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleanKey}` },
-      body: JSON.stringify({
-        model: testModel,
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 1,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
+  // A single hardcoded test model can go dead on the provider's own schedule
+  // (the same class of problem modelHealing.ts guards live requests against —
+  // Google/Groq/Cerebras all retire model IDs without warning) and make a
+  // perfectly valid key look "rejected" here even though other models work
+  // fine on it. Try one fallback candidate before concluding the KEY itself
+  // is bad, not just this particular model.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const res = await fetch(config.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleanKey}` },
+        body: JSON.stringify({
+          model: testModel,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
 
-    if (res.ok) return { ok: true };
+      if (res.ok) return { ok: true };
 
-    const message = await extractApiErrorMessage(res);
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: `Cheie respinsă de ${config.name} (${res.status}). Verifică sau regenerează cheia.` };
+      const message = await extractApiErrorMessage(res);
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, error: `Cheie respinsă de ${config.name} (${res.status}). Verifică sau regenerează cheia.` };
+      }
+      if (res.status === 429) {
+        // A 429 only happens AFTER the key authenticates (an invalid key returns
+        // 401/403), so the key is valid — it just hit the rate limit during this
+        // test ping. Treat as success with a soft note, not a hard failure.
+        return { ok: true, warning: 'Cheie validă. Ai atins temporar limita de rate (free tier) — AI-ul merge, doar lasă câteva secunde între cereri.' };
+      }
+
+      const fallback = attempt === 0 ? nextCandidateModel(provider, testModel) : null;
+      if (fallback) {
+        testModel = fallback;
+        continue;
+      }
+      return { ok: false, error: `Eroare ${config.name} (${res.status}): ${message}` };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        return { ok: false, error: 'Verificarea a expirat — verifică conexiunea la internet.' };
+      }
+      return { ok: false, error: error instanceof Error ? error.message : 'Nu am putut contacta serverul AI.' };
     }
-    if (res.status === 429) {
-      // A 429 only happens AFTER the key authenticates (an invalid key returns
-      // 401/403), so the key is valid — it just hit the rate limit during this
-      // test ping. Treat as success with a soft note, not a hard failure.
-      return { ok: true, warning: 'Cheie validă. Ai atins temporar limita de rate (free tier) — AI-ul merge, doar lasă câteva secunde între cereri.' };
-    }
-    return { ok: false, error: `Eroare ${config.name} (${res.status}): ${message}` };
-  } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      return { ok: false, error: 'Verificarea a expirat — verifică conexiunea la internet.' };
-    }
-    return { ok: false, error: error instanceof Error ? error.message : 'Nu am putut contacta serverul AI.' };
   }
+  return { ok: false, error: `Eroare ${config.name}: nu am putut valida cheia.` };
 }
 
 function extractJsonArray(raw: string): string | null {

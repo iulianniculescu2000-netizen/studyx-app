@@ -153,7 +153,7 @@ export default function ExamSplitModal({ folderName, folderId, color, category, 
                 onClick={handleConfirm}
                 whileTap={{ scale: 0.98 }}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                style={{ background: theme.accent }}
               >
                 <Check size={14} /> Creează {plan.chunkCount} sesiuni
               </motion.button>

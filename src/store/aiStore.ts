@@ -14,9 +14,15 @@ export type AIModel =
   | 'mixtral-8x7b-32768'
   | 'openai/gpt-oss-120b'
   | 'openai/gpt-oss-20b'
+  // Retired by Google (confirmed live, 2026-08-24: all three 404 "no longer
+  // available to new users") — same reasoning as the Groq entries above, kept
+  // only so persisted state still type-checks and migrates cleanly.
   | 'gemini-2.5-flash'
   | 'gemini-2.0-flash'
   | 'gemini-2.5-pro'
+  | 'gemini-3.6-flash'
+  | 'gemini-3.5-flash'
+  | 'gemini-3.1-pro-preview'
   | 'gpt-oss-120b'
   | 'qwen-3-235b-a22b-instruct-2507'
   | 'zai-glm-4.7';
@@ -110,6 +116,14 @@ export interface AIState {
   apiKey: string;
   /** Per-provider keys so switching Groq↔Google keeps each key intact. */
   providerKeys: Partial<Record<AIProvider, string>>;
+  /**
+   * Per-provider model choice — mirrors providerKeys so a background model
+   * check (e.g. "Actualizează" in Settings, which verifies every configured
+   * provider, not just the active one) can fix a provider you aren't
+   * currently using and have it actually stick the next time you switch to it,
+   * instead of resetting to the static default.
+   */
+  providerModels: Partial<Record<AIProvider, AIModel>>;
   provider: AIProvider;
   model: AIModel;
   hasKey: boolean;
@@ -132,6 +146,8 @@ export interface AIActions {
   setApiKey: (apiKey: string) => void;
   setProvider: (provider: AIProvider) => void;
   setModel: (model: AIModel) => void;
+  /** Sets the model for ANY provider, not just the active one — used by the multi-provider model check. Keeps `model` in sync only if that provider happens to be active right now. */
+  setProviderModel: (provider: AIProvider, model: AIModel) => void;
   setHasKey: (hasKey: boolean) => void;
   addKnowledgeSource: (
     name: string,
@@ -157,7 +173,7 @@ export interface AIActions {
 const DEFAULT_MODEL: AIModel = 'openai/gpt-oss-120b';
 const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
   groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
-  google: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
+  google: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
   cerebras: ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507', 'zai-glm-4.7'],
 };
 
@@ -174,7 +190,7 @@ function isValidProviderKey(provider: AIProvider, apiKey: string) {
 }
 
 function getDefaultModelForProvider(provider: AIProvider): AIModel {
-  if (provider === 'google') return 'gemini-2.5-flash';
+  if (provider === 'google') return 'gemini-3.6-flash';
   if (provider === 'cerebras') return 'gpt-oss-120b';
   // groq
   return DEFAULT_MODEL;
@@ -194,6 +210,7 @@ const createDefaultState = (): AIState => ({
   error: null,
   apiKey: '',
   providerKeys: {},
+  providerModels: {},
   provider: 'groq',
   model: DEFAULT_MODEL,
   hasKey: false,
@@ -357,7 +374,10 @@ export const useAIStore = create<AIState & AIActions>()(
         },
 
         setProvider: (provider) => {
-          const nextModel = getDefaultModelForProvider(provider);
+          // Prefer a model already confirmed working for this provider (set by
+          // the user, or by the multi-provider model check) over the static
+          // default, so a background fix actually sticks on switch-back.
+          const nextModel = normalizeProviderModel(provider, get().providerModels[provider] ?? getDefaultModelForProvider(provider));
           // Load the key already saved for this provider so the user doesn't
           // have to re-enter it every time they switch Groq↔Google.
           const nextKey = get().providerKeys[provider] ?? '';
@@ -369,7 +389,15 @@ export const useAIStore = create<AIState & AIActions>()(
           }, false, 'ai/setProvider');
         },
 
-        setModel: (model) => set({ model }, false, 'ai/setModel'),
+        setModel: (model) => set((state) => ({
+          model,
+          providerModels: { ...state.providerModels, [state.provider]: model },
+        }), false, 'ai/setModel'),
+
+        setProviderModel: (provider, model) => set((state) => ({
+          providerModels: { ...state.providerModels, [provider]: model },
+          ...(state.provider === provider ? { model } : {}),
+        }), false, 'ai/setProviderModel'),
         setHasKey: (hasKey) => set({ hasKey }, false, 'ai/setHasKey'),
 
         addKnowledgeSource: async (name, text, type = 'txt', options = {}) => {
@@ -641,6 +669,7 @@ export const useAIStore = create<AIState & AIActions>()(
         partialize: (state) => ({
           apiKey: state.apiKey,
           providerKeys: state.providerKeys,
+          providerModels: state.providerModels,
           provider: state.provider,
           model: state.model,
           hasKey: state.hasKey,
@@ -659,6 +688,17 @@ export const useAIStore = create<AIState & AIActions>()(
           }
           state.provider = state.provider ?? 'groq';
           state.model = normalizeProviderModel(state.provider, state.model);
+          // Drop any per-provider model that's since been retired (same reasoning
+          // as the active-model normalize above) — a stale entry here would
+          // silently resurface a dead model the next time that provider becomes active.
+          const cleanedProviderModels: Partial<Record<AIProvider, AIModel>> = {};
+          for (const [key, value] of Object.entries(state.providerModels ?? {})) {
+            const providerKey = key as AIProvider;
+            if (value && PROVIDER_MODELS[providerKey]?.includes(value)) {
+              cleanedProviderModels[providerKey] = value;
+            }
+          }
+          state.providerModels = cleanedProviderModels;
           // Migrate the old single-key storage into per-provider keys. Seed the
           // active provider's slot from the legacy key (only if it's the right
           // format for that provider), then make apiKey reflect the active slot.

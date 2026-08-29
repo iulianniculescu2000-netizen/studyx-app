@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
@@ -10,6 +10,7 @@ import {
   CreditCard,
   FolderOpen,
   ImageIcon,
+  Info,
   Layers3,
   ListChecks,
   Loader2,
@@ -54,7 +55,7 @@ import AIOrb from './ai-chat/AIOrb';
 import FreeKeysNotice from './ai-chat/FreeKeysNotice';
 import StudioSelect from './ai-chat/StudioSelect';
 import { diversifyChunks, extractRelevantExcerpt } from './ai-chat/chatHelpers';
-import { CHAT_STORAGE_KEY, useChatMessages } from './ai-chat/useChatMessages';
+import { CHAT_STORAGE_KEY, useChatMessages, type ChatThread } from './ai-chat/useChatMessages';
 import { useScopedSource } from './ai-chat/useScopedSource';
 import { useAgentCommands } from './ai-chat/useAgentCommands';
 import { useStudioGeneration } from './ai-chat/useStudioGeneration';
@@ -131,7 +132,11 @@ export default function AIChatDrawer() {
   const { mobile } = useViewportProfile();
 
   const { scopedSource, setScopedSource, contextCacheRef } = useScopedSource();
-  const { messages, setMessages, messagesRef, chatEndRef } = useChatMessages({ open, calmMotion });
+  // Rezidențiat gets its own isolated conversation — keyed off the route so it
+  // stays correct no matter how the drawer was opened (event, orb, shortcut).
+  const location = useLocation();
+  const chatThread: ChatThread = location.pathname.startsWith('/rezidentiat') ? 'rezidentiat' : 'general';
+  const { messages, setMessages, messagesRef, chatEndRef } = useChatMessages({ open, calmMotion, thread: chatThread });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [thinkingPhase, setThinkingPhase] = useState<string | null>(null);
@@ -141,6 +146,8 @@ export default function AIChatDrawer() {
   const navigate = useNavigate();
   const [activeCitationKey, setActiveCitationKey] = useState<string | null>(null);
   const [view, setView] = useState<DrawerView>('chat');
+  /** Studio's "how it works" intro + the two static info cards, collapsed by default so the drawer opens straight to the controls you actually use. */
+  const [studioInfoOpen, setStudioInfoOpen] = useState(false);
   /** Chat sheet widened to studio size — schemas and tables need the room. */
   const [wideChat, setWideChat] = useState(false);
   /** Secondary header controls (widen, regenerate, clear) live behind one "⋯" instead of competing icons. */
@@ -267,11 +274,16 @@ export default function AIChatDrawer() {
         heading?: string;
         resetConversation?: boolean;
         view?: DrawerView;
+        examStyle?: 'residency';
       }>).detail;
 
       if (!detail?.prompt) return;
       if (detail.open) setChatOpen(true);
       if (detail.view) setView(detail.view);
+      // Explicit request (Residency page) — the Studio's exam-style track is
+      // its own toggle, not derived from the prompt text, so a chapter
+      // generation dispatched as exam-scoped has to set it directly.
+      if (detail.examStyle) setStudioExamStyle(detail.examStyle);
       // Only a chapter-scoped event may move the Studio's chapter selection.
       // Resetting unconditionally meant any plain chat prompt ("Discută
       // răspunsul", "Debrief cu AI Coach") silently threw away a chapter the
@@ -307,7 +319,7 @@ export default function AIChatDrawer() {
 
     window.addEventListener('studyx:ai-prompt', handler as EventListener);
     return () => window.removeEventListener('studyx:ai-prompt', handler as EventListener);
-  }, [contextCacheRef, setChatOpen, setMessages, setScopedSource, setStudioHeading, setStudioSourceId]);
+  }, [contextCacheRef, setChatOpen, setMessages, setScopedSource, setStudioHeading, setStudioSourceId, setStudioExamStyle]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -601,7 +613,8 @@ export default function AIChatDrawer() {
     setActiveCitationKey(null);
     conversationSummaryRef.current = '';
     summaryCoveredCountRef.current = 0;
-    try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* ignore */ }
+    const activeStorageKey = chatThread === 'rezidentiat' ? `${CHAT_STORAGE_KEY}:rezidentiat` : CHAT_STORAGE_KEY;
+    try { localStorage.removeItem(activeStorageKey); } catch { /* ignore */ }
   };
 
   // ── Per-response actions (hover) ───────────────────────────────────────────
@@ -864,7 +877,7 @@ export default function AIChatDrawer() {
                 <div
                   className={`max-w-[84%] rounded-[24px] p-4 text-sm leading-relaxed shadow-sm ${message.role === 'user' ? 'text-white' : ''}`}
                   style={{
-                    background: message.role === 'user' ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                    background: message.role === 'user' ? theme.accent : theme.surface2,
                     color: message.role === 'user' ? '#fff' : theme.text,
                     borderRadius: message.role === 'user' ? '24px 24px 8px 24px' : '24px 24px 24px 8px',
                     border: message.role === 'assistant' ? `1px solid ${theme.border}` : 'none',
@@ -909,7 +922,7 @@ export default function AIChatDrawer() {
                             navigate(target.route);
                           }}
                           className="press-feedback mt-2.5 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
-                          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 20px ${theme.accent}33` }}
+                          style={{ background: theme.accent, boxShadow: `0 8px 20px ${theme.accent}33` }}
                         >
                           <ArrowRight size={14} /> {agentResults[message.agentJobId].label}
                         </button>
@@ -921,7 +934,7 @@ export default function AIChatDrawer() {
                     <button
                       onClick={() => { setChatOpen(false); navigate(message.openRoute!.route); }}
                       className="press-feedback mt-3 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
-                      style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 20px ${theme.accent}33` }}
+                      style={{ background: theme.accent, boxShadow: `0 8px 20px ${theme.accent}33` }}
                     >
                       <ArrowRight size={14} /> {message.openRoute.label}
                     </button>
@@ -1069,7 +1082,7 @@ export default function AIChatDrawer() {
           style={{
             // Sit above the mobile bottom-nav so it doesn't cover the last tab.
             bottom: mobile ? 'calc(74px + env(safe-area-inset-bottom, 0px))' : '24px',
-            background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+            background: theme.accent,
             boxShadow: `0 10px 30px ${theme.accent}45, 0 2px 8px rgba(0,0,0,0.12)`,
             backdropFilter: performanceLite ? 'blur(8px)' : 'blur(14px)',
           }}
@@ -1117,7 +1130,9 @@ export default function AIChatDrawer() {
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-base font-black tracking-tight" style={{ color: theme.text }}>StudyX AI</h3>
+                      <h3 className="text-base font-black tracking-tight" style={{ color: theme.text }}>
+                        StudyX AI{chatThread === 'rezidentiat' ? ' · Rezidențiat' : ''}
+                      </h3>
                       <div className="flex items-center gap-1 rounded-full px-2 py-0.5"
                         style={{ background: `${theme.success}18`, border: `1px solid ${theme.success}30` }}>
                         <div className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: theme.success }} />
@@ -1125,15 +1140,17 @@ export default function AIChatDrawer() {
                       </div>
                     </div>
                     <p className="mt-0.5 text-[11px] font-medium truncate" style={{ color: theme.text3 }}>
-                      {view === 'studio'
-                        ? 'Generare grile și pachete din cursuri'
-                        : scopedSource
-                          ? `Focus activ: ${scopedSource.name}`
-                          : weakTopics[0]
-                            ? `Arii slabe: ${weakTopics.slice(0, 2).map(t => t.topic).join(', ')}`
-                            : memoryInteractions >= 3
-                              ? `Te cunoaște după ${memoryInteractions} interacțiuni`
-                              : 'Asistent calibrat pe profilul tău de studiu'}
+                      {chatThread === 'rezidentiat'
+                        ? 'Conversație separată, dedicată pregătirii de rezidențiat'
+                        : view === 'studio'
+                          ? 'Generare grile și pachete din cursuri'
+                          : scopedSource
+                            ? `Focus activ: ${scopedSource.name}`
+                            : weakTopics[0]
+                              ? `Arii slabe: ${weakTopics.slice(0, 2).map(t => t.topic).join(', ')}`
+                              : memoryInteractions >= 3
+                                ? `Te cunoaște după ${memoryInteractions} interacțiuni`
+                                : 'Asistent calibrat pe profilul tău de studiu'}
                     </p>
                   </div>
 
@@ -1149,7 +1166,7 @@ export default function AIChatDrawer() {
                           onClick={() => setView(entry.id)}
                           className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em]"
                           style={{
-                            background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
+                            background: active ? theme.accent : 'transparent',
                             color: active ? '#fff' : theme.text3,
                           }}
                         >
@@ -1249,38 +1266,71 @@ export default function AIChatDrawer() {
                 </div>
 
 
-                {view === 'studio' ? (
-                  <div className={`grid min-h-0 flex-1 ${mobile ? 'grid-cols-1' : 'grid-cols-[minmax(0,1.15fr)_340px]'}`}>
-                    <div className="custom-scrollbar min-h-0 overflow-y-auto px-6 py-5">
-                      {scopedSource && (
-                        <div
-                          className="mb-4 rounded-[24px] border p-4"
-                          style={{ background: theme.surface2, borderColor: theme.border }}
-                        >
-                          <div className="mb-2 flex flex-wrap items-center gap-2">
-                            <span className="citation-pill inline-flex items-center gap-1.5">
-                              <BookOpen size={12} />
-                              Sursă activă
-                            </span>
-                            <span className="premium-chip rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
-                              {scopedSource.name}
-                            </span>
-                          </div>
-                          <p className="text-sm leading-relaxed" style={{ color: theme.text }}>
-                            Poți discuta liber despre documentul selectat și, din panoul din dreapta, să generezi pachete de grile direct în folderul ales.
-                          </p>
+                <div className="relative flex min-h-0 flex-1">
+                  <div
+                    className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-5"
+                    style={view === 'chat' ? { background: 'linear-gradient(180deg, rgba(255,255,255,0.04), transparent 28%)' } : undefined}
+                  >
+                    {view === 'studio' && scopedSource && (
+                      <div
+                        className="mb-4 rounded-[24px] border p-4"
+                        style={{ background: theme.surface2, borderColor: theme.border }}
+                      >
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className="citation-pill inline-flex items-center gap-1.5">
+                            <BookOpen size={12} />
+                            Sursă activă
+                          </span>
+                          <span className="premium-chip rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+                            {scopedSource.name}
+                          </span>
                         </div>
-                      )}
-                      {renderMessageList(true)}
-                    </div>
+                        <p className="text-sm leading-relaxed" style={{ color: theme.text }}>
+                          Poți discuta liber despre documentul selectat și, din panoul „Studio", să generezi pachete de grile direct în folderul ales.
+                        </p>
+                      </div>
+                    )}
+                    {renderMessageList(view === 'studio')}
+                  </div>
 
-                    <div className="custom-scrollbar min-h-0 overflow-y-auto border-l px-5 py-5" style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.02)' }}>
+                  {/*
+                    Studio used to be a permanent 340px grid column whenever its tab was
+                    active — it now overlays the chat instead (backdrop + slide-in drawer),
+                    so chat keeps full width until you actually open Studio.
+                  */}
+                  <AnimatePresence>
+                    {view === 'studio' && (
+                      <>
+                        <motion.div
+                          key="studio-backdrop"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: calmMotion ? 0.1 : 0.18 }}
+                          onClick={() => setView('chat')}
+                          className="absolute inset-0 z-10"
+                          style={{ background: 'rgba(0,0,0,0.28)' }}
+                        />
+                        <motion.div
+                          key="studio-drawer"
+                          initial={calmMotion ? { opacity: 0 } : { x: '100%' }}
+                          animate={calmMotion ? { opacity: 1 } : { x: 0 }}
+                          exit={calmMotion ? { opacity: 0 } : { x: '100%' }}
+                          transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+                          className={`custom-scrollbar absolute right-0 top-0 bottom-0 z-20 overflow-y-auto border-l px-5 py-5 ${mobile ? 'w-full' : 'w-full max-w-[320px]'}`}
+                          style={{
+                            borderColor: theme.border,
+                            background: theme.isDark ? 'rgba(20,16,30,0.98)' : 'rgba(255,255,255,0.98)',
+                            backdropFilter: 'blur(28px) saturate(160%)',
+                            boxShadow: '-24px 0 60px rgba(0,0,0,0.35)',
+                          }}
+                        >
                       <GlassCard variant="strong" radius="28px" padding="16px">
                         <div className="mb-3 flex items-center gap-2">
                           <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18`, color: theme.accent }}>
                             <Wand2 size={18} />
                           </div>
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <div className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: theme.text3 }}>
                               AI Studio
                             </div>
@@ -1288,11 +1338,41 @@ export default function AIChatDrawer() {
                               Pachete smart din curs
                             </div>
                           </div>
+                          <motion.button
+                            whileHover={calmMotion ? undefined : { scale: 1.08, rotate: 90 }}
+                            whileTap={calmMotion ? undefined : { scale: 0.9 }}
+                            onClick={() => setView('chat')}
+                            aria-label="Închide Studio"
+                            className="flex-shrink-0 rounded-xl p-2"
+                            style={{ color: theme.text3, background: theme.surface2 }}
+                          >
+                            <X size={15} />
+                          </motion.button>
                         </div>
 
-                        <p className="mb-4 text-xs leading-6" style={{ color: theme.text2 }}>
-                          Încarci cursul în bibliotecă, alegi documentul și StudyX îți generează batch-uri de grile adaptate profilului tău, apoi le trimite direct în folderul ales.
-                        </p>
+                        <button
+                          onClick={() => setStudioInfoOpen((v) => !v)}
+                          className="mb-3 flex items-center gap-1.5 text-[10.5px] font-bold"
+                          style={{ color: theme.text3 }}
+                        >
+                          <Info size={12} /> Cum funcționează?
+                          <ChevronDown size={11} style={{ transform: studioInfoOpen ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }} />
+                        </button>
+                        <AnimatePresence initial={false}>
+                          {studioInfoOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: calmMotion ? 0.12 : 0.2 }}
+                              className="overflow-hidden"
+                            >
+                              <p className="mb-4 text-xs leading-6" style={{ color: theme.text2 }}>
+                                Încarci cursul în bibliotecă, alegi documentul și StudyX îți generează batch-uri de grile adaptate profilului tău, apoi le trimite direct în folderul ales.
+                              </p>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
 
                         <div className="space-y-4">
                           <StudioSelect
@@ -1384,7 +1464,7 @@ export default function AIChatDrawer() {
                                     onClick={() => setStudioDifficulty(entry.id)}
                                     className="rounded-2xl px-3 py-2 text-xs font-black uppercase tracking-[0.14em]"
                                     style={{
-                                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
+                                      background: active ? theme.accent : theme.surface,
                                       border: `1px solid ${active ? 'transparent' : theme.border}`,
                                       color: active ? '#fff' : theme.text,
                                     }}
@@ -1411,7 +1491,7 @@ export default function AIChatDrawer() {
                                     title={meta.description}
                                     className="rounded-2xl px-3 py-2 text-left"
                                     style={{
-                                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
+                                      background: active ? theme.accent : theme.surface,
                                       border: `1px solid ${active ? 'transparent' : theme.border}`,
                                       color: active ? '#fff' : theme.text,
                                     }}
@@ -1424,38 +1504,40 @@ export default function AIChatDrawer() {
                             </div>
                           </div>
 
-                          <div className="grid gap-2">
-                            <div className="rounded-[20px] border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
-                              <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                                Motor de adaptare
+                          {studioInfoOpen && (
+                            <div className="grid gap-2">
+                              <div className="rounded-[20px] border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
+                                <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                                  Motor de adaptare
+                                </div>
+                                <div className="mt-2 text-xs leading-6" style={{ color: theme.text2 }}>
+                                  {weakTopics[0]
+                                    ? `AI-ul ține cont de tema vulnerabilă "${weakTopics[0].topic}" și îți ajustează accentul de generare.`
+                                    : 'AI-ul folosește documentul selectat și preferințele actuale pentru a genera pachete curate.'}
+                                </div>
+                                <div className="mt-2 text-[11px] leading-5" style={{ color: theme.text3 }}>
+                                  Poți cere până la {STUDIO_MAX_PACK_COUNT} pachete și {STUDIO_MAX_QUESTIONS_PER_PACK} întrebări per pachet. Dacă un apel AI cade, StudyX completează inteligent din document ca să nu pierzi sesiunea.
+                                </div>
                               </div>
-                              <div className="mt-2 text-xs leading-6" style={{ color: theme.text2 }}>
-                                {weakTopics[0]
-                                  ? `AI-ul ține cont de tema vulnerabilă "${weakTopics[0].topic}" și îți ajustează accentul de generare.`
-                                  : 'AI-ul folosește documentul selectat și preferințele actuale pentru a genera pachete curate.'}
-                              </div>
-                              <div className="mt-2 text-[11px] leading-5" style={{ color: theme.text3 }}>
-                                Poți cere până la {STUDIO_MAX_PACK_COUNT} pachete și {STUDIO_MAX_QUESTIONS_PER_PACK} întrebări per pachet. Dacă un apel AI cade, StudyX completează inteligent din document ca să nu pierzi sesiunea.
-                              </div>
-                            </div>
 
-                            <div className="rounded-[20px] border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
-                              <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                                Destinație
-                              </div>
-                              <div className="mt-2 flex items-center gap-2 text-sm font-semibold" style={{ color: theme.text }}>
-                                <FolderOpen size={14} style={{ color: theme.accent }} />
-                                {selectedStudioFolder ? `${selectedStudioFolder.emoji} ${selectedStudioFolder.name}` : 'Neclasificate'}
+                              <div className="rounded-[20px] border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
+                                <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                                  Destinație
+                                </div>
+                                <div className="mt-2 flex items-center gap-2 text-sm font-semibold" style={{ color: theme.text }}>
+                                  <FolderOpen size={14} style={{ color: theme.accent }} />
+                                  {selectedStudioFolder ? `${selectedStudioFolder.emoji} ${selectedStudioFolder.name}` : 'Neclasificate'}
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          )}
 
                           <button
                             onClick={() => void handleGeneratePackages()}
                             disabled={!selectedStudioSource || studioGenerating}
                             className="press-feedback flex w-full items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-45"
                             style={{
-                              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                              background: theme.accent,
                               boxShadow: `0 18px 30px ${theme.accent}24`,
                             }}
                           >
@@ -1482,16 +1564,11 @@ export default function AIChatDrawer() {
                           )}
                         </div>
                       </GlassCard>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className="custom-scrollbar flex-1 overflow-y-auto px-6 py-5"
-                    style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.04), transparent 28%)' }}
-                  >
-                    {renderMessageList()}
-                  </div>
-                )}
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 <div
                   className="border-t px-4 pt-3 pb-4"
@@ -1566,7 +1643,7 @@ export default function AIChatDrawer() {
                           aria-label="Trimite mesajul"
                           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] transition-all press-feedback"
                           style={{
-                            background: (input.trim() || pastedImage) ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : `${theme.accent}18`,
+                            background: (input.trim() || pastedImage) ? theme.accent : `${theme.accent}18`,
                             color: (input.trim() || pastedImage) ? '#fff' : theme.accent,
                             boxShadow: (input.trim() || pastedImage) ? `0 6px 14px ${theme.accent}40` : 'none',
                             cursor: (input.trim() || pastedImage) ? 'pointer' : 'default',

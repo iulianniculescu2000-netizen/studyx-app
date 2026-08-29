@@ -124,7 +124,7 @@ function FolderTargetPicker({
                   }}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all"
                   style={{
-                    background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
+                    background: active ? theme.accent : 'transparent',
                     color: active ? '#fff' : theme.text,
                   }}
                 >
@@ -408,7 +408,7 @@ export function QuizInfoStep({
         whileTap={{ scale: 0.98 }}
         className="w-full py-3.5 rounded-2xl font-semibold text-white"
         style={{
-          background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
+          background: theme.accent,
           opacity: canProceed ? 1 : 0.6,
         }}
       >
@@ -482,7 +482,7 @@ export function QuizAIGenerationPanel({
           <div className="flex items-center gap-2">
             <div
               className="w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ background: theme.accent }}
             >
               <Bot size={15} className="text-white" />
             </div>
@@ -549,7 +549,7 @@ export function QuizAIGenerationPanel({
                   onClick={() => onModeChange(m.id)}
                   className="flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-1.5"
                   style={{
-                    background: aiMode === m.id ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                    background: aiMode === m.id ? theme.accent : theme.surface2,
                     color: aiMode === m.id ? '#fff' : theme.text3,
                     border: `1px solid ${aiMode === m.id ? `${theme.accent}50` : 'transparent'}`,
                   }}
@@ -583,7 +583,7 @@ export function QuizAIGenerationPanel({
                     onClick={() => onDifficultyChange(d.level)}
                     className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
                     style={{
-                      background: aiDifficulty === d.level ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                      background: aiDifficulty === d.level ? theme.accent : theme.surface2,
                       color: aiDifficulty === d.level ? '#fff' : theme.text3,
                       border: `1px solid ${aiDifficulty === d.level ? `${theme.accent}50` : 'transparent'}`,
                     }}
@@ -610,7 +610,7 @@ export function QuizAIGenerationPanel({
                       onClick={() => toggleQuestionType(type)}
                       className="flex items-center gap-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all"
                       style={{
-                        background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                        background: active ? theme.accent : theme.surface2,
                         color: active ? '#fff' : theme.text3,
                         border: `1px solid ${active ? `${theme.accent}50` : 'transparent'}`,
                       }}
@@ -638,7 +638,7 @@ export function QuizAIGenerationPanel({
                   onClick={() => onCountChange(count)}
                   className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
                   style={{
-                    background: aiCount === count ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                    background: aiCount === count ? theme.accent : theme.surface2,
                     color: aiCount === count ? '#fff' : theme.text3,
                     border: `1px solid ${aiCount === count ? `${theme.accent}50` : 'transparent'}`,
                   }}
@@ -663,7 +663,7 @@ export function QuizAIGenerationPanel({
               <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
                 <motion.div
                   className="h-full rounded-full"
-                  style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                  style={{ background: theme.accent }}
                   initial={{ width: 0 }}
                   animate={{ width: `${Math.round((aiProgress.generated / aiProgress.total) * 100)}%` }}
                   transition={{ duration: 0.4, ease: 'easeOut' }}
@@ -680,7 +680,7 @@ export function QuizAIGenerationPanel({
             style={{
               background: aiLoading || !hasKey || !aiText.trim()
                 ? theme.surface2
-                : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                : theme.accent,
               color: aiLoading || !hasKey || !aiText.trim() ? theme.text3 : 'white',
             }}
           >

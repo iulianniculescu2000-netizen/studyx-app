@@ -79,7 +79,7 @@ export default function ProfileSelect({ onAddNew }: Props) {
             transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.1 }}
             className="w-14 h-14 rounded-2xl mx-auto mb-5 flex items-center justify-center text-2xl"
             style={{
-              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+              background: theme.accent,
               boxShadow: `0 16px 48px ${theme.accent}40`,
             }}>
             📚

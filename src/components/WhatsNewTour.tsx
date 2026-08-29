@@ -179,7 +179,7 @@ function EditableAgentParamsDemo({ theme }: { theme: Theme }) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 4 }}
               className="rounded-[10px] px-2.5 py-1 text-[10.5px] font-bold text-white"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ background: theme.accent }}
             >
               {difficulties[difficulty]}
             </motion.span>
@@ -215,7 +215,7 @@ function RealPredictionsDemo({ theme }: { theme: Theme }) {
               <div className="h-[9px] flex-1 overflow-hidden rounded-full" style={{ background: theme.surface2 }}>
                 <motion.div
                   className="h-full rounded-full"
-                  style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                  style={{ background: theme.accent }}
                   initial={{ width: 0 }}
                   animate={{ width: `${topic.value}%` }}
                   transition={{ duration: 0.9, delay: 0.2 + i * 0.15, ease: 'easeOut' }}
@@ -254,7 +254,7 @@ function HeroDemo({ theme }: { theme: Theme }) {
         />
         <div
           className="z-10 flex h-[84px] w-[84px] items-center justify-center rounded-[26px] text-white"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+          style={{ background: theme.accent }}
         >
           <Sparkles size={38} />
         </div>
@@ -601,7 +601,7 @@ function BookIndexingDemo({ theme }: { theme: Theme }) {
           <div className="h-[5px] w-full overflow-hidden rounded-full" style={{ background: theme.surface }}>
             <div
               className="h-full rounded-full transition-all"
-              style={{ width: `${percent}%`, background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ width: `${percent}%`, background: theme.accent }}
             />
           </div>
         </div>
@@ -1020,7 +1020,7 @@ export default function WhatsNewTour() {
             {/* ambient glow */}
             <div
               className="pointer-events-none absolute -top-28 left-1/2 h-56 w-[480px] -translate-x-1/2 rounded-full opacity-40 blur-[80px]"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ background: theme.accent }}
             />
 
             {/* header */}
@@ -1030,7 +1030,7 @@ export default function WhatsNewTour() {
                   animate={{ rotate: [0, 12, -8, 0] }}
                   transition={{ repeat: Infinity, duration: 5, repeatDelay: 1.5 }}
                   className="flex h-9 w-9 items-center justify-center rounded-[13px] text-white"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 10px 22px ${theme.accent}44` }}
+                  style={{ background: theme.accent, boxShadow: `0 10px 22px ${theme.accent}44` }}
                 >
                   <Rocket size={17} />
                 </motion.div>
@@ -1122,7 +1122,7 @@ export default function WhatsNewTour() {
                       width: i === index ? 22 : 7,
                       height: 7,
                       background: i === index
-                        ? `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`
+                        ? theme.accent
                         : `${theme.text3}38`,
                     }}
                   />
@@ -1136,7 +1136,7 @@ export default function WhatsNewTour() {
                   onClick={close}
                   className="flex h-10 items-center gap-2 rounded-[14px] px-5 text-[12px] font-black text-white"
                   style={{
-                    background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                    background: theme.accent,
                     boxShadow: `0 12px 26px ${theme.accent}40`,
                   }}
                 >
@@ -1149,7 +1149,7 @@ export default function WhatsNewTour() {
                   aria-label="Slide următor"
                   className="flex h-10 w-10 items-center justify-center rounded-[14px] text-white transition-all"
                   style={{
-                    background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                    background: theme.accent,
                     boxShadow: `0 10px 22px ${theme.accent}38`,
                   }}
                 >

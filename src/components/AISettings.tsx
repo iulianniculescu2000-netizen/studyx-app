@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Key, Cpu, Eye, EyeOff, Check,
   Library, Trash2, Upload, FileText, Image,
-  Loader2, Gift, ChevronDown, ArrowUpRight, Brain
+  Loader2, Gift, ChevronDown, ArrowUpRight, Brain, RefreshCw, Sparkles
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIModel, type AIProvider } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
 import { clearStudyPatterns, getProfileSummaryText } from '../ai/UserProfile';
+import { refreshAllProviderModels, type ProviderModelCheck } from '../lib/ai/modelHealing';
 import Portal from './Portal';
 
 const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; docs: string }[] = [
@@ -41,9 +42,9 @@ const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; spee
     { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B', desc: 'Ultra rapid', speed: 'Instant' },
   ],
   google: [
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: 'Echilibrat, rapid și inteligent', speed: 'Rapid' },
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', desc: 'Ultra rapid pentru chat', speed: 'Instant' },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', desc: 'Cel mai bun pentru raționament', speed: 'Smart' },
+    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', desc: 'Echilibrat, rapid și inteligent', speed: 'Rapid' },
+    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Ultra rapid pentru chat', speed: 'Instant' },
+    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', desc: 'Cel mai bun pentru raționament', speed: 'Smart' },
   ],
   cerebras: [
     { id: 'gpt-oss-120b', name: 'GPT-OSS 120B', desc: 'Cel mai inteligent, foarte rapid', speed: 'Ultra rapid' },
@@ -96,8 +97,10 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
   const theme = useTheme();
   const {
     apiKey, provider, model, hasKey, setApiKey, setProvider, setModel,
-    knowledgeSources, addKnowledgeSource, removeKnowledgeSource
+    knowledgeSources, addKnowledgeSource, removeKnowledgeSource, providerKeys
   } = useAIStore();
+
+  const hasAnyProviderKey = Object.values(providerKeys).some((k) => (k ?? '').trim().length > 0);
 
   const [draft, setDraft] = useState(apiKey);
   const [showKey, setShowKey] = useState(false);
@@ -105,6 +108,20 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
   const [saved, setSaved] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{ ok: boolean; error?: string; warning?: string } | null>(null);
+  const [refreshingModel, setRefreshingModel] = useState(false);
+  const [providerCheckResults, setProviderCheckResults] = useState<ProviderModelCheck[] | null>(null);
+  const [showProviderCheck, setShowProviderCheck] = useState(false);
+
+  const handleRefreshModel = async () => {
+    setRefreshingModel(true);
+    try {
+      const results = await refreshAllProviderModels();
+      setProviderCheckResults(results);
+      setShowProviderCheck(true);
+    } finally {
+      setRefreshingModel(false);
+    }
+  };
   const [libraryError, setLibraryError] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const activeProfileId = useUserStore((s) => s.activeProfileId);
@@ -276,6 +293,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
   };
 
   return (
+    <>
     <Portal>
       <AnimatePresence>
         {open && (
@@ -380,7 +398,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="mt-3.5 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[11px] font-black text-white shadow-lg"
-                        style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                        style={{ background: theme.accent }}
                       >
                         <ArrowUpRight size={13} /> Deschide {activeProvider.name}
                       </a>
@@ -460,9 +478,24 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
 
                 {/* Model Selection */}
                 <div className="mb-8">
-                  <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.1em] mb-2.5 opacity-60" style={{ color: theme.text }}>
-                    <Cpu size={12} /> Model AI
-                  </label>
+                  <div className="mb-2.5 flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.1em] opacity-60" style={{ color: theme.text }}>
+                      <Cpu size={12} /> Model AI
+                    </label>
+                    <motion.button
+                      whileHover={{ scale: 1.015 }}
+                      whileTap={{ scale: 0.93, transition: { type: 'spring', stiffness: 500, damping: 15 } }}
+                      onClick={() => void handleRefreshModel()}
+                      disabled={refreshingModel || !hasAnyProviderKey}
+                      className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] disabled:opacity-40"
+                      style={{ background: theme.surface2, color: theme.accent, border: `1px solid ${theme.border}` }}
+                      title="Verifică toate providerele AI configurate și trece automat pe modelele care încă funcționează"
+                    >
+                      {refreshingModel
+                        ? <><Loader2 size={11} className="animate-spin" /> Verific…</>
+                        : <><RefreshCw size={11} /> Actualizează</>}
+                    </motion.button>
+                  </div>
                   <div className="space-y-2">
                     {modelOptions.map((m) => (
                       <button key={m.id} onClick={() => setModel(m.id)} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-all"
@@ -481,7 +514,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                 </div>
 
                 <motion.button whileHover={{ scale: keyInvalid ? 1 : 1.02 }} whileTap={{ scale: keyInvalid ? 1 : 0.97 }} onClick={handleSave} disabled={keyInvalid} className="w-full py-3.5 rounded-2xl font-black text-sm text-white shadow-xl mb-8 disabled:opacity-45"
-                  style={{ background: saved ? theme.success : keyInvalid ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: keyInvalid ? theme.text3 : '#fff' }}>
+                  style={{ background: saved ? theme.success : keyInvalid ? theme.surface2 : theme.accent, color: keyInvalid ? theme.text3 : '#fff' }}>
                   {saved ? 'Salvat!' : 'Salvează Configurarea'}
                 </motion.button>
 
@@ -540,7 +573,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                       ) : (
                         <>
                           <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg"
-                            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff' }}>
+                            style={{ background: theme.accent, color: '#fff' }}>
                             <Upload size={20} />
                           </div>
                           <p className="text-sm font-black mb-4" style={{ color: theme.text }}>Încarcă materiale de studiu</p>
@@ -592,5 +625,98 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
         )}
       </AnimatePresence>
     </Portal>
+
+    <Portal>
+      <AnimatePresence>
+        {showProviderCheck && providerCheckResults && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowProviderCheck(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[210]"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.93, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+              className="fixed left-1/2 top-1/2 z-[211] w-[min(420px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-[28px] p-6"
+              style={{
+                background: theme.isDark ? 'rgba(22,18,32,0.97)' : 'rgba(255,255,255,0.98)',
+                border: `1px solid ${theme.border}`,
+                boxShadow: '0 30px 90px rgba(0,0,0,0.5)',
+                backdropFilter: 'blur(28px) saturate(160%)',
+              }}
+            >
+              <div className="mb-5 flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ background: theme.accent, boxShadow: `0 10px 24px ${theme.accent}35` }}>
+                  <Sparkles size={19} color="#fff" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>Verificare AI</div>
+                  <div className="text-base font-black" style={{ color: theme.text }}>Modele actualizate</div>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.08, rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowProviderCheck(false)}
+                  className="rounded-xl p-2"
+                  style={{ color: theme.text3, background: theme.surface2 }}
+                >
+                  <X size={16} />
+                </motion.button>
+              </div>
+
+              <div className="space-y-2.5">
+                {providerCheckResults.map((entry, i) => {
+                  const tone = !entry.hadKey ? theme.text3 : !entry.ok ? theme.danger : entry.changed ? theme.accent : theme.success;
+                  return (
+                    <motion.div
+                      key={entry.provider}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.06, duration: 0.3 }}
+                      className="flex items-center gap-3 rounded-2xl px-4 py-3"
+                      style={{ background: theme.surface2, border: `1px solid ${tone}30` }}
+                    >
+                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: `${tone}18`, color: tone }}>
+                        {!entry.hadKey ? <Key size={15} /> : !entry.ok ? <X size={15} strokeWidth={3} /> : entry.changed ? <Sparkles size={15} /> : <Check size={15} strokeWidth={3} />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-black" style={{ color: theme.text }}>{entry.providerName}</div>
+                        <div className="truncate text-[11px] font-semibold" style={{ color: theme.text3 }}>
+                          {entry.changed && entry.previousModel
+                            ? `${entry.previousModel} → ${entry.model}`
+                            : entry.model ?? entry.message}
+                        </div>
+                      </div>
+                      <span
+                        className="flex-shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider"
+                        style={{ background: `${tone}18`, color: tone }}
+                      >
+                        {!entry.hadKey ? 'Fără cheie' : !entry.ok ? 'Eșuat' : entry.changed ? 'Actualizat' : 'La zi'}
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              <motion.button
+                whileHover={{ scale: 1.015 }}
+                whileTap={{ scale: 0.95, transition: { type: 'spring', stiffness: 500, damping: 15 } }}
+                onClick={() => setShowProviderCheck(false)}
+                className="mt-5 w-full rounded-2xl py-3 text-sm font-black text-white"
+                style={{ background: theme.accent }}
+              >
+                Am înțeles
+              </motion.button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </Portal>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { BookOpen, CheckCircle, Users, Target } from 'lucide-react';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface StudyPathRecommendation {
   id: string;
@@ -20,19 +21,21 @@ interface AIPredictiveStudyPathsProps {
 }
 
 export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudyPathsProps) {
+  const theme = useTheme();
+
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
-      case 'beginner': return 'bg-green-100 text-green-800';
-      case 'intermediate': return 'bg-yellow-100 text-yellow-800';
-      case 'advanced': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'beginner': return theme.success;
+      case 'intermediate': return theme.warning;
+      case 'advanced': return theme.danger;
+      default: return theme.text3;
     }
   };
 
   const getSuccessRateColor = (rate: number) => {
-    if (rate >= 90) return 'text-green-600';
-    if (rate >= 75) return 'text-yellow-600';
-    return 'text-red-600';
+    if (rate >= 90) return theme.success;
+    if (rate >= 75) return theme.warning;
+    return theme.danger;
   };
 
   const getDifficultyIcon = (difficulty: string) => {
@@ -46,31 +49,30 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {studyPaths.map((path, index) => (
+      {studyPaths.map((path, index) => {
+        const difficultyColor = getDifficultyColor(path.difficulty);
+        return (
         <motion.div
           key={path.id}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: index * 0.1 }}
-          whileHover={{ 
-            scale: 1.02, 
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
-          }}
-          className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700"
+          whileHover={{ scale: 1.015 }}
+          className="glass-panel rounded-[24px] p-6"
         >
           {/* Path Header */}
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              <h3 className="text-lg font-semibold mb-2" style={{ color: theme.text }}>
                 {path.title}
               </h3>
               <div className="flex items-center gap-2">
                 <span className="text-lg">{getDifficultyIcon(path.difficulty)}</span>
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${getDifficultyColor(path.difficulty)}`}>
+                <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: `${difficultyColor}18`, color: difficultyColor }}>
                   {path.difficulty.toUpperCase()}
                 </span>
                 {path.aiOptimized && (
-                  <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded-full font-medium">
+                  <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: `${theme.accent}18`, color: theme.accent }}>
                     ✨ AI Optimizat
                   </span>
                 )}
@@ -79,47 +81,47 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
           </div>
 
           {/* Path Description */}
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          <p className="text-sm mb-4" style={{ color: theme.text3 }}>
             {path.description}
           </p>
 
           {/* Path Stats */}
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-blue-500" />
+              <BookOpen className="w-4 h-4" style={{ color: theme.accent2 }} />
               <div>
-                <p className="text-xs text-gray-500">Durată</p>
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                <p className="text-xs" style={{ color: theme.text3 }}>Durată</p>
+                <p className="text-sm font-medium" style={{ color: theme.text }}>
                   {path.duration} săptămâni
                 </p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
-              <Target className="w-4 h-4 text-green-500" />
+              <Target className="w-4 h-4" style={{ color: theme.success }} />
               <div>
-                <p className="text-xs text-gray-500">Relevanță pentru tine</p>
-                <p className={`text-sm font-medium ${getSuccessRateColor(path.successRate)}`}>
+                <p className="text-xs" style={{ color: theme.text3 }}>Relevanță pentru tine</p>
+                <p className="text-sm font-medium" style={{ color: getSuccessRateColor(path.successRate) }}>
                   {path.successRate}%
                 </p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-purple-500" />
+              <Users className="w-4 h-4" style={{ color: theme.accent }} />
               <div>
-                <p className="text-xs text-gray-500">Timp/săptămână</p>
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                <p className="text-xs" style={{ color: theme.text3 }}>Timp/săptămână</p>
+                <p className="text-sm font-medium" style={{ color: theme.text }}>
                   {path.timeCommitment} ore
                 </p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-orange-500" />
+              <CheckCircle className="w-4 h-4" style={{ color: theme.warning }} />
               <div>
-                <p className="text-xs text-gray-500">Rezultate</p>
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                <p className="text-xs" style={{ color: theme.text3 }}>Rezultate</p>
+                <p className="text-sm font-medium" style={{ color: theme.text }}>
                   {path.outcomes.length} obiective
                 </p>
               </div>
@@ -128,12 +130,12 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
 
           {/* Topics */}
           <div className="mb-4">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <h4 className="text-sm font-medium mb-2" style={{ color: theme.text2 }}>
               Subiecte acoperite:
             </h4>
             <div className="flex flex-wrap gap-2">
               {path.topics.map((topic, idx) => (
-                <span key={idx} className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                <span key={idx} className="text-xs px-2 py-1 rounded-full" style={{ background: theme.surface2, color: theme.text2 }}>
                   {topic}
                 </span>
               ))}
@@ -143,12 +145,12 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
           {/* Prerequisites */}
           {path.prerequisites.length > 0 && (
             <div className="mb-4">
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <h4 className="text-sm font-medium mb-2" style={{ color: theme.text2 }}>
                 Cerințe preliminare:
               </h4>
               <div className="flex flex-wrap gap-2">
                 {path.prerequisites.map((prereq, idx) => (
-                  <span key={idx} className="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">
+                  <span key={idx} className="text-xs px-2 py-1 rounded-full" style={{ background: theme.surface2, color: theme.text3 }}>
                     {prereq}
                   </span>
                 ))}
@@ -158,13 +160,13 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
 
           {/* Outcomes */}
           <div className="mb-4">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <h4 className="text-sm font-medium mb-2" style={{ color: theme.text2 }}>
               Rezultate așteptate:
             </h4>
             <ul className="space-y-1">
               {path.outcomes.map((outcome, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <CheckCircle className="w-3 h-3 text-green-500 mt-0.5 flex-shrink-0" />
+                <li key={idx} className="flex items-start gap-2 text-sm" style={{ color: theme.text3 }}>
+                  <CheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: theme.success }} />
                   <span>{outcome}</span>
                 </li>
               ))}
@@ -173,14 +175,16 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
 
           {/* Action Button */}
           <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-medium hover:from-purple-600 hover:to-blue-600 transition-all duration-200"
+            whileHover={{ scale: 1.015 }}
+            whileTap={{ scale: 0.93, transition: { type: 'spring', stiffness: 500, damping: 15 } }}
+            className="press-feedback w-full py-3 rounded-lg font-medium transition-colors duration-200"
+            style={{ background: theme.accent, color: '#fff' }}
           >
             Începe Calea de Studiu
           </motion.button>
         </motion.div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -115,7 +115,12 @@ export async function generateQuizFromChapter({
     updatedAt: now,
     shuffleQuestions: true,
     shuffleAnswers: true,
-    tags: titleContext ? ['ai-studio', 'chapter-pack', sourceName, titleContext] : ['ai-studio', 'document-pack', sourceName],
+    // 'rezidentiat' keeps this out of "Toate grilele" (coursework only) and
+    // groups it with the rest of the Rezidențiat section's content instead.
+    tags: [
+      ...(titleContext ? ['ai-studio', 'chapter-pack', sourceName, titleContext] : ['ai-studio', 'document-pack', sourceName]),
+      ...(examStyle === 'residency' ? ['rezidentiat'] : []),
+    ],
   };
 
   return {

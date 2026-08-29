@@ -184,7 +184,7 @@ function FolderTargetSelect({
                     }}
                     className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left transition-all"
                     style={{
-                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
+                      background: active ? theme.accent : 'transparent',
                       color: active ? '#fff' : theme.text,
                     }}
                   >
@@ -220,7 +220,7 @@ function FolderTargetSelect({
                       type="button"
                       onClick={submitNewFolder}
                       className="flex-1 rounded-[12px] px-3 py-2 text-[11px] font-black uppercase tracking-wider text-white"
-                      style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                      style={{ background: theme.accent }}
                     >
                       Creează
                     </button>
@@ -331,7 +331,7 @@ function LibrarySourceSelect({
                     onClick={() => { onChange(source.id); setOpen(false); }}
                     className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2 text-left transition-all"
                     style={{
-                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
+                      background: active ? theme.accent : 'transparent',
                       color: active ? '#fff' : theme.text,
                     }}
                   >
@@ -467,7 +467,7 @@ export function FlashcardHubActions({
         <div className="flex items-center gap-2.5 mb-4">
           <div
             className="flex h-10 w-10 items-center justify-center rounded-2xl flex-shrink-0"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+            style={{ background: theme.accent }}
           >
             <Bot size={20} className="text-white" />
           </div>
@@ -519,7 +519,7 @@ export function FlashcardHubActions({
           disabled={aiLoading}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-[16px] py-3.5 text-xs font-black uppercase tracking-widest text-white transition-all"
           style={{
-            background: aiLoading ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+            background: aiLoading ? theme.surface2 : theme.accent,
             color: aiLoading ? theme.text3 : '#fff',
           }}
         >
@@ -556,7 +556,7 @@ export function FlashcardHubActions({
                 onClick={() => activeLibrarySourceId && onLibraryGenerate(activeLibrarySourceId)}
                 disabled={libraryGenerating || !activeLibrarySourceId}
                 className="flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-white transition-all disabled:opacity-60"
-                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                style={{ background: theme.accent }}
               >
                 {libraryGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 {libraryGenerating ? 'Generez...' : 'Generează carduri'}
@@ -841,7 +841,7 @@ function EditDeckModal({
           <button
             onClick={save}
             className="flex-1 rounded-[16px] py-3 text-[11px] font-black uppercase tracking-wider text-white transition-all hover:scale-[1.02]"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+            style={{ background: theme.accent }}
           >
             Salvează
           </button>
@@ -975,7 +975,7 @@ export function FlashcardDeckGrid({ decks, folders, theme }: FlashcardDeckGridPr
         <Link
           to="/create"
           className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold text-white"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+          style={{ background: theme.accent }}
         >
           <BookOpen size={15} />
           Creează o grilă

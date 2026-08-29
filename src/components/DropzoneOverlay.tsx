@@ -85,7 +85,7 @@ export default function DropzoneOverlay({ onFilesDropped }: Props) {
               transition={calmMotion ? { duration: 0.18 } : { repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
               className="w-28 h-28 rounded-[32px] flex items-center justify-center shadow-2xl"
               style={{ 
-                background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, 
+                background: theme.accent, 
                 color: '#fff',
                 boxShadow: `0 20px 40px ${theme.accent}66`
               }}

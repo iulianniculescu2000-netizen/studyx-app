@@ -30,7 +30,13 @@ type ProviderId = 'groq' | 'google' | 'cerebras';
  */
 const MODEL_CANDIDATES: Record<ProviderId, AIModel[]> = {
   groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
-  google: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
+  // 2026-08-24: confirmed live against Google's API that every 2.x model
+  // (2.5-flash, 2.0-flash, 2.5-pro, 2.5-flash-lite) 404s with "no longer
+  // available to new users" — not listed as a fallback candidate here even
+  // though `/models` still lists them (the catalog entry outlives actual
+  // invocability, so checkModelAvailability's liveIds check alone isn't
+  // enough to catch this class of retirement).
+  google: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
   cerebras: ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507', 'zai-glm-4.7'],
 };
 
@@ -38,6 +44,12 @@ const MODELS_ENDPOINT: Record<ProviderId, string> = {
   groq: 'https://api.groq.com/openai/v1/models',
   google: 'https://generativelanguage.googleapis.com/v1beta/openai/models',
   cerebras: 'https://api.cerebras.ai/v1/models',
+};
+
+const CHAT_ENDPOINT: Record<ProviderId, string> = {
+  groq: 'https://api.groq.com/openai/v1/chat/completions',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+  cerebras: 'https://api.cerebras.ai/v1/chat/completions',
 };
 
 /**
@@ -140,4 +152,101 @@ function providerDisplayName(provider: ProviderId): string {
   if (provider === 'google') return 'Google Gemini';
   if (provider === 'cerebras') return 'Cerebras';
   return 'Groq';
+}
+
+/**
+ * A real 1-token chat-completions ping, not a `/models` catalog lookup.
+ * Confirmed live (2026-08-24) that a retired Google model can still appear
+ * in `/models` long after every actual chat request to it 404s — catalog
+ * membership is not proof a model works, only an invocation attempt is.
+ */
+async function pingModel(provider: ProviderId, model: string, apiKey: string): Promise<boolean> {
+  try {
+    const res = await fetch(CHAT_ENDPOINT[provider], {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false }),
+      signal: AbortSignal.timeout(10000),
+    });
+    // 429 only happens after the key/model authenticate — rate-limited, not dead.
+    return res.ok || res.status === 429;
+  } catch {
+    return false;
+  }
+}
+
+/** First model (current one preferred) that actually answers a real ping, or null if none of them do. */
+async function findLiveModel(provider: ProviderId, currentModel: string, apiKey: string): Promise<string | null> {
+  if (await pingModel(provider, currentModel, apiKey)) return currentModel;
+  for (const candidate of MODEL_CANDIDATES[provider]) {
+    if (candidate === currentModel) continue;
+    if (await pingModel(provider, candidate, apiKey)) return candidate;
+  }
+  return null;
+}
+
+export interface ProviderModelCheck {
+  provider: ProviderId;
+  providerName: string;
+  hadKey: boolean;
+  ok: boolean;
+  changed: boolean;
+  previousModel: string | null;
+  model: string | null;
+  message: string;
+}
+
+/**
+ * On-demand "check for AI updates" — the Settings button. Checks EVERY
+ * provider that has a saved key, not just the one currently active, so
+ * fixing e.g. Cerebras doesn't require switching to it first. Ping-based
+ * (not catalog-based) for the reason `pingModel` explains: a provider can
+ * keep listing a retired model in `/models` long after it 404s on real use,
+ * so only an actual invocation attempt proves a model works.
+ *
+ * A fix for a provider you're not currently on still needs to survive the
+ * next time you DO switch to it — `setProviderModel` persists into
+ * `providerModels` regardless of which provider is active, and `setProvider`
+ * reads from there first.
+ */
+export async function refreshAllProviderModels(): Promise<ProviderModelCheck[]> {
+  const state = useAIStore.getState();
+  const providers: ProviderId[] = ['groq', 'google', 'cerebras'];
+  const results: ProviderModelCheck[] = [];
+
+  for (const provider of providers) {
+    const providerName = providerDisplayName(provider);
+    const key = (state.providerKeys[provider] ?? '').trim();
+
+    if (!key) {
+      results.push({
+        provider, providerName, hadKey: false, ok: false, changed: false,
+        previousModel: null, model: null, message: 'Fără cheie configurată.',
+      });
+      continue;
+    }
+
+    const previousModel = provider === state.provider ? state.model : (state.providerModels[provider] ?? MODEL_CANDIDATES[provider][0]);
+    const live = await findLiveModel(provider, previousModel, key);
+
+    if (!live) {
+      results.push({
+        provider, providerName, hadKey: true, ok: false, changed: false,
+        previousModel, model: null, message: 'Niciun model nu a răspuns — verifică cheia.',
+      });
+      continue;
+    }
+
+    const changed = live !== previousModel;
+    if (changed) {
+      useAIStore.getState().setProviderModel(provider, live as AIModel);
+    }
+    results.push({
+      provider, providerName, hadKey: true, ok: true, changed,
+      previousModel, model: live,
+      message: changed ? `Actualizat automat la ${live}.` : `Deja pe cel mai recent model (${live}).`,
+    });
+  }
+
+  return results;
 }

@@ -1,10 +1,12 @@
 import { motion } from 'framer-motion';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface AIGamificationHeaderProps {
   username: string;
 }
 
 export default function AIGamificationHeader({ username }: AIGamificationHeaderProps) {
+  const theme = useTheme();
   return (
     <motion.div
       initial={{ opacity: 0, y: -20 }}
@@ -26,16 +28,19 @@ export default function AIGamificationHeader({ username }: AIGamificationHeaderP
         >
           {'🏆'}
         </motion.div>
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-yellow-500 to-orange-500 bg-clip-text text-transparent">
+        <h1
+          className="text-3xl font-bold"
+          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}
+        >
           Gamification AI
         </h1>
       </div>
-      <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      <p className="max-w-2xl mx-auto" style={{ color: theme.text3 }}>
         {/* "clasamente globale" promised a leaderboard that never existed —
             StudyX is single-user, and the comparison tab is you vs. your past self. */}
         Provocări, realizări și comparație cu propriul tău progres, ca să-ți susțină studiul
       </p>
-      <p className="mt-3 text-sm font-medium text-yellow-600/80 dark:text-yellow-400/80">
+      <p className="mt-3 text-sm font-medium" style={{ color: theme.accent }}>
         Hub-ul premium de progres pentru {username}
       </p>
     </motion.div>

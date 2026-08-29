@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Plus, Filter, X, ArrowUpDown, Archive, Tag, BookOpen, Sparkles } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
+import { isRezidentiatQuiz } from '../lib/rezidentiatBank';
 import { useTheme } from '../theme/ThemeContext';
 import QuizCard from '../components/QuizCard';
 import ImportQuizButton from '../components/ImportQuizButton';
@@ -22,8 +23,12 @@ export default function QuizList() {
   const ITEMS_PER_PAGE = 12;
   const [page, setPage] = useState(1);
 
-  const activeQuizzes = quizzes.filter(q => !q.archived);
-  const archivedQuizzes = quizzes.filter(q => q.archived);
+  // Rezidențiat content (the real Lawrence+Kumar bank, and any AI-generated
+  // packs from Rezidențiat book chapters) lives only in the Rezidențiat page —
+  // "Toate grilele" is exclusively the year's coursework materii, so it stays
+  // a clean, undiluted subject list instead of a mix of the two.
+  const activeQuizzes = quizzes.filter(q => !q.archived && !isRezidentiatQuiz(q));
+  const archivedQuizzes = quizzes.filter(q => q.archived && !isRezidentiatQuiz(q));
 
   const categories = useMemo(() => 
     ['Toate', ...Array.from(new Set(activeQuizzes.map((q) => q.category).filter(Boolean))).sort()],
@@ -96,7 +101,7 @@ export default function QuizList() {
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff' }}>
+                  style={{ background: theme.accent, color: '#fff' }}>
                   <BookOpen size={20} />
                 </div>
                 <h1 className="text-3xl font-black tracking-tight" style={{ color: theme.text }}>

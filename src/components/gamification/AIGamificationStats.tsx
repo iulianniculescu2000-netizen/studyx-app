@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Trophy, Star, Flame, Medal, BarChart3 } from 'lucide-react';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface UserStats {
   points: number;
@@ -15,72 +16,35 @@ interface AIGamificationStatsProps {
 }
 
 export default function AIGamificationStats({ userStats }: AIGamificationStatsProps) {
+  const theme = useTheme();
+  const items = [
+    { icon: Trophy, label: 'Puncte', value: userStats.points.toLocaleString(), color: theme.accent },
+    { icon: Star, label: 'Nivel', value: userStats.level, color: theme.accent2 },
+    { icon: Flame, label: 'Streak', value: `${userStats.studyStreak} zile`, color: theme.warning },
+    { icon: Medal, label: 'Realizări', value: userStats.achievements, color: theme.accent },
+    { icon: BarChart3, label: 'Întrebări (7 zile)', value: userStats.weeklyQuestions, color: theme.success },
+  ];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-2xl p-6 border border-yellow-200 dark:border-yellow-800 mb-6"
+      className="glass-panel rounded-2xl p-6 mb-6"
     >
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Trophy className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              Puncte
-            </span>
+        {items.map((item) => (
+          <div key={item.label} className="text-center">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <item.icon className="w-5 h-5" style={{ color: item.color }} />
+              <span className="text-sm font-medium" style={{ color: theme.text3 }}>
+                {item.label}
+              </span>
+            </div>
+            <p className="text-2xl font-bold" style={{ color: theme.text }}>
+              {item.value}
+            </p>
           </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {userStats.points.toLocaleString()}
-          </p>
-        </div>
-        
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Star className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              Nivel
-            </span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {userStats.level}
-          </p>
-        </div>
-        
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Flame className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              Streak
-            </span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {userStats.studyStreak} zile
-          </p>
-        </div>
-        
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <Medal className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              Realizări
-            </span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {userStats.achievements}
-          </p>
-        </div>
-        
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <BarChart3 className="w-5 h-5 text-red-600 dark:text-red-400" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              Întrebări (7 zile)
-            </span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {userStats.weeklyQuestions}
-          </p>
-        </div>
+        ))}
       </div>
     </motion.div>
   );

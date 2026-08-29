@@ -47,7 +47,7 @@ function StepParamEditor({
   const countMax = usesPackCount ? 60 : 100;
 
   const chipStyle = (active: boolean) => ({
-    background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
+    background: active ? theme.accent : theme.surface,
     color: active ? '#fff' : theme.text3,
     border: `1px solid ${active ? `${theme.accent}50` : theme.border}`,
   });
@@ -233,7 +233,7 @@ export default function AgentJobCard({
           <button
             onClick={onConfirm}
             className="rounded-xl px-3.5 py-1.5 text-[11px] font-black uppercase tracking-wider text-white"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+            style={{ background: theme.accent }}
           >
             Execută
           </button>
@@ -255,7 +255,7 @@ export default function AgentJobCard({
         <button
           onClick={onRetry}
           className="mt-3 flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-black uppercase tracking-wider text-white"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+          style={{ background: theme.accent }}
         >
           <RotateCcw size={12} />
           Reîncearcă

@@ -396,7 +396,7 @@ export default function QuizResults() {
               <button
                 onClick={() => openResultsDebrief(debriefPrompt, wrongEntries.length > 0 ? 'explain' : 'summarize')}
                 className="premium-card-hover press-feedback mt-4 inline-flex items-center gap-2 rounded-[18px] px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white"
-                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 14px 30px ${theme.accent}26` }}
+                style={{ background: theme.accent, boxShadow: `0 14px 30px ${theme.accent}26` }}
               >
                 <MessageSquare size={14} />
                 Debrief cu AI Coach
@@ -562,7 +562,7 @@ export default function QuizResults() {
           {/* Primary: retry */}
           <Link to={`/play/${quiz.id}`}
             className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-semibold text-white transition-all hover:opacity-90"
-            style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 6px 20px ${theme.accent}25` }}>
+            style={{ background: theme.accent, boxShadow: `0 6px 20px ${theme.accent}25` }}>
             <RotateCcw size={15} />
             Încearcă din nou
           </Link>

@@ -295,7 +295,7 @@ export default function ReviewMode() {
             </button>
             <Link to="/"
               className="flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-white text-sm"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+              style={{ background: theme.accent }}>
               <Trophy size={14} />Dashboard
             </Link>
           </div>
@@ -326,7 +326,7 @@ export default function ReviewMode() {
           <span className="text-sm font-medium" style={{ color: theme.text3 }}>{currentIdx + 1}/{items.length}</span>
           <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
             <motion.div className="h-full rounded-full"
-              style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ background: theme.accent }}
               animate={{ width: `${progress}%` }} transition={{ duration: 0.4 }} />
           </div>
           <button onClick={() => setShowKeys(k => !k)}
@@ -438,7 +438,7 @@ export default function ReviewMode() {
                 <motion.button initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
                   onClick={handleNext}
                   className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 premium-card-hover"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                  style={{ background: theme.accent }}
                   whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
                   {currentIdx + 1 >= items.length ? '🏁 Finalizează' : <>Următor <ChevronRight size={16} /></>}
                 </motion.button>

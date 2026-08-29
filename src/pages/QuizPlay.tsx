@@ -837,7 +837,7 @@ export default function QuizPlay() {
           initial={{ width: 0 }}
           animate={{ width: `${progress}%` }}
           transition={{ duration: calmMotion ? 0.24 : 0.6, ease: [0.23, 1, 0.32, 1] }}
-          style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 0 10px ${theme.accent}60` }}
+          style={{ background: theme.accent, boxShadow: `0 0 10px ${theme.accent}60` }}
         />
       </div>
 
@@ -1147,8 +1147,12 @@ export default function QuizPlay() {
                   disabled={revealed && !isMultiple}
                   className={`premium-option-card w-full flex items-center gap-4 rounded-[24px] text-left transition-all ${optionPaddingClass}`}
                   style={getOptionStyle(opt.id)}
-                  whileHover={!revealed ? { scale: calmMotion ? 1.005 : 1.01 } : {}}
-                  whileTap={!revealed && !calmMotion ? { scale: 0.99 } : {}}
+                  whileHover={!revealed ? { scale: calmMotion ? 1.005 : 1.015 } : {}}
+                  // The single most-repeated click in the whole app (every answer, every
+                  // question) deserves a real squish, not a 1% nudge — a fast press down
+                  // + its own spring back to rest (independent of the reveal-color
+                  // transition above) so the bounce doesn't get swallowed by that timing.
+                  whileTap={!revealed && !calmMotion ? { scale: 0.95, transition: { type: 'spring', stiffness: 500, damping: 15 } } : {}}
                 >
                   {/* Checkbox/Radio */}
                   <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold border-2 transition-all"
@@ -1190,7 +1194,7 @@ export default function QuizPlay() {
                     onClick={confirmSelection}
                     disabled={selectedNow.length === 0}
                     className="press-feedback flex-1 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-35 sm:flex-none sm:min-w-[220px]"
-                    style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 18px 36px ${theme.accent}22` }}
+                    style={{ background: theme.accent, boxShadow: `0 18px 36px ${theme.accent}22` }}
                     whileHover={calmMotion ? undefined : { scale: 1.01 }}
                     whileTap={calmMotion ? undefined : { scale: 0.98 }}
                   >
@@ -1238,7 +1242,7 @@ export default function QuizPlay() {
                   onClick={() => setActiveAIPanel('explanation')}
                   className="rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em] transition-all"
                   style={{
-                    background: activeAIPanel === 'explanation' ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                    background: activeAIPanel === 'explanation' ? theme.accent : theme.surface2,
                     color: activeAIPanel === 'explanation' ? '#fff' : theme.text3,
                     border: `1px solid ${activeAIPanel === 'explanation' ? 'transparent' : theme.border}`,
                   }}
@@ -1483,7 +1487,7 @@ export default function QuizPlay() {
                             onClick={revealed ? handleNext : confirmSelection}
                             disabled={!revealed && selectedNow.length === 0}
                             className={`press-feedback rounded-[20px] text-sm font-black text-white disabled:opacity-35 ${denseLayout ? 'px-4 py-2.5' : 'px-5 py-3'} ${mobile ? 'w-full' : 'min-w-[220px]'}`}
-                            style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 18px 36px ${theme.accent}22` }}
+                            style={{ background: theme.accent, boxShadow: `0 18px 36px ${theme.accent}22` }}
                             whileHover={calmMotion ? undefined : { scale: 1.01 }}
                             whileTap={calmMotion ? undefined : { scale: 0.98 }}
                           >

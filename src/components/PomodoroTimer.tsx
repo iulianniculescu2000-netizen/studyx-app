@@ -221,7 +221,7 @@ export default function PomodoroTimer() {
         aria-label="Deschide Pomodoro"
         className="fixed z-[9997] flex h-12 w-12 items-center justify-center rounded-2xl shadow-xl press-feedback"
         style={{
-          background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+          background: theme.accent,
           boxShadow: `0 8px 24px ${theme.accent}40`,
         }}
       >

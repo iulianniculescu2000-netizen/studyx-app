@@ -35,7 +35,7 @@ export default function AIOrb({
           position: 'absolute',
           inset: 0,
           borderRadius: '50%',
-          background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+          background: theme.accent,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

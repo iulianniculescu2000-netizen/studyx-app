@@ -157,7 +157,7 @@ export function AnkiImportModal({
               whileTap={{ scale: 0.99 }}
               onClick={handleFilePick}
               className="flex w-full items-center justify-center gap-2 rounded-[16px] py-3.5 text-xs font-black uppercase tracking-widest text-white transition-all"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ background: theme.accent }}
             >
               <Upload size={16} />
               Selectează fișier .apkg
@@ -278,7 +278,7 @@ export function AnkiImportModal({
                           onClick={() => { setParentFolderId(option.id); setParentPickerOpen(false); }}
                           className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left transition-all"
                           style={{
-                            background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
+                            background: active ? theme.accent : 'transparent',
                             color: active ? '#fff' : theme.text,
                           }}
                         >
@@ -299,7 +299,7 @@ export function AnkiImportModal({
               onClick={confirmImport}
               className="flex w-full items-center justify-center gap-2 rounded-[16px] py-3.5 text-xs font-black uppercase tracking-widest text-white transition-all"
               style={{
-                background: phase === 'importing' ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                background: phase === 'importing' ? theme.surface2 : theme.accent,
                 color: phase === 'importing' ? theme.text3 : '#fff',
               }}
             >

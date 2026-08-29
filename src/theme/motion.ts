@@ -32,8 +32,15 @@ export const heroIn: Variants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
 };
 
-/** Standard hover/tap feedback for glass buttons and clickable cards. */
+/**
+ * Standard hover/tap feedback for glass buttons and clickable cards. The tap
+ * scales down further than a subtle "01/97" nudge — the press should read as
+ * a real squish — and Framer's own spring back to rest (not a CSS transition)
+ * gives the release a small natural overshoot/bounce for free, matching the
+ * "back"-eased release on the CSS `.press-feedback` class.
+ */
 export const pressFeedback = {
-  whileHover: { scale: 1.01 },
-  whileTap: { scale: 0.97 },
+  whileHover: { scale: 1.015 },
+  whileTap: { scale: 0.93 },
+  transition: { type: 'spring', stiffness: 500, damping: 15 },
 };

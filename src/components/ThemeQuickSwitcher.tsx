@@ -114,7 +114,7 @@ export default function ThemeQuickSwitcher({ collapsed }: { collapsed: boolean }
       >
         <span
           className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-black uppercase"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff' }}
+          style={{ background: theme.accent, color: '#fff' }}
         >
           {activeEntry?.id === 'glass' ? '2' : '1'}
         </span>

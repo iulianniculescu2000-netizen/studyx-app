@@ -663,20 +663,30 @@ button.citation-pill:hover {
   border: 1px solid color-mix(in srgb, var(--border2) 70%, transparent);
 }
 
+/*
+ * Rest → hover/active uses a fast, linear-ish curve (you should feel the
+ * press land instantly). Active → rest (the release) uses a "back" easing
+ * that overshoots past 1 before settling — the bounce is what makes letting
+ * go feel rewarding instead of just "undoing" the press. Since this is the
+ * base rule (not scoped to :hover/:active), it's what governs every
+ * transform transition back to rest.
+ */
 .press-feedback {
-  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.16s ease, filter 0.18s ease;
+  transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.26s ease, opacity 0.16s ease, filter 0.2s ease;
 }
 
 .press-feedback:hover {
-  transform: translateY(-1.5px);
-  filter: saturate(1.03);
-  box-shadow: 0 8px 24px var(--shadow-color-soft);
+  transform: translateY(-1.5px) scale(1.015);
+  filter: saturate(1.05);
+  box-shadow: 0 10px 26px var(--shadow-color-soft);
+  transition-duration: 0.16s;
 }
 
 .press-feedback:active {
-  transform: translateY(0) scale(0.972);
-  transition-duration: 0.08s;
-  filter: saturate(0.98);
+  transform: translateY(0.5px) scale(0.93);
+  transition: transform 0.09s cubic-bezier(0.4, 0, 0.6, 1), filter 0.1s ease, box-shadow 0.12s ease;
+  filter: saturate(0.96);
+  box-shadow: 0 2px 8px var(--shadow-color-soft);
 }
 
 .premium-chip {

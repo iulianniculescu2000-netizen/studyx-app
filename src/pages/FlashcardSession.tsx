@@ -290,7 +290,7 @@ export default function FlashcardSession() {
         >
           <div
             className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 16px 40px ${theme.accent}30` }}
+            style={{ background: theme.accent, boxShadow: `0 16px 40px ${theme.accent}30` }}
           >
             <Trophy size={36} className="text-white" />
           </div>
@@ -317,7 +317,7 @@ export default function FlashcardSession() {
           <button
             onClick={() => navigate('/flashcards')}
             className={`w-full rounded-2xl font-black uppercase tracking-widest text-xs text-white shadow-2xl transition-all ${mobile ? 'py-3.5' : 'py-4'}`}
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 12px 30px ${theme.accent}40` }}
+            style={{ background: theme.accent, boxShadow: `0 12px 30px ${theme.accent}40` }}
           >
             Înapoi la Flashcards
           </button>
@@ -448,7 +448,7 @@ export default function FlashcardSession() {
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: theme.surface2 }}>
                   <motion.div
                     className="h-full rounded-full"
-                    style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                    style={{ background: theme.accent }}
                     animate={{ width: `${progress}%` }}
                   />
                 </div>

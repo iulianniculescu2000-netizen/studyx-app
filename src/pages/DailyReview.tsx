@@ -142,7 +142,7 @@ export default function DailyReview() {
           <Link
             to="/"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-white"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+            style={{ background: theme.accent }}
           >
             Înapoi la Dashboard
           </Link>
@@ -162,7 +162,7 @@ export default function DailyReview() {
         >
           {/* Icon */}
           <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 16px 40px ${theme.accent}30` }}>
+            style={{ background: theme.accent, boxShadow: `0 16px 40px ${theme.accent}30` }}>
             <Brain size={36} className="text-white" />
           </div>
 
@@ -203,7 +203,7 @@ export default function DailyReview() {
               setPhase('session');
             }}
             className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 mb-3"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 24px ${theme.accent}25` }}>
+            style={{ background: theme.accent, boxShadow: `0 8px 24px ${theme.accent}25` }}>
             <Sparkles size={16} />Începe sesiunea
           </motion.button>
           <Link to="/" className="text-sm" style={{ color: theme.text3 }}>Înapoi la Dashboard</Link>
@@ -223,7 +223,7 @@ export default function DailyReview() {
           className="max-w-sm w-full text-center"
         >
           <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 16px 40px ${theme.accent}30` }}>
+            style={{ background: theme.accent, boxShadow: `0 16px 40px ${theme.accent}30` }}>
             <Trophy size={36} className="text-white" />
           </div>
 
@@ -267,7 +267,7 @@ export default function DailyReview() {
             <button
               onClick={() => { setPhase('ready'); setCurrentIdx(0); setSelected([]); setRevealed(false); setResults([]); }}
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-semibold text-white"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+              style={{ background: theme.accent }}>
               <RotateCcw size={14} />Repetă sesiunea
             </button>
             <Link to="/"
@@ -314,7 +314,7 @@ export default function DailyReview() {
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
             <motion.div
               className="h-full rounded-full"
-              style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ background: theme.accent }}
               animate={{ width: `${progress}%` }}
               transition={{ duration: 0.4, ease: 'easeOut' }}
             />
@@ -419,7 +419,7 @@ export default function DailyReview() {
                   animate={{ opacity: 1, y: 0 }}
                   onClick={handleNext}
                   className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                  style={{ background: theme.accent }}
                   whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.98 }}>
                   {currentIdx + 1 >= items.length ? '🏁 Vezi rezultatele' : (<>Următor <ChevronRight size={16} /></>)}

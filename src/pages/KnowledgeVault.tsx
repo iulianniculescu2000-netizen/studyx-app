@@ -525,7 +525,7 @@ export default function KnowledgeVault() {
                 )}
                 <div
                   className="flex h-10 w-10 items-center justify-center rounded-2xl shadow-lg"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff' }}
+                  style={{ background: theme.accent, color: '#fff' }}
                 >
                   {!isTopLevel ? <FolderOpen size={20} /> : <Database size={20} />}
                 </div>
@@ -878,7 +878,7 @@ export default function KnowledgeVault() {
                               <div className="h-1.5 overflow-hidden rounded-full" style={{ background: theme.surface2 }}>
                                 <div
                                   className="h-full rounded-full transition-all"
-                                  style={{ width: `${Math.max(4, Math.round(source.indexProgress ?? 0))}%`, background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                                  style={{ width: `${Math.max(4, Math.round(source.indexProgress ?? 0))}%`, background: theme.accent }}
                                 />
                               </div>
                             </div>

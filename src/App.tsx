@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation as useRouterLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ThemeProvider, useTheme } from './theme/ThemeContext';
@@ -7,6 +7,7 @@ import { useFocusModeStore } from './store/focusModeStore';
 import { useTutorialStore } from './store/tutorialStore';
 import { useAIStore } from './store/aiStore';
 import { useQuizStore } from './store/quizStore';
+import { useStatsStore } from './store/statsStore';
 import { useToastStore } from './store/toastStore';
 import { useSaveStatusStore } from './store/saveStatusStore';
 import TitleBar from './components/TitleBar';
@@ -82,6 +83,28 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
 
   const [isSwapping, setIsSwapping] = useState(false);
   const [addingProfile, setAddingProfile] = useState(false);
+
+  // Real inputs for AIPredictiveAnalytics — it used to always get a hardcoded
+  // `currentLevel={5}` and `subjects={['Medicina', 'Chirurgie']}` regardless
+  // of who was actually using it. Same level formula AIGamification already
+  // computes from real activity, and the subjects the user has actually
+  // studied (most-answered categories first), not two fixed placeholders.
+  const predictiveQuizzes = useQuizStore((state) => state.quizzes);
+  const predictiveSessions = useQuizStore((state) => state.sessions);
+  const predictiveStreak = useStatsStore((state) => state.streak);
+  const predictiveLevel = useMemo(
+    () => Math.max(1, Math.floor((predictiveQuizzes.length + predictiveSessions.length + predictiveStreak.longestStreak) / 4) + 1),
+    [predictiveQuizzes.length, predictiveSessions.length, predictiveStreak.longestStreak],
+  );
+  const predictiveSubjects = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const quiz of predictiveQuizzes) {
+      if (!quiz.category) continue;
+      counts.set(quiz.category, (counts.get(quiz.category) ?? 0) + 1);
+    }
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([category]) => category);
+    return ranked.length > 0 ? ranked.slice(0, 5) : ['Medicina'];
+  }, [predictiveQuizzes]);
 
   const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string) => {
     let timeoutId: ReturnType<typeof window.setTimeout>;
@@ -258,12 +281,20 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
     return () => cancelIdleTask(handle);
   }, [splashVisible]);
 
+  // Welcome/ProfileSelect mount immediately, hidden behind the splash, so
+  // their data reads happen during the splash's visible window rather than
+  // janking the reveal. But that also means their entrance animations finish
+  // playing out of sight — remounting them the instant the splash clears
+  // (key flips) replays that entrance fresh, so avatars/cards actually pop in
+  // as the splash fades instead of just sitting there already-settled.
+  const revealKey = splashVisible ? 'pre-splash' : 'post-splash';
+
   if (profiles.length === 0 || (addingProfile && !activeProfileId)) {
-    return <Welcome onBack={profiles.length > 0 ? () => setAddingProfile(false) : undefined} />;
+    return <Welcome key={revealKey} onBack={profiles.length > 0 ? () => setAddingProfile(false) : undefined} />;
   }
 
   if (!activeProfileId) {
-    return <ProfileSelect onAddNew={() => setAddingProfile(true)} />;
+    return <ProfileSelect key={revealKey} onAddNew={() => setAddingProfile(true)} />;
   }
 
   return (
@@ -309,7 +340,7 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
                   <Route path="/notes" element={<RouteView><Notes /></RouteView>} />
                   <Route path="/settings" element={<RouteView><Settings /></RouteView>} />
                   <Route path="/gamification" element={<RouteView><AIGamification userId={activeProfileId || ''} username={username || ''} /></RouteView>} />
-                  <Route path="/analytics" element={<RouteView><AIPredictiveAnalytics userId={activeProfileId} currentLevel={5} subjects={['Medicina', 'Chirurgie']} /></RouteView>} />
+                  <Route path="/analytics" element={<RouteView><AIPredictiveAnalytics userId={activeProfileId} currentLevel={predictiveLevel} subjects={predictiveSubjects} /></RouteView>} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </motion.div>
@@ -342,6 +373,13 @@ export default function App() {
   const setLowPowerMode = useRuntimeStore((state) => state.setLowPowerMode);
   const setHealthReport = useDiagnosticsStore((state) => state.setHealthReport);
   const addToast = useToastStore((state) => state.addToast);
+  const { calmMotion } = useAdaptiveMotion();
+  // A splash that vanishes the instant the JS bundle finishes evaluating reads
+  // as a stutter, not a launch — the heaviest mount work (store hydration,
+  // route matching) lands in the same frame as the fade-out. Giving it a real
+  // felt duration (still snappy under reduced-motion/low-power) lets that work
+  // finish underneath the splash instead of janking the reveal.
+  const splashDurationMs = calmMotion ? 650 : 2200;
 
   useEffect(() => {
     if (safeStartupEnabled) {
@@ -360,8 +398,9 @@ export default function App() {
 
     beginStartupSession();
     window.electronAPI?.appReady();
-    const timer = setTimeout(() => setSplashVisible(false), 720);
+    const timer = setTimeout(() => setSplashVisible(false), splashDurationMs);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- splashDurationMs is fixed for the lifetime of this mount (calmMotion doesn't change mid-boot)
   }, [addToast, safeStartupEnabled, setHealthReport, setLowPowerMode]);
 
   useEffect(() => {
@@ -375,7 +414,7 @@ export default function App() {
       <ThemeProvider>
         <div className="flex h-screen w-screen flex-col overflow-hidden" style={{ background: 'transparent' }}>
           <WindowControls />
-          <SplashScreen visible={splashVisible} />
+          <SplashScreen visible={splashVisible} durationMs={splashDurationMs} />
           <AppContent splashVisible={splashVisible} />
         </div>
       </ThemeProvider>

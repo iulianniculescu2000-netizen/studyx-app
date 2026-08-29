@@ -226,7 +226,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold text-white"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+          style={{ background: theme.accent }}
         >
           <Camera size={17} /> Fă o poză grilelor
         </motion.button>
@@ -449,7 +449,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
           onClick={doImport}
           whileTap={{ scale: 0.98 }}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+          style={{ background: theme.accent }}
         >
           <FileText size={14} />
           {wizardMode ? `Adaugă ${importable.length} în wizard` : `Importă ${importable.length} grile`}
