@@ -48,8 +48,7 @@ const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; spee
   ],
   cerebras: [
     { id: 'gpt-oss-120b', name: 'GPT-OSS 120B', desc: 'Cel mai inteligent, foarte rapid', speed: 'Ultra rapid' },
-    { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', desc: 'Puternic (preview)', speed: 'Rapid' },
-    { id: 'zai-glm-4.7', name: 'GLM 4.7', desc: 'Echilibrat (preview)', speed: 'Rapid' },
+    { id: 'qwen-3.8-27b', name: 'Qwen 3.8 27B', desc: 'Rapid, echilibrat', speed: 'Rapid' },
   ],
 };
 

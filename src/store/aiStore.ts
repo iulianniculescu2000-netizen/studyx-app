@@ -24,8 +24,15 @@ export type AIModel =
   | 'gemini-3.5-flash'
   | 'gemini-3.1-pro-preview'
   | 'gpt-oss-120b'
+  // 2026-09-08: confirmed against Cerebras's own docs — 'qwen-3-235b-a22b-instruct-2507'
+  // was replaced by 'qwen-3.8-27b', and 'zai-glm-4.7' hit its already-announced
+  // 2026-08-17 deprecation date and is gone. Both kept in the union (same
+  // reasoning as the Groq/Google entries above) purely so already-persisted
+  // state still type-checks; removed from PROVIDER_MODELS so normalizeProviderModel
+  // migrates them away on next hydrate.
   | 'qwen-3-235b-a22b-instruct-2507'
-  | 'zai-glm-4.7';
+  | 'zai-glm-4.7'
+  | 'qwen-3.8-27b';
 
 export type AIProvider = 'groq' | 'google' | 'cerebras';
 
@@ -177,7 +184,7 @@ const DEFAULT_MODEL: AIModel = 'openai/gpt-oss-120b';
 const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
   groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
   google: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
-  cerebras: ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507', 'zai-glm-4.7'],
+  cerebras: ['gpt-oss-120b', 'qwen-3.8-27b'],
 };
 
 function isValidProviderKey(provider: AIProvider, apiKey: string) {

@@ -37,7 +37,10 @@ const MODEL_CANDIDATES: Record<ProviderId, AIModel[]> = {
   // invocability, so checkModelAvailability's liveIds check alone isn't
   // enough to catch this class of retirement).
   google: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
-  cerebras: ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507', 'zai-glm-4.7'],
+  // 2026-09-08, confirmed against Cerebras's own docs: 'qwen-3-235b-a22b-instruct-2507'
+  // was renamed to 'qwen-3.8-27b'; 'zai-glm-4.7' hit its announced 2026-08-17
+  // deprecation date and no longer appears in the model catalog at all.
+  cerebras: ['gpt-oss-120b', 'qwen-3.8-27b'],
 };
 
 const MODELS_ENDPOINT: Record<ProviderId, string> = {
