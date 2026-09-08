@@ -373,7 +373,7 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
 export default function App() {
   const [splashVisible, setSplashVisible] = useState(true);
   const safeStartupEnabled = useRuntimeStore((state) => state.featureFlags.safeStartup);
-  const setLowPowerMode = useRuntimeStore((state) => state.setLowPowerMode);
+  const setLowPowerModeForThisSessionOnly = useRuntimeStore((state) => state.setLowPowerModeForThisSessionOnly);
   const setHealthReport = useDiagnosticsStore((state) => state.setHealthReport);
   const addToast = useToastStore((state) => state.addToast);
   const { calmMotion } = useAdaptiveMotion();
@@ -388,14 +388,14 @@ export default function App() {
     if (safeStartupEnabled) {
       const startupState = inspectPreviousStartup();
       if (startupState.hadUncleanExit) {
-        setLowPowerMode(true);
+        setLowPowerModeForThisSessionOnly();
         setHealthReport('degraded', [{
           id: 'unclean-startup',
           label: 'Pornire anterioară incompletă',
           status: 'error',
           detail: 'Ultima sesiune nu s-a închis curat. Am activat mod economisire pentru stabilitate.',
         }]);
-        addToast('Am detectat o pornire anterioară incompletă. Activăm un profil mai sigur.', 'warning', 5600);
+        addToast('Am detectat o pornire anterioară incompletă. Activăm un profil mai sigur pentru sesiunea asta.', 'warning', 5600);
       }
     }
 
@@ -404,7 +404,7 @@ export default function App() {
     const timer = setTimeout(() => setSplashVisible(false), splashDurationMs);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- splashDurationMs is fixed for the lifetime of this mount (calmMotion doesn't change mid-boot)
-  }, [addToast, safeStartupEnabled, setHealthReport, setLowPowerMode]);
+  }, [addToast, safeStartupEnabled, setHealthReport, setLowPowerModeForThisSessionOnly]);
 
   useEffect(() => {
     if (splashVisible) return;
