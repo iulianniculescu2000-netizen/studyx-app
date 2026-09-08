@@ -20,7 +20,7 @@
 import { useAIStore, type AIModel, type AIProvider } from '../../store/aiStore';
 import { useToastStore } from '../../store/toastStore';
 
-type ProviderId = 'groq' | 'google' | 'cerebras';
+type ProviderId = 'groq' | 'google' | 'cerebras' | 'mistral';
 
 /**
  * Known-good models per provider, in preference order. Kept separate from
@@ -41,18 +41,24 @@ const MODEL_CANDIDATES: Record<ProviderId, AIModel[]> = {
   // was renamed to 'qwen-3.8-27b'; 'zai-glm-4.7' hit its announced 2026-08-17
   // deprecation date and no longer appears in the model catalog at all.
   cerebras: ['gpt-oss-120b', 'qwen-3.8-27b'],
+  // "-latest" aliases, not dated model names — Mistral keeps these pointed at
+  // their current model, so (unlike NVIDIA's dated pick, dead within 2 weeks)
+  // this shouldn't need healing from a rename/retirement in the first place.
+  mistral: ['mistral-small-latest', 'mistral-large-latest'],
 };
 
 const MODELS_ENDPOINT: Record<ProviderId, string> = {
   groq: 'https://api.groq.com/openai/v1/models',
   google: 'https://generativelanguage.googleapis.com/v1beta/openai/models',
   cerebras: 'https://api.cerebras.ai/v1/models',
+  mistral: 'https://api.mistral.ai/v1/models',
 };
 
 const CHAT_ENDPOINT: Record<ProviderId, string> = {
   groq: 'https://api.groq.com/openai/v1/chat/completions',
   google: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
   cerebras: 'https://api.cerebras.ai/v1/chat/completions',
+  mistral: 'https://api.mistral.ai/v1/chat/completions',
 };
 
 /**
@@ -108,7 +114,7 @@ const LAST_CHECK_KEY = 'studyx-model-health-check';
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function isKnownProvider(provider: AIProvider): provider is ProviderId {
-  return provider === 'groq' || provider === 'google' || provider === 'cerebras';
+  return provider === 'groq' || provider === 'google' || provider === 'cerebras' || provider === 'mistral';
 }
 
 /**
@@ -154,6 +160,7 @@ export async function checkModelAvailability(): Promise<void> {
 function providerDisplayName(provider: ProviderId): string {
   if (provider === 'google') return 'Google Gemini';
   if (provider === 'cerebras') return 'Cerebras';
+  if (provider === 'mistral') return 'Mistral AI';
   return 'Groq';
 }
 
@@ -214,7 +221,7 @@ export interface ProviderModelCheck {
  */
 export async function refreshAllProviderModels(): Promise<ProviderModelCheck[]> {
   const state = useAIStore.getState();
-  const providers: ProviderId[] = ['groq', 'google', 'cerebras'];
+  const providers: ProviderId[] = ['groq', 'google', 'cerebras', 'mistral'];
   const results: ProviderModelCheck[] = [];
 
   for (const provider of providers) {

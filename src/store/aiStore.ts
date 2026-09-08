@@ -32,9 +32,20 @@ export type AIModel =
   // migrates them away on next hydrate.
   | 'qwen-3-235b-a22b-instruct-2507'
   | 'zai-glm-4.7'
-  | 'qwen-3.8-27b';
+  | 'qwen-3.8-27b'
+  // Mistral AI (La Plateforme) — 4th free provider, added 2026-09-08 after
+  // NVIDIA NIM turned out to reject browser CORS entirely (reverted). Verified
+  // THIS time before shipping: CORS confirmed live via curl OPTIONS preflight
+  // (returns access-control-allow-origin: *), free "Experiment" tier needs no
+  // card (multiple independent sources agree — the "activate billing" step in
+  // their console just turns the free tier on, doesn't collect payment info),
+  // ~1B tokens/month. "-latest" aliases used deliberately instead of a dated
+  // model name — Mistral keeps them pointed at their current model, so this
+  // shouldn't go stale the way the NVIDIA pick did within 2 weeks.
+  | 'mistral-small-latest'
+  | 'mistral-large-latest';
 
-export type AIProvider = 'groq' | 'google' | 'cerebras';
+export type AIProvider = 'groq' | 'google' | 'cerebras' | 'mistral';
 
 export type AIKnowledgeSourceType = 'txt' | 'pdf' | 'docx' | 'image';
 export type AIKnowledgeSourceStatus = 'indexing' | 'ready' | 'error';
@@ -185,6 +196,7 @@ const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
   groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
   google: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
   cerebras: ['gpt-oss-120b', 'qwen-3.8-27b'],
+  mistral: ['mistral-small-latest', 'mistral-large-latest'],
 };
 
 function isValidProviderKey(provider: AIProvider, apiKey: string) {
@@ -194,14 +206,16 @@ function isValidProviderKey(provider: AIProvider, apiKey: string) {
   if (provider === 'groq') return trimmed.startsWith('gsk_') && trimmed.length > 20;
   // Cerebras keys are prefixed with "csk-".
   if (provider === 'cerebras') return trimmed.startsWith('csk-') && trimmed.length > 20;
-  // Google/Gemini keys vary in prefix (AIza, AQ., …), so don't gate on a prefix.
-  // Accept any substantial key that isn't a Groq/Cerebras key; the live API check decides.
+  // Google/Gemini and Mistral keys are both opaque tokens with no distinctive
+  // prefix, so don't gate on one. Accept any substantial key that isn't a
+  // Groq/Cerebras key; the live API check decides the rest.
   return trimmed.length >= 20 && !trimmed.startsWith('gsk_') && !trimmed.startsWith('csk-');
 }
 
 function getDefaultModelForProvider(provider: AIProvider): AIModel {
   if (provider === 'google') return 'gemini-3.6-flash';
   if (provider === 'cerebras') return 'gpt-oss-120b';
+  if (provider === 'mistral') return 'mistral-small-latest';
   // groq
   return DEFAULT_MODEL;
 }

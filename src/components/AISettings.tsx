@@ -34,6 +34,13 @@ const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; 
     keyHint: 'csk-...',
     docs: 'https://cloud.cerebras.ai/',
   },
+  {
+    id: 'mistral',
+    name: 'Mistral AI',
+    desc: 'Gratuit, fără card · ~1 miliard de tokeni/lună',
+    keyHint: 'cheie opacă, fără prefix fix',
+    docs: 'https://admin.mistral.ai/organization/api-keys',
+  },
 ];
 
 const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; speed: string }[]> = {
@@ -49,6 +56,10 @@ const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; spee
   cerebras: [
     { id: 'gpt-oss-120b', name: 'GPT-OSS 120B', desc: 'Cel mai inteligent, foarte rapid', speed: 'Ultra rapid' },
     { id: 'qwen-3.8-27b', name: 'Qwen 3.8 27B', desc: 'Rapid, echilibrat', speed: 'Rapid' },
+  ],
+  mistral: [
+    { id: 'mistral-small-latest', name: 'Mistral Small', desc: 'Rapid, echilibrat', speed: 'Rapid' },
+    { id: 'mistral-large-latest', name: 'Mistral Large', desc: 'Cel mai puternic, mai lent', speed: 'Smart' },
   ],
 };
 
@@ -83,6 +94,16 @@ const KEY_GUIDE: Record<AIProvider, { intro: string; steps: string[] }> = {
       'Mergi la „API Keys" și apasă „Generate API Key".',
       'Copiază cheia generată — începe cu „csk-…".',
       'Lipește-o în câmpul de mai sus și apasă „Salvează".',
+    ],
+  },
+  mistral: {
+    intro: '~1 miliard de tokeni/lună gratis, fără card bancar. Cere doar verificare de telefon.',
+    steps: [
+      'Apasă butonul de mai jos — se deschide contul Mistral.',
+      'Creează un cont sau conectează-te, confirmă numărul de telefon dacă ți se cere.',
+      'La primul pas, activează planul gratuit „Experiment" (nu cere card).',
+      'Mergi la „API Keys" și apasă „Create new key".',
+      'Lipește cheia generată în câmpul de mai sus și apasă „Salvează".',
     ],
   },
 };
@@ -168,22 +189,27 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
 
   const activeProvider = PROVIDERS.find((entry) => entry.id === provider) ?? PROVIDERS[0];
   const modelOptions = MODELS[provider] ?? MODELS.groq;
-  // A key's provider is unambiguous from its prefix (gsk_ = Groq, AIza = Google),
-  // so we never block a valid key just because the selector points elsewhere — we
-  // switch the provider automatically on save instead.
+  // A key's provider is unambiguous ONLY when it has a distinctive prefix
+  // (gsk_ = Groq, csk- = Cerebras) — Google and Mistral keys are both opaque
+  // tokens with no recognizable prefix, so guessing between them isn't
+  // possible from format alone. Returning null here for anything else lets
+  // handleSave's `?? provider` fallback keep whatever the user already has
+  // selected, instead of forcing a guess. This used to default to 'google'
+  // unconditionally, which silently rerouted a pasted NVIDIA key onto Google
+  // and burned a real API call on a 400 — never repeat that.
   const detectProviderFromKey = (k: string): AIProvider | null => {
     const trimmed = k.trim();
     if (trimmed.startsWith('gsk_') && trimmed.length > 20) return 'groq';
     if (trimmed.startsWith('csk-') && trimmed.length > 20) return 'cerebras';
-    // Groq/Cerebras keys have fixed prefixes; any other substantial key is a
-    // Google/Gemini key (AIza, AQ., …) — we don't gate on the Google prefix.
-    if (trimmed.length >= 20) return 'google';
     return null;
   };
-  const detectedProvider = detectProviderFromKey(draft);
-  // Invalid only if it matches NEITHER provider's format.
-  const keyInvalid = draft.trim().length > 0 && detectedProvider === null;
-  // Valid key, but belongs to the other provider than the one selected.
+  const trimmedDraft = draft.trim();
+  const detectedProvider = detectProviderFromKey(trimmedDraft);
+  // "Invalid" only means too short to be any real key — not being able to
+  // guess a prefix-less provider is a different thing entirely.
+  const keyInvalid = trimmedDraft.length > 0 && trimmedDraft.length < 20;
+  // Only fires for a CONFIDENTLY-detected prefix that belongs to a different
+  // provider than the one selected — never a false alarm for Google/Mistral.
   const keyForOtherProvider = detectedProvider !== null && detectedProvider !== provider;
 
   const handleSave = async () => {

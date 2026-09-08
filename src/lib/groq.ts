@@ -126,6 +126,17 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
     };
   }
 
+  if (provider === 'mistral') {
+    return {
+      name: 'Mistral AI',
+      // OpenAI-compatible, ~1B tokens/lună gratis pe tier-ul "Experiment",
+      // fără card — CORS confirmat live (access-control-allow-origin: *),
+      // spre deosebire de NVIDIA NIM (încercat și scos, vezi istoricul git).
+      endpoint: 'https://api.mistral.ai/v1/chat/completions',
+      keyHint: 'Cheia API Mistral nu este configurata. Mergi la Setari AI.',
+    };
+  }
+
   return {
     name: 'Groq',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
@@ -134,15 +145,16 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
 }
 
 /** Default model to use when we fall back to another provider mid-request. */
-const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras', string> = {
+const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras' | 'mistral', string> = {
   groq: 'openai/gpt-oss-120b',
   google: 'gemini-3.6-flash',
   cerebras: 'gpt-oss-120b',
+  mistral: 'mistral-small-latest',
 };
 
-type ProviderId = 'groq' | 'google' | 'cerebras';
+type ProviderId = 'groq' | 'google' | 'cerebras' | 'mistral';
 
-const PROVIDER_ORDER: ProviderId[] = ['groq', 'google', 'cerebras'];
+const PROVIDER_ORDER: ProviderId[] = ['groq', 'google', 'cerebras', 'mistral'];
 
 /**
  * How long we keep starting requests on a fallback provider after switching away
@@ -280,7 +292,10 @@ export async function validateApiKey(
 
   const config = getProviderConfig(provider);
   let testModel =
-    provider === 'google' ? 'gemini-3.6-flash' : provider === 'cerebras' ? 'gpt-oss-120b' : 'openai/gpt-oss-20b';
+    provider === 'google' ? 'gemini-3.6-flash'
+    : provider === 'cerebras' ? 'gpt-oss-120b'
+    : provider === 'mistral' ? 'mistral-small-latest'
+    : 'openai/gpt-oss-20b';
 
   // A single hardcoded test model can go dead on the provider's own schedule
   // (the same class of problem modelHealing.ts guards live requests against —

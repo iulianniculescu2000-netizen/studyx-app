@@ -25,7 +25,7 @@ export default function FreeKeysNotice({
   const hasNone = configuredCount === 0;
 
   // Everything is set up — nothing to nag about.
-  if (configuredCount >= 3) return null;
+  if (configuredCount >= 4) return null;
 
   const goToSettings = () => {
     onNavigate?.();
@@ -52,16 +52,16 @@ export default function FreeKeysNotice({
       <p className="text-[13px] font-medium leading-relaxed" style={{ color: theme.text2 }}>
         {hasNone ? (
           <>
-            StudyX merge pe <strong style={{ color: theme.text }}>chei gratuite</strong> de la Groq, Google Gemini
-            și Cerebras — fără card, doar cu un cont. Pune-le pe toate trei: când una atinge limita zilnică,
-            aplicația <strong style={{ color: theme.text }}>trece automat pe următoarea</strong>, așa că nu rămâi
-            blocat în mijlocul învățatului.
+            StudyX merge pe <strong style={{ color: theme.text }}>chei gratuite</strong> de la Groq, Google Gemini,
+            Cerebras și Mistral AI — fără card, doar cu un cont. Pune-le pe toate patru: când una atinge limita
+            zilnică, aplicația <strong style={{ color: theme.text }}>trece automat pe următoarea</strong>, așa că nu
+            rămâi blocat în mijlocul învățatului.
           </>
         ) : (
           <>
-            Ai <strong style={{ color: theme.text }}>{configuredCount} {configuredCount === 1 ? 'cheie' : 'chei'}</strong> din 3.
+            Ai <strong style={{ color: theme.text }}>{configuredCount} {configuredCount === 1 ? 'cheie' : 'chei'}</strong> din 4.
             Fiecare furnizor are propria limită gratuită, iar aplicația comută singură pe următoarea cheie când una
-            se termină. Cu toate trei, practic nu mai atingi limita.
+            se termină. Cu toate patru, practic nu mai atingi limita.
           </>
         )}
       </p>
