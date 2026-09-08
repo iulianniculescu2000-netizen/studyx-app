@@ -230,21 +230,42 @@ export class DocumentProcessor {
 
     const lines = text.split('\n');
     const out: string[] = [];
-
-    for (const line of lines) {
+    const isCandidate = (line: string): boolean => {
       const trimmed = line.trim();
-      const isHeading = trimmed.length > 0 && (
+      return trimmed.length > 0 && (
         (knownHeadings?.length ? this.matchesKnownHeading(trimmed, knownHeadings) !== null : false)
         || this.isLikelyHeading(trimmed)
       );
+    };
 
-      if (isHeading) {
+    let i = 0;
+    while (i < lines.length) {
+      const trimmed = lines[i].trim();
+      if (isCandidate(lines[i])) {
+        // A real title that's too long for one line in the printed book wraps
+        // onto a second physical line that ALSO looks like its own
+        // heading-shaped line ("PACIENTUL CU" / "DISFUNCTIE RENALĂ") — merge
+        // consecutive heading-shaped lines into one before treating them as a
+        // heading, so the chapter list shows the whole title instead of a
+        // truncated half. Capped at 2 lines / 80 chars combined so a run of
+        // unrelated short ALL-CAPS lines doesn't get glued into one heading.
+        let merged = trimmed;
+        let next = i + 1;
+        if (next < lines.length && isCandidate(lines[next]) && merged.length <= 50) {
+          const candidate = `${merged} ${lines[next].trim()}`;
+          if (candidate.length <= 80) {
+            merged = candidate;
+            next += 1;
+          }
+        }
         if (out.length > 0 && out[out.length - 1].trim() !== '') out.push('');
-        out.push(trimmed);
+        out.push(merged);
         out.push('');
+        i = next;
         continue;
       }
-      out.push(line);
+      out.push(lines[i]);
+      i += 1;
     }
 
     return out.join('\n');
