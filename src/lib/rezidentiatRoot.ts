@@ -20,7 +20,7 @@ export const REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME = '🃏 Flashcarduri AI';
 interface NamedFolder {
   id: string;
   name: string;
-  parentId: string | null | undefined;
+  parentId?: string | null;
 }
 
 function normalize(name: string): string {

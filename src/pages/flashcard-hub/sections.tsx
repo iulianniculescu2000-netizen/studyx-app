@@ -121,11 +121,18 @@ function FolderTargetSelect({
     return () => window.removeEventListener('mousedown', close);
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
+  const toggleOpen = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    // Reset the browse position/creation form on the transition into "open"
+    // (not via an effect on [open] — that fired a setState on every render
+    // while open, not just on the open transition).
     setBrowseParentId(selectedFolder?.parentId ?? null);
     setCreating(false);
-  }, [open]);
+    setOpen(true);
+  };
 
   const submitNewFolder = () => {
     const name = newName.trim();
@@ -141,7 +148,7 @@ function FolderTargetSelect({
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={toggleOpen}
         className="flex w-full items-center gap-3 rounded-[14px] border px-3 py-2.5 text-left transition-all"
         style={{
           background: theme.surface2,

@@ -97,27 +97,36 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
         // Validate every field's SHAPE before it's ever allowed near a store —
         // a hand-edited or truncated file used to overwrite live data with
         // whatever garbage happened to parse as JSON.
+        //
+        // The `as unknown` casts below are load-bearing, not decorative: a
+        // type-guard call narrows its exact argument expression for all code
+        // that follows, even code inside an unrelated later `if` block — so
+        // calling `isQuizSnapshot(data)` would narrow `data` itself, and the
+        // NEXT block's `data.folders` access would then fail to typecheck
+        // (the narrowed type has no `folders` field). Passing `data as
+        // unknown` gives the guard a fresh, non-narrowable expression instead
+        // of the tracked `data` reference, so each check stays independent.
         const parsed: ParsedBackup = { version: 1 };
+        if (data.quizzes !== undefined && !isQuizSnapshot(data as unknown)) throw new Error('Fișierul are secțiunea de grile coruptă sau incompletă.');
         if (data.quizzes !== undefined) {
-          if (!isQuizSnapshot(data)) throw new Error('Fișierul are secțiunea de grile coruptă sau incompletă.');
-          parsed.quizzes = data.quizzes;
-          parsed.sessions = data.sessions;
+          parsed.quizzes = data.quizzes as Quiz[];
+          parsed.sessions = data.sessions as QuizSession[] | undefined;
         }
+        if (data.folders !== undefined && !isFolderSnapshot(data as unknown)) throw new Error('Fișierul are secțiunea de foldere coruptă sau incompletă.');
         if (data.folders !== undefined) {
-          if (!isFolderSnapshot(data)) throw new Error('Fișierul are secțiunea de foldere coruptă sau incompletă.');
-          parsed.folders = data.folders;
+          parsed.folders = data.folders as Folder[];
         }
+        if (data.stats !== undefined && !isStatsSnapshot(data.stats)) throw new Error('Fișierul are secțiunea de statistici coruptă sau incompletă.');
         if (data.stats !== undefined) {
-          if (!isStatsSnapshot(data.stats)) throw new Error('Fișierul are secțiunea de statistici coruptă sau incompletă.');
-          parsed.stats = data.stats;
+          parsed.stats = data.stats as ParsedBackup['stats'];
         }
+        if (data.notes !== undefined && !isNotesSnapshot(data as unknown)) throw new Error('Fișierul are secțiunea de notițe coruptă sau incompletă.');
         if (data.notes !== undefined) {
-          if (!isNotesSnapshot(data)) throw new Error('Fișierul are secțiunea de notițe coruptă sau incompletă.');
-          parsed.notes = data.notes;
+          parsed.notes = data.notes as Record<string, string>;
         }
+        if (data.ai !== undefined && !isAiSnapshot(data.ai)) throw new Error('Fișierul are secțiunea de bibliotecă AI coruptă sau incompletă.');
         if (data.ai !== undefined) {
-          if (!isAiSnapshot(data.ai)) throw new Error('Fișierul are secțiunea de bibliotecă AI coruptă sau incompletă.');
-          parsed.ai = data.ai;
+          parsed.ai = data.ai as ParsedBackup['ai'];
         }
         // Quizzes reference folders by id — restoring one without the other
         // leaves quizzes pointing at folders that don't exist in the restored
