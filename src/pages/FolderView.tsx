@@ -138,8 +138,8 @@ export default function FolderView() {
           {backHref && (
             <Link
               to={backHref}
-              className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold transition-opacity hover:opacity-80"
-              style={{ color: theme.text3 }}
+              className="mb-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+              style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
             >
               <ArrowLeft size={15} />Înapoi la {backLabel}
             </Link>

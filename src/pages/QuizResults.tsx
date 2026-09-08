@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { RotateCcw, Home, Check, X, Star, Download, Bot, Loader2, Scale, MessageSquare, BookOpen } from 'lucide-react';
+import { RotateCcw, Home, Check, X, Star, Download, Bot, Loader2, Scale, MessageSquare, BookOpen, ChevronLeft } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { QuizSession, Question, QuestionStat } from '../types';
 import type { WrongOptionAnalysis } from '../ai/types';
@@ -97,7 +97,13 @@ export default function QuizResults() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="mb-4" style={{ color: theme.text2 }}>Sesiunea nu a fost găsită.</p>
-          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi</Link>
+          <Link
+            to="/quizzes"
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
+          >
+            <ChevronLeft size={15} />Înapoi la grile
+          </Link>
         </div>
       </div>
     );

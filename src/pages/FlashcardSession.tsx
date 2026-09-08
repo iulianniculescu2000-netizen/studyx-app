@@ -333,7 +333,13 @@ export default function FlashcardSession() {
           <Sparkles size={48} className="mx-auto mb-4 opacity-20" style={{ color: theme.text }} />
           <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Niciun card de studiat</h2>
           <p className="text-sm opacity-60 mb-6" style={{ color: theme.text }}>Toate cardurile tale sunt la zi sau nu există întrebări.</p>
-          <button onClick={() => navigate('/flashcards')} className="text-accent font-bold">Înapoi</button>
+          <button
+            onClick={() => navigate('/flashcards')}
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
+          >
+            <ChevronLeft size={15} />Înapoi la flashcarduri
+          </button>
         </div>
       </div>
     );

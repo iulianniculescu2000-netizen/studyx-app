@@ -292,8 +292,8 @@ export default function QuizDetail() {
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
             <Link
               to={backHref}
-              className="flex items-center gap-1.5 text-sm hover:opacity-80 transition-all"
-              style={{ color: theme.text3 }}
+              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+              style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
             >
               <ChevronLeft size={15} />
               {backLabel}

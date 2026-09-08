@@ -83,8 +83,8 @@ export default function Welcome({ onBack }: Props) {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   onClick={onBack}
-                  className="flex items-center gap-1.5 text-sm mb-6 transition-opacity hover:opacity-80"
-                  style={{ color: theme.text3 }}>
+                  className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold mb-6 transition-all hover:opacity-80"
+                  style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}>
                   <ChevronLeft size={15} />Înapoi la profiluri
                 </motion.button>
               )}

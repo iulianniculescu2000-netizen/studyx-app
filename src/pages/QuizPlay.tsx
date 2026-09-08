@@ -674,7 +674,13 @@ export default function QuizPlay() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost găsită.</p>
-          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi la grile</Link>
+          <Link
+            to="/quizzes"
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
+          >
+            <ChevronLeft size={15} />Înapoi la grile
+          </Link>
         </div>
       </div>
     );
