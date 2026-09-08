@@ -1022,9 +1022,12 @@ export async function executeAgentPlan(
             break;
           }
           const parent = resolveQuizFolder(step.parent);
-          const appearance = suggestFolderAppearance(step.name);
-          const emoji = parent ? '📁' : appearance.emoji;
-          const color = appearance.color;
+          // Used to fall back to a generic 📁 for any subfolder, discarding
+          // the topical suggestion right below it — "Arsuri" created under
+          // "Rezidențiat" got a plain folder icon instead of anything
+          // relevant, while a root-level folder with the same name would
+          // have gotten a proper one. Nesting isn't a reason to be generic.
+          const { emoji, color } = suggestFolderAppearance(step.name);
           const id = folderStore.addFolder(step.name, emoji, color, parent?.id ?? null);
           const folder: Folder = { id, name: step.name, emoji, color, parentId: parent?.id ?? null, createdAt: Date.now() };
           createdFolderByName.set(normalizeName(step.name), folder);
@@ -1037,7 +1040,8 @@ export async function executeAgentPlan(
         case 'create_library_folder': {
           if (!step.name) throw new Error('Lipsește numele folderului.');
           const parent = step.parent ? findByName(useAIStore.getState().libraryFolders, step.parent) : null;
-          const id = aiStore.addLibraryFolder(step.name, parent ? '📁' : '📚', parent?.id ?? null);
+          const libraryEmoji = parent ? suggestFolderAppearance(step.name).emoji : '📚';
+          const id = aiStore.addLibraryFolder(step.name, libraryEmoji, parent?.id ?? null);
           undoOps.push(() => useAIStore.getState().deleteLibraryFolder(id));
           summaryParts.push(parent ? `subfolder bibliotecă „${step.name}" în „${parent.name}"` : `folder bibliotecă „${step.name}"`);
           callbacks.onStep(index, 'done');
