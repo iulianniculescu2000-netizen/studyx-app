@@ -121,6 +121,30 @@ export function useAgentCommands({
     // forcing the user to retype the whole command — no need to clear it here
     // either way; a successful job just never reads it again.
 
+    // The confirm-card message's text was frozen at "I'm about to do X" (set
+    // once in presentAgentPlan, before execution) — the ACTUAL outcome only
+    // ever lived in AgentJobCard, a live UI component reading straight from
+    // useAgentJobsStore, never as plain text. That's fine for a human looking
+    // at the card, but the model building `historyForAI` from `messages`
+    // never saw it: a later "de ce nu a mers?" had nothing to go on except a
+    // message that still read as if the job were still pending/just-declared,
+    // so it fell through to ordinary RAG chat and answered about something
+    // else entirely (confirmed live — asking about "agentul" after a failed
+    // run got interpreted as "agent patogen", a medical term, because that's
+    // what the book-grounded context actually contained). Rewriting the
+    // message with the real outcome each time (initial run AND every retry —
+    // this same code path runs for both) gives every later turn real
+    // grounding to reason from instead of stale intent text.
+    const introText = plan.reply || (plan.needsConfirm ? 'Am pregătit un plan. Confirmă ca să îl execut.' : 'Execut planul...');
+    const outcomeText = failedAll
+      ? `❌ Nu a mers: ${result.errors.join(' ')}`
+      : result.errors.length > 0
+        ? `✅ ${result.summary} — cu observații: ${result.errors.join(' ')}`
+        : `✅ ${result.summary}`;
+    setMessages((prev) => prev.map((message) => (
+      message.agentJobId === jobId ? { ...message, content: `${introText}\n\n${outcomeText}` } : message
+    )));
+
     addToast(result.summary, failedAll ? 'error' : result.errors.length ? 'warning' : 'success');
     if (isDocumentHidden() || !open) {
       void desktopNotify('StudyX — agent', result.summary);
