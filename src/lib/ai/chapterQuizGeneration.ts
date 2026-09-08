@@ -70,7 +70,15 @@ export async function generateQuizFromChapter({
     throw new Error('Nu am găsit conținut indexat pentru acest capitol.');
   }
 
-  const packCount = Math.max(1, Math.ceil(chapterChunks.length / CHAPTER_CHUNK_WINDOW));
+  // Capped at `questionCount`: a pack can't usefully hold less than 1 question,
+  // so more packs than questions asked for is pure waste, not extra spread.
+  // A long chapter (many chunks) with a SMALL question count used to still run
+  // one pack per CHAPTER_CHUNK_WINDOW-sized slice regardless — e.g. a 50-chunk
+  // chapter sized 10 packs for a request of just 5 questions, generated 10
+  // (each its own real API call + medical-judge pass), then threw away half
+  // via the final .slice(0, questionCount) below. Every discarded question was
+  // a fully-billed generation for nothing.
+  const packCount = Math.max(1, Math.min(Math.ceil(chapterChunks.length / CHAPTER_CHUNK_WINDOW), questionCount));
   const questionsPerPack = Math.max(1, Math.ceil(questionCount / packCount));
   const titleContext = heading === WHOLE_DOCUMENT_HEADING ? undefined : heading;
 
