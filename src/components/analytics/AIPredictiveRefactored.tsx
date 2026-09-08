@@ -142,6 +142,14 @@ export default function AIPredictiveAnalyticsRefactored({
   );
   const studyHours = Math.max(1, Math.round(totalStudyTime / 3600));
 
+  // accuracy is 0 both when the student has answered nothing yet AND when they
+  // are genuinely getting everything wrong — `accuracy || 72` treated both the
+  // same way, silently swapping a real 0% for a fabricated "72% predicted
+  // score". trackedTopics (real answered questions) is the only reliable
+  // "do we actually have data" signal; absent that, fall back to the same
+  // neutral 50 baseline already used below for study-path relevance.
+  const hasRealData = trackedTopics.length > 0;
+
   const examPredictions = useMemo<ExamPrediction[]>(
     () => [
       {
@@ -149,7 +157,7 @@ export default function AIPredictiveAnalyticsRefactored({
         examName: `${activeSubjects[0] ?? 'Medicina'} - predictie examen`,
         subject: activeSubjects[0] ?? 'Medicina',
         examDate: new Date(PREDICTION_BASE_TIME + 21 * 24 * 60 * 60 * 1000),
-        predictedScore: Math.max(45, accuracy || 72),
+        predictedScore: hasRealData ? Math.max(45, accuracy) : 50,
         confidenceLevel: Math.min(94, 55 + sessions.length * 6 + quizzes.length * 2),
         recommendedStudyTime: Math.max(45, dueCount * 6 + studyHours * 4),
         weakAreas: trackedTopics.slice(0, 3).map((entry) => entry.topic),
@@ -162,7 +170,7 @@ export default function AIPredictiveAnalyticsRefactored({
         examName: `${activeSubjects[1] ?? activeSubjects[0] ?? 'Recapitulare'} - test partial`,
         subject: activeSubjects[1] ?? activeSubjects[0] ?? 'Recapitulare',
         examDate: new Date(PREDICTION_BASE_TIME + 10 * 24 * 60 * 60 * 1000),
-        predictedScore: Math.max(40, Math.min(96, (accuracy || 68) - 6)),
+        predictedScore: hasRealData ? Math.max(40, Math.min(96, accuracy - 6)) : 50,
         confidenceLevel: Math.min(88, 50 + sessions.length * 5 + quizzes.length),
         recommendedStudyTime: Math.max(30, dueCount * 4 + 30),
         weakAreas: trackedTopics.slice(1, 3).map((entry) => entry.topic),
@@ -171,7 +179,7 @@ export default function AIPredictiveAnalyticsRefactored({
         aiGenerated: true,
       },
     ],
-    [accuracy, activeSubjects, dueCount, quizzes.length, sessions.length, studyHours, trackedTopics],
+    [accuracy, activeSubjects, dueCount, hasRealData, quizzes.length, sessions.length, studyHours, trackedTopics],
   );
 
   const knowledgeGaps = useMemo<KnowledgeGap[]>(() => {

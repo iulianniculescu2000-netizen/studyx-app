@@ -220,6 +220,7 @@ export default function AIChatDrawer() {
     setThinkingPhase,
     studioPackCount,
     studioQuestionsPerPack,
+    chatThread,
   });
 
   const activeModeConfig = useMemo(

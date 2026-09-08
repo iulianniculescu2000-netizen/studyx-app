@@ -81,10 +81,13 @@ function clampConfidence(value: number | undefined, fallback = 0.72) {
 }
 
 function normalizeQuestion(question: QuestionGenerationResponse['questions'][number], index: number): Question {
-  const options = question.options.map((option, optionIndex) => ({
+  // Guard against a malformed single item (model omitted "options" for just
+  // that one question) — drop its options instead of throwing and losing the
+  // whole batch; sanitizeGeneratedQuestions filters it out right after anyway.
+  const options = (Array.isArray(question.options) ? question.options : []).map((option, optionIndex) => ({
     id: `${index}-${optionIndex}-${crypto.randomUUID().replace(/-/g, '').slice(0, 6)}`,
-    text: option.text,
-    isCorrect: option.isCorrect,
+    text: option?.text ?? '',
+    isCorrect: Boolean(option?.isCorrect),
   }));
   const correctCount = options.filter((option) => option.isCorrect).length;
   return {
@@ -296,6 +299,21 @@ export async function generateQuestionsFromTopic(
 
   const sanitized = sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion));
   const judged = await verifyQuestionsMedically(sanitized, undefined);
+
+  if (judged.questions.length === 0) {
+    // Temporary diagnostic: pinpoint WHERE the batch got dropped to zero —
+    // the raw model output, or sanitize, or the medical judge — since the
+    // generic "couldn't generate" error alone doesn't say which.
+    console.error('[StudyX AI] generateQuestionsFromTopic produced 0 questions ' + JSON.stringify({
+      topic,
+      examStyle,
+      rawParsedCount: parsed.questions?.length ?? 0,
+      rawParsedSample: parsed.questions?.[0],
+      sanitizedCount: sanitized.length,
+      flaggedCount: judged.flaggedCount,
+      flaggedReasons: judged.flaggedReasons,
+    }, null, 2));
+  }
 
   return {
     questions: judged.questions,

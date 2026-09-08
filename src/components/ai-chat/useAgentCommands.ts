@@ -22,6 +22,7 @@ import { useToastStore } from '../../store/toastStore';
 import { useAgentJobsStore } from '../../store/agentJobsStore';
 import { useQuizChatContextStore } from '../../store/quizChatContextStore';
 import type { ChatMessage, ChatMode } from './shared';
+import type { ChatThread } from './useChatMessages';
 
 interface UseAgentCommandsOptions {
   hasKey: boolean;
@@ -31,6 +32,8 @@ interface UseAgentCommandsOptions {
   /** Fallback pack size when a plan step doesn't specify one — the Studio panel's current settings. */
   studioPackCount: number;
   studioQuestionsPerPack: number;
+  /** Which conversation is live — decides the default exam format (residency vs. simple) when the user doesn't say. */
+  chatThread: ChatThread;
 }
 
 /**
@@ -47,6 +50,7 @@ export function useAgentCommands({
   setThinkingPhase,
   studioPackCount,
   studioQuestionsPerPack,
+  chatThread,
 }: UseAgentCommandsOptions) {
   const open = useUIStore((state) => state.chatOpen);
   const addToast = useToastStore((state) => state.addToast);
@@ -214,7 +218,7 @@ export function useAgentCommands({
     setThinkingPhase(retry ? 'Reiau comanda anterioară…' : 'Analizez comanda…');
     let plan: AgentPlan;
     try {
-      plan = await planAgentCommand(commandText, history);
+      plan = await planAgentCommand(commandText, history, chatThread === 'rezidentiat' ? 'residency' : 'simple');
     } catch {
       return false;
     }

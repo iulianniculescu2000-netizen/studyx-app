@@ -554,7 +554,7 @@ function folderPaths(items: Array<{ id: string; name: string; parentId?: string 
   });
 }
 
-function buildPlannerPrompt() {
+function buildPlannerPrompt(contextStyle: ExamStyle) {
   const { knowledgeSources, libraryFolders } = useAIStore.getState();
   const folders = useFolderStore.getState().folders;
   const quizzes = useQuizStore.getState().quizzes;
@@ -600,7 +600,7 @@ function buildPlannerPrompt() {
     '- "greșeli"/"greșesc"/"unde greșesc"/"recapitulare greșeli"/"din ce am greșit" → generate_from_mistakes (NU cere sursă; folosește banca de greșeli).',
     '- "rezumă"/"rezumat"/"sinteză" pentru un curs din bibliotecă → summarize_document.',
     '- "complement multiplu"/"răspunsuri multiple"/"mai multe răspunsuri corecte" → questionType:"multiple". "complement simplu"/"un singur răspuns" → questionType:"single". Implicit "single".',
-    '- "examStyle" alege formatul: "residency" = grile ca la rezidențiat, cu 5 variante (A-E) — implicit; "simple" = grilă clasică de facultate, cu 4 variante (A-D). Pune "simple" doar dacă userul cere explicit grile simple sau spune că sunt pentru o materie/facultate/licență.',
+    `- "examStyle" alege formatul: "residency" = grile ca la rezidențiat, cu 5 variante (A-E); "simple" = grilă clasică de facultate, cu 4 variante (A-D). Implicit (dacă userul nu cere clar unul din cele două): "${contextStyle}" — asta pentru că ${contextStyle === 'residency' ? 'userul discută în secțiunea Rezidențiat' : 'userul discută în afara secțiunii Rezidențiat'}. Pune celălalt format DOAR dacă userul cere explicit (ex. "rezidențiat"/"ca la examen" → residency; "grile simple"/"pentru facultate" → simple).`,
     '- "grilă"/"grile"/"întrebări"/"întrebare" = NUMĂRUL DE ÎNTREBĂRI (questionsPerPack). "set"/"seturi"/"pachet"/"pachete" = NUMĂRUL DE PACHETE (packCount).',
     '- IMPLICIT packCount = 1. Pune packCount > 1 DOAR dacă userul cere explicit mai multe "seturi"/"pachete", SAU dacă numărul de întrebări depășește 60 (abia atunci împarte în pachete de maxim 60 fiecare).',
     '- NU inventa numere și NU exagera. Exemple: "2 grile" → packCount:1, questionsPerPack:2. "10 întrebări" → packCount:1, questionsPerPack:10. "3 seturi a câte 20" → packCount:3, questionsPerPack:20. "150 de grile" → packCount:3, questionsPerPack:50.',
@@ -735,8 +735,9 @@ function normalizeStep(raw: Record<string, unknown>): AgentStep | null {
 export async function planAgentCommand(
   command: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  contextStyle: ExamStyle = DEFAULT_EXAM_STYLE,
 ): Promise<AgentPlan> {
-  const system = buildPlannerPrompt();
+  const system = buildPlannerPrompt(contextStyle);
   // Feed the recent turns so follow-ups ("mai încearcă", "acum în Hematologie")
   // resolve against the previous request instead of being planned in isolation.
   const recentTurns = history
@@ -774,12 +775,14 @@ export async function planAgentCommand(
   // The two tracks matter enough not to leave them to the planner's judgement:
   // "grile de rezidentiat" and "grile simple pentru materie" are read straight
   // from the user's wording, exactly like the counts below.
-  const requestedStyle = detectExamStyle(command);
-  if (requestedStyle) {
-    for (const step of steps) {
-      if (step.action === 'generate_quiz_pack' || step.action === 'generate_quiz_topic' || step.action === 'generate_from_mistakes') {
-        step.examStyle = requestedStyle;
-      }
+  // Explicit wording always wins; absent that, fall back to the section the
+  // user is actually chatting from (Rezidențiat vs. general) instead of a
+  // hardcoded default — a "10 grile despre X" asked outside Rezidențiat must
+  // not silently produce a set tagged 'rezidentiat' and hidden from "Toate grilele".
+  const requestedStyle = detectExamStyle(command) ?? contextStyle;
+  for (const step of steps) {
+    if (step.action === 'generate_quiz_pack' || step.action === 'generate_quiz_topic' || step.action === 'generate_from_mistakes') {
+      step.examStyle = requestedStyle;
     }
   }
 
@@ -1488,6 +1491,9 @@ export async function executeAgentPlan(
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Pas eșuat.';
+      // Surfaced only as a short message in the confirm card otherwise — log the
+      // full error (with stack) so a real crash is diagnosable, not just "X failed".
+      console.error(`[Agent] step "${step.action}" failed:`, error);
       errors.push(message);
       callbacks.onStep(index, 'error', message);
     }
