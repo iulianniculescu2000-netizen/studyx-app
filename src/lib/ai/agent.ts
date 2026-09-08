@@ -1138,6 +1138,9 @@ export async function executeAgentPlan(
           if (result.medicallyFlaggedCount) {
             errors.push(`„${step.topic}": ${result.medicallyFlaggedCount} întrebări eliminate de verificarea medicală (răspuns marcat greșit).`);
           }
+          if (result.malformedDroppedCount) {
+            errors.push(`„${step.topic}": ${result.malformedDroppedCount} întrebări generate incomplet de AI au fost eliminate — de aceea ai primit mai puține decât ai cerut.`);
+          }
 
           const folder = resolveOrCreateQuizFolder(step.folder);
           const quiz: Quiz = {

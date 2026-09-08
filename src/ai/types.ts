@@ -163,6 +163,8 @@ export interface AIQuestionResult {
   mode: 'standard' | 'exam' | 'tutor';
   /** How many questions the medical-correctness pass dropped (0 if none/unavailable). */
   medicallyFlaggedCount?: number;
+  /** How many raw model questions were dropped as malformed (empty text, no valid options, no correct answer) before the medical pass ever saw them. */
+  malformedDroppedCount?: number;
   flaggedReasons?: string[];
 }
 

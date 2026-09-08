@@ -314,6 +314,16 @@ export async function generateQuestionsFromTopic(
   });
 
   const sanitized = sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion));
+  // Silent before this: the model returning fewer than `count` items to begin
+  // with, or one item in an otherwise-fine batch glitching (empty text, no
+  // options left after dedup, no option marked correct) and getting dropped
+  // by sanitizeGeneratedQuestions — either way "asked for 10, got 7" had zero
+  // explanation anywhere in the UI. Tracked the same way medicallyFlaggedCount
+  // already was, and surfaced by the same warning in agent.ts's
+  // generate_quiz_topic step. Deliberately NOT the same bucket as the medical
+  // judge's drops below — that's an intentional safety filter, this is a
+  // shortfall against what was actually asked for.
+  const malformedDroppedCount = Math.max(0, count - sanitized.length);
   const judged = await verifyQuestionsMedically(sanitized, undefined);
 
   if (judged.questions.length === 0) {
@@ -336,6 +346,7 @@ export async function generateQuestionsFromTopic(
     sources: [],
     mode: 'standard',
     medicallyFlaggedCount: judged.flaggedCount,
+    malformedDroppedCount,
     flaggedReasons: judged.flaggedReasons,
   };
 }
