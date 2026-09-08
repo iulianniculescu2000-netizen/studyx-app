@@ -73,7 +73,11 @@ export function useAgentCommands({
 
     const result = await executeAgentPlan(
       plan,
-      { defaultPackCount: studioPackCount, defaultQuestionsPerPack: studioQuestionsPerPack },
+      {
+        defaultPackCount: studioPackCount,
+        defaultQuestionsPerPack: studioQuestionsPerPack,
+        residencyScope: chatThread === 'rezidentiat',
+      },
       {
         onStep: (index, status, detail) => {
           useAgentJobsStore.getState().setStepStatus(jobId, `s${index}`, status, detail);

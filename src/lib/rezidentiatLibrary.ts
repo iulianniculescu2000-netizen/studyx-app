@@ -1,12 +1,5 @@
 import { useAIStore } from '../store/aiStore';
-import { REZIDENTIAT_ROOT_NAME, findRezidentiatRootFolder } from './rezidentiatRoot';
-
-function findOrCreateLibraryFolder(): string {
-  const { libraryFolders, addLibraryFolder } = useAIStore.getState();
-  const existing = findRezidentiatRootFolder(libraryFolders);
-  if (existing) return existing.id;
-  return addLibraryFolder(REZIDENTIAT_ROOT_NAME, '🩺');
-}
+import { findOrCreateRezidentiatLibraryRoot } from './rezidentiatRoot';
 
 /**
  * Default AI knowledge-library sources for Rezidențiat — the three reference
@@ -53,7 +46,7 @@ export function isLibraryBookImported(book: RezidentiatLibraryBook): boolean {
 
 export async function importRezidentiatLibraryBook(book: RezidentiatLibraryBook): Promise<void> {
   const text = await book.load();
-  const folderId = findOrCreateLibraryFolder();
+  const folderId = findOrCreateRezidentiatLibraryRoot();
   const source = await useAIStore.getState().addKnowledgeSource(book.name, text, 'pdf');
   useAIStore.getState().moveSourceToLibraryFolder(source.id, folderId);
 }

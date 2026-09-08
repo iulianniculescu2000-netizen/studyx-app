@@ -12,6 +12,8 @@
  * should go through here instead of re-declaring the name or the check.
  */
 import { useFolderStore } from '../store/folderStore';
+import { useAIStore } from '../store/aiStore';
+import type { Folder } from '../types';
 
 export const REZIDENTIAT_ROOT_NAME = 'Rezidențiat';
 /** Where AI-generated chapter flashcard decks land — kept separate from the discipline/specialty tree the real question banks build, so generated content doesn't get mixed in with verified imports. */
@@ -57,10 +59,34 @@ export function isUnderRezidentiatRoot(folderId: string, folders: NamedFolder[])
 export function findOrCreateAiFlashcardsFolder(): string {
   const { folders, addFolder } = useFolderStore.getState();
 
-  const root = findRezidentiatRootFolder(folders) ?? { id: addFolder(REZIDENTIAT_ROOT_NAME, '🩺', 'blue', null) };
+  const root = findOrCreateRezidentiatQuizRoot();
   const existing = folders.find(
     (f) => f.parentId === root.id && f.name.trim().toLowerCase() === REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME.toLowerCase(),
   );
   if (existing) return existing.id;
   return addFolder(REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME, '🃏', 'purple', root.id);
+}
+
+/**
+ * Finds (or creates) the Rezidențiat root in the QUIZ folder tree
+ * (`useFolderStore` — the tree FolderView/Sidebar render). Any AI action that
+ * creates a folder or places generated content without an explicit
+ * destination, while the user is inside the Rezidențiat section, should land
+ * here instead of at the true tree root (which is the general/"toate
+ * folderele" screen, one level above Rezidențiat itself).
+ */
+export function findOrCreateRezidentiatQuizRoot(): Folder {
+  const { folders, addFolder } = useFolderStore.getState();
+  const existing = findRezidentiatRootFolder(folders);
+  if (existing) return existing;
+  const id = addFolder(REZIDENTIAT_ROOT_NAME, '🩺', 'blue', null);
+  return { id, name: REZIDENTIAT_ROOT_NAME, emoji: '🩺', color: 'blue', parentId: null, createdAt: Date.now() };
+}
+
+/** Same as `findOrCreateRezidentiatQuizRoot`, for the separate AI LIBRARY folder tree (`useAIStore`). */
+export function findOrCreateRezidentiatLibraryRoot(): string {
+  const { libraryFolders, addLibraryFolder } = useAIStore.getState();
+  const existing = findRezidentiatRootFolder(libraryFolders);
+  if (existing) return existing.id;
+  return addLibraryFolder(REZIDENTIAT_ROOT_NAME, '🩺');
 }

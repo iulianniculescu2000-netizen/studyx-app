@@ -21,6 +21,7 @@ import { useUserStore } from '../../store/userStore';
 import { useQuizChatContextStore } from '../../store/quizChatContextStore';
 import { suggestFolderAppearance } from '../folderAppearance';
 import { extractJsonFromText } from '../quizImport';
+import { findOrCreateRezidentiatQuizRoot, findOrCreateRezidentiatLibraryRoot, REZIDENTIAT_ROOT_NAME } from '../rezidentiatRoot';
 import type { Difficulty, Folder, Question, Quiz } from '../../types';
 
 function shortId() {
@@ -196,6 +197,15 @@ export interface AgentPlan {
 export interface AgentContext {
   defaultPackCount: number;
   defaultQuestionsPerPack: number;
+  /**
+   * True when the command was typed in the Rezidențiat-scoped chat thread
+   * (see `useChatThread`). An action that creates a folder or places
+   * generated content WITHOUT an explicit destination name must default to
+   * inside the Rezidențiat root, not the true tree root — otherwise "fă-mi
+   * un folder X" typed from inside Rezidențiat lands one level up, on the
+   * general screen, next to Rezidențiat itself instead of inside it.
+   */
+  residencyScope: boolean;
 }
 
 export interface AgentRunResult {
@@ -974,25 +984,47 @@ export async function executeAgentPlan(
     return findByName(useFolderStore.getState().folders, folderName);
   };
 
+  // When the command was typed from inside the Rezidențiat-scoped chat and
+  // doesn't name an explicit destination, "no folder" must mean "the
+  // Rezidențiat root", not the true tree root — the latter is one level up,
+  // the general/"toate folderele" screen. Memoized so a plan with several
+  // steps (and repeated calls below) all land on the same folder instead of
+  // each creating their own.
+  let residencyRoot: Folder | null = null;
+  const defaultParentFolder = (): Folder | null => {
+    if (!ctx.residencyScope) return null;
+    if (!residencyRoot) residencyRoot = findOrCreateRezidentiatQuizRoot();
+    return residencyRoot;
+  };
+
+  // Same idea, for the separate AI library folder tree (`create_library_folder`).
+  let residencyLibraryRoot: { id: string; name: string } | null = null;
+  const defaultLibraryParent = (): { id: string; name: string } | null => {
+    if (!ctx.residencyScope) return null;
+    if (!residencyLibraryRoot) residencyLibraryRoot = { id: findOrCreateRezidentiatLibraryRoot(), name: REZIDENTIAT_ROOT_NAME };
+    return residencyLibraryRoot;
+  };
+
   /**
    * Destination folder for generated content. A named folder that doesn't exist
    * yet is created instead of silently ignored — "pune-l în Bac" must put it in
    * Bac, not drop the deck at the root because no such folder was there.
    */
   const resolveOrCreateQuizFolder = (folderName: string | undefined): Folder | null => {
-    if (!folderName?.trim()) return null;
+    if (!folderName?.trim()) return defaultParentFolder();
     const existing = resolveQuizFolder(folderName);
     if (existing) return existing;
 
     const name = folderName.trim();
     const appearance = suggestFolderAppearance(name);
-    const id = folderStore.addFolder(name, appearance.emoji, appearance.color, null);
+    const parent = defaultParentFolder();
+    const id = folderStore.addFolder(name, appearance.emoji, appearance.color, parent?.id ?? null);
     const folder: Folder = {
       id,
       name,
       emoji: appearance.emoji,
       color: appearance.color,
-      parentId: null,
+      parentId: parent?.id ?? null,
       createdAt: Date.now(),
     };
     createdFolderByName.set(normalizeName(name), folder);
@@ -1009,7 +1041,7 @@ export async function executeAgentPlan(
       switch (step.action) {
         case 'create_folder': {
           if (!step.name) throw new Error('Lipsește numele folderului.');
-          const parent = resolveQuizFolder(step.parent);
+          const parent = step.parent ? resolveQuizFolder(step.parent) : defaultParentFolder();
           // Reuse an existing folder with this name UNDER THE SAME PARENT,
           // instead of creating a duplicate — but resolveQuizFolder matches
           // by name GLOBALLY (any folder in the whole tree), so without also
@@ -1044,7 +1076,7 @@ export async function executeAgentPlan(
 
         case 'create_library_folder': {
           if (!step.name) throw new Error('Lipsește numele folderului.');
-          const parent = step.parent ? findByName(useAIStore.getState().libraryFolders, step.parent) : null;
+          const parent = step.parent ? findByName(useAIStore.getState().libraryFolders, step.parent) : defaultLibraryParent();
           const libraryEmoji = parent ? suggestFolderAppearance(step.name).emoji : '📚';
           const id = aiStore.addLibraryFolder(step.name, libraryEmoji, parent?.id ?? null);
           undoOps.push(() => useAIStore.getState().deleteLibraryFolder(id));
