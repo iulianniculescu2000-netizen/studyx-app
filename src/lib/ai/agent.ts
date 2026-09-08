@@ -1009,19 +1009,24 @@ export async function executeAgentPlan(
       switch (step.action) {
         case 'create_folder': {
           if (!step.name) throw new Error('Lipsește numele folderului.');
-          // Reuse an existing folder with this name instead of creating a
-          // duplicate — unlike resolveOrCreateQuizFolder (used when a step
-          // just names a destination folder), this branch used to skip that
-          // check entirely. A retry after a later step failed (e.g. the quiz
-          // generation step erroring out) re-ran the WHOLE plan from step 1,
-          // so every retry minted a fresh "Arsuri" folder alongside the
-          // empty one from the previous attempt.
-          const existing = resolveQuizFolder(step.name);
+          const parent = resolveQuizFolder(step.parent);
+          // Reuse an existing folder with this name UNDER THE SAME PARENT,
+          // instead of creating a duplicate — but resolveQuizFolder matches
+          // by name GLOBALLY (any folder in the whole tree), so without also
+          // checking the parent, asking for "un folder arsuri în Rezidențiat"
+          // could silently "succeed" by reusing an unrelated "arsuri" folder
+          // sitting somewhere completely different (root, another
+          // discipline, a leftover from a past session) — the UI says
+          // "Folder existent, reutilizat" and the step shows done, but no
+          // folder ever appears where the user is actually looking. Confirmed
+          // live: exactly this happened. Only treat it as "the same folder"
+          // when the parent matches too (both null = both at root).
+          const nameMatch = resolveQuizFolder(step.name);
+          const existing = nameMatch && (nameMatch.parentId ?? null) === (parent?.id ?? null) ? nameMatch : null;
           if (existing) {
             callbacks.onStep(index, 'done', 'Folder existent, reutilizat');
             break;
           }
-          const parent = resolveQuizFolder(step.parent);
           // Used to fall back to a generic 📁 for any subfolder, discarding
           // the topical suggestion right below it — "Arsuri" created under
           // "Rezidențiat" got a plain folder icon instead of anything
