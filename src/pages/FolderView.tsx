@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Check, CalendarDays, FolderPlus, Layers, Plus, Shuffle, X } from 'lucide-react';
+import { ArrowLeft, Check, CalendarDays, FolderPlus, Layers, Pencil, Plus, Shuffle, Trash2, X } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useFolderStore } from '../store/folderStore';
 import { useQuizStore } from '../store/quizStore';
@@ -23,14 +23,19 @@ export default function FolderView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const theme = useTheme();
-  const { folders, addFolder } = useFolderStore();
-  const { getQuizzesByFolder, quizzes: allQuizzes, addQuiz, deleteQuiz } = useQuizStore();
+  const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
+  const { getQuizzesByFolder, quizzes: allQuizzes, addQuiz, deleteQuiz, bulkDeleteQuizzes } = useQuizStore();
   const [creatingSubfolder, setCreatingSubfolder] = useState(false);
   const [subfolderName, setSubfolderName] = useState('');
   const [subfolderEmoji, setSubfolderEmoji] = useState('📁');
   const [subfolderColor, setSubfolderColor] = useState<QuizColor>('blue');
   const [showExamSplit, setShowExamSplit] = useState(false);
   const [confirmPlayAll, setConfirmPlayAll] = useState(false);
+  const [editingChildId, setEditingChildId] = useState<string | null>(null);
+  const [editChildName, setEditChildName] = useState('');
+  const [editChildEmoji, setEditChildEmoji] = useState('📁');
+  const [editChildColor, setEditChildColor] = useState<QuizColor>('blue');
+  const [deleteChildTarget, setDeleteChildTarget] = useState<{ id: string; name: string } | null>(null);
 
   const isNull = id === 'null';
   const folder = isNull ? null : folders.find(f => f.id === id);
@@ -129,6 +134,44 @@ export default function FolderView() {
     if (!folder || !name) return;
     addFolder(name, subfolderEmoji.trim() || '📁', subfolderColor, folder.id);
     closeSubfolderForm();
+  };
+
+  const openEditChild = (child: { id: string; name: string; emoji: string; color: QuizColor }) => {
+    setEditingChildId(child.id);
+    setEditChildName(child.name);
+    setEditChildEmoji(child.emoji);
+    setEditChildColor(child.color);
+  };
+
+  const closeEditChild = () => setEditingChildId(null);
+
+  const saveEditChild = () => {
+    const name = editChildName.trim();
+    if (!editingChildId || !name) return;
+    updateFolder(editingChildId, { name, emoji: editChildEmoji.trim() || '📁', color: editChildColor });
+    setEditingChildId(null);
+  };
+
+  // Deleting a subfolder takes its own nested subfolders (and every quiz inside
+  // that whole subtree) with it — same recursive rule as Sidebar's folder delete,
+  // so nothing gets silently orphaned under a folder that no longer exists.
+  const confirmDeleteChild = () => {
+    if (!deleteChildTarget) return;
+    const toDelete = new Set([deleteChildTarget.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      folders.forEach((candidate) => {
+        if (candidate.parentId && toDelete.has(candidate.parentId) && !toDelete.has(candidate.id)) {
+          toDelete.add(candidate.id);
+          changed = true;
+        }
+      });
+    }
+    const quizIdsToDelete = allQuizzes.filter((q) => q.folderId && toDelete.has(q.folderId)).map((q) => q.id);
+    if (quizIdsToDelete.length > 0) bulkDeleteQuizzes(quizIdsToDelete);
+    deleteFolder(deleteChildTarget.id);
+    setDeleteChildTarget(null);
   };
 
   return (
@@ -285,32 +328,123 @@ export default function FolderView() {
                 const count = countRecursive(child.id);
                 const hasSubfolders = folders.some((f) => f.parentId === child.id);
                 const childColor = COLOR_HEX[child.color] ?? theme.accent;
-                return (
-                  <Link
-                    key={child.id}
-                    to={`/folder/${child.id}`}
-                    className="glass-panel group rounded-2xl p-4 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
-                    style={{ color: theme.text }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-xl transition-transform group-hover:scale-105"
-                        style={{ background: `${childColor}18` }}
-                      >
-                        {child.emoji}
+
+                if (editingChildId === child.id) {
+                  return (
+                    <div key={child.id} className="glass-panel rounded-2xl p-4" style={{ boxShadow: `0 0 0 1.5px ${childColor}55` }}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={editChildEmoji}
+                          onChange={(event) => setEditChildEmoji(event.target.value.slice(0, 4))}
+                          className="h-10 w-12 flex-shrink-0 rounded-xl text-center text-lg"
+                          style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text }}
+                          aria-label="Emoji subfolder"
+                        />
+                        <input
+                          value={editChildName}
+                          onChange={(event) => setEditChildName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') saveEditChild();
+                            if (event.key === 'Escape') closeEditChild();
+                          }}
+                          autoFocus
+                          className="h-10 min-w-0 flex-1 rounded-xl px-3 text-sm font-bold outline-none"
+                          style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text }}
+                          aria-label="Nume subfolder"
+                        />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-black">{child.name}</div>
-                        <span
-                          className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                          style={{ background: theme.surface2, color: theme.text3 }}
-                        >
-                          {count} {count === 1 ? 'set' : 'seturi'}{hasSubfolders ? ' în total' : ''}
-                        </span>
+                      <div className="mt-2.5 flex items-center gap-1.5">
+                        {FOLDER_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => setEditChildColor(color)}
+                            className="h-6 w-6 rounded-full transition-transform hover:scale-110"
+                            style={{
+                              background: COLOR_HEX[color],
+                              boxShadow: editChildColor === color ? `0 0 0 2.5px ${COLOR_HEX[color]}40` : 'none',
+                              border: editChildColor === color ? `2px solid ${theme.text}` : '2px solid transparent',
+                            }}
+                            aria-label={`Culoare ${color}`}
+                          />
+                        ))}
+                        <div className="ml-auto flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={saveEditChild}
+                            disabled={!editChildName.trim()}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg disabled:opacity-40"
+                            style={{ background: theme.success, color: '#fff' }}
+                            aria-label="Salvează"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={closeEditChild}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg"
+                            style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}
+                            aria-label="Anulează"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="h-8 w-1 flex-shrink-0 rounded-full" style={{ background: childColor }} />
                     </div>
-                  </Link>
+                  );
+                }
+
+                return (
+                  <div key={child.id} className="group relative">
+                    <Link
+                      to={`/folder/${child.id}`}
+                      className="glass-panel block rounded-2xl p-4 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+                      style={{ color: theme.text }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-xl transition-transform group-hover:scale-105"
+                          style={{ background: `${childColor}18` }}
+                        >
+                          {child.emoji}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate pr-14 font-black">{child.name}</div>
+                          <span
+                            className="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                            style={{ background: theme.surface2, color: theme.text3 }}
+                          >
+                            {count} {count === 1 ? 'set' : 'seturi'}{hasSubfolders ? ' în total' : ''}
+                          </span>
+                        </div>
+                        <div className="h-8 w-1 flex-shrink-0 rounded-full" style={{ background: childColor }} />
+                      </div>
+                    </Link>
+                    {/* Edit/delete — hidden until hover, same pattern as Sidebar's folder rows. */}
+                    <div
+                      className="absolute right-3 top-3 hidden items-center gap-1 rounded-lg px-1 py-1 group-hover:flex"
+                      style={{ background: theme.isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.92)' }}
+                    >
+                      <button
+                        type="button"
+                        onClick={(event) => { event.preventDefault(); openEditChild(child); }}
+                        aria-label={`Redenumește sau schimbă iconița pentru ${child.name}`}
+                        className="rounded p-1 hover:opacity-80"
+                        style={{ color: theme.text3 }}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => { event.preventDefault(); setDeleteChildTarget({ id: child.id, name: child.name }); }}
+                        aria-label={`Șterge subfolderul ${child.name}`}
+                        className="rounded p-1 hover:opacity-80"
+                        style={{ color: theme.danger }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -381,6 +515,15 @@ export default function FolderView() {
         confirmLabel="Începe sesiunea"
         onConfirm={handlePlayFolder}
         onCancel={() => setConfirmPlayAll(false)}
+      />
+
+      <ConfirmDialog
+        open={!!deleteChildTarget}
+        title={`Ștergi subfolderul „${deleteChildTarget?.name ?? ''}"?`}
+        description="Se șterg și toate subfolderele și grilele dinăuntru. Acțiunea nu poate fi anulată."
+        confirmLabel="Șterge"
+        onConfirm={confirmDeleteChild}
+        onCancel={() => setDeleteChildTarget(null)}
       />
     </div>
   );
