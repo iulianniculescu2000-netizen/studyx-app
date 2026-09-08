@@ -1009,6 +1009,18 @@ export async function executeAgentPlan(
       switch (step.action) {
         case 'create_folder': {
           if (!step.name) throw new Error('Lipsește numele folderului.');
+          // Reuse an existing folder with this name instead of creating a
+          // duplicate — unlike resolveOrCreateQuizFolder (used when a step
+          // just names a destination folder), this branch used to skip that
+          // check entirely. A retry after a later step failed (e.g. the quiz
+          // generation step erroring out) re-ran the WHOLE plan from step 1,
+          // so every retry minted a fresh "Arsuri" folder alongside the
+          // empty one from the previous attempt.
+          const existing = resolveQuizFolder(step.name);
+          if (existing) {
+            callbacks.onStep(index, 'done', 'Folder existent, reutilizat');
+            break;
+          }
           const parent = resolveQuizFolder(step.parent);
           const appearance = suggestFolderAppearance(step.name);
           const emoji = parent ? '📁' : appearance.emoji;

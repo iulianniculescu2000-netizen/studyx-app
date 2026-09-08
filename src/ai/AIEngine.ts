@@ -265,12 +265,27 @@ export async function generateQuestionsFromTopic(
   profile: UserProfileData | null,
   examStyle: ExamStyle = DEFAULT_EXAM_STYLE,
 ): Promise<AIQuestionResult> {
+  // TASK_MAX_TOKENS.questions (groq.ts) is a flat 2200-token budget meant for
+  // a handful of questions — it doesn't scale with `count`. This is the one
+  // caller that can ask for up to 60 questions in a SINGLE completion
+  // (chapter/pack generation elsewhere batches in smaller chunks). A
+  // residency-style question alone (5 lettered options, an explanation, a
+  // vignette stem for medium/hard difficulty) commonly runs 150-250 tokens,
+  // so 10 questions already sits at or past the flat cap — the response gets
+  // cut off mid-JSON, fails validation, and the one repair attempt can't
+  // recover missing content (it's told explicitly not to invent any). This
+  // was reproduced live: "10 grile despre arsuri" (residency style) failed
+  // this way twice in a row. Scaling the budget with `count` instead of a
+  // constant fixes it for any topic/size, not just this one.
+  const maxTokens = Math.min(8000, Math.max(2200, count * 220 + 300));
+
   const parsed = await runAIPipeline<QuestionGenerationResponse>({
     retrieve: () => topic,
     generate: async () => {
       const prompt = buildQuestionPrompt(profile, [], difficulty, undefined, questionType, undefined, count, examStyle);
       return groqRequest({
         task: 'questions',
+        maxTokens,
         messages: [
           { role: 'system', content: prompt },
           {
@@ -288,6 +303,7 @@ export async function generateQuestionsFromTopic(
     fix: async (raw, error) => (
       groqRequest({
         task: 'questions',
+        maxTokens,
         messages: [
           { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Nu inventa conținut nou — corectează doar sintaxa JSON-ului primit. Păstrează conținutul în română.' },
           { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}\n\nJSON de reparat:\n${raw}` },
