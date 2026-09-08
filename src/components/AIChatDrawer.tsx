@@ -1767,7 +1767,7 @@ export default function AIChatDrawer() {
             exit={{ opacity: 0 }}
             onClick={() => setZoomedBlock(null)}
             className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-8"
-            style={{ background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)' }}
+            style={{ background: 'rgba(0,0,0,0.62)', backdropFilter: performanceLite ? 'blur(6px)' : 'blur(14px)' }}
           >
             <motion.div
               initial={{ scale: 0.97, opacity: 0 }}

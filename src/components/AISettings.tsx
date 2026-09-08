@@ -303,7 +303,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={onClose}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200]"
+              className="fixed inset-0 bg-black/60 backdrop-blur-[14px] z-[200]"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.93, y: 20 }}
@@ -635,7 +635,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowProviderCheck(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[210]"
+              className="fixed inset-0 bg-black/60 backdrop-blur-[14px] z-[210]"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.93, y: 20 }}

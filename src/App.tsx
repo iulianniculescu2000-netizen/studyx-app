@@ -319,10 +319,15 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
-                initial={calmMotion ? false : { opacity: 0, y: 10, scale: 0.995 }}
+                initial={calmMotion ? false : { opacity: 0, y: 12, scale: 0.992 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={calmMotion ? undefined : { opacity: 0, y: -8, scale: 0.998 }}
-                transition={calmMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                exit={calmMotion ? undefined : { opacity: 0, y: -8, scale: 0.997 }}
+                // A physics spring (vs. the previous fixed-duration ease) lets each
+                // page transition settle at its own natural pace instead of always
+                // taking exactly 220ms — reads as fluid glass motion rather than a
+                // mechanical fade. Damping stays high enough that it settles
+                // cleanly with no visible overshoot/bounce.
+                transition={calmMotion ? { duration: 0 } : { type: 'spring', stiffness: 300, damping: 30, mass: 0.9 }}
                 style={{ height: '100%' }}
               >
                 <Routes location={location}>

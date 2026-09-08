@@ -432,6 +432,7 @@ function NavItem({
             color: isActive ? theme.text : theme.text3,
             cursor: 'pointer',
             borderRadius: '14px',
+            boxShadow: isActive ? `0 4px 18px ${theme.accent}2e` : 'none',
           } : {
             gap: 10,
             padding: '6px 10px',
@@ -443,6 +444,7 @@ function NavItem({
             fontWeight: isActive ? 700 : 600,
             cursor: 'pointer',
             borderRadius: '13px',
+            boxShadow: isActive ? `0 4px 18px ${theme.accent}26` : 'none',
           }}
           onMouseEnter={(e) => {
             if (!isActive) {
@@ -974,7 +976,7 @@ export default function Sidebar() {
                           style={{
                             background: isDropTarget ? `${theme.accent}24` : isActive ? `${theme.accent}16` : 'transparent',
                             color: isActive ? theme.accent : theme.text2,
-                            boxShadow: isDropTarget ? `inset 0 0 0 1px ${theme.accent}55` : 'none',
+                            boxShadow: isDropTarget ? `inset 0 0 0 1px ${theme.accent}55` : isActive ? `0 3px 14px ${theme.accent}22` : 'none',
                           }}
                           onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = `${theme.accent}09`; }}
                           onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -1050,7 +1052,7 @@ export default function Sidebar() {
                               color: isActive ? theme.accent : theme.text2,
                               paddingRight: 36,
                               paddingLeft: 12 + depth * 14,
-                              boxShadow: isDropTarget ? `inset 0 0 0 1px ${colorHex}66` : 'none',
+                              boxShadow: isDropTarget ? `inset 0 0 0 1px ${colorHex}66` : isActive ? `0 3px 14px ${colorHex}22` : 'none',
                             }}
                             onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = `${theme.accent}09`; }}
                             onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
