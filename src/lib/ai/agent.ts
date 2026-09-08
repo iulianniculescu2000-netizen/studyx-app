@@ -1083,7 +1083,12 @@ export async function executeAgentPlan(
           if (result.medicallyFlaggedCount > 0) {
             errors.push(`„${source.name}": ${result.medicallyFlaggedCount} întrebări eliminate de verificarea medicală (răspuns marcat greșit).`);
           }
-          summaryParts.push(`${result.quizzes.length} seturi din „${source.name}"`);
+          // Names the folder it ACTUALLY resolved to, not just the raw name the
+          // planner asked for — those can differ (fuzzy name match landed on an
+          // unexpected existing folder, or none matched and a new one got
+          // created) and the user has no other way to find out where content
+          // went without this line.
+          summaryParts.push(`${result.quizzes.length} seturi din „${source.name}"${folder ? ` în „${folder.name}"` : ''}`);
           callbacks.onStep(
             index,
             mostlyFallback ? 'error' : 'done',
@@ -1161,7 +1166,7 @@ export async function executeAgentPlan(
           useQuizStore.getState().addQuiz(quiz);
           createdQuizIds.push(quiz.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
-          summaryParts.push(`${result.questions.length} grile despre „${step.topic}"`);
+          summaryParts.push(`${result.questions.length} grile despre „${step.topic}"${folder ? ` în „${folder.name}"` : ''}`);
           callbacks.onStep(index, 'done', `${result.questions.length} grile`);
           break;
         }
@@ -1215,7 +1220,7 @@ export async function executeAgentPlan(
           useQuizStore.getState().addQuiz(quiz);
           createdQuizIds.push(quiz.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
-          summaryParts.push(`${result.questions.length} grile de recapitulare din greșeli`);
+          summaryParts.push(`${result.questions.length} grile de recapitulare din greșeli${folder ? ` în „${folder.name}"` : ''}`);
           callbacks.onStep(index, 'done', `${result.questions.length} grile țintite`);
           break;
         }
@@ -1252,7 +1257,7 @@ export async function executeAgentPlan(
           useQuizStore.getState().addQuiz(deck);
           createdQuizIds.push(deck.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(deck.id));
-          summaryParts.push(`${cards.length} flashcarduri din „${source.name}"`);
+          summaryParts.push(`${cards.length} flashcarduri din „${source.name}"${folder ? ` în „${folder.name}"` : ''}`);
           callbacks.onStep(index, 'done', `${cards.length} carduri`);
           break;
         }
@@ -1290,7 +1295,7 @@ export async function executeAgentPlan(
           useQuizStore.getState().addQuiz(deck);
           createdQuizIds.push(deck.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(deck.id));
-          summaryParts.push(`${cards.length} flashcarduri despre „${topic}"`);
+          summaryParts.push(`${cards.length} flashcarduri despre „${topic}"${folder ? ` în „${folder.name}"` : ''}`);
           callbacks.onStep(index, 'done', `${cards.length} carduri`);
           break;
         }
