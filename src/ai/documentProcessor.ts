@@ -143,8 +143,17 @@ export class DocumentProcessor {
   ) {
     const { chunkSize = 1500, overlap = 200, minChunkLength = 100, preserveStructure = true, knownHeadings } = options;
 
+    // The curated list only earns "authoritative, skip the generic heuristic"
+    // trust (see isolateHeadings/createStructureAwareChunks) once it's proven
+    // to actually apply to THIS text — a book matched to the wrong curriculum
+    // entry, or a random unrelated document sharing a name pattern, should
+    // still fall back to the generic heuristic rather than come back with zero
+    // headings at all.
+    const effectiveKnownHeadings =
+      knownHeadings?.length && this.hasAnyKnownHeadingMatch(text, knownHeadings) ? knownHeadings : undefined;
+
     if (preserveStructure) {
-      return this.createStructureAwareChunks(text, sourceName, chunkSize, overlap, minChunkLength, knownHeadings);
+      return this.createStructureAwareChunks(text, sourceName, chunkSize, overlap, minChunkLength, effectiveKnownHeadings);
     } else {
       return this.createSimpleChunks(text, sourceName, chunkSize, overlap, minChunkLength);
     }
@@ -160,6 +169,11 @@ export class DocumentProcessor {
       .replace(/[̀-ͯ]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  /** Whether at least one known heading actually appears somewhere in the text, line by line. */
+  private hasAnyKnownHeadingMatch(text: string, knownHeadings: string[]): boolean {
+    return text.split('\n').some((line) => this.matchesKnownHeading(line, knownHeadings) !== null);
   }
 
   /**
@@ -230,12 +244,20 @@ export class DocumentProcessor {
 
     const lines = text.split('\n');
     const out: string[] = [];
+    // When this book has a curated, verified chapter list (residencyCurriculum.ts —
+    // matched against the official exam Tematica), that list is authoritative and
+    // COMPLETE for real top-level structure. Also running the generic heuristic in
+    // that case used to "detect" a heading out of every ALL-CAPS fragment, numbered
+    // list item, chemical formula, or stray sentence in the book — the real chapters
+    // (CARDIOLOGIE, HEMATOLOGIE, ...) ended up buried among dozens of one-line noise
+    // entries like "CH 20COCH" or "capilarelor şi atinge concentraţii...". Without a
+    // curated list (any book the user adds themselves), the heuristic is still the
+    // only option, so it stays as the fallback.
     const isCandidate = (line: string): boolean => {
       const trimmed = line.trim();
-      return trimmed.length > 0 && (
-        (knownHeadings?.length ? this.matchesKnownHeading(trimmed, knownHeadings) !== null : false)
-        || this.isLikelyHeading(trimmed)
-      );
+      if (!trimmed) return false;
+      if (knownHeadings?.length) return this.matchesKnownHeading(trimmed, knownHeadings) !== null;
+      return this.isLikelyHeading(trimmed);
     };
 
     let i = 0;
@@ -367,7 +389,10 @@ export class DocumentProcessor {
       if (!paragraph) continue;
 
       const knownHeading = knownHeadings?.length ? this.matchesKnownHeading(paragraph, knownHeadings) : null;
-      const isHeading = knownHeading !== null || this.isLikelyHeading(paragraph);
+      // Same "curated list is authoritative" rule as isolateHeadings above — see
+      // the comment there for why the generic heuristic is skipped entirely
+      // when a verified chapter list exists for this book.
+      const isHeading = knownHeadings?.length ? knownHeading !== null : this.isLikelyHeading(paragraph);
 
       if (isHeading) {
         // A chapter title closes the previous chapter's chunk before becoming

@@ -35,10 +35,31 @@ export function useSourceChapters(sourceId: string | null) {
         if (!counts.has(key)) order.push(key);
         counts.set(key, (counts.get(key) ?? 0) + 1);
       }
-      setChapters(order.map((heading) => ({
+
+      // A "heading" backed by only a couple of chunks is almost always a
+      // false positive from the heuristic detector — a numbered list item
+      // inside a paragraph ("3. Greutatea", "4. Înălțimea" from a growth-chart
+      // list), not a real section break — rather than a genuinely short real
+      // chapter. Left as-is, every one of those shows up as its own
+      // one-fragment "chapter" and buries the real ones. Fold it into the
+      // nearest preceding real heading instead of dropping it, so its content
+      // still counts toward a chapter's total (it just isn't independently
+      // selectable for chapter-scoped Discută/Generează/Flashcarduri).
+      const MIN_CHUNKS_FOR_OWN_HEADING = 3;
+      const mergedOrder: string[] = [];
+      const mergedCounts = new Map<string, number>();
+      for (const heading of order) {
+        const count = counts.get(heading) ?? 0;
+        const isReal = heading === WHOLE_DOCUMENT_HEADING || count >= MIN_CHUNKS_FOR_OWN_HEADING || mergedOrder.length === 0;
+        const target = isReal ? heading : mergedOrder[mergedOrder.length - 1];
+        if (!mergedCounts.has(target)) mergedOrder.push(target);
+        mergedCounts.set(target, (mergedCounts.get(target) ?? 0) + count);
+      }
+
+      setChapters(mergedOrder.map((heading) => ({
         heading,
         label: heading === WHOLE_DOCUMENT_HEADING ? 'Document complet' : heading,
-        chunkCount: counts.get(heading) ?? 0,
+        chunkCount: mergedCounts.get(heading) ?? 0,
       })));
       setLoading(false);
     }).catch(() => {
