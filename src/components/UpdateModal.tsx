@@ -216,6 +216,7 @@ export default function UpdateModal() {
   const { addFolder } = useFolderStore();
 
   const [contentError, setContentError] = useState<string | null>(null);
+  const [rollbackWarning, setRollbackWarning] = useState<string | null>(null);
 
   const contentUpdates = manifest?.contentUpdates ?? [];
   const latestVersion = manifest?.latestVersion ?? manifest?.version ?? localVersion;
@@ -240,18 +241,25 @@ export default function UpdateModal() {
   const close = () => {
     setShowUpdateModal(false);
     setContentError(null);
+    setRollbackWarning(null);
   };
 
   const handleInstallContent = async (pack: ContentUpdate) => {
     setContentError(null);
+    setRollbackWarning(null);
     setContentInstalling(pack.id);
     try {
-      saveRollbackSnapshot(
+      const rollbackSaved = saveRollbackSnapshot(
         useQuizStore.getState().quizzes,
         useQuizStore.getState().sessions,
         useFolderStore.getState().folders,
         `Înainte de instalare: ${pack.subject}`,
       );
+      if (!rollbackSaved) {
+        // Not a reason to block the install — but if it goes wrong, there is
+        // no copy to restore from, and the user has to know that up front.
+        setRollbackWarning('Nu am putut salva o copie de siguranță (spațiu de stocare plin) — dacă ceva nu merge după instalare, nu vei putea reveni automat.');
+      }
 
       const data = await fetchContentPack(pack.url);
       const existingFolder = useFolderStore.getState().folders.find((f) => f.name.toLowerCase() === pack.subject.toLowerCase());
@@ -705,6 +713,26 @@ export default function UpdateModal() {
                         />
                       ))}
                     </div>
+
+                    {rollbackWarning && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: '12px 16px',
+                          borderRadius: 12,
+                          background: 'rgba(245,158,11,0.08)',
+                          border: '1px solid rgba(245,158,11,0.20)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          fontSize: 13,
+                          color: '#f59e0b',
+                        }}
+                      >
+                        <AlertCircle size={14} />
+                        {rollbackWarning}
+                      </div>
+                    )}
 
                     {contentError && (
                       <div

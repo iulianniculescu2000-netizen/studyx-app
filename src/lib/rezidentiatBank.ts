@@ -15,10 +15,10 @@ import type { Quiz, QuizImportData } from '../types';
 import { parseImportedQuiz } from './quizImport';
 import { useQuizStore } from '../store/quizStore';
 import { useFolderStore } from '../store/folderStore';
+import { REZIDENTIAT_ROOT_NAME } from './rezidentiatRoot';
 
 /** Generic marker on ANY rezidențiat-scoped quiz — every real bank, and AI packs generated in exam style from Residency chapters. */
 export const REZIDENTIAT_TAG = 'rezidentiat';
-const REZIDENTIAT_FOLDER_NAME = 'Rezidențiat';
 
 interface BankSpecialty {
   specialty: string;
@@ -78,7 +78,7 @@ function findOrCreateFolder(name: string, parentId: string | null, emoji: string
 
 export async function importRezidentiatBank(bank: RezidentiatBankInfo): Promise<{ quizzes: number; questions: number }> {
   const disciplines = await bank.load();
-  const rootId = findOrCreateFolder(REZIDENTIAT_FOLDER_NAME, null, '🩺');
+  const rootId = findOrCreateFolder(REZIDENTIAT_ROOT_NAME, null, '🩺');
 
   const { addQuiz } = useQuizStore.getState();
   let quizCount = 0;

@@ -81,7 +81,7 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
   const startTutorial = useTutorialStore((state) => state.startTutorial);
   const hasHydrated = useTutorialStore((state) => state._hasHydrated);
 
-  const [isSwapping, setIsSwapping] = useState(false);
+  const [, setIsSwapping] = useState(false);
   const [addingProfile, setAddingProfile] = useState(false);
 
   // Real inputs for AIPredictiveAnalytics — it used to always get a hardcoded
@@ -211,7 +211,6 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
 
   useProfileLifecycle({
     activeProfileId,
-    isSwapping,
     setIsSwapping,
     resetSaveStatus,
     addToast,
@@ -311,7 +310,11 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
         <Suspense fallback={null}>
           <GlobalSearch />
         </Suspense>
-        <main style={{ flex: 1, overflow: 'hidden', position: 'relative', paddingBottom: mobile && !focusMode ? 'calc(58px + env(safe-area-inset-bottom, 0px))' : undefined }}>
+        {/* 58px clears the bottom tab bar; the rest clears the floating AI-chat
+            and Pomodoro buttons docked above it (AIChatDrawer/PomodoroTimer),
+            which otherwise sit on top of a page's own last row of content —
+            e.g. the "Mod economisire" toggle in Settings. */}
+        <main style={{ flex: 1, overflow: 'hidden', position: 'relative', paddingBottom: mobile && !focusMode ? 'calc(150px + env(safe-area-inset-bottom, 0px))' : undefined }}>
           <AppErrorBoundary>
             <AnimatePresence mode="wait">
               <motion.div

@@ -329,7 +329,32 @@ export default function Settings() {
   };
 
   const handleReset = async () => {
-    await window.electronAPI?.hardReset();
+    if (window.electronAPI?.hardReset) {
+      await window.electronAPI.hardReset();
+      return;
+    }
+    // Browser build has no electronAPI — `?.` on hardReset used to make this
+    // a silent no-op: the user confirms an "ireversibil" reset and nothing
+    // happens, with no indication it didn't work.
+    try {
+      localStorage.clear();
+      if (window.indexedDB?.databases) {
+        const databases = await window.indexedDB.databases();
+        await Promise.all(
+          databases
+            .filter((db): db is { name: string } => !!db.name)
+            .map((db) => new Promise<void>((resolve) => {
+              const req = window.indexedDB.deleteDatabase(db.name);
+              req.onsuccess = () => resolve();
+              req.onerror = () => resolve();
+              req.onblocked = () => resolve();
+            })),
+        );
+      }
+      window.location.reload();
+    } catch (error) {
+      addToast(error instanceof Error ? `Resetarea a eșuat: ${error.message}` : 'Resetarea a eșuat.', 'error');
+    }
   };
 
   const rerunHealthCheck = async () => {

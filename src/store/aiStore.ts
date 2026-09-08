@@ -168,6 +168,9 @@ export interface AIActions {
   clearAIMemory: (profileId?: string) => void;
   markHydrated: () => void;
   reset: () => void;
+  /** Per-profile: knowledge sources + library folders load/save through profileStorage.ts, not the global zustand persist blob. */
+  _hydrate: (data: { knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] }) => void;
+  _snapshot: () => { knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] };
 }
 
 const DEFAULT_MODEL: AIModel = 'openai/gpt-oss-120b';
@@ -656,6 +659,12 @@ export const useAIStore = create<AIState & AIActions>()(
 
         markHydrated: () => set({ isHydrated: true }, false, 'ai/markHydrated'),
 
+        _hydrate: (data) => set({
+          knowledgeSources: data.knowledgeSources ?? [],
+          libraryFolders: data.libraryFolders ?? [],
+        }, false, 'ai/_hydrate'),
+        _snapshot: () => ({ knowledgeSources: get().knowledgeSources, libraryFolders: get().libraryFolders }),
+
         reset: () => {
           void clearVault();
           set({
@@ -673,8 +682,6 @@ export const useAIStore = create<AIState & AIActions>()(
           provider: state.provider,
           model: state.model,
           hasKey: state.hasKey,
-          knowledgeSources: state.knowledgeSources,
-          libraryFolders: state.libraryFolders,
           cache: state.cache,
           studyMemory: state.studyMemory,
         }),

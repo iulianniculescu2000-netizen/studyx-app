@@ -2,19 +2,8 @@ import { useLocation } from 'react-router-dom';
 import { useFolderStore } from '../../store/folderStore';
 import { useQuizStore } from '../../store/quizStore';
 import { isRezidentiatQuiz } from '../../lib/rezidentiatBank';
+import { isUnderRezidentiatRoot } from '../../lib/rezidentiatRoot';
 import type { ChatThread } from './useChatMessages';
-import type { Folder } from '../../types';
-
-const REZIDENTIAT_ROOT_NAME = 'rezidențiat';
-
-function isUnderRezidentiatRoot(folderId: string, folders: Folder[]): boolean {
-  let folder = folders.find((f) => f.id === folderId);
-  while (folder) {
-    if (!folder.parentId) return folder.name.trim().toLowerCase() === REZIDENTIAT_ROOT_NAME;
-    folder = folders.find((f) => f.id === folder!.parentId);
-  }
-  return false;
-}
 
 /**
  * Which AI conversation is live, based on where the user actually is —

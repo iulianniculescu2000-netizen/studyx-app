@@ -1,15 +1,11 @@
 import { useAIStore } from '../store/aiStore';
-
-/** Same display name as the quiz-folder root (different store — see rezidentiatBank.ts). */
-const RESIDENCY_LIBRARY_FOLDER_NAME = 'Rezidențiat';
+import { REZIDENTIAT_ROOT_NAME, findRezidentiatRootFolder } from './rezidentiatRoot';
 
 function findOrCreateLibraryFolder(): string {
   const { libraryFolders, addLibraryFolder } = useAIStore.getState();
-  const existing = libraryFolders.find(
-    (folder) => folder.parentId === null && folder.name.trim().toLowerCase() === RESIDENCY_LIBRARY_FOLDER_NAME.toLowerCase(),
-  );
+  const existing = findRezidentiatRootFolder(libraryFolders);
   if (existing) return existing.id;
-  return addLibraryFolder(RESIDENCY_LIBRARY_FOLDER_NAME, '🩺');
+  return addLibraryFolder(REZIDENTIAT_ROOT_NAME, '🩺');
 }
 
 /**

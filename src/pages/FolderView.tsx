@@ -10,6 +10,7 @@ import ImportQuizButton from '../components/ImportQuizButton';
 import ExamSplitModal from '../components/ExamSplitModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { isFlashcardDeck } from '../lib/deckKind';
+import { isRezidentiatRootFolder } from '../lib/rezidentiatRoot';
 import type { Quiz, QuizColor } from '../types';
 
 const COLOR_HEX: Record<string, string> = {
@@ -103,7 +104,7 @@ export default function FolderView() {
   // The root "Rezidențiat" folder is deliberately absent from "Toate grilele"
   // (kept separate from the year's coursework) — sending its own "back" there
   // would point at a list that never shows it. Its true home is its own page.
-  const isRezidentiatRoot = !!folder && !folder.parentId && folder.name.trim().toLowerCase() === 'rezidențiat';
+  const isRezidentiatRoot = !!folder && isRezidentiatRootFolder(folder);
   const backHref = folder
     ? (folder.parentId ? `/folder/${folder.parentId}` : isRezidentiatRoot ? '/rezidentiat' : '/quizzes')
     : null;

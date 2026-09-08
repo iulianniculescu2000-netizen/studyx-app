@@ -24,6 +24,7 @@ import ThemedSelect from './ThemedSelect';
 import ThemeQuickSwitcher from './ThemeQuickSwitcher';
 import { isFlashcardDeck } from '../lib/deckKind';
 import { isRezidentiatQuiz } from '../lib/rezidentiatBank';
+import { isRezidentiatRootFolder } from '../lib/rezidentiatRoot';
 import { suggestFolderAppearance } from '../lib/folderAppearance';
 import type { QuizColor } from '../types';
 
@@ -625,7 +626,7 @@ export default function Sidebar() {
     // now exclusively so) from the dedicated Rezidențiat page — listing it
     // here too would show a folder whose quiz count reads 0 (folderQuizCount
     // excludes rezidențiat quizzes on purpose), which looks like a bug.
-    const regularFolders = folders.filter((folder) => folder.name.trim().toLowerCase() !== 'rezidențiat');
+    const regularFolders = folders.filter((folder) => !isRezidentiatRootFolder(folder));
     const byParent = new Map<string, typeof folders>();
     regularFolders.forEach((folder) => {
       const key = folder.parentId ?? '__root__';

@@ -7,12 +7,14 @@ import { useQuizStore } from './quizStore';
 import { useFolderStore } from './folderStore';
 import { useStatsStore } from './statsStore';
 import { useNotesStore } from './notesStore';
+import { useAIStore, type AIKnowledgeSource, type AILibraryFolder } from './aiStore';
+import { setVectorStoreProfile } from '../ai/vectorStore';
 import type { Quiz, QuizSession, Folder, QuestionStat, StudyStreak } from '../types';
 import { useSaveStatusStore } from './saveStatusStore';
 import { useToastStore } from './toastStore';
 
 const LS_KEY = (profileId: string, ns: string) => `studyx-p-${profileId}-${ns}`;
-type ProfileNamespace = 'quizzes' | 'folders' | 'stats' | 'notes';
+type ProfileNamespace = 'quizzes' | 'folders' | 'stats' | 'notes' | 'ai';
 const CORRUPT_TOAST_ID = 'profile-storage-corrupt';
 const QUOTA_TOAST_ID = 'profile-storage-quota';
 const QUARANTINE_SUFFIX = '__corrupt-';
@@ -102,21 +104,23 @@ function snapshotFor(namespace: ProfileNamespace) {
       return useStatsStore.getState()._snapshot();
     case 'notes':
       return useNotesStore.getState()._snapshot();
+    case 'ai':
+      return useAIStore.getState()._snapshot();
   }
 }
 
-function isQuizSnapshot(value: unknown): value is { quizzes: Quiz[]; sessions: QuizSession[] } {
+export function isQuizSnapshot(value: unknown): value is { quizzes: Quiz[]; sessions: QuizSession[] } {
   if (!value || typeof value !== 'object') return false;
   const data = value as Record<string, unknown>;
   return Array.isArray(data.quizzes) && Array.isArray(data.sessions);
 }
 
-function isFolderSnapshot(value: unknown): value is { folders: Folder[] } {
+export function isFolderSnapshot(value: unknown): value is { folders: Folder[] } {
   if (!value || typeof value !== 'object') return false;
   return Array.isArray((value as Record<string, unknown>).folders);
 }
 
-function isStatsSnapshot(value: unknown): value is { questionStats: Record<string, QuestionStat>; streak: StudyStreak; totalStudyTime: number } {
+export function isStatsSnapshot(value: unknown): value is { questionStats: Record<string, QuestionStat>; streak: StudyStreak; totalStudyTime: number } {
   if (!value || typeof value !== 'object') return false;
   const data = value as Record<string, unknown>;
   const streak = data.streak as Record<string, unknown> | undefined;
@@ -129,10 +133,16 @@ function isStatsSnapshot(value: unknown): value is { questionStats: Record<strin
     && Array.isArray(streak.studyDates);
 }
 
-function isNotesSnapshot(value: unknown): value is { notes: Record<string, string> } {
+export function isNotesSnapshot(value: unknown): value is { notes: Record<string, string> } {
   if (!value || typeof value !== 'object') return false;
   const notes = (value as Record<string, unknown>).notes;
   return !!notes && typeof notes === 'object' && !Array.isArray(notes);
+}
+
+export function isAiSnapshot(value: unknown): value is { knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] } {
+  if (!value || typeof value !== 'object') return false;
+  const data = value as Record<string, unknown>;
+  return Array.isArray(data.knowledgeSources) && Array.isArray(data.libraryFolders);
 }
 
 function validateSnapshot<T>(namespace: ProfileNamespace, data: unknown): T | null {
@@ -145,6 +155,8 @@ function validateSnapshot<T>(namespace: ProfileNamespace, data: unknown): T | nu
       return (isStatsSnapshot(data) ? data : null) as T | null;
     case 'notes':
       return (isNotesSnapshot(data) ? data : null) as T | null;
+    case 'ai':
+      return (isAiSnapshot(data) ? data : null) as T | null;
   }
 }
 
@@ -280,7 +292,7 @@ export async function saveProfileNamespace(profileId: string, namespace: Profile
  * the same data.
  */
 export function flushProfileDataSync(profileId: string) {
-  const namespaces: ProfileNamespace[] = ['quizzes', 'folders', 'stats', 'notes'];
+  const namespaces: ProfileNamespace[] = ['quizzes', 'folders', 'stats', 'notes', 'ai'];
   for (const ns of namespaces) {
     try {
       const serialized = JSON.stringify(snapshotFor(ns));
@@ -303,27 +315,36 @@ export async function saveProfileData(profileId: string) {
     saveProfileNamespace(profileId, 'folders'),
     saveProfileNamespace(profileId, 'stats'),
     saveProfileNamespace(profileId, 'notes'),
+    saveProfileNamespace(profileId, 'ai'),
   ]);
 }
 
 /** Load store state for a profile */
 export async function loadProfileData(profileId: string) {
   useSaveStatusStore.getState().setRecovering('Incarcam profilul');
-  const [quizData, folderData, statsData, notesData] = await Promise.all([
+  // Deliberately NOT awaited: IndexedDB being slow/unavailable (a broken
+  // environment, private-browsing restrictions) must not block
+  // quizzes/folders/stats/notes from loading — those don't depend on it. The
+  // narrow window before this resolves only affects RAG lookups against the
+  // knowledge vault, which self-correct the moment it finishes.
+  void setVectorStoreProfile(profileId).catch(() => undefined);
+  const [quizData, folderData, statsData, notesData, aiData] = await Promise.all([
     read<{ quizzes: Quiz[]; sessions: QuizSession[] }>(profileId, 'quizzes', 'studyx-quizzes-v3'),
     read<{ folders: Folder[] }>(profileId, 'folders', 'studyx-folders-v2'),
     read<{ questionStats: Record<string, QuestionStat>; streak: StudyStreak; totalStudyTime: number }>(profileId, 'stats', 'studyx-stats'),
     read<{ notes: Record<string, string> }>(profileId, 'notes', 'studyx-notes'),
+    read<{ knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] }>(profileId, 'ai', 'ai-store'),
   ]);
 
   useQuizStore.getState()._hydrate(quizData ?? { quizzes: [], sessions: [] });
   useFolderStore.getState()._hydrate(folderData ?? { folders: [] });
-  useStatsStore.getState()._hydrate(statsData ?? { 
-    questionStats: {}, 
-    streak: { currentStreak: 0, longestStreak: 0, lastStudyDate: '', studyDates: [] }, 
-    totalStudyTime: 0 
+  useStatsStore.getState()._hydrate(statsData ?? {
+    questionStats: {},
+    streak: { currentStreak: 0, longestStreak: 0, lastStudyDate: '', studyDates: [] },
+    totalStudyTime: 0
   });
   useNotesStore.getState()._hydrate(notesData ?? { notes: {} });
+  useAIStore.getState()._hydrate(aiData ?? { knowledgeSources: [], libraryFolders: [] });
 
   lastSerializedSnapshot.set(`${profileId}:quizzes`, JSON.stringify(quizData ?? { quizzes: [], sessions: [] }));
   lastSerializedSnapshot.set(`${profileId}:folders`, JSON.stringify(folderData ?? { folders: [] }));
@@ -333,5 +354,6 @@ export async function loadProfileData(profileId: string) {
     totalStudyTime: 0,
   }));
   lastSerializedSnapshot.set(`${profileId}:notes`, JSON.stringify(notesData ?? { notes: {} }));
+  lastSerializedSnapshot.set(`${profileId}:ai`, JSON.stringify(aiData ?? { knowledgeSources: [], libraryFolders: [] }));
   useSaveStatusStore.getState().setSaved('Profil sincronizat');
 }

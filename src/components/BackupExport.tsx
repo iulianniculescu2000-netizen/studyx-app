@@ -8,11 +8,28 @@ import { useQuizStore } from '../store/quizStore';
 import { useFolderStore } from '../store/folderStore';
 import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
+import { useAIStore } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
+import {
+  isQuizSnapshot, isFolderSnapshot, isStatsSnapshot, isNotesSnapshot, isAiSnapshot,
+  flushProfileDataSync, saveProfileData,
+} from '../store/profileStorage';
+import type { Quiz, QuizSession, Folder, QuestionStat, StudyStreak } from '../types';
+import type { AIKnowledgeSource, AILibraryFolder } from '../store/aiStore';
 
 interface BackupExportProps {
   open: boolean;
   onClose: () => void;
+}
+
+interface ParsedBackup {
+  version: number;
+  quizzes?: Quiz[];
+  sessions?: QuizSession[];
+  folders?: Folder[];
+  stats?: { questionStats: Record<string, QuestionStat>; streak: StudyStreak; totalStudyTime: number };
+  notes?: Record<string, string>;
+  ai?: { knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] };
 }
 
 export default function BackupExport({ open, onClose }: BackupExportProps) {
@@ -20,12 +37,14 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
   const { calmMotion, performanceLite } = useAdaptiveMotion();
   const [status, setStatus] = useState<'idle' | 'ok' | 'error'>('idle');
   const [msg, setMsg] = useState('');
+  const [pendingRestore, setPendingRestore] = useState<ParsedBackup | null>(null);
 
   const exportBackup = async () => {
     const { quizzes, sessions } = useQuizStore.getState();
     const { folders } = useFolderStore.getState();
     const { questionStats, streak, totalStudyTime } = useStatsStore.getState();
     const { notes } = useNotesStore.getState();
+    const { knowledgeSources, libraryFolders } = useAIStore.getState();
     const { profiles, activeProfileId } = useUserStore.getState();
 
     const data = {
@@ -37,6 +56,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
       folders,
       stats: { questionStats, streak, totalStudyTime },
       notes,
+      ai: { knowledgeSources, libraryFolders },
     };
 
     const content = JSON.stringify(data, null, 2);
@@ -71,24 +91,79 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
       if (!file) return;
       try {
         const text = await file.text();
-        const data = JSON.parse(text);
+        const data = JSON.parse(text) as Record<string, unknown>;
         if (data.version !== 1) throw new Error('Format nerecunoscut');
 
-        // Restore stores
-        if (data.quizzes) useQuizStore.setState((s) => ({ ...s, quizzes: data.quizzes, sessions: data.sessions ?? s.sessions }));
-        if (data.folders) useFolderStore.setState((s) => ({ ...s, folders: data.folders }));
-        if (data.stats) useStatsStore.getState()._hydrate(data.stats);
-        if (data.notes) useNotesStore.setState((s) => ({ ...s, notes: data.notes }));
+        // Validate every field's SHAPE before it's ever allowed near a store —
+        // a hand-edited or truncated file used to overwrite live data with
+        // whatever garbage happened to parse as JSON.
+        const parsed: ParsedBackup = { version: 1 };
+        if (data.quizzes !== undefined) {
+          if (!isQuizSnapshot(data)) throw new Error('Fișierul are secțiunea de grile coruptă sau incompletă.');
+          parsed.quizzes = data.quizzes;
+          parsed.sessions = data.sessions;
+        }
+        if (data.folders !== undefined) {
+          if (!isFolderSnapshot(data)) throw new Error('Fișierul are secțiunea de foldere coruptă sau incompletă.');
+          parsed.folders = data.folders;
+        }
+        if (data.stats !== undefined) {
+          if (!isStatsSnapshot(data.stats)) throw new Error('Fișierul are secțiunea de statistici coruptă sau incompletă.');
+          parsed.stats = data.stats;
+        }
+        if (data.notes !== undefined) {
+          if (!isNotesSnapshot(data)) throw new Error('Fișierul are secțiunea de notițe coruptă sau incompletă.');
+          parsed.notes = data.notes;
+        }
+        if (data.ai !== undefined) {
+          if (!isAiSnapshot(data.ai)) throw new Error('Fișierul are secțiunea de bibliotecă AI coruptă sau incompletă.');
+          parsed.ai = data.ai;
+        }
+        // Quizzes reference folders by id — restoring one without the other
+        // leaves quizzes pointing at folders that don't exist in the restored
+        // set, invisible everywhere `getQuizzesByFolder` is used.
+        if (parsed.quizzes && !parsed.folders) {
+          throw new Error('Fișierul conține grile fără foldere — nu pot restaura una fără cealaltă în siguranță.');
+        }
 
-        setStatus('ok');
-        setMsg('Backup restaurat! Repornește aplicația dacă ceva pare greșit.');
+        setPendingRestore(parsed);
       } catch (err: unknown) {
         setStatus('error');
         setMsg(err instanceof Error ? err.message : 'Fișier invalid');
+        setTimeout(() => setStatus('idle'), 4000);
       }
-      setTimeout(() => setStatus('idle'), 4000);
     };
     input.click();
+  };
+
+  const applyPendingRestore = async () => {
+    if (!pendingRestore) return;
+    const data = pendingRestore;
+    setPendingRestore(null);
+
+    if (data.quizzes) useQuizStore.setState((s) => ({ ...s, quizzes: data.quizzes!, sessions: data.sessions ?? s.sessions }));
+    if (data.folders) useFolderStore.setState((s) => ({ ...s, folders: data.folders! }));
+    if (data.stats) useStatsStore.getState()._hydrate(data.stats);
+    if (data.notes) useNotesStore.setState((s) => ({ ...s, notes: data.notes! }));
+    if (data.ai) useAIStore.getState()._hydrate(data.ai);
+
+    // Land it on disk immediately — the debounced autosave can take several
+    // seconds, and a user who reads "restaurat" and force-quits right after
+    // (exactly what "repornește aplicația" invites) must not lose the restore.
+    const activeProfileId = useUserStore.getState().activeProfileId;
+    if (activeProfileId) {
+      flushProfileDataSync(activeProfileId);
+      try {
+        await saveProfileData(activeProfileId);
+      } catch {
+        // flushProfileDataSync already landed the critical bytes in
+        // localStorage; the async path's own toast covers a real failure here.
+      }
+    }
+
+    setStatus('ok');
+    setMsg('Backup restaurat și salvat.');
+    setTimeout(() => setStatus('idle'), 4000);
   };
 
   return (
@@ -131,6 +206,36 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar" style={{ minHeight: 0 }}>
+              {pendingRestore ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl p-4" style={{ background: `${theme.danger}0c`, border: `1px solid ${theme.danger}30` }}>
+                    <p className="mb-2 flex items-center gap-2 text-sm font-black" style={{ color: theme.danger }}>
+                      <AlertCircle size={16} /> Sigur restaurezi?
+                    </p>
+                    <p className="text-[12px] font-medium leading-relaxed" style={{ color: theme.text }}>
+                      Se vor înlocui ireversibil datele curente cu cele din fișier:
+                    </p>
+                    <ul className="mt-2 space-y-1 text-[11px] font-bold opacity-80" style={{ color: theme.text }}>
+                      {pendingRestore.quizzes && <li>• {pendingRestore.quizzes.length} grile, {pendingRestore.folders?.length ?? 0} foldere</li>}
+                      {pendingRestore.stats && <li>• statisticile de studiu</li>}
+                      {pendingRestore.notes && <li>• {Object.keys(pendingRestore.notes).length} notițe</li>}
+                      {pendingRestore.ai && <li>• {pendingRestore.ai.knowledgeSources.length} surse din biblioteca AI</li>}
+                    </ul>
+                  </div>
+                  <div className="flex gap-2">
+                    <motion.button whileTap={calmMotion ? undefined : { scale: 0.97 }} onClick={() => setPendingRestore(null)}
+                      className="flex-1 rounded-2xl py-3 text-xs font-black uppercase tracking-wider"
+                      style={{ background: theme.surface2, color: theme.text }}>
+                      Anulează
+                    </motion.button>
+                    <motion.button whileTap={calmMotion ? undefined : { scale: 0.97 }} onClick={() => void applyPendingRestore()}
+                      className="flex-1 rounded-2xl py-3 text-xs font-black uppercase tracking-wider text-white"
+                      style={{ background: theme.danger }}>
+                      Restaurează
+                    </motion.button>
+                  </div>
+                </div>
+              ) : (
               <div className="space-y-3">
                 <motion.button whileHover={calmMotion ? undefined : { scale: 1.02 }} whileTap={calmMotion ? undefined : { scale: 0.97 }} onClick={exportBackup}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
@@ -141,7 +246,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
                   </div>
                   <div>
                     <p className="text-sm font-black" style={{ color: theme.text }}>Exportă Backup</p>
-                    <p className="text-[11px] font-medium opacity-60" style={{ color: theme.text }}>Grile, statistici, notițe — tot</p>
+                    <p className="text-[11px] font-medium opacity-60" style={{ color: theme.text }}>Grile, foldere, statistici, notițe, bibliotecă AI</p>
                   </div>
                 </motion.button>
 
@@ -158,6 +263,7 @@ export default function BackupExport({ open, onClose }: BackupExportProps) {
                   </div>
                 </motion.button>
               </div>
+              )}
 
               {/* Status */}
               <AnimatePresence>

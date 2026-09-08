@@ -2,7 +2,8 @@ import { idbGet, idbSet, idbRemove } from '../lib/idb';
 import { embedBatch, embedText, cosineSimilarity } from './embeddings';
 import type { ChunkRecord } from './types';
 
-const VECTOR_INDEX_KEY = 'studyx-vectors-index-v2';
+const LEGACY_VECTOR_INDEX_KEY = 'studyx-vectors-index-v2';
+const legacySourceStorageKey = (sourceId: string) => `studyx-vectors-source-${sourceId}`;
 
 interface VectorSourceIndexEntry {
   sourceId: string;
@@ -20,9 +21,48 @@ interface AddChunksOptions {
 let vectorCache: ChunkRecord[] | null = null;
 let indexCache: VectorSourceIndexEntry[] | null = null;
 let writeLock: Promise<void> = Promise.resolve();
+/** Set by `setVectorStoreProfile` — every knowledge source lives under this profile's own keys, never shared across profiles. */
+let activeProfileId: string | null = null;
+
+function vectorIndexKey(): string {
+  if (!activeProfileId) return LEGACY_VECTOR_INDEX_KEY;
+  return `studyx-vectors-index-v2:${activeProfileId}`;
+}
 
 function getSourceStorageKey(sourceId: string) {
-  return `studyx-vectors-source-${sourceId}`;
+  if (!activeProfileId) return legacySourceStorageKey(sourceId);
+  return `studyx-vectors-source-${activeProfileId}:${sourceId}`;
+}
+
+/**
+ * Points every subsequent vector-store read/write at this profile's own keys
+ * and drops the in-memory caches (they'd otherwise still hold the previous
+ * profile's chunks). One-time migration: the very first profile to call this
+ * after upgrading inherits whatever was in the old, un-scoped global vector
+ * store — otherwise that data would silently vanish for everyone.
+ */
+export async function setVectorStoreProfile(profileId: string): Promise<void> {
+  activeProfileId = profileId;
+  vectorCache = null;
+  indexCache = null;
+
+  const alreadyMigrated = await idbGet<VectorSourceIndexEntry[]>(vectorIndexKey());
+  if (alreadyMigrated) return;
+
+  const legacyIndex = await idbGet<VectorSourceIndexEntry[]>(LEGACY_VECTOR_INDEX_KEY);
+  if (!legacyIndex || legacyIndex.length === 0) return;
+
+  const migratedEntries: VectorSourceIndexEntry[] = [];
+  for (const entry of legacyIndex) {
+    const chunks = await idbGet<ChunkRecord[]>(entry.key);
+    if (!chunks) continue;
+    const newKey = getSourceStorageKey(entry.sourceId);
+    await idbSet(newKey, chunks);
+    migratedEntries.push({ ...entry, key: newKey });
+  }
+  await idbSet(vectorIndexKey(), migratedEntries);
+  await idbRemove(LEGACY_VECTOR_INDEX_KEY);
+  await Promise.all(legacyIndex.map((entry) => idbRemove(entry.key)));
 }
 
 async function withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -40,14 +80,14 @@ async function withLock<T>(operation: () => Promise<T>): Promise<T> {
 
 async function getVectorIndex(): Promise<VectorSourceIndexEntry[]> {
   if (indexCache) return indexCache;
-  const data = await idbGet<VectorSourceIndexEntry[]>(VECTOR_INDEX_KEY);
+  const data = await idbGet<VectorSourceIndexEntry[]>(vectorIndexKey());
   indexCache = Array.isArray(data) ? data : [];
   return indexCache;
 }
 
 async function saveVectorIndex(entries: VectorSourceIndexEntry[]) {
   indexCache = entries;
-  await idbSet(VECTOR_INDEX_KEY, entries);
+  await idbSet(vectorIndexKey(), entries);
 }
 
 async function yieldToMainThread() {
@@ -158,7 +198,7 @@ export async function clearVault() {
   await withLock(async () => {
     const index = await getVectorIndex();
     await Promise.all(index.map((entry) => idbRemove(entry.key)));
-    await idbRemove(VECTOR_INDEX_KEY);
+    await idbRemove(vectorIndexKey());
     vectorCache = [];
     indexCache = [];
   });

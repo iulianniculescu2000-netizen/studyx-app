@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link } from 'react-router-dom';
-import { BookOpen, ChevronDown, ChevronRight, Download, FolderTree, Loader2, MessageCircle, Plus, Sparkles, Stethoscope } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { BookOpen, ChevronDown, ChevronRight, CreditCard, Download, FolderTree, Loader2, MessageCircle, Plus, Sparkles, Stethoscope } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore, type AIKnowledgeSource } from '../store/aiStore';
 import { useUIStore } from '../store/uiStore';
@@ -12,15 +12,12 @@ import { useToastStore } from '../store/toastStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useSourceChapters } from '../hooks/useSourceChapters';
 import { dispatchDiscussChapter, dispatchGenerateFromChapter } from '../lib/ai/chapterEvents';
+import { generateFlashcardsFromChapter } from '../lib/ai/chapterFlashcardGeneration';
 import { importRezidentiatBank, isBankImported, isRezidentiatQuiz, REZIDENTIAT_BANKS, type RezidentiatBankInfo } from '../lib/rezidentiatBank';
 import { importRezidentiatLibraryBook, isLibraryBookImported, REZIDENTIAT_LIBRARY_BOOKS, type RezidentiatLibraryBook } from '../lib/rezidentiatLibrary';
 import RezidentiatTutorial, { REZIDENTIAT_TUTORIAL_OPEN_EVENT } from '../components/RezidentiatTutorial';
 import type { Quiz, QuestionStat } from '../types';
-
-/** Reserved library-folder name that scopes this page — created on demand, no schema change. */
-const RESIDENCY_FOLDER_NAME = 'Rezidențiat';
-/** The QUIZ folder (useFolderStore) real banks import into — same display name, different store than the AI-library folder above; they coexist without conflict. */
-const REZIDENTIAT_FOLDER_ROOT_NAME = 'Rezidențiat';
+import { REZIDENTIAT_ROOT_NAME, findRezidentiatRootFolder, findOrCreateAiFlashcardsFolder } from '../lib/rezidentiatRoot';
 
 type Theme = ReturnType<typeof useTheme>;
 
@@ -80,6 +77,11 @@ function ChapterProgressBadge({ sourceName, heading, theme }: { sourceName: stri
 function BookChapters({ source, theme, calmMotion }: { source: AIKnowledgeSource; theme: Theme; calmMotion: boolean }) {
   const { chapters, loading } = useSourceChapters(source.id);
   const setChatOpen = useUIStore((state) => state.setChatOpen);
+  const folders = useFolderStore((state) => state.folders);
+  const addQuiz = useQuizStore((state) => state.addQuiz);
+  const addToast = useToastStore((state) => state.addToast);
+  const navigate = useNavigate();
+  const [generatingFlashcardsHeading, setGeneratingFlashcardsHeading] = useState<string | null>(null);
 
   const discuss = (heading: string, label: string) => {
     setChatOpen(true);
@@ -88,6 +90,31 @@ function BookChapters({ source, theme, calmMotion }: { source: AIKnowledgeSource
   const generate = (heading: string, label: string) => {
     setChatOpen(true);
     dispatchGenerateFromChapter(source, heading, label, true);
+  };
+
+  const generateFlashcards = async (heading: string, label: string) => {
+    if (generatingFlashcardsHeading) return;
+    setGeneratingFlashcardsHeading(heading);
+    try {
+      const folderId = findOrCreateAiFlashcardsFolder();
+      const folder = folders.find((f) => f.id === folderId) ?? null;
+      const { deck, cardCount } = await generateFlashcardsFromChapter({
+        sourceId: source.id,
+        sourceName: source.name,
+        heading,
+        label,
+        folder,
+        cardCount: 20,
+        examStyle: 'residency',
+      });
+      addQuiz({ ...deck, folderId });
+      addToast(`${cardCount} flashcarduri create din „${label}".`, 'success', 5000);
+      navigate(`/flashcards/session/${deck.id}?mode=all`);
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Generarea flashcardurilor a eșuat.', 'error', 5000);
+    } finally {
+      setGeneratingFlashcardsHeading(null);
+    }
   };
 
   if (loading) {
@@ -133,6 +160,18 @@ function BookChapters({ source, theme, calmMotion }: { source: AIKnowledgeSource
               style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent }}
             >
               <Sparkles size={13} /> Generează grile
+            </motion.button>
+            <motion.button
+              whileTap={calmMotion ? undefined : { scale: 0.97 }}
+              onClick={() => void generateFlashcards(chapter.heading, chapter.label)}
+              disabled={generatingFlashcardsHeading === chapter.heading}
+              className="flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-[10.5px] font-black uppercase tracking-[0.08em] disabled:opacity-60"
+              style={{ background: `${theme.success}15`, border: `1px solid ${theme.success}25`, color: theme.success }}
+            >
+              {generatingFlashcardsHeading === chapter.heading
+                ? <Loader2 size={13} className="animate-spin" />
+                : <CreditCard size={13} />}
+              Flashcarduri
             </motion.button>
           </div>
         </div>
@@ -401,10 +440,7 @@ function RealLibraryAnnounceBubble({ theme, calmMotion }: { theme: Theme; calmMo
 function RealBankFolderLink({ theme, calmMotion }: { theme: Theme; calmMotion: boolean }) {
   const quizzes = useQuizStore((state) => state.quizzes);
   const folders = useFolderStore((state) => state.folders);
-  const rootFolder = useMemo(
-    () => folders.find((f) => f.parentId === null && f.name.trim().toLowerCase() === REZIDENTIAT_FOLDER_ROOT_NAME.toLowerCase()),
-    [folders],
-  );
+  const rootFolder = useMemo(() => findRezidentiatRootFolder(folders), [folders]);
   const hasContent = useMemo(() => quizzes.some((q) => !q.archived && isRezidentiatQuiz(q)), [quizzes]);
 
   if (!hasContent || !rootFolder) return null;
@@ -439,10 +475,7 @@ export default function Residency() {
   const addLibraryFolder = useAIStore((state) => state.addLibraryFolder);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const residencyFolder = useMemo(
-    () => libraryFolders.find((folder) => folder.name.trim().toLowerCase() === RESIDENCY_FOLDER_NAME.toLowerCase()) ?? null,
-    [libraryFolders],
-  );
+  const residencyFolder = useMemo(() => findRezidentiatRootFolder(libraryFolders), [libraryFolders]);
 
   const books = useMemo(
     () => (residencyFolder ? knowledgeSources.filter((source) => source.folderId === residencyFolder.id) : []),
@@ -509,7 +542,7 @@ export default function Residency() {
             </p>
             <motion.button
               whileTap={calmMotion ? undefined : { scale: 0.97 }}
-              onClick={() => addLibraryFolder(RESIDENCY_FOLDER_NAME, '🩺')}
+              onClick={() => addLibraryFolder(REZIDENTIAT_ROOT_NAME, '🩺')}
               className="rounded-2xl px-6 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white"
               style={{ background: theme.accent }}
             >

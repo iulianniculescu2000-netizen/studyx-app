@@ -3,6 +3,7 @@ import { useFolderStore } from '../store/folderStore';
 import { useNotesStore } from '../store/notesStore';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
+import { useAIStore } from '../store/aiStore';
 import { flushProfileDataSync, loadProfileData, saveProfileData, saveProfileNamespace } from '../store/profileStorage';
 import { cancelIdleTask, scheduleIdleTask } from '../lib/idleTaskScheduler';
 
@@ -10,7 +11,6 @@ type AddToast = (message: string, type?: 'success' | 'error' | 'warning' | 'info
 
 type Options = {
   activeProfileId: string | null;
-  isSwapping: boolean;
   setIsSwapping: (value: boolean) => void;
   resetSaveStatus: () => void;
   addToast: AddToast;
@@ -18,7 +18,6 @@ type Options = {
 
 export function useProfileLifecycle({
   activeProfileId,
-  isSwapping,
   setIsSwapping,
   resetSaveStatus,
   addToast,
@@ -26,15 +25,25 @@ export function useProfileLifecycle({
   const prevProfileIdRef = useRef<string | null>(null);
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const saveIdleRef = useRef<Record<string, number>>({});
+  // Synchronous lock — unlike the `isSwapping` STATE this used to gate on,
+  // a ref is readable/writable immediately, not just after the next commit.
+  // React 18 StrictMode (dev only) invokes a freshly-mounted effect's setup
+  // twice back-to-back before either invocation's `setState` has committed,
+  // so both used to read the same stale `isSwapping === false` and both would
+  // start swapping concurrently. This still works if a future edit drops
+  // `isSwapping` from the dependency array — nothing here depends on it.
+  const isSwappingRef = useRef(false);
+  const activeProfileIdRef = useRef(activeProfileId);
+  activeProfileIdRef.current = activeProfileId;
 
   useEffect(() => {
     const swapProfile = async () => {
-      const current = activeProfileId;
+      if (isSwappingRef.current) return;
+      const current = activeProfileIdRef.current;
       const prev = prevProfileIdRef.current;
-
       if (prev === current) return;
-      if (isSwapping) return;
 
+      isSwappingRef.current = true;
       setIsSwapping(true);
       try {
         if (prev) {
@@ -49,20 +58,27 @@ export function useProfileLifecycle({
       } catch {
         addToast('Eroare la schimbarea profilului.', 'error');
       } finally {
+        isSwappingRef.current = false;
         setIsSwapping(false);
         resetSaveStatus();
+        // `activeProfileId` may have changed again while this swap was in
+        // flight — the lock above would have made that render's invocation a
+        // no-op, so nothing else will retry it unless done explicitly here.
+        if (activeProfileIdRef.current !== prevProfileIdRef.current) {
+          void swapProfile();
+        }
       }
     };
 
     void swapProfile();
-  }, [activeProfileId, addToast, isSwapping, resetSaveStatus, setIsSwapping]);
+  }, [activeProfileId, addToast, resetSaveStatus, setIsSwapping]);
 
   useEffect(() => {
     if (!activeProfileId) return;
 
-    const namespaces: Array<'quizzes' | 'folders' | 'stats' | 'notes'> = ['quizzes', 'folders', 'stats', 'notes'];
+    const namespaces: Array<'quizzes' | 'folders' | 'stats' | 'notes' | 'ai'> = ['quizzes', 'folders', 'stats', 'notes', 'ai'];
 
-    const clearScheduledSave = (namespace: 'quizzes' | 'folders' | 'stats' | 'notes') => {
+    const clearScheduledSave = (namespace: 'quizzes' | 'folders' | 'stats' | 'notes' | 'ai') => {
       const key = `${activeProfileId}:${namespace}`;
       const timer = saveTimersRef.current[key];
       if (timer) {
@@ -76,7 +92,7 @@ export function useProfileLifecycle({
       }
     };
 
-    const persistNamespace = (namespace: 'quizzes' | 'folders' | 'stats' | 'notes') => {
+    const persistNamespace = (namespace: 'quizzes' | 'folders' | 'stats' | 'notes' | 'ai') => {
       const key = `${activeProfileId}:${namespace}`;
       clearScheduledSave(namespace);
       void saveProfileNamespace(activeProfileId, namespace).catch(() => {
@@ -86,7 +102,7 @@ export function useProfileLifecycle({
       });
     };
 
-    const scheduleSave = (namespace: 'quizzes' | 'folders' | 'stats' | 'notes') => {
+    const scheduleSave = (namespace: 'quizzes' | 'folders' | 'stats' | 'notes' | 'ai') => {
       const key = `${activeProfileId}:${namespace}`;
       clearScheduledSave(namespace);
 
@@ -135,6 +151,7 @@ export function useProfileLifecycle({
     const u2 = useFolderStore.subscribe(() => scheduleSave('folders'));
     const u3 = useStatsStore.subscribe(() => scheduleSave('stats'));
     const u4 = useNotesStore.subscribe(() => scheduleSave('notes'));
+    const u5 = useAIStore.subscribe(() => scheduleSave('ai'));
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pagehide', handlePageHide);
 
@@ -143,6 +160,7 @@ export function useProfileLifecycle({
       u2();
       u3();
       u4();
+      u5();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
       void flushPending();

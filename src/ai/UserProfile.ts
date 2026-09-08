@@ -1,4 +1,5 @@
 import { idbGet } from '../lib/idb';
+import { useToastStore } from '../store/toastStore';
 import type { Confidence, Question } from '../types';
 import type {
   AIAnalysisResult,
@@ -46,13 +47,33 @@ function emptyProfile(profileId: string): UserProfileData {
 }
 
 export function loadUserProfile(profileId: string): UserProfileData {
+  const key = getProfileKey(profileId);
   try {
-    const raw = localStorage.getItem(getProfileKey(profileId));
+    const raw = localStorage.getItem(key);
     if (!raw) return emptyProfile(profileId);
     const parsed = JSON.parse(raw) as UserProfileData;
     return { ...emptyProfile(profileId), ...parsed, profileId };
   } catch {
-    return emptyProfile(profileId);
+    // Corrupt JSON — unlike a missing key, this used to fail the exact same
+    // way on every subsequent call too (the bad bytes were never replaced),
+    // silently resetting the adaptive-difficulty/weak-topics profile with no
+    // indication to the user. Quarantine a copy, then overwrite with a fresh
+    // empty profile so this doesn't keep re-triggering on every answer.
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) localStorage.setItem(`${key}__corrupt-${Date.now()}`, raw);
+    } catch {
+      // Out of space — nothing more we can do here.
+    }
+    const fresh = emptyProfile(profileId);
+    saveUserProfile(fresh);
+    useToastStore.getState().upsertToast(
+      'ai-user-profile-corrupt',
+      'Profilul tău de învățare AI era corupt și a fost resetat. Progresul din grile nu e afectat.',
+      'warning',
+      9000,
+    );
+    return fresh;
   }
 }
 

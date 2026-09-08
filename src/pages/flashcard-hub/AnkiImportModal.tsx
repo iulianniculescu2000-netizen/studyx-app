@@ -36,7 +36,9 @@ export function AnkiImportModal({
   onImported: (firstQuizId: string | null) => void;
 }) {
   const addFolder = useFolderStore((state) => state.addFolder);
+  const deleteFolder = useFolderStore((state) => state.deleteFolder);
   const addQuiz = useQuizStore((state) => state.addQuiz);
+  const deleteQuiz = useQuizStore((state) => state.deleteQuiz);
 
   const [phase, setPhase] = useState<Phase>('pick');
   const [error, setError] = useState('');
@@ -76,6 +78,13 @@ export function AnkiImportModal({
     if (!result) return;
     setPhase('importing');
 
+    // Tracks everything created during THIS call so a failure partway through
+    // can be undone instead of leaving a partial import silently saved while
+    // the UI reports "eșuat" — addFolder never reuses an existing folder, so
+    // every id collected here is safe to delete outright on rollback.
+    const createdFolderIds: string[] = [];
+    const createdQuizIds: string[] = [];
+
     try {
       const rootParentId = parentFolderId === '__root__' ? null : parentFolderId;
       const folderIdByPath = new Map<string, string>();
@@ -85,7 +94,9 @@ export function AnkiImportModal({
         const segment = path[path.length - 1];
         const parentId = path.length > 1 ? (folderIdByPath.get(path.slice(0, -1).join('::')) ?? rootParentId) : rootParentId;
         const appearance = suggestFolderAppearance(segment);
-        folderIdByPath.set(key, addFolder(segment, appearance.emoji, appearance.color, parentId));
+        const newFolderId = addFolder(segment, appearance.emoji, appearance.color, parentId);
+        folderIdByPath.set(key, newFolderId);
+        createdFolderIds.push(newFolderId);
       }
 
       let firstQuizId: string | null = null;
@@ -93,11 +104,19 @@ export function AnkiImportModal({
         const leafFolderId = deck.path.length > 0 ? (folderIdByPath.get(deck.path.join('::')) ?? rootParentId) : rootParentId;
         const quiz: Quiz = { ...deck.quiz, folderId: leafFolderId };
         addQuiz(quiz);
+        createdQuizIds.push(quiz.id);
         if (!firstQuizId) firstQuizId = quiz.id;
       }
 
       onImported(firstQuizId);
     } catch (err: unknown) {
+      // Undo everything this call added — a failed import must leave zero
+      // trace, not a partial deck set the UI reported as "eșuat".
+      createdQuizIds.forEach((id) => deleteQuiz(id));
+      // deleteFolder cascades to descendants, so deleting only the top-level
+      // ones this call created is enough — but calling it on an id already
+      // removed by its own parent's cascade would be a harmless no-op anyway.
+      createdFolderIds.forEach((id) => deleteFolder(id));
       // Without this the modal would stay in 'importing' forever — a phase that
       // deliberately hides the close button — leaving a reload as the only exit.
       setError(err instanceof Error ? err.message : 'Salvarea deck-urilor a eșuat.');
