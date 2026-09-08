@@ -12,6 +12,8 @@ import {
   BookOpen,
   Bot,
   Check,
+  CreditCard,
+  FolderTree,
   MessageCircle,
   ShieldCheck,
   Sparkles,
@@ -22,7 +24,10 @@ import {
 import { useTheme } from '../theme/ThemeContext';
 import { useOverlayFlag } from '../hooks/useOverlayFlag';
 
-const SEEN_KEY = 'studyx:tutorial:rezidentiat:v1:seen';
+// Bumped to v2 when the section grew (bancă dublă, bibliotecă cu 3 cărți reale,
+// structura de foldere pe discipline/specialități, flashcarduri pe capitol) —
+// cine a văzut deja v1 vede din nou turul, cu conținutul actualizat.
+const SEEN_KEY = 'studyx:tutorial:rezidentiat:v2:seen';
 export const REZIDENTIAT_TUTORIAL_OPEN_EVENT = 'studyx:rezidentiat-tutorial:open';
 
 type Theme = ReturnType<typeof useTheme>;
@@ -60,11 +65,20 @@ function HeroDemo({ theme }: { theme: Theme }) {
 }
 
 function ChaptersDemo({ theme }: { theme: Theme }) {
-  const [active, setActive] = useState<'discuss' | 'generate'>('discuss');
+  const actions = useMemo(
+    () => [
+      { id: 'discuss', label: 'Discută', Icon: MessageCircle, color: theme.text2 },
+      { id: 'generate', label: 'Generează grile', Icon: Sparkles, color: theme.accent },
+      { id: 'flashcards', label: 'Flashcarduri', Icon: CreditCard, color: theme.success },
+    ] as const,
+    [theme],
+  );
+  const [activeIndex, setActiveIndex] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setActive((a) => (a === 'discuss' ? 'generate' : 'discuss')), 1500);
+    const id = window.setInterval(() => setActiveIndex((i) => (i + 1) % actions.length), 1300);
     return () => window.clearInterval(id);
-  }, []);
+  }, [actions.length]);
+
   return (
     <DemoFrame theme={theme}>
       <div className="w-full max-w-[340px] rounded-[16px] border px-4 py-3" style={{ background: theme.surface2, borderColor: theme.border }}>
@@ -77,29 +91,24 @@ function ChaptersDemo({ theme }: { theme: Theme }) {
             <div className="text-[9px] font-medium" style={{ color: theme.text3 }}>36 fragmente</div>
           </div>
         </div>
-        <div className="flex gap-2">
-          <motion.div
-            animate={{ scale: active === 'discuss' ? 1.04 : 1 }}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-[10px] py-2 text-[9.5px] font-black uppercase tracking-wide"
-            style={{
-              background: active === 'discuss' ? theme.surface : 'transparent',
-              border: `1px solid ${active === 'discuss' ? theme.border2 : theme.border}`,
-              color: theme.text2,
-            }}
-          >
-            <MessageCircle size={11} /> Discută
-          </motion.div>
-          <motion.div
-            animate={{ scale: active === 'generate' ? 1.04 : 1 }}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-[10px] py-2 text-[9.5px] font-black uppercase tracking-wide"
-            style={{
-              background: active === 'generate' ? `${theme.accent}18` : 'transparent',
-              border: `1px solid ${active === 'generate' ? `${theme.accent}40` : theme.border}`,
-              color: active === 'generate' ? theme.accent : theme.text2,
-            }}
-          >
-            <Sparkles size={11} /> Generează grile
-          </motion.div>
+        <div className="flex gap-1.5">
+          {actions.map(({ id, label, Icon, color }, i) => {
+            const active = i === activeIndex;
+            return (
+              <motion.div
+                key={id}
+                animate={{ scale: active ? 1.04 : 1 }}
+                className="flex flex-1 items-center justify-center gap-1 rounded-[10px] py-2 text-[8.5px] font-black uppercase tracking-wide"
+                style={{
+                  background: active ? `${color}18` : 'transparent',
+                  border: `1px solid ${active ? `${color}45` : theme.border}`,
+                  color: active ? color : theme.text3,
+                }}
+              >
+                <Icon size={10} /> {label}
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </DemoFrame>
@@ -137,7 +146,81 @@ function RealBankDemo({ theme }: { theme: Theme }) {
             </motion.div>
           ))}
         </div>
-        <div className="mt-2.5 text-[9px] font-semibold" style={{ color: theme.text3 }}>~2050 de grile verificate din bibliografia oficială</div>
+        <div className="mt-2.5 text-[9px] font-semibold" style={{ color: theme.text3 }}>~4200 de grile verificate, din 2 bănci reale</div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** The 3 real reference books, added to the library one by one. */
+function LibraryBooksDemo({ theme }: { theme: Theme }) {
+  const books = ['Kumar și Clark', 'Lawrence', 'Sinopsis de medicină'];
+  const [added, setAdded] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setAdded((a) => (a >= books.length ? 0 : a + 1)), 900);
+    return () => window.clearInterval(id);
+  }, [books.length]);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-full max-w-[300px] space-y-1.5">
+        {books.map((name, i) => {
+          const done = i < added;
+          return (
+            <motion.div
+              key={name}
+              animate={{ opacity: done ? 1 : 0.45, x: done ? 0 : -4 }}
+              className="flex items-center gap-2 rounded-[10px] border px-2.5 py-2"
+              style={{ background: done ? `${theme.success}12` : theme.surface2, borderColor: done ? `${theme.success}35` : theme.border }}
+            >
+              {done ? <Check size={11} style={{ color: theme.success }} /> : <BookOpen size={11} style={{ color: theme.text3 }} />}
+              <span className="text-[10px] font-bold" style={{ color: done ? theme.text : theme.text3 }}>{name}</span>
+              <span className="ml-auto text-[8px] font-semibold uppercase tracking-wider" style={{ color: done ? theme.success : theme.text3 }}>
+                {done ? 'indexată' : '…'}
+              </span>
+            </motion.div>
+          );
+        })}
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** Discipline → specialitate folder drill-down (the real tree FolderView renders). */
+function FolderTreeDemo({ theme }: { theme: Theme }) {
+  const [depth, setDepth] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setDepth((d) => (d + 1) % 3), 1300);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const levels = [
+    { label: 'Rezidențiat', indent: 0 },
+    { label: 'Chirurgie', indent: 1 },
+    { label: 'Ortopedie', indent: 2 },
+  ];
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-full max-w-[280px] space-y-1.5">
+        {levels.map((level, i) => (
+          <motion.div
+            key={level.label}
+            animate={{ opacity: i <= depth ? 1 : 0.3, x: i <= depth ? level.indent * 16 : level.indent * 16 - 6 }}
+            className="flex items-center gap-2 rounded-[9px] px-2.5 py-1.5"
+            style={{
+              marginLeft: level.indent * 16,
+              background: i === depth ? `${theme.accent}16` : 'transparent',
+              border: `1px solid ${i === depth ? `${theme.accent}40` : 'transparent'}`,
+            }}
+          >
+            <FolderTree size={11} style={{ color: i <= depth ? theme.accent : theme.text3 }} />
+            <span className="text-[10px] font-bold" style={{ color: i <= depth ? theme.text : theme.text3 }}>{level.label}</span>
+          </motion.div>
+        ))}
+        <div className="pt-1 text-center text-[8.5px] font-semibold" style={{ color: theme.text3 }}>
+          organizate automat pe discipline și specialități
+        </div>
       </div>
     </DemoFrame>
   );
@@ -154,7 +237,7 @@ function DedicatedAiDemo({ theme }: { theme: Theme }) {
       <div className="w-full max-w-[340px] space-y-2">
         <div className="flex justify-end">
           <div className="max-w-[75%] rounded-[14px] rounded-tr-[4px] px-3 py-1.5 text-[10px] font-semibold text-white" style={{ background: theme.accent }}>
-            Ce e mai probabil să apară la examen aici?
+            Fă-mi un folder Cardio și 10 grile acolo
           </div>
         </div>
         <AnimatePresence>
@@ -199,24 +282,38 @@ const SLIDES: Slide[] = [
     Demo: HeroDemo,
   },
   {
+    id: 'library',
+    badge: 'Bibliotecă implicită',
+    title: '3 cărți de referință, deja indexate',
+    description: 'Kumar și Clark, Lawrence și Sinopsis de medicină vin gata adăugate — citite integral, pagină cu pagină, și împărțite pe capitole reale, nu doar bucăți aleatorii de text.',
+    Demo: LibraryBooksDemo,
+  },
+  {
     id: 'chapters',
     badge: 'Cărțile tale',
-    title: 'Discută sau generează grile, pe capitol',
-    description: 'Fiecare capitol indexat din cărțile tale are două acțiuni rapide: discuți cu AI-ul despre el, sau îi ceri să genereze grile direct din conținutul lui.',
+    title: 'Discută, generează grile sau flashcarduri, pe capitol',
+    description: 'Fiecare capitol indexat are trei acțiuni rapide: discuți cu AI-ul despre el, îi ceri grile direct din conținutul lui, sau flashcarduri pentru repetare spațiată.',
     Demo: ChaptersDemo,
+  },
+  {
+    id: 'folders',
+    badge: 'Organizare automată',
+    title: 'Disciplină → specialitate → boală',
+    description: 'Grilele reale se calibrează singure pe structura oficială — nimic de sortat manual. Iar tot ce creezi din chat (foldere, grile noi) rămâne aici, în Rezidențiat, nu se rătăcește pe ecranul general.',
+    Demo: FolderTreeDemo,
   },
   {
     id: 'bank',
     badge: 'Conținut real',
-    title: '~2050 de grile reale, verificate',
-    description: 'Extrase din bibliografia oficială (Lawrence + Kumar), cu răspunsul corect confirmat din cheia cărții — nu inventate de AI. Scorare reală de examen: -0,25 pentru fiecare răspuns greșit bifat.',
+    title: '~4200 de grile reale, verificate',
+    description: 'Două bănci: „Lawrence + Kumar" (~2050) și „Modele Grile" (~2175, pe patologie), cu răspunsul corect confirmat din cheia cărții — nu inventate de AI. Scorare reală de examen: -0,25 pentru fiecare răspuns greșit bifat.',
     Demo: RealBankDemo,
   },
   {
     id: 'dedicated-ai',
     badge: 'AI dedicat',
-    title: 'Aici AI-ul răspunde ca la rezidențiat, nu generic',
-    description: 'Discuțiile și grilele generate din această pagină sunt calibrate pe formatul examenului real: 5 variante A-E, stil de enunț oficial, focus pe ce chiar contează pentru concurs.',
+    title: 'O conversație separată, doar pentru Rezidențiat',
+    description: 'Chat-ul de aici e complet izolat de restul aplicației: răspunde ca la rezidențiat (5 variante A-E, stil de enunț oficial) și poate crea foldere sau genera grile direct din comenzi — totul rămâne organizat exact aici, în secțiune.',
     Demo: DedicatedAiDemo,
   },
 ];
