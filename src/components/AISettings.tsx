@@ -34,13 +34,6 @@ const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; 
     keyHint: 'csk-...',
     docs: 'https://cloud.cerebras.ai/',
   },
-  {
-    id: 'nvidia',
-    name: 'NVIDIA NIM',
-    desc: 'Gratuit, fără card la niciun pas · peste 40 de cereri/minut',
-    keyHint: 'nvapi-...',
-    docs: 'https://build.nvidia.com/models',
-  },
 ];
 
 const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; speed: string }[]> = {
@@ -56,10 +49,6 @@ const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; spee
   cerebras: [
     { id: 'gpt-oss-120b', name: 'GPT-OSS 120B', desc: 'Cel mai inteligent, foarte rapid', speed: 'Ultra rapid' },
     { id: 'qwen-3.8-27b', name: 'Qwen 3.8 27B', desc: 'Rapid, echilibrat', speed: 'Rapid' },
-  ],
-  nvidia: [
-    { id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', desc: 'Echilibrat, foarte capabil', speed: 'Rapid' },
-    { id: 'meta/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', desc: 'Cel mai puternic, mai lent', speed: 'Lent' },
   ],
 };
 
@@ -93,16 +82,6 @@ const KEY_GUIDE: Record<AIProvider, { intro: string; steps: string[] }> = {
       'Creează un cont sau conectează-te.',
       'Mergi la „API Keys" și apasă „Generate API Key".',
       'Copiază cheia generată — începe cu „csk-…".',
-      'Lipește-o în câmpul de mai sus și apasă „Salvează".',
-    ],
-  },
-  nvidia: {
-    intro: 'Gratuit, fără card bancar la niciun pas din înregistrare. ~40 cereri/minut.',
-    steps: [
-      'Apasă butonul de mai jos — se deschide NVIDIA Build.',
-      'Conectează-te sau creează un cont (email sau Google).',
-      'Apasă „Get API Key" → „Generate Key".',
-      'Copiază cheia generată — începe cu „nvapi-…".',
       'Lipește-o în câmpul de mai sus și apasă „Salvează".',
     ],
   },

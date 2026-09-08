@@ -161,7 +161,7 @@ const STEPS: TutorialStep[] = [
   {
     id: 'ai_setup',
     title: 'Activează AI-ul — gratuit, cu toate cele trei chei',
-    description: 'StudyX merge pe patru provideri gratuiți: Groq (foarte rapid), Google Gemini, Cerebras (1.000.000 tokeni/zi) și NVIDIA NIM. Din Setări → AI lipești cheile — fără card, doar cu un cont. Pune-le pe toate patru: fiecare are limita ei zilnică, iar când una se termină aplicația trece automat pe următoarea și continuă de unde ai rămas.',
+    description: 'StudyX merge pe trei provideri gratuiți: Groq (foarte rapid), Google Gemini și Cerebras (1.000.000 tokeni/zi). Din Setări → AI lipești cheile — fără card, doar cu un cont. Pune-le pe toate trei: fiecare are limita ei zilnică, iar când una se termină aplicația trece automat pe următoarea și continuă de unde ai rămas.',
     icon: <Bot size={22} />,
     target: '[data-tutorial="nav-settings"]',
     targetPadding: 6,

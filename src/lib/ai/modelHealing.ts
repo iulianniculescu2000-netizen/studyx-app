@@ -20,7 +20,7 @@
 import { useAIStore, type AIModel, type AIProvider } from '../../store/aiStore';
 import { useToastStore } from '../../store/toastStore';
 
-type ProviderId = 'groq' | 'google' | 'cerebras' | 'nvidia';
+type ProviderId = 'groq' | 'google' | 'cerebras';
 
 /**
  * Known-good models per provider, in preference order. Kept separate from
@@ -41,23 +41,18 @@ const MODEL_CANDIDATES: Record<ProviderId, AIModel[]> = {
   // was renamed to 'qwen-3.8-27b'; 'zai-glm-4.7' hit its announced 2026-08-17
   // deprecation date and no longer appears in the model catalog at all.
   cerebras: ['gpt-oss-120b', 'qwen-3.8-27b'],
-  // 2026-09-08: confirmed live via real curl/Python examples against NVIDIA's
-  // own docs — both IDs verified to actually invoke (not just catalog names).
-  nvidia: ['meta/llama-3.3-70b-instruct', 'meta/llama-3.1-405b-instruct'],
 };
 
 const MODELS_ENDPOINT: Record<ProviderId, string> = {
   groq: 'https://api.groq.com/openai/v1/models',
   google: 'https://generativelanguage.googleapis.com/v1beta/openai/models',
   cerebras: 'https://api.cerebras.ai/v1/models',
-  nvidia: 'https://integrate.api.nvidia.com/v1/models',
 };
 
 const CHAT_ENDPOINT: Record<ProviderId, string> = {
   groq: 'https://api.groq.com/openai/v1/chat/completions',
   google: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
   cerebras: 'https://api.cerebras.ai/v1/chat/completions',
-  nvidia: 'https://integrate.api.nvidia.com/v1/chat/completions',
 };
 
 /**
@@ -159,7 +154,6 @@ export async function checkModelAvailability(): Promise<void> {
 function providerDisplayName(provider: ProviderId): string {
   if (provider === 'google') return 'Google Gemini';
   if (provider === 'cerebras') return 'Cerebras';
-  if (provider === 'nvidia') return 'NVIDIA NIM';
   return 'Groq';
 }
 

@@ -126,17 +126,6 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
     };
   }
 
-  if (provider === 'nvidia') {
-    return {
-      name: 'NVIDIA NIM',
-      // OpenAI-compatible, build.nvidia.com — free inference, no payment card
-      // required anywhere in signup (unlike Cerebras/Mistral, which both gate
-      // some part of onboarding behind a card or "activate billing" step).
-      endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
-      keyHint: 'Cheia API NVIDIA NIM nu este configurata. Mergi la Setari AI.',
-    };
-  }
-
   return {
     name: 'Groq',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
@@ -145,16 +134,15 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
 }
 
 /** Default model to use when we fall back to another provider mid-request. */
-const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras' | 'nvidia', string> = {
+const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras', string> = {
   groq: 'openai/gpt-oss-120b',
   google: 'gemini-3.6-flash',
   cerebras: 'gpt-oss-120b',
-  nvidia: 'meta/llama-3.3-70b-instruct',
 };
 
-type ProviderId = 'groq' | 'google' | 'cerebras' | 'nvidia';
+type ProviderId = 'groq' | 'google' | 'cerebras';
 
-const PROVIDER_ORDER: ProviderId[] = ['groq', 'google', 'cerebras', 'nvidia'];
+const PROVIDER_ORDER: ProviderId[] = ['groq', 'google', 'cerebras'];
 
 /**
  * How long we keep starting requests on a fallback provider after switching away
@@ -292,10 +280,7 @@ export async function validateApiKey(
 
   const config = getProviderConfig(provider);
   let testModel =
-    provider === 'google' ? 'gemini-3.6-flash'
-    : provider === 'cerebras' ? 'gpt-oss-120b'
-    : provider === 'nvidia' ? 'meta/llama-3.3-70b-instruct'
-    : 'openai/gpt-oss-20b';
+    provider === 'google' ? 'gemini-3.6-flash' : provider === 'cerebras' ? 'gpt-oss-120b' : 'openai/gpt-oss-20b';
 
   // A single hardcoded test model can go dead on the provider's own schedule
   // (the same class of problem modelHealing.ts guards live requests against —

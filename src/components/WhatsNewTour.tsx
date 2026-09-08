@@ -741,9 +741,9 @@ function ConformanceDemo({ theme }: { theme: Theme }) {
   );
 }
 
-/** Four free keys, and the automatic switch when one runs out. */
+/** Three free keys, and the automatic switch when one runs out. */
 function FreeKeysDemo({ theme }: { theme: Theme }) {
-  const providers = ['Groq', 'Gemini', 'Cerebras', 'NVIDIA'];
+  const providers = ['Groq', 'Gemini', 'Cerebras'];
   const [active, setActive] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => setActive((value) => (value + 1) % providers.length), 1600);
@@ -858,7 +858,7 @@ const SLIDES: Slide[] = [
     id: 'free-keys',
     badge: 'Chei gratuite',
     title: 'Pune toate cele trei chei gratuite',
-    description: 'StudyX merge pe nivelurile gratuite de la Groq, Google Gemini, Cerebras și NVIDIA NIM — fără card, doar cu un cont. Când una atinge limita zilnică, aplicația trece automat pe următoarea și continuă de unde ai rămas. Cu toate patru salvate, practic nu mai rămâi blocat.',
+    description: 'StudyX merge pe nivelurile gratuite de la Groq, Google Gemini și Cerebras — fără card, doar cu un cont. Când una atinge limita zilnică, aplicația trece automat pe următoarea și continuă de unde ai rămas. Cu toate trei salvate, practic nu mai rămâi blocat.',
     Demo: FreeKeysDemo,
     tip: 'Setări → AI. Îți explicăm din nou și în chat, prima dată când deschizi asistentul.',
   },
