@@ -32,9 +32,15 @@ export type AIModel =
   // migrates them away on next hydrate.
   | 'qwen-3-235b-a22b-instruct-2507'
   | 'zai-glm-4.7'
-  | 'qwen-3.8-27b';
+  | 'qwen-3.8-27b'
+  // NVIDIA NIM (build.nvidia.com) — 4th free provider, added 2026-09-08 as a
+  // Cerebras alternative that never asks for a payment card at any point in
+  // signup (unlike Cerebras/Mistral, which both gate parts of onboarding
+  // behind card or billing-activation steps). OpenAI-compatible, ~40 RPM.
+  | 'meta/llama-3.3-70b-instruct'
+  | 'meta/llama-3.1-405b-instruct';
 
-export type AIProvider = 'groq' | 'google' | 'cerebras';
+export type AIProvider = 'groq' | 'google' | 'cerebras' | 'nvidia';
 
 export type AIKnowledgeSourceType = 'txt' | 'pdf' | 'docx' | 'image';
 export type AIKnowledgeSourceStatus = 'indexing' | 'ready' | 'error';
@@ -185,6 +191,7 @@ const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
   groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
   google: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
   cerebras: ['gpt-oss-120b', 'qwen-3.8-27b'],
+  nvidia: ['meta/llama-3.3-70b-instruct', 'meta/llama-3.1-405b-instruct'],
 };
 
 function isValidProviderKey(provider: AIProvider, apiKey: string) {
@@ -194,14 +201,17 @@ function isValidProviderKey(provider: AIProvider, apiKey: string) {
   if (provider === 'groq') return trimmed.startsWith('gsk_') && trimmed.length > 20;
   // Cerebras keys are prefixed with "csk-".
   if (provider === 'cerebras') return trimmed.startsWith('csk-') && trimmed.length > 20;
+  // NVIDIA NIM keys are prefixed with "nvapi-".
+  if (provider === 'nvidia') return trimmed.startsWith('nvapi-') && trimmed.length > 20;
   // Google/Gemini keys vary in prefix (AIza, AQ., …), so don't gate on a prefix.
-  // Accept any substantial key that isn't a Groq/Cerebras key; the live API check decides.
-  return trimmed.length >= 20 && !trimmed.startsWith('gsk_') && !trimmed.startsWith('csk-');
+  // Accept any substantial key that isn't a Groq/Cerebras/NVIDIA key; the live API check decides.
+  return trimmed.length >= 20 && !trimmed.startsWith('gsk_') && !trimmed.startsWith('csk-') && !trimmed.startsWith('nvapi-');
 }
 
 function getDefaultModelForProvider(provider: AIProvider): AIModel {
   if (provider === 'google') return 'gemini-3.6-flash';
   if (provider === 'cerebras') return 'gpt-oss-120b';
+  if (provider === 'nvidia') return 'meta/llama-3.3-70b-instruct';
   // groq
   return DEFAULT_MODEL;
 }
