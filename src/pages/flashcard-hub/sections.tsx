@@ -99,17 +99,15 @@ function FolderTargetSelect({
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [browseParentId, setBrowseParentId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const selectedFolder = folders.find((folder) => folder.id === value);
   const selectedLabel = selectedFolder ? `${selectedFolder.emoji} ${selectedFolder.name}` : 'Neclasificate';
-  const options = [
-    { id: '__uncategorized__', label: 'Neclasificate', helper: 'Fără folder dedicat' },
-    ...folders.map((folder) => ({
-      id: folder.id,
-      label: `${folder.emoji} ${folderPath(folders, folder)}`,
-      helper: 'Salvează aici',
-    })),
-  ];
+  const browseFolder = browseParentId ? folders.find((folder) => folder.id === browseParentId) : undefined;
+  const childFolders = folders
+    .filter((folder) => (folder.parentId ?? null) === browseParentId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const childCount = (folderId: string) => folders.filter((folder) => folder.parentId === folderId).length;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -123,11 +121,16 @@ function FolderTargetSelect({
     return () => window.removeEventListener('mousedown', close);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setBrowseParentId(selectedFolder?.parentId ?? null);
+    setCreating(false);
+  }, [open]);
+
   const submitNewFolder = () => {
     const name = newName.trim();
     if (!name) return;
-    const parentId = selectedFolder ? selectedFolder.id : null;
-    const id = onCreateFolder(name, parentId);
+    const id = onCreateFolder(name, browseParentId);
     onChange(id);
     setNewName('');
     setCreating(false);
@@ -171,30 +174,69 @@ function FolderTargetSelect({
               backdropFilter: 'blur(18px) saturate(160%)',
             }}
           >
+            {browseFolder && (
+              <button
+                type="button"
+                onClick={() => setBrowseParentId(browseFolder.parentId ?? null)}
+                className="mb-1 flex w-full items-center gap-2 rounded-[12px] px-2 py-1.5 text-left transition-all hover:bg-white/5"
+                style={{ color: theme.text3 }}
+              >
+                <ChevronDown size={13} className="rotate-90" />
+                <span className="truncate text-[11px] font-black">{folderPath(folders, browseFolder)}</span>
+              </button>
+            )}
+
             <div className="custom-scrollbar max-h-52 overflow-y-auto">
-              {options.map((option) => {
-                const active = option.id === value;
+              {(() => {
+                const hereId = browseFolder ? browseFolder.id : '__uncategorized__';
+                const hereLabel = browseFolder ? `${browseFolder.emoji} ${browseFolder.name}` : 'Neclasificate';
+                const hereActive = hereId === value;
                 return (
                   <button
-                    key={option.id}
                     type="button"
                     onClick={() => {
-                      onChange(option.id);
+                      onChange(hereId);
                       setOpen(false);
                     }}
                     className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left transition-all"
                     style={{
-                      background: active ? theme.accent : 'transparent',
-                      color: active ? '#fff' : theme.text,
+                      background: hereActive ? theme.accent : 'transparent',
+                      color: hereActive ? '#fff' : theme.text,
                     }}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-black">{option.label}</div>
-                      <div className="mt-0.5 truncate text-[10px]" style={{ color: active ? 'rgba(255,255,255,0.72)' : theme.text3 }}>
-                        {option.helper}
+                      <div className="truncate text-xs font-black">{hereLabel}</div>
+                      <div className="mt-0.5 truncate text-[10px]" style={{ color: hereActive ? 'rgba(255,255,255,0.72)' : theme.text3 }}>
+                        Salvează aici
                       </div>
                     </div>
-                    {active && <Check size={14} />}
+                    {hereActive && <Check size={14} />}
+                  </button>
+                );
+              })()}
+
+              {childFolders.map((folder) => {
+                const active = folder.id === value;
+                const subCount = childCount(folder.id);
+                return (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    onClick={() => setBrowseParentId(folder.id)}
+                    className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left transition-all hover:bg-white/5"
+                    style={{
+                      background: active ? `${theme.accent}1c` : 'transparent',
+                      color: theme.text,
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-black">{folder.emoji} {folder.name}</div>
+                      <div className="mt-0.5 truncate text-[10px]" style={{ color: theme.text3 }}>
+                        {subCount > 0 ? `${subCount} ${subCount === 1 ? 'subfolder' : 'subfoldere'}` : 'Deschide'}
+                      </div>
+                    </div>
+                    {active && <Check size={14} style={{ color: theme.accent }} />}
+                    <ChevronDown size={14} className="-rotate-90" style={{ color: theme.text3 }} />
                   </button>
                 );
               })}
@@ -211,7 +253,7 @@ function FolderTargetSelect({
                       if (event.key === 'Enter') submitNewFolder();
                       if (event.key === 'Escape') setCreating(false);
                     }}
-                    placeholder={selectedFolder ? `Subfolder în ${selectedFolder.name}` : 'Nume folder nou'}
+                    placeholder={browseFolder ? `Subfolder în ${browseFolder.name}` : 'Nume folder nou'}
                     className="w-full rounded-[12px] border px-3 py-2 text-xs font-bold outline-none"
                     style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
                   />
@@ -243,7 +285,7 @@ function FolderTargetSelect({
                 >
                   <FolderPlus size={15} />
                   <span className="text-xs font-black">
-                    {selectedFolder ? `Subfolder nou în ${selectedFolder.name}` : 'Folder nou'}
+                    {browseFolder ? `Subfolder nou în ${browseFolder.name}` : 'Folder nou'}
                   </span>
                 </button>
               )}
