@@ -35,6 +35,7 @@ import { useStatsStore } from '../store/statsStore';
 import { useQuizStore } from '../store/quizStore';
 import { useAIStore } from '../store/aiStore';
 import { useToastStore } from '../store/toastStore';
+import { useAgentJobsStore } from '../store/agentJobsStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildPerformanceSummary, buildUserContextString } from '../lib/aiContext';
@@ -110,6 +111,10 @@ export default function AIChatDrawer() {
   const open = useUIStore((state) => state.chatOpen);
   const setChatOpen = useUIStore((state) => state.setChatOpen);
   const floatingUiSuppressed = useUIStore((state) => state.floatingUILocks.length > 0);
+  // job.result lives in the global store (not local component state) so the
+  // "jump straight in" CTA survives this drawer unmounting mid-job — see the
+  // comment on AgentJob.result in agentJobsStore.ts.
+  const agentJobs = useAgentJobsStore((state) => state.jobs);
   const activeProfileId = useUserStore((state) => state.activeProfileId);
   const quizzes = useQuizStore((state) => state.quizzes);
   const addQuiz = useQuizStore((state) => state.addQuiz);
@@ -205,7 +210,6 @@ export default function AIChatDrawer() {
   });
 
   const {
-    agentResults,
     runAgentJob,
     tryHandleAgentCommand,
     tryHandleAnswerDispute,
@@ -916,19 +920,22 @@ export default function AIChatDrawer() {
                         onRetry={() => void retryAgentJob(message.agentJobId!)}
                         onEditParams={(stepId, patch) => editAgentStepParams(message.agentJobId!, stepId, patch)}
                       />
-                      {agentResults[message.agentJobId] && (
-                        <button
-                          onClick={() => {
-                            const target = agentResults[message.agentJobId!];
-                            setChatOpen(false);
-                            navigate(target.route);
-                          }}
-                          className="press-feedback mt-2.5 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
-                          style={{ background: theme.accent, boxShadow: `0 8px 20px ${theme.accent}33` }}
-                        >
-                          <ArrowRight size={14} /> {agentResults[message.agentJobId].label}
-                        </button>
-                      )}
+                      {(() => {
+                        const target = agentJobs.find((job) => job.id === message.agentJobId)?.result;
+                        if (!target) return null;
+                        return (
+                          <button
+                            onClick={() => {
+                              setChatOpen(false);
+                              navigate(target.route);
+                            }}
+                            className="press-feedback mt-2.5 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
+                            style={{ background: theme.accent, boxShadow: `0 8px 20px ${theme.accent}33` }}
+                          >
+                            <ArrowRight size={14} /> {target.label}
+                          </button>
+                        );
+                      })()}
                     </div>
                   )}
 

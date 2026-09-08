@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { AgentPlan } from '../lib/ai/agent';
 
 export type AgentStepStatus = 'pending' | 'running' | 'done' | 'error' | 'skipped';
 export type AgentJobStatus = 'planning' | 'awaiting-confirm' | 'running' | 'done' | 'error' | 'cancelled';
@@ -39,13 +40,33 @@ export interface AgentJob {
   finishedAt?: number;
   summary?: string;
   conformance?: AgentJobConformance;
+  /**
+   * The full plan, kept around for retryAgentJob/editAgentStepParams. This
+   * USED to live only in a useAgentCommands ref, local to the AIChatDrawer
+   * component instance — AIChatDrawer fully unmounts (returns null) whenever
+   * another part of the app suppresses the floating chat button while it's
+   * closed (e.g. QuizDetail's own embedded chat panel calls setChatOpen(false)
+   * + lockFloatingUI while the user is looking at a different quiz). A job
+   * that failed and got its plan orphaned that way made "REÎNCEARCĂ" a silent
+   * no-op — the button rendered fine (this job record is fine, it's in the
+   * global store), but retryAgentJob's plan lookup came back empty. Storing
+   * the plan here instead of in a component-local ref survives that unmount.
+   */
+  plan?: AgentPlan;
+  /** Post-success "jump straight in" CTA — same survive-a-remount reasoning as `plan`. */
+  result?: { route: string; label: string };
+  /** Reverts what this job created — same survive-a-remount reasoning as `plan`. */
+  undo?: (() => void) | null;
 }
 
 interface AgentJobsStore {
   jobs: AgentJob[];
-  createJob: (command: string, steps: AgentJobStep[], status?: AgentJobStatus) => string;
+  createJob: (command: string, steps: AgentJobStep[], status?: AgentJobStatus, plan?: AgentPlan) => string;
   setJobStatus: (jobId: string, status: AgentJobStatus, summary?: string) => void;
   setJobConformance: (jobId: string, conformance: AgentJobConformance) => void;
+  setJobResult: (jobId: string, result: AgentJob['result']) => void;
+  setJobPlan: (jobId: string, plan: AgentPlan) => void;
+  setJobUndo: (jobId: string, undo: (() => void) | null) => void;
   setStepStatus: (jobId: string, stepId: string, status: AgentStepStatus, detail?: string) => void;
   setSteps: (jobId: string, steps: AgentJobStep[]) => void;
   updateStep: (jobId: string, stepId: string, patch: Partial<AgentJobStep>) => void;
@@ -59,10 +80,10 @@ function patchJob(jobs: AgentJob[], jobId: string, patch: (job: AgentJob) => Age
 export const useAgentJobsStore = create<AgentJobsStore>((set) => ({
   jobs: [],
 
-  createJob: (command, steps, status = 'running') => {
+  createJob: (command, steps, status = 'running', plan) => {
     const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
     set((state) => ({
-      jobs: [{ id, command, status, steps, createdAt: Date.now() }, ...state.jobs].slice(0, 20),
+      jobs: [{ id, command, status, steps, plan, createdAt: Date.now() }, ...state.jobs].slice(0, 20),
     }));
     return id;
   },
@@ -78,6 +99,18 @@ export const useAgentJobsStore = create<AgentJobsStore>((set) => ({
 
   setJobConformance: (jobId, conformance) => set((state) => ({
     jobs: patchJob(state.jobs, jobId, (job) => ({ ...job, conformance })),
+  })),
+
+  setJobResult: (jobId, result) => set((state) => ({
+    jobs: patchJob(state.jobs, jobId, (job) => ({ ...job, result })),
+  })),
+
+  setJobPlan: (jobId, plan) => set((state) => ({
+    jobs: patchJob(state.jobs, jobId, (job) => ({ ...job, plan })),
+  })),
+
+  setJobUndo: (jobId, undo) => set((state) => ({
+    jobs: patchJob(state.jobs, jobId, (job) => ({ ...job, undo })),
   })),
 
   setStepStatus: (jobId, stepId, status, detail) => set((state) => ({

@@ -20,6 +20,7 @@ import { detectDeviceCapabilities } from '../lib/deviceTier';
 import { getHealthBadgeLabel } from '../lib/healthReporter';
 import { runStartupHealthCheck } from '../lib/startupHealthCheck';
 import { clearRollbackSnapshot, formatSnapshotDate, getRollbackSnapshot } from '../lib/rollback';
+import { isAIDebugEnabled, setAIDebugEnabled } from '../ai/debug';
 import { saveProfileData } from '../store/profileStorage';
 import { useQuizStore } from '../store/quizStore';
 import { useFolderStore } from '../store/folderStore';
@@ -236,6 +237,7 @@ export default function Settings() {
   const setPerformanceMode = useRuntimeStore((state) => state.setPerformanceMode);
   const setLowPowerMode = useRuntimeStore((state) => state.setLowPowerMode);
   const setFeatureFlag = useRuntimeStore((state) => state.setFeatureFlag);
+  const [aiDebug, setAiDebug] = useState(() => isAIDebugEnabled());
   const healthStatus = useDiagnosticsStore((state) => state.healthStatus);
   const checks = useDiagnosticsStore((state) => state.checks);
   const events = useDiagnosticsStore((state) => state.events);
@@ -519,6 +521,15 @@ export default function Settings() {
             checked={featureFlags.diagnosticsPanel}
             onChange={(value) => setFeatureFlag('diagnosticsPanel', value)}
             accent={theme.success}
+          />
+          <Divider />
+          <ToggleRow
+            icon={<Bot size={16} />}
+            label="Jurnal AI detaliat"
+            description="Scrie în consola browserului (F12) cererea și răspunsul brut la fiecare apel AI — util ca să trimiți exact ce a răspuns modelul când o generare eșuează."
+            checked={aiDebug}
+            onChange={(value) => { setAIDebugEnabled(value); setAiDebug(value); }}
+            accent={theme.accent2 ?? theme.accent}
           />
           <Divider />
           <ToggleRow

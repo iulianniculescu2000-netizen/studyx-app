@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import {
   describeStep,
   executeAgentPlan,
@@ -55,9 +55,6 @@ export function useAgentCommands({
   const open = useUIStore((state) => state.chatOpen);
   const addToast = useToastStore((state) => state.addToast);
 
-  // Per-job "open the result" CTA so the agent closes the create→study loop.
-  const [agentResults, setAgentResults] = useState<Record<string, { route: string; label: string }>>({});
-  const pendingAgentPlansRef = useRef<Map<string, AgentPlan>>(new Map());
   // Last genuine agent command, so a follow-up "mai încearcă" re-runs it instead
   // of letting the planner invent a new (wrong) request from "mai încearcă".
   const lastAgentCommandRef = useRef<string>('');
@@ -67,10 +64,9 @@ export function useAgentCommands({
   // question+answer already in history) instead of falling through to normal
   // chat and getting a generic non-answer.
   const pendingClarificationRef = useRef(false);
-  const agentUndoRef = useRef<Map<string, (() => void) | null>>(new Map());
 
   const runAgentJob = async (jobId: string) => {
-    const plan = pendingAgentPlansRef.current.get(jobId);
+    const plan = useAgentJobsStore.getState().jobs.find((job) => job.id === jobId)?.plan;
     if (!plan) return;
     const jobs = useAgentJobsStore.getState();
     jobs.setJobStatus(jobId, 'running');
@@ -85,7 +81,7 @@ export function useAgentCommands({
       },
     );
 
-    agentUndoRef.current.set(jobId, result.undo);
+    useAgentJobsStore.getState().setJobUndo(jobId, result.undo);
     const failedAll = result.errors.length > 0 && result.createdQuizIds.length === 0;
     jobs.setJobStatus(jobId, failedAll ? 'error' : 'done', result.summary);
 
@@ -112,23 +108,18 @@ export function useAgentCommands({
       const created = useQuizStore.getState().quizzes.find((q) => q.id === firstId);
       const isFlashcard = created ? isFlashcardDeck(created) : false;
       const many = result.createdQuizIds.length > 1;
-      setAgentResults((prev) => ({
-        ...prev,
-        [jobId]: {
-          route: isFlashcard ? `/flashcards/session/${firstId}?mode=all` : `/play/${firstId}`,
-          label: isFlashcard ? 'Începe sesiunea' : many ? 'Începe primul set' : 'Începe acum',
-        },
-      }));
+      useAgentJobsStore.getState().setJobResult(jobId, {
+        route: isFlashcard ? `/flashcards/session/${firstId}?mode=all` : `/play/${firstId}`,
+        label: isFlashcard ? 'Începe sesiunea' : many ? 'Începe primul set' : 'Începe acum',
+      });
     }
 
     // If the plan generated a study plan text, surface it in chat now (after execution)
     const studyPlanText = plan.reply && plan.steps.some(s => s.action === 'create_study_plan') ? plan.reply : null;
-    // Keep the plan around on failure (a rate limit, a transient network error) so
-    // retryAgentJob can re-run the exact same steps instead of forcing the user to
-    // retype the whole command — only discard it once the job actually succeeded.
-    if (!failedAll) {
-      pendingAgentPlansRef.current.delete(jobId);
-    }
+    // The plan stays on the job on failure (a rate limit, a transient network
+    // error) so retryAgentJob can re-run the exact same steps instead of
+    // forcing the user to retype the whole command — no need to clear it here
+    // either way; a successful job just never reads it again.
 
     addToast(result.summary, failedAll ? 'error' : result.errors.length ? 'warning' : 'success');
     if (isDocumentHidden() || !open) {
@@ -172,11 +163,11 @@ export function useAgentCommands({
       originalText,
       steps,
       plan.needsConfirm ? 'awaiting-confirm' : 'running',
+      plan,
     );
     if (plan.needsConfirm) {
       useAgentJobsStore.getState().setJobStatus(jobId, 'awaiting-confirm', plan.confirmReason);
     }
-    pendingAgentPlansRef.current.set(jobId, plan);
 
     setMessages((prev) => [...prev, {
       role: 'assistant',
@@ -270,7 +261,7 @@ export function useAgentCommands({
 
   /** Re-runs a failed job's original plan (e.g. after a rate-limit error) without making the user retype the command. */
   const retryAgentJob = async (jobId: string) => {
-    const plan = pendingAgentPlansRef.current.get(jobId);
+    const plan = useAgentJobsStore.getState().jobs.find((job) => job.id === jobId)?.plan;
     if (!plan) return;
     // Reset step statuses so the card doesn't show the previous attempt's
     // error/done icons while the retry is in flight.
@@ -291,20 +282,20 @@ export function useAgentCommands({
   };
 
   const cancelAgentJob = (jobId: string) => {
-    pendingAgentPlansRef.current.delete(jobId);
     useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Anulat de utilizator.');
   };
 
   // Lets the confirm card tweak count/difficulty/type before execution instead of
   // forcing a cancel + retype when the planner guessed a parameter wrong.
   const editAgentStepParams = (jobId: string, stepId: string, patch: Partial<AgentStep>) => {
-    const plan = pendingAgentPlansRef.current.get(jobId);
+    const plan = useAgentJobsStore.getState().jobs.find((job) => job.id === jobId)?.plan;
     if (!plan) return;
     const index = Number(stepId.slice(1));
     const step = plan.steps[index];
     if (!step) return;
     const updated = { ...step, ...patch };
-    plan.steps[index] = updated;
+    const updatedPlan: AgentPlan = { ...plan, steps: plan.steps.map((s, i) => (i === index ? updated : s)) };
+    useAgentJobsStore.getState().setJobPlan(jobId, updatedPlan);
     useAgentJobsStore.getState().updateStep(jobId, stepId, {
       label: describeStep(updated),
       params: {
@@ -318,16 +309,15 @@ export function useAgentCommands({
   };
 
   const undoAgentJob = (jobId: string) => {
-    const undo = agentUndoRef.current.get(jobId);
+    const undo = useAgentJobsStore.getState().jobs.find((job) => job.id === jobId)?.undo;
     if (!undo) return;
     undo();
-    agentUndoRef.current.delete(jobId);
+    useAgentJobsStore.getState().setJobUndo(jobId, null);
     useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Acțiunile au fost anulate (undo).');
     addToast('Am anulat acțiunile agentului.', 'info');
   };
 
   return {
-    agentResults,
     runAgentJob,
     presentAgentPlan,
     tryHandleAgentCommand,
