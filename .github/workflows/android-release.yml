@@ -60,8 +60,28 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Build debug APK
+        id: gradle_build
         working-directory: android
-        run: ./gradlew assembleDebug
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee gradle-output.log
+
+      - name: Show Gradle failure details
+        # Raw step logs need repo-admin sign-in to view (confirmed while
+        # debugging this workflow), so a failure here would otherwise be a
+        # dead end to diagnose. $GITHUB_STEP_SUMMARY is public on this repo's
+        # run page without sign-in — dump the actual Gradle error there.
+        if: steps.gradle_build.outcome == 'failure'
+        working-directory: android
+        run: |
+          {
+            echo '### Gradle build failed — last 200 lines'
+            echo '```'
+            tail -n 200 gradle-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
