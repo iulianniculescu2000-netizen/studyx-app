@@ -52,6 +52,13 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Make gradlew executable
+        # Belt-and-suspenders: the executable bit is now committed too, but a
+        # future commit from a Windows checkout could silently drop it again
+        # (exactly what caused the first run's exit-126 failure) — this step
+        # makes the build immune to that regardless of what git tracked.
+        run: chmod +x android/gradlew
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug
