@@ -16,6 +16,7 @@ import { generateFlashcardsFromChapter } from '../lib/ai/chapterFlashcardGenerat
 import { importRezidentiatBank, isBankImported, isRezidentiatQuiz, REZIDENTIAT_BANKS, type RezidentiatBankInfo } from '../lib/rezidentiatBank';
 import { importRezidentiatLibraryBook, isLibraryBookImported, REZIDENTIAT_LIBRARY_BOOKS, type RezidentiatLibraryBook } from '../lib/rezidentiatLibrary';
 import RezidentiatTutorial, { REZIDENTIAT_TUTORIAL_OPEN_EVENT } from '../components/RezidentiatTutorial';
+import BookTableOfContents from '../components/BookTableOfContents';
 import type { Quiz, QuestionStat } from '../types';
 import { REZIDENTIAT_ROOT_NAME, findRezidentiatRootFolder, findOrCreateAiFlashcardsFolder } from '../lib/rezidentiatRoot';
 
@@ -610,7 +611,12 @@ export default function Residency() {
                         style={{ borderColor: theme.border }}
                       >
                         {source.indexStatus === 'ready' ? (
-                          <BookChapters source={source} theme={theme} calmMotion={calmMotion} />
+                          <>
+                            <BookTableOfContents source={source} theme={theme} />
+                            <div className="border-t" style={{ borderColor: theme.border }}>
+                              <BookChapters source={source} theme={theme} calmMotion={calmMotion} />
+                            </div>
+                          </>
                         ) : source.indexStatus === 'indexing' ? (
                           <div className="space-y-2.5 py-4">
                             <p className="text-sm" style={{ color: theme.text3 }}>
