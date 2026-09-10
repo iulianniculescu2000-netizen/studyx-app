@@ -38,6 +38,7 @@ import { beginStartupSession, completeStartupSession, inspectPreviousStartup } f
 import { useUpdateStore } from './store/updateStore';
 import { migrateLegacyUserMemory } from './ai/UserProfile';
 import { checkModelAvailability } from './lib/ai/modelHealing';
+import { checkForNativeUpdate } from './lib/nativeUpdateCheck';
 
 const AIChatDrawer = lazy(() => import('./components/AIChatDrawer'));
 const WhatsNewTour = lazy(() => import('./components/WhatsNewTour'));
@@ -275,6 +276,17 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
     // request would have failed on it. Throttled to once/day internally.
     const handle = scheduleIdleTask(() => { void checkModelAvailability(); }, {
       dedupeKey: 'model-availability-check',
+      timeoutMs: 2000,
+    });
+    return () => cancelIdleTask(handle);
+  }, [splashVisible]);
+
+  useEffect(() => {
+    if (splashVisible) return;
+    // No-op outside the native Android shell (see nativeUpdateCheck.ts) —
+    // Electron has its own auto-updater, this is the Android counterpart.
+    const handle = scheduleIdleTask(() => { void checkForNativeUpdate(); }, {
+      dedupeKey: 'native-update-check',
       timeoutMs: 2000,
     });
     return () => cancelIdleTask(handle);

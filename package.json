@@ -28,6 +28,7 @@
     "electron:build": "npm.cmd run generate-icon && npm.cmd run build && electron-builder.cmd",
     "electron:build:dir": "npm.cmd run generate-icon && npm.cmd run build && electron-builder.cmd --dir",
     "electron:publish": "node scripts/publish-release.cjs",
+    "android:sync": "npm.cmd run build && cap.cmd sync android",
     "analyze": "node scripts/analyze-bundle.js",
     "analyze:build": "npm.cmd run build && npm.cmd run analyze",
     "bundle-report": "webpack-bundle-analyzer dist/static/js/*.js",
@@ -126,6 +127,8 @@
     ]
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -148,6 +151,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4.2.2",
