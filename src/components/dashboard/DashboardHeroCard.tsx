@@ -8,6 +8,7 @@ import { useQuizStore } from '../../store/quizStore';
 import { useStatsStore } from '../../store/statsStore';
 import { buildPerformanceSummary, buildUserContextString } from '../../lib/aiContext';
 import { buildStudyCoachPlan } from '../../lib/studyCoach';
+import { findDueExamSession, localDateStr } from '../../lib/studyPlan';
 import { useAdaptiveMotion } from '../../hooks/useAdaptiveMotion';
 import { cancelIdleTask, scheduleIdleTask } from '../../lib/idleTaskScheduler';
 import { createLatestOnlyRunner } from '../../lib/asyncGuard';
@@ -37,7 +38,7 @@ export default function DashboardHeroCard() {
   const theme = useTheme();
   const { quizzes } = useQuizStore();
   const { questionStats, streak, getDueQuestions, getAccuracy, getStatsByTag } = useStatsStore();
-  const { hasKey, knowledgeSources } = useAIStore();
+  const { hasKey, knowledgeSources, libraryFolders } = useAIStore();
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { calmMotion, performanceLite } = useAdaptiveMotion();
@@ -56,7 +57,14 @@ export default function DashboardHeroCard() {
     () => buildPerformanceSummary(questionStats, streak, getDueQuestions, getAccuracy, getStatsByTag, quizzes),
     [getAccuracy, getDueQuestions, getStatsByTag, questionStats, quizzes, streak],
   );
-  const coachPlan = useMemo(() => buildStudyCoachPlan(summary, knowledgeSources), [knowledgeSources, summary]);
+  const dueExamSession = useMemo(
+    () => findDueExamSession(libraryFolders, localDateStr()),
+    [libraryFolders],
+  );
+  const coachPlan = useMemo(
+    () => buildStudyCoachPlan(summary, knowledgeSources, dueExamSession),
+    [dueExamSession, knowledgeSources, summary],
+  );
   const userContext = buildUserContextString(summary);
 
   const generate = useCallback(async () => {

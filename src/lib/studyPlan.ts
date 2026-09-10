@@ -7,7 +7,7 @@
  * quiz questions), reusing `daysUntil` directly rather than duplicating it.
  */
 import { daysUntil } from './examSplit';
-import type { AIExamPlan, AIStudyPlanChapterRef, AIStudySessionKind } from '../store/aiStore';
+import type { AIExamPlan, AILibraryFolder, AIStudyPlanChapterRef, AIStudyPlanSession, AIStudySessionKind } from '../store/aiStore';
 
 export interface StudyPlanChapterInput {
   sourceId: string;
@@ -138,7 +138,8 @@ export function buildStudyPlan(
   return { totalDays, recapPasses, sessions, warnings };
 }
 
-function formatLocalDate(d: Date): string {
+/** Local calendar date as 'YYYY-MM-DD' — never toISOString() (shifts a day across timezones). Exported so callers can compare against AIExamPlan/AIStudyPlanSession dates without duplicating this. */
+export function localDateStr(d: Date = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -148,13 +149,13 @@ function formatLocalDate(d: Date): string {
 export function toExamPlan(plan: StudyPlan, examDate: Date, targetGrade: number, generateId: () => string): AIExamPlan {
   const sourceIds = Array.from(new Set(plan.sessions.flatMap((s) => s.chapters.map((c) => c.sourceId))));
   return {
-    examDate: formatLocalDate(examDate),
+    examDate: localDateStr(examDate),
     targetGrade,
     generatedAt: Date.now(),
     sourceIds,
     sessions: plan.sessions.map((s) => ({
       id: generateId(),
-      date: formatLocalDate(s.date),
+      date: localDateStr(s.date),
       kind: s.kind,
       passIndex: s.passIndex,
       chapters: s.chapters.map((c) => ({ sourceId: c.sourceId, sourceName: c.sourceName, heading: c.heading, label: c.label })),
@@ -183,4 +184,31 @@ export function mergeExamPlanProgress(newPlan: AIExamPlan, oldPlan: AIExamPlan |
         : session
     )),
   };
+}
+
+export interface DueExamSession {
+  folderId: string;
+  folderName: string;
+  session: AIStudyPlanSession;
+}
+
+/**
+ * The single most-relevant exam-plan session to surface outside the Knowledge
+ * Vault (e.g. on the Dashboard) — the earliest undone session, today or
+ * overdue, across every folder whose exam hasn't already passed. Skipping a
+ * day never silently drops that day's session; it just becomes "today's".
+ */
+export function findDueExamSession(folders: AILibraryFolder[], todayStr: string): DueExamSession | null {
+  let best: DueExamSession | null = null;
+  for (const folder of folders) {
+    const plan = folder.examPlan;
+    if (!plan || plan.examDate < todayStr) continue;
+    for (const session of plan.sessions) {
+      if (session.done || session.date > todayStr) continue;
+      if (!best || session.date < best.session.date) {
+        best = { folderId: folder.id, folderName: folder.name, session };
+      }
+    }
+  }
+  return best;
 }
