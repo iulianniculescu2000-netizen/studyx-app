@@ -50,6 +50,37 @@ export type AIProvider = 'groq' | 'google' | 'cerebras' | 'mistral';
 export type AIKnowledgeSourceType = 'txt' | 'pdf' | 'docx' | 'image';
 export type AIKnowledgeSourceStatus = 'indexing' | 'ready' | 'error';
 
+export type AIStudySessionKind = 'first-pass' | 'recap';
+
+export interface AIStudyPlanChapterRef {
+  sourceId: string;
+  sourceName: string;
+  heading: string;
+  label: string;
+}
+
+export interface AIStudyPlanSession {
+  id: string;
+  /** 'YYYY-MM-DD', local calendar date — never toISOString() (shifts a day across timezones). */
+  date: string;
+  kind: AIStudySessionKind;
+  /** 0 = first pass, 1..N = recap pass number. */
+  passIndex: number;
+  chapters: AIStudyPlanChapterRef[];
+  done: boolean;
+}
+
+export interface AIExamPlan {
+  /** 'YYYY-MM-DD' */
+  examDate: string;
+  /** 1-10, Romanian grading scale. */
+  targetGrade: number;
+  generatedAt: number;
+  /** Source ids the plan was built from — lets the UI detect newly-added documents. */
+  sourceIds: string[];
+  sessions: AIStudyPlanSession[];
+}
+
 export interface AILibraryFolder {
   id: string;
   name: string;
@@ -57,6 +88,8 @@ export interface AILibraryFolder {
   /** null for a top-level folder; otherwise the id of the parent folder. */
   parentId: string | null;
   createdAt: number;
+  /** Absent/null = the exam-plan feature isn't used for this folder. */
+  examPlan?: AIExamPlan | null;
 }
 
 export interface AIKnowledgeSource {
@@ -178,6 +211,8 @@ export interface AIActions {
   renameLibraryFolder: (folderId: string, name: string) => void;
   deleteLibraryFolder: (folderId: string) => void;
   moveSourceToLibraryFolder: (sourceId: string, folderId: string | null) => void;
+  setFolderExamPlan: (folderId: string, plan: AIExamPlan | null) => void;
+  toggleExamPlanSession: (folderId: string, sessionId: string) => void;
   getKnowledgeContext: (query: string, maxChars?: number) => Promise<string>;
   clearCache: () => void;
   updateCacheSize: () => void;
@@ -563,6 +598,31 @@ export const useAIStore = create<AIState & AIActions>()(
               source.id === sourceId ? { ...source, folderId } : source
             )),
           }), false, 'ai/moveSourceToLibraryFolder');
+        },
+
+        setFolderExamPlan: (folderId, plan) => {
+          set((state) => ({
+            libraryFolders: state.libraryFolders.map((folder) => (
+              folder.id === folderId ? { ...folder, examPlan: plan } : folder
+            )),
+          }), false, 'ai/setFolderExamPlan');
+        },
+
+        toggleExamPlanSession: (folderId, sessionId) => {
+          set((state) => ({
+            libraryFolders: state.libraryFolders.map((folder) => {
+              if (folder.id !== folderId || !folder.examPlan) return folder;
+              return {
+                ...folder,
+                examPlan: {
+                  ...folder.examPlan,
+                  sessions: folder.examPlan.sessions.map((session) => (
+                    session.id === sessionId ? { ...session, done: !session.done } : session
+                  )),
+                },
+              };
+            }),
+          }), false, 'ai/toggleExamPlanSession');
         },
 
         getKnowledgeContext: async (query, maxChars = 6000) => {

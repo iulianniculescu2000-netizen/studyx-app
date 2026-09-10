@@ -30,6 +30,7 @@ import { useSourceChapters } from '../hooks/useSourceChapters';
 import { dispatchGenerateFromChapter } from '../lib/ai/chapterEvents';
 import ThemedSelect from '../components/ThemedSelect';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ExamPlanCard from '../components/ExamPlanCard';
 
 function SourceStatusBadge({
   source,
@@ -251,6 +252,13 @@ export default function KnowledgeVault() {
     }
     return list.sort((a, b) => b.addedAt - a.addedAt);
   }, [knowledgeSources, activeFolderId, search]);
+
+  // Unfiltered by the search box — the exam plan card needs every source
+  // directly in this folder, not just the ones matching the current query.
+  const sourcesInActiveFolder = useMemo(
+    () => (activeFolder ? knowledgeSources.filter((s) => s.folderId === activeFolder.id) : []),
+    [knowledgeSources, activeFolder],
+  );
 
   const totalWords = useMemo(
     () => knowledgeSources.reduce((acc, s) => acc + s.wordCount, 0),
@@ -817,6 +825,8 @@ export default function KnowledgeVault() {
                 style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text, outline: 'none' }}
               />
             </div>
+
+            {activeFolder && <ExamPlanCard folder={activeFolder} sources={sourcesInActiveFolder} />}
 
             <AnimatePresence mode="popLayout">
               {visibleSources.length === 0 ? (
