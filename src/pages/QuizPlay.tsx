@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, BookOpen, Layers, Keyboard, Zap, Eye, GraduationCap, StickyNote, MessageSquare, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, BookOpen, Layers, Keyboard, Zap, Eye, GraduationCap, StickyNote, MessageSquare, Sparkles, Flame } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
@@ -30,6 +30,7 @@ import {
 } from '../helpers/quizAi';
 import { evaluateSelection, formatQuizPlayTime, getCorrectOptionIds, isCorrectSelection, shuffleArray } from './quiz-play/helpers';
 import { AIExplanationPanel, HintPanel, MnemonicPanel } from './quiz-play/ai-panels';
+import SegmentedProgressBar from './quiz-play/SegmentedProgressBar';
 
 const loadAIEngine = () => import('../ai/AIEngine');
 
@@ -86,6 +87,11 @@ export default function QuizPlay() {
   const [autoAdvance, setAutoAdvance] = useState(false);
   const [autoAdvanceHold, setAutoAdvanceHold] = useState(false);
   const [questionTimer, setQuestionTimer] = useState(TIME_PER_Q);
+  // In-session "answered correctly in a row" count — mobile-only motivational
+  // pill, shown nowhere else. Deliberately local/transient (not persisted, no
+  // store write): unlike statsStore's streak (consecutive study DAYS) or the
+  // SM-2 repetition counter, there is no existing concept for this to reuse.
+  const [answerStreak, setAnswerStreak] = useState(0);
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   /**
@@ -396,12 +402,15 @@ export default function QuizPlay() {
       // component that is no longer on screen.
       if (result === 'correct') {
         setFeedbackAnim('correct');
+        setAnswerStreak((n) => n + 1);
         feedbackTimersRef.current.push(window.setTimeout(() => setFeedbackAnim(null), 420));
       } else if (result === 'partial') {
         setFeedbackAnim('partial');
+        setAnswerStreak(0);
         feedbackTimersRef.current.push(window.setTimeout(() => setFeedbackAnim(null), 600));
       } else {
         setFeedbackAnim('wrong');
+        setAnswerStreak(0);
         setShakeId(selectedNow.find((id) => !correctIdsForQuestion.includes(id)) ?? selectedNow[0] ?? null);
         feedbackTimersRef.current.push(window.setTimeout(() => {
           setFeedbackAnim(null);
@@ -904,34 +913,53 @@ export default function QuizPlay() {
                 </div>
               </div>
 
-              {/* Metrics strip — compact, no wrapping */}
-              <div
-                className="flex shrink-0 self-start items-stretch divide-x rounded-[20px] overflow-hidden border border-white/18"
-                style={{ background: 'rgba(255,255,255,0.12)' }}
-              >
-                {[
-                  { label: 'Progres', value: progressSummary },
-                  { label: 'Timp', value: formatQuizPlayTime(timeElapsed) },
-                  { label: timedMode ? 'Timer' : 'Ritm', value: timedMode ? `${questionTimer}s` : autoAdvance ? 'Auto' : 'Man.' , accent: timedMode ? timerTone : undefined },
-                  { label: 'Rămase', value: `${Math.max(questionQueue.length - answeredCount, 0)}` },
-                ].map((metric, i) => (
-                  <div
-                    key={metric.label}
-                    className="flex flex-col items-center justify-center px-4 py-3 gap-1"
-                    style={{ borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.16)' : 'none' }}
-                  >
-                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/50 whitespace-nowrap leading-none">
-                      {metric.label}
-                    </span>
+              {/* Metrics strip — compact, no wrapping. Mobile gets a single-row summary instead: the 4-box grid is desktop-width-shaped and repeats "Întrebarea X din Y" already shown above it. */}
+              {mobile ? (
+                <div
+                  className="flex shrink-0 items-center justify-between gap-2 self-start rounded-[16px] border border-white/18 px-3.5 py-2.5"
+                  style={{ background: 'rgba(255,255,255,0.12)' }}
+                >
+                  <span className="truncate text-[11px] font-black uppercase tracking-[0.12em] text-white/75">
+                    {quiz.category}
+                  </span>
+                  {timedMode && (
                     <span
-                      className="text-sm font-black tracking-tight whitespace-nowrap leading-none"
-                      style={{ color: metric.accent ?? 'rgba(255,255,255,0.95)' }}
+                      className="flex-shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black tabular-nums"
+                      style={{ background: 'rgba(255,255,255,0.18)', color: timerTone === theme.danger ? '#FFD1CE' : '#FFFFFF' }}
                     >
-                      {metric.value}
+                      {questionTimer}s
                     </span>
-                  </div>
-                ))}
-              </div>
+                  )}
+                </div>
+              ) : (
+                <div
+                  className="flex shrink-0 self-start items-stretch divide-x rounded-[20px] overflow-hidden border border-white/18"
+                  style={{ background: 'rgba(255,255,255,0.12)' }}
+                >
+                  {[
+                    { label: 'Progres', value: progressSummary },
+                    { label: 'Timp', value: formatQuizPlayTime(timeElapsed) },
+                    { label: timedMode ? 'Timer' : 'Ritm', value: timedMode ? `${questionTimer}s` : autoAdvance ? 'Auto' : 'Man.' , accent: timedMode ? timerTone : undefined },
+                    { label: 'Rămase', value: `${Math.max(questionQueue.length - answeredCount, 0)}` },
+                  ].map((metric, i) => (
+                    <div
+                      key={metric.label}
+                      className="flex flex-col items-center justify-center px-4 py-3 gap-1"
+                      style={{ borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.16)' : 'none' }}
+                    >
+                      <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/50 whitespace-nowrap leading-none">
+                        {metric.label}
+                      </span>
+                      <span
+                        className="text-sm font-black tracking-tight whitespace-nowrap leading-none"
+                        style={{ color: metric.accent ?? 'rgba(255,255,255,0.95)' }}
+                      >
+                        {metric.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className={`grid ${denseLayout ? 'gap-3' : 'gap-4'} xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end`}>
@@ -940,14 +968,23 @@ export default function QuizPlay() {
                   <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/65">Progres sesiune</span>
                   <span className="text-sm font-black text-white">{Math.round(progress)}%</span>
                 </div>
-                <div className="h-2 rounded-full overflow-hidden bg-white/16">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.98), rgba(255,255,255,0.62))' }}
-                    animate={{ width: `${progress}%` }}
-                    transition={calmMotion ? { duration: 0.2, ease: 'linear' } : { duration: 0.4, ease: 'easeOut' }}
+                {/* One segment per question reads better than a continuous bar at this width — but stops being
+                    legible past ~24 questions (e.g. a combined "joacă tot folderul" session), so falls back to
+                    the same continuous bar desktop uses. */}
+                {mobile && questionQueue.length > 1 && questionQueue.length <= 24 ? (
+                  <SegmentedProgressBar
+                    segments={questionQueue.map((q, i) => ({ done: answers[q.id] !== undefined, current: i === currentIdx }))}
                   />
-                </div>
+                ) : (
+                  <div className="h-2 rounded-full overflow-hidden bg-white/16">
+                    <motion.div
+                      className="h-full rounded-full"
+                      style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.98), rgba(255,255,255,0.62))' }}
+                      animate={{ width: `${progress}%` }}
+                      transition={calmMotion ? { duration: 0.2, ease: 'linear' } : { duration: 0.4, ease: 'easeOut' }}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className={heroControlsWrapClass}>
@@ -1463,6 +1500,12 @@ export default function QuizPlay() {
                   className="sticky bottom-3 z-20 mt-4"
                 >
                   <div className={`glass-panel premium-shadow rounded-[24px] border ${denseLayout ? 'px-3 py-3' : 'px-4 py-4'}`}>
+                    {mobile && !examMode && answerStreak > 1 && (
+                      <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.1em]" style={{ color: theme.warning }}>
+                        <Flame size={13} fill={theme.warning} />
+                        {answerStreak} corecte la rând
+                      </div>
+                    )}
                     {revealed && !examMode ? (
                       <ConfidenceButtons
                         onRate={handleConfidence}
