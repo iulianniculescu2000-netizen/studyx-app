@@ -21,6 +21,7 @@ import { useAIStore } from '../store/aiStore';
 import { isFlashcardDeck } from '../lib/deckKind';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useCountUp } from '../hooks/useCountUp';
+import { useViewportProfile } from '../hooks/useViewportProfile';
 
 function DashboardLoading({ compact }: { compact: boolean }) {
   return (
@@ -206,6 +207,7 @@ export default function Dashboard() {
   const { streak, getAccuracy, totalStudyTime, getDueQuestions, questionStats } = useStatsStore();
   const knowledgeSources = useAIStore((state) => state.knowledgeSources);
   const startTutorial = useTutorialStore((state) => state.startTutorial);
+  const { mobile } = useViewportProfile();
   const [hour, setHour] = useState(new Date().getHours());
 
   const accuracy = getAccuracy();
@@ -235,7 +237,8 @@ export default function Dashboard() {
     hasLibrary: knowledgeSources.some((source) => source.indexStatus === 'ready'),
     hasMistakes: Object.values(questionStats ?? {}).some((stat) => (stat?.timesWrong ?? 0) > 0),
     dueCount: getDueQuestions().length,
-  }), [quizzes, knowledgeSources, questionStats, getDueQuestions]);
+    mobile,
+  }), [quizzes, knowledgeSources, questionStats, getDueQuestions, mobile]);
 
   const recentQuizzes = useMemo(
     () => [...quizzes]

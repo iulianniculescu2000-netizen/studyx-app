@@ -12,6 +12,7 @@ const empty: AppTipContext = {
   hasLibrary: false,
   hasMistakes: false,
   dueCount: 0,
+  mobile: false,
 };
 
 const active: AppTipContext = {
@@ -20,6 +21,7 @@ const active: AppTipContext = {
   hasLibrary: true,
   hasMistakes: true,
   dueCount: 12,
+  mobile: false,
 };
 
 describe('tip selection', () => {
@@ -41,6 +43,11 @@ describe('tip selection', () => {
   it('always keeps a few universally useful tips, so the strip is never empty', () => {
     expect(selectRelevantTips(empty).length).toBeGreaterThanOrEqual(3);
     expect(selectRelevantTips(active).length).toBeGreaterThan(selectRelevantTips(empty).length);
+  });
+
+  it('hides the Ctrl+K palette tip on mobile, where there is no keyboard', () => {
+    expect(selectRelevantTips(active).map((tip) => tip.id)).toContain('palette');
+    expect(selectRelevantTips({ ...active, mobile: true }).map((tip) => tip.id)).not.toContain('palette');
   });
 
   it('keeps every tip short enough for one line and uniquely identified', () => {

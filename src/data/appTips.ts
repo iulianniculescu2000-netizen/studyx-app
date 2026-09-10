@@ -15,6 +15,8 @@ export interface AppTipContext {
   hasLibrary: boolean;
   hasMistakes: boolean;
   dueCount: number;
+  /** Ctrl+K has no equivalent on a touchscreen — the palette tip only makes sense on desktop. */
+  mobile: boolean;
 }
 
 export interface AppTip {
@@ -32,6 +34,7 @@ export const APP_TIPS: AppTip[] = [
     id: 'palette',
     emoji: '⌘',
     text: 'poți sări la orice set, folder sau acțiune cu Ctrl+K, fără să mai umbli prin meniuri',
+    when: (context) => !context.mobile,
   },
   {
     id: 'schemas',
