@@ -314,7 +314,7 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
             and Pomodoro buttons docked above it (AIChatDrawer/PomodoroTimer),
             which otherwise sit on top of a page's own last row of content —
             e.g. the "Mod economisire" toggle in Settings. */}
-        <main style={{ flex: 1, overflow: 'hidden', position: 'relative', paddingBottom: mobile && !focusMode ? 'calc(150px + env(safe-area-inset-bottom, 0px))' : undefined }}>
+        <main style={{ flex: 1, overflow: 'hidden', position: 'relative', paddingBottom: mobile && !focusMode ? 'calc(166px + env(safe-area-inset-bottom, 0px))' : undefined }}>
           <AppErrorBoundary>
             <AnimatePresence mode="wait">
               <motion.div

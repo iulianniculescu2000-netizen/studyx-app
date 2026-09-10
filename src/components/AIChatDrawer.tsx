@@ -1089,8 +1089,8 @@ export default function AIChatDrawer() {
           data-tutorial="ai-chat-button"
           className="fixed right-6 z-[9998] flex h-14 w-14 items-center justify-center rounded-[22px] text-white shadow-2xl press-feedback"
           style={{
-            // Sit above the mobile bottom-nav so it doesn't cover the last tab.
-            bottom: mobile ? 'calc(74px + env(safe-area-inset-bottom, 0px))' : '24px',
+            // Sit above the floating mobile bottom-nav (14px gap + 64px bar + 12px clearance) so it doesn't cover it.
+            bottom: mobile ? 'calc(90px + env(safe-area-inset-bottom, 0px))' : '24px',
             background: theme.accent,
             boxShadow: `0 10px 30px ${theme.accent}45, 0 2px 8px rgba(0,0,0,0.12)`,
             backdropFilter: performanceLite ? 'blur(8px)' : 'blur(14px)',
