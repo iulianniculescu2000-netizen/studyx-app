@@ -44,7 +44,10 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          # Capacitor 8's generated capacitor.build.gradle pins sourceCompatibility/
+          # targetCompatibility to VERSION_21 — javac on an older JDK rejects that
+          # with "invalid source release: 21", which is what broke the first 3 runs.
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
