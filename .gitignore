@@ -38,3 +38,4 @@ release/
 
 # Dump de pagini din cărțile de rezidențiat (regenerabil cu scripts/ingestKnowledge.js; duplică src/data/rezidentiat/library/)
 src/data/rezidentiat/knowledge_db.jsonl
+src/data/rezidentiat/capitole_db.json

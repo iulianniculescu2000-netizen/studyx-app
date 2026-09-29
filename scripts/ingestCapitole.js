@@ -6,7 +6,8 @@ import mammoth from 'mammoth';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ROOT_DIR = 'C:\\Users\\Iulia\\Desktop\\Rezidentiat\\Capitole';
+// Suprascrie folderul sursă cu variabila de mediu REZI_ROOT.
+const ROOT_DIR = path.join(process.env.REZI_ROOT ?? 'C:/Users/Iulia/Desktop/Rezidentiat', 'Capitole');
 const OUTPUT_FILE = path.join(__dirname, '..', 'src', 'data', 'rezidentiat', 'capitole_db.json');
 
 async function extractPdfText(filePath) {

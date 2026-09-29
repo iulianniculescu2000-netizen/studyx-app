@@ -19,6 +19,7 @@ import RezidentiatTutorial, { REZIDENTIAT_TUTORIAL_OPEN_EVENT } from '../compone
 import BookTableOfContents from '../components/BookTableOfContents';
 import type { Quiz, QuestionStat } from '../types';
 import { REZIDENTIAT_ROOT_NAME, findRezidentiatRootFolder, findOrCreateAiFlashcardsFolder } from '../lib/rezidentiatRoot';
+import { mergeBuiltInDeck } from '../lib/rezidentiatFlashcards';
 
 type Theme = ReturnType<typeof useTheme>;
 
@@ -542,7 +543,7 @@ export default function Residency() {
                 </div>
                 <h3 className="text-xl font-bold" style={{ color: theme.text }}>Baza Oficială: Kumar Flashcards</h3>
                 <p className="mt-1 max-w-lg text-sm font-medium" style={{ color: theme.text3 }}>
-                  Colecție de 550 concepte cheie extrase cu precizie. Apasă pe buton pentru a încărca setul.
+                  Concepte cheie extrase din manual, grupate pe capitole. Apasă pe buton pentru a încărca setul.
                 </p>
               </div>
               <button
@@ -556,9 +557,15 @@ export default function Residency() {
                       const quizStore = useQuizStore.getState();
                       const existing = quizStore.quizzes.find(q => q.id === quizData.id);
 
-                      // Dacă JSON-ul a fost actualizat, suprascrie versiunea veche din Zustand.
+                      // Setul livrat cu aplicația poate fi corectat între versiuni: reîmprospătăm conținutul,
+                      // dar un card la care ai deja istoric de studiu nu dispare niciodată.
                       if (existing) {
-                        quizStore.updateQuiz(quizData.id, { questions: quizData.questions, title: quizData.title });
+                        const { useStatsStore } = await import('../store/statsStore');
+                        const stats = useStatsStore.getState().questionStats;
+                        quizStore.updateQuiz(quizData.id, {
+                          questions: mergeBuiltInDeck(existing.questions, quizData.questions, (questionId) => `${quizData.id}:${questionId}` in stats),
+                          title: quizData.title,
+                        });
                       } else {
                         const folderId = findOrCreateAiFlashcardsFolder();
                         quizStore.addQuiz({ ...quizData, folderId });
@@ -570,11 +577,11 @@ export default function Residency() {
                     console.error('Eroare la pornire:', err);
                   }
                 }}
-                className="flex shrink-0 items-center gap-2 rounded-2xl px-6 py-3 font-black uppercase tracking-wider text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+                className="flex shrink-0 items-center gap-2 rounded-2xl px-6 py-3 font-black uppercase tracking-wider text-white shadow-lg transition-transform hover:scale-105 active:scale-[0.97]"
                 style={{ background: theme.accent }}
               >
                 <BookOpen size={18} />
-                Începe (550 Carduri)
+                Începe setul de carduri
               </button>
             </div>
           </div>

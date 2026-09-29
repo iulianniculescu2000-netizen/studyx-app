@@ -6,8 +6,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Ensure paths
-const BOOKS_DIR = 'C:\\Users\\Iulia\\Desktop\\Rezidentiat\\Carti';
-const CAPITOLE_DIR = 'C:\\Users\\Iulia\\Desktop\\Rezidentiat\\Capitole';
+// Folderul cu materialele sursă; suprascrie-l cu variabila de mediu REZI_ROOT.
+const REZI_ROOT = process.env.REZI_ROOT ?? 'C:/Users/Iulia/Desktop/Rezidentiat';
+const BOOKS_DIR = path.join(REZI_ROOT, 'Carti');
+const CAPITOLE_DIR = path.join(REZI_ROOT, 'Capitole');
 const OUTPUT_FILE = path.join(__dirname, '..', 'src', 'data', 'rezidentiat', 'knowledge_db.jsonl');
 
 async function processPdfFile(filePath, category, sourceName, outputStream) {
