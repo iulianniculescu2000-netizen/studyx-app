@@ -239,7 +239,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
 
                     <motion.button
                       onClick={copyPrompt}
-                      whileTap={{ scale: 0.98 }}
+                      whileTap={{ scale: 0.97 }}
                       className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
                       style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text }}
                     >

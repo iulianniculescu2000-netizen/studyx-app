@@ -85,7 +85,7 @@ export default function AIPredictiveExamPredictions({
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: index * 0.1 }}
-            whileHover={{ scale: 1.015 }}
+            whileHover={{ scale: 1.02 }}
             onClick={() => setSelectedPrediction(prediction)}
             className="glass-panel rounded-[24px] p-6 cursor-pointer"
             style={{ borderColor: selected ? `${theme.accent}60` : undefined, boxShadow: selected ? `0 0 0 2px ${theme.accent}30` : undefined }}
@@ -183,7 +183,7 @@ export default function AIPredictiveExamPredictions({
             {/* Actions */}
             <div className="flex gap-2">
               <motion.button
-                whileHover={{ scale: 1.015 }}
+                whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.93, transition: { type: 'spring', stiffness: 500, damping: 15 } }}
                 onClick={(e) => {
                   e.stopPropagation();

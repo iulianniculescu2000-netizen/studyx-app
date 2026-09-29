@@ -139,7 +139,7 @@ export default function AIGamificationChallenges({ challenges }: AIGamificationC
 
           <motion.button
             whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileTap={{ scale: 0.97 }}
             className="w-full py-3 rounded-lg font-medium transition-all duration-200"
             style={{ background: theme.accent2, color: '#fff' }}
           >

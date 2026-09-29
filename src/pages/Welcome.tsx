@@ -1,9 +1,8 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { ArrowRight, Sparkles, Check, ChevronLeft } from 'lucide-react';
+import { ArrowRight, ChevronLeft } from 'lucide-react';
 import { useUserStore } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
-import { THEME_LIST, type ThemeId } from '../theme/themes';
 import Logo from '../components/Logo';
 
 interface Props {
@@ -17,10 +16,9 @@ interface Props {
 const NAME_EXAMPLES = ['Alexandru', 'Maria', 'Andrei', 'Ioana', 'Ștefan', 'Elena'];
 
 export default function Welcome({ onBack }: Props) {
-  const { setUsername, setTheme, themeId } = useUserStore();
+  const { setUsername } = useUserStore();
   const theme = useTheme();
   const [name, setName] = useState('');
-  const [step, setStep] = useState<'name' | 'theme'>('name');
   const [error, setError] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [shake, setShake] = useState(false);
@@ -31,20 +29,6 @@ export default function Welcome({ onBack }: Props) {
     const id = window.setInterval(() => setPlaceholderIndex((i) => (i + 1) % NAME_EXAMPLES.length), 2200);
     return () => window.clearInterval(id);
   }, [name, inputFocused]);
-  // 'glass' is the only UI 2.0 entry in THEME_LIST — everything else (bigsur,
-  // obsidian, pearl, aurora, midnight, amber, auto) is UI 1.0, same split as
-  // ThemeQuickSwitcher already uses in the sidebar.
-  const [uiGen, setUiGen] = useState<'v2' | 'v1'>(() => (themeId === 'glass' ? 'v2' : 'v1'));
-  const glassEntries = THEME_LIST.filter((entry) => entry.id === 'glass');
-  const legacyEntries = THEME_LIST.filter((entry) => entry.id !== 'glass');
-  const visibleThemes = uiGen === 'v2' ? glassEntries : legacyEntries;
-
-  const handleGenChange = (gen: 'v2' | 'v1') => {
-    setUiGen(gen);
-    if (gen === 'v2') setTheme('glass');
-    else if (themeId === 'glass') setTheme('obsidian');
-  };
-
   const handleNameSubmit = () => {
     const trimmed = name.trim();
     if (trimmed.length < 2 || trimmed.length > 30) {
@@ -54,11 +38,7 @@ export default function Welcome({ onBack }: Props) {
       return;
     }
     setError('');
-    setStep('theme');
-  };
-
-  const handleFinish = () => {
-    setUsername(name.trim());
+    setUsername(trimmed);
   };
 
   const avatarLetter = name.trim().charAt(0).toUpperCase() || '?';
@@ -89,7 +69,7 @@ export default function Welcome({ onBack }: Props) {
         <AnimatePresence mode="wait">
 
           {/* ── Step 1: Name ──────────────────────────────────── */}
-          {step === 'name' && (
+          {(
             <motion.div key="name"
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
@@ -261,200 +241,12 @@ export default function Welcome({ onBack }: Props) {
                   boxShadow: `0 10px 30px ${theme.accent}35`,
                   opacity: name.trim().length < 2 ? 0.45 : 1,
                 }}>
-                Continuă <ArrowRight size={18} />
+                Intră în aplicație <ArrowRight size={18} />
               </motion.button>
             </motion.div>
           )}
 
           {/* ── Step 2: Theme ────────────────────────────────── */}
-          {step === 'theme' && (
-            <motion.div key="theme"
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -40 }}
-              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            >
-              {/* ── Big Avatar Hero ── */}
-              <div className="flex flex-col items-center mb-5">
-                <div className="relative mb-4 mt-2">
-                  {/* Rotating ring */}
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-                    className="absolute rounded-full pointer-events-none"
-                    style={{ inset: -10, border: `1.5px solid ${theme.accent}30`, borderRadius: '50%' }}
-                  />
-                  {/* Inner dashed ring */}
-                  <motion.div
-                    animate={{ rotate: -360 }}
-                    transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
-                    className="absolute rounded-full pointer-events-none"
-                    style={{ inset: -4, border: `1px dashed ${theme.accent2}40`, borderRadius: '50%' }}
-                  />
-
-                  {/* Avatar bubble */}
-                  <motion.div
-                    initial={{ scale: 0, rotate: -10 }}
-                    animate={{ scale: 1, rotate: 0, y: [0, -5, 0] }}
-                    transition={{
-                      scale: { type: 'spring', stiffness: 280, damping: 18 },
-                      rotate: { type: 'spring', stiffness: 280, damping: 18 },
-                      y: { duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 },
-                    }}
-                    className="relative w-24 h-24 rounded-full flex items-center justify-center"
-                    style={{
-                      background: theme.accent,
-                      boxShadow: `0 16px 48px ${theme.accent}45, 0 0 0 4px ${theme.accent}18`,
-                    }}>
-                    <span className="text-4xl font-black text-white select-none"
-                      style={{ textShadow: '0 2px 10px rgba(0,0,0,0.25)' }}>
-                      {avatarLetter}
-                    </span>
-                  </motion.div>
-
-                  {/* Bottom glow */}
-                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-16 h-5 rounded-full pointer-events-none"
-                    style={{ background: theme.accent, filter: 'blur(14px)', opacity: 0.3 }}
-                  />
-                </div>
-
-                <motion.h2
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-2xl font-bold mb-0.5 tracking-tight"
-                  style={{ color: theme.text }}>
-                  Salut, {name.trim()}! 👋
-                </motion.h2>
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.4 }}
-                  className="text-sm"
-                  style={{ color: theme.text2 }}>
-                  Alege tema care ți se potrivește
-                </motion.p>
-              </div>
-
-              {/* UI generation switch */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="flex justify-center mb-4">
-                <div className="inline-flex rounded-2xl p-1 gap-1"
-                  style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
-                  {([
-                    { id: 'v2' as const, label: 'UI II · Glass', hint: 'Nou' },
-                    { id: 'v1' as const, label: 'UI I · Clasic', hint: null },
-                  ]).map((gen) => {
-                    const active = uiGen === gen.id;
-                    return (
-                      <button
-                        key={gen.id}
-                        onClick={() => handleGenChange(gen.id)}
-                        className="relative px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-colors"
-                        style={{ color: active ? '#fff' : theme.text3 }}>
-                        {active && (
-                          <motion.div
-                            layoutId="ui-gen-pill"
-                            className="absolute inset-0 rounded-xl"
-                            style={{ background: theme.accent, boxShadow: `0 6px 18px ${theme.accent}40` }}
-                            transition={{ type: 'spring', stiffness: 340, damping: 28 }}
-                          />
-                        )}
-                        <span className="relative flex items-center gap-1.5">
-                          {gen.id === 'v2' && <Sparkles size={13} />}
-                          {gen.label}
-                          {gen.hint && (
-                            <span className="rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider"
-                              style={{ background: active ? 'rgba(255,255,255,0.25)' : `${theme.accent}18`, color: active ? '#fff' : theme.accent }}>
-                              {gen.hint}
-                            </span>
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </motion.div>
-
-              {/* Theme grid */}
-              <motion.div
-                key={uiGen}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05, duration: 0.3 }}
-                className={`grid gap-2.5 mb-5 ${uiGen === 'v2' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                {visibleThemes.map((t, i) => {
-                  const isActive = themeId === t.id;
-                  return (
-                    <motion.button
-                      key={t.id}
-                      initial={{ opacity: 0, scale: 0.88 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.4 + i * 0.05, duration: 0.3 }}
-                      onClick={() => setTheme(t.id as ThemeId)}
-                      whileHover={{ scale: 1.025, y: -1 }}
-                      whileTap={{ scale: 0.97 }}
-                      className="p-3.5 rounded-2xl text-left transition-all relative overflow-hidden"
-                      style={{
-                        background: t.modalBg,
-                        border: `2px solid ${isActive ? t.accent : t.border}`,
-                        boxShadow: isActive ? `0 4px 20px ${t.accent}35` : '0 2px 8px rgba(0,0,0,0.10)',
-                      }}>
-                      {/* Mini preview */}
-                      <div className="w-full h-8 rounded-xl mb-2.5 relative overflow-hidden"
-                        style={{ background: t.bg }}>
-                        <div className="absolute inset-0"
-                          style={{ background: `radial-gradient(circle at 30% 50%, ${t.orb1}, transparent 60%), radial-gradient(circle at 70% 50%, ${t.orb2}, transparent 60%)`, opacity: 0.6 }} />
-                        <div className="absolute bottom-1 left-2 right-6 h-1.5 rounded-full"
-                          style={{ background: t.surface2 }} />
-                        <div className="absolute bottom-1 right-2 w-4 h-1.5 rounded-full"
-                          style={{ background: t.accent, opacity: 0.8 }} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">{t.emoji}</span>
-                        <span className="font-semibold text-sm" style={{ color: t.text }}>{t.name}</span>
-                      </div>
-
-                      {/* Check indicator */}
-                      <AnimatePresence>
-                        {isActive && (
-                          <motion.div
-                            key="check"
-                            layoutId="theme-check"
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            exit={{ scale: 0 }}
-                            className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center"
-                            style={{ background: t.accent }}>
-                            <Check size={11} color="white" strokeWidth={3} />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.button>
-                  );
-                })}
-              </motion.div>
-
-              <motion.button
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7 }}
-                onClick={handleFinish}
-                whileHover={{ scale: 1.02, y: -1 }}
-                whileTap={{ scale: 0.97 }}
-                className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
-                style={{
-                  background: theme.accent,
-                  boxShadow: `0 10px 30px ${theme.accent}40`,
-                }}>
-                <Sparkles size={17} />
-                Intră în StudyX
-              </motion.button>
-            </motion.div>
-          )}
 
         </AnimatePresence>
       </div>

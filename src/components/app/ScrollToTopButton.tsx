@@ -47,7 +47,7 @@ export default function ScrollToTopButton() {
         host?.scrollTo({ top: 0, behavior: 'smooth' });
       }}
       aria-label="Revino sus"
-      className="fixed bottom-8 right-8 z-[100] flex h-12 w-12 items-center justify-center rounded-full text-white shadow-2xl transition-transform hover:scale-110 active:scale-95"
+      className="fixed bottom-8 right-8 z-[100] flex h-12 w-12 items-center justify-center rounded-full text-white shadow-2xl transition-transform hover:scale-110 active:scale-[0.97]"
       style={{ background: 'var(--accent)', boxShadow: '0 8px 32px var(--accent-glow)' }}
     >
       <ArrowUp size={20} strokeWidth={3} />

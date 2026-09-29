@@ -173,7 +173,7 @@ export function AnkiImportModal({
             </p>
             <motion.button
               whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
+              whileTap={{ scale: 0.985 }}
               onClick={handleFilePick}
               className="flex w-full items-center justify-center gap-2 rounded-[16px] py-3.5 text-xs font-black uppercase tracking-widest text-white transition-all"
               style={{ background: theme.accent }}

@@ -405,7 +405,7 @@ export function QuizInfoStep({
       <motion.button
         onClick={onContinue}
         whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.98 }}
+        whileTap={{ scale: 0.97 }}
         className="w-full py-3.5 rounded-2xl font-semibold text-white"
         style={{
           background: theme.accent,

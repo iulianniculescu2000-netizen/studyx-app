@@ -151,7 +151,7 @@ export default function ExamSplitModal({ folderName, folderId, color, category, 
 
               <motion.button
                 onClick={handleConfirm}
-                whileTap={{ scale: 0.98 }}
+                whileTap={{ scale: 0.97 }}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
                 style={{ background: theme.accent }}
               >

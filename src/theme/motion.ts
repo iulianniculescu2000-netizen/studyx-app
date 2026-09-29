@@ -40,9 +40,11 @@ export const heroIn: Variants = {
  * "back"-eased release on the CSS `.press-feedback` class.
  */
 export const pressFeedback = {
-  whileHover: { scale: 1.01 },
-  whileTap: { scale: 0.98 },
-  transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
+  whileHover: { scale: 1.01, y: -1 },
+  whileTap: { scale: 0.97, y: 0 },
+  // A spring (not a long ease) so the press lands instantly and the release settles with a
+  // hint of overshoot. Values mirror --hover-lift/--hover-scale/--press-scale in index.css.
+  transition: { type: "spring", stiffness: 460, damping: 26, mass: 0.7 } as Transition,
 };
 
 /* ── POLISH v2.2 — Serotonin UI Presets ───────────────────────────────────── */

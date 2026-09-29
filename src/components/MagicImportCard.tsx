@@ -67,7 +67,7 @@ export default function MagicImportCard() {
       <motion.button
         onClick={() => setOpen(true)}
         whileHover={calmMotion ? undefined : { y: -2, scale: 1.005 }}
-        whileTap={{ scale: 0.99 }}
+        whileTap={{ scale: 0.985 }}
         className="press-feedback relative w-full overflow-hidden rounded-[28px] p-5 text-left"
         style={{
           background: `linear-gradient(135deg, ${theme.accent}18, ${(theme.accent2 ?? theme.accent)}10)`,

@@ -24,7 +24,7 @@ import { useOverlayFlag } from '../hooks/useOverlayFlag';
 const WHATS_NEW_VERSION = '2.2.0';
 // Bump the suffix when the tour content changes within the same app version, so
 // users who already dismissed the previous tour see the new highlights once more.
-const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-v22:seen`;
+const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-v22b:seen`;
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
 export const WHATS_NEW_OPEN_EVENT = 'studyx:whats-new:open';
@@ -236,6 +236,76 @@ function GlassFluidDemo({ theme }: { theme: Theme }) {
   );
 }
 
+/** Full-window glass chat: the panel's transparency sweeps back and forth over the page behind it. */
+function GlassChatDemo({ theme }: { theme: Theme }) {
+  const [clear, setClear] = useState(false);
+  useEffect(() => {
+    const id = window.setInterval(() => setClear((value) => !value), 1800);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="flex flex-col items-center">
+      <div className="relative h-[120px] w-[250px] overflow-hidden rounded-[14px]" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+        <div className="absolute inset-0 grid grid-cols-3 gap-1.5 p-2">
+          {[theme.accent, theme.accent2, theme.success, theme.warning, theme.accent2, theme.accent].map((color, index) => (
+            <div key={index} className="rounded-lg" style={{ background: `${color}55` }} />
+          ))}
+        </div>
+        <motion.div
+          animate={{ opacity: clear ? 0.55 : 0.92 }}
+          transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+          className="absolute inset-y-2 left-9 right-2 rounded-xl p-2.5"
+          style={{ background: theme.surface, border: `1px solid ${theme.border}`, backdropFilter: 'blur(6px)' }}
+        >
+          <div className="mb-1.5 h-1.5 w-2/5 rounded-full" style={{ background: theme.accent }} />
+          <div className="mb-1 h-1.5 w-4/5 rounded-full" style={{ background: theme.text3, opacity: 0.5 }} />
+          <div className="h-1.5 w-3/5 rounded-full" style={{ background: theme.text3, opacity: 0.5 }} />
+        </motion.div>
+        <div className="absolute inset-y-2 left-2 w-5 rounded-lg" style={{ background: theme.surface, border: `1px solid ${theme.border}` }} />
+      </div>
+      <div className="mt-2 text-[9px] font-semibold" style={{ color: theme.text3 }}>
+        {clear ? 'transparență mare — vezi aplicația prin sticlă' : 'transparență mică — text ușor de citit'}
+      </div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** Conversation memory: remembered facts appear one after another. */
+function ConversationMemoryDemo({ theme }: { theme: Theme }) {
+  const facts = ['Examen de rezidențiat în iulie', 'Preferă scheme și tabele', 'Reluăm nefrologia mâine'];
+  const [shown, setShown] = useState(1);
+  useEffect(() => {
+    const id = window.setInterval(() => setShown((value) => (value >= facts.length ? 1 : value + 1)), 1400);
+    return () => window.clearInterval(id);
+  }, [facts.length]);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-[240px] space-y-1.5">
+        <div className="mb-1 text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>Ce știe asistentul despre tine</div>
+        <AnimatePresence initial={false}>
+          {facts.slice(0, shown).map((fact) => (
+            <motion.div
+              key={fact}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="rounded-[10px] px-3 py-2 text-[11px] font-bold"
+              style={{ background: `${theme.accent}14`, border: `1px solid ${theme.accent}30`, color: theme.text }}
+            >
+              {fact}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </DemoFrame>
+  );
+}
+
 type Slide = {
   id: string;
   badge: string;
@@ -267,6 +337,22 @@ const SLIDES: Slide[] = [
     title: 'Agentul ține minte ce a făcut — și unde',
     description: 'Mesajul din chat îți arăta mereu intenția inițială, chiar și după ce un job eșua sau reușea — acum se rescrie cu rezultatul real. Iar tot ce creezi fără să specifici un folder (dintr-o secțiune ca Rezidențiat) rămâne acolo, nu se rătăcește pe ecranul general.',
     Demo: AgentOutcomeDemo,
+  },
+  {
+    id: 'glass-chat',
+    badge: 'Chat AI',
+    title: 'Chatul AI pe tot ecranul, ca un panou de sticlă',
+    description: 'Deschide chatul pe toată fereastra, lângă bara laterală, cu aplicația estompată în spate. Alegi cât de transparent să fie (Clar, Sticlă sau Mat) și cât de tare se estompează fundalul. Esc te aduce înapoi la fereastra mică.',
+    Demo: GlassChatDemo,
+    tip: 'Ctrl+Shift+F sau butonul cu săgeți din colțul chatului. Transparența se reglează din butonul cu glisoare.',
+  },
+  {
+    id: 'chat-memory',
+    badge: 'Chat AI',
+    title: 'Asistentul te ține minte',
+    description: 'Reține din conversații ce e util pentru studiu: obiective, cum îți place să înveți, la ce te împiedici. Conversația lungă nu se mai pierde la repornire, iar când revii după o pauză îți propune să continui de unde ai rămas. Răspunsurile cu doze sau praguri sunt verificate încă o dată.',
+    Demo: ConversationMemoryDemo,
+    tip: 'Vezi, editezi sau oprești memoria din Setări → AI → Memoria conversațiilor.',
   },
   {
     id: 'glass-fluid',
@@ -474,8 +560,8 @@ export default function WhatsNewTour() {
 
               {isLast ? (
                 <motion.button
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={close}
                   className="flex h-10 items-center gap-2 rounded-[14px] px-5 text-[12px] font-black text-white"
                   style={{

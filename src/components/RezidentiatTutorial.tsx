@@ -500,8 +500,8 @@ export default function RezidentiatTutorial() {
 
               {isLast ? (
                 <motion.button
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={close}
                   className="flex h-10 items-center gap-2 rounded-[14px] px-5 text-[12px] font-black text-white"
                   style={{ background: theme.accent, boxShadow: `0 12px 26px ${theme.accent}40` }}

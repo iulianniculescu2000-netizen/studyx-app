@@ -370,7 +370,7 @@ export default function UpdateModal() {
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.1, rotate: 15 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => checkForUpdate()}
                   disabled={!canRefresh}
                   title="Verifică actualizările"
@@ -397,8 +397,8 @@ export default function UpdateModal() {
                   )}
                 </motion.button>
                 <motion.button
-                  whileHover={{ scale: 1.1, rotate: 90 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileHover={{ scale: 1.08, rotate: 90 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={close}
                   style={{
                     width: 36,

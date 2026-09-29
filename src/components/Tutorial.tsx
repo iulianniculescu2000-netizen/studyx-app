@@ -622,8 +622,8 @@ export default function Tutorial({ profileId }: { profileId: string }) {
                 </span>
               </div>
               <motion.button
-                whileHover={{ scale: 1.1, rotate: 90 }}
-                whileTap={{ scale: 0.9 }}
+                whileHover={{ scale: 1.08, rotate: 90 }}
+                whileTap={{ scale: 0.94 }}
                 onClick={skip}
                 className="p-2 rounded-xl transition-all flex-shrink-0"
                 style={{ color: theme.text3, background: theme.surface2, cursor: 'pointer' }}>
@@ -663,7 +663,7 @@ export default function Tutorial({ profileId }: { profileId: string }) {
               <motion.button
                 onClick={isLast ? complete : nextStep}
                 whileHover={{ scale: 1.02, y: -2 }}
-                whileTap={{ scale: 0.98 }}
+                whileTap={{ scale: 0.97 }}
                 className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black uppercase tracking-[0.15em] text-white shadow-2xl"
                 style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`, boxShadow: `0 12px 24px ${accentColor}40` }}>
                 {isLast

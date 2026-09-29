@@ -224,7 +224,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
         <motion.button
           onClick={() => cameraRef.current?.click()}
           whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.97 }}
           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold text-white"
           style={{ background: theme.accent }}
         >
@@ -233,7 +233,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
         <motion.button
           onClick={() => inputRef.current?.click()}
           whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.97 }}
           className="w-full flex flex-col items-center justify-center gap-2 py-6 rounded-2xl text-sm font-semibold"
           style={{
             border: `2px dashed ${theme.border2}`,
@@ -447,7 +447,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
         </button>
         <motion.button
           onClick={doImport}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.97 }}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
           style={{ background: theme.accent }}
         >

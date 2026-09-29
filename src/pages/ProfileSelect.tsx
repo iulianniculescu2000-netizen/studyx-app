@@ -172,7 +172,7 @@ function ProfileAvatar({ profile, index, isHovered, isSelected, isRemoving, isCo
   onRemove: (e: React.MouseEvent, id: string) => void;
   theme: Theme;
 }) {
-  const profileTheme = THEMES[profile.themeId as keyof typeof THEMES] ?? THEMES.obsidian;
+  const profileTheme = THEMES.glass;
   const accentColor = profileTheme.accent;
 
   return (

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { RefreshCw, Sparkles, Zap } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronDown, RefreshCw, Sparkles, Zap } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeContext';
 import { useAIStore } from '../../store/aiStore';
 import { useQuizStore } from '../../store/quizStore';
 import { useStatsStore } from '../../store/statsStore';
 import { buildPerformanceSummary, buildUserContextString } from '../../lib/aiContext';
 import { buildStudyCoachPlan } from '../../lib/studyCoach';
+import { digestRecommendation } from '../../lib/recommendationDigest';
 import { findDueExamSession, localDateStr } from '../../lib/studyPlan';
 import { useAdaptiveMotion } from '../../hooks/useAdaptiveMotion';
 import { cancelIdleTask, scheduleIdleTask } from '../../lib/idleTaskScheduler';
@@ -17,6 +18,24 @@ import GlassCard from '../ui/GlassCard';
 import AIRichText from '../ai-chat/AIRichText';
 
 const AI_REC_KEY = 'studyx-ai-recommendation';
+const EXPANDED_KEY = 'studyx-coach-expanded';
+
+function readExpanded(): boolean {
+  try {
+    return localStorage.getItem(EXPANDED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** One-line teaser of a (possibly markdown) recommendation: no headings, bullets, emphasis or line breaks. */
+function plainPreview(value: string): string {
+  return value
+    .replace(/[#*_`>]+/g, '')
+    .replace(/^\s*[-•]\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 let dashboardAIRecommendationPromise: Promise<typeof import('../../lib/groq')> | null = null;
 
@@ -28,11 +47,11 @@ function loadDashboardAIRecommendation() {
 }
 
 /**
- * The single most-important thing on the dashboard: the AI recommendation,
- * fused with "today's session" progress into one hero (UI 2.0 — one hero,
- * not a hero plus a separate progress card plus a stat grid competing for
- * attention). Logic is unchanged from DashboardAIStudyBuddy/TodayProgressCard,
- * only the layout is merged.
+ * The AI Study Coach as one slim row: headline, a one-line teaser of today's
+ * recommendation, a small progress ring and the "start session" button. The full
+ * recommendation, the suggested actions and "regenerate" live behind the chevron
+ * (remembered across visits), so the coach no longer pushes the stats and the
+ * recent decks off the first screen.
  */
 export default function DashboardHeroCard() {
   const theme = useTheme();
@@ -41,7 +60,7 @@ export default function DashboardHeroCard() {
   const { hasKey, knowledgeSources, libraryFolders } = useAIStore();
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { calmMotion, performanceLite } = useAdaptiveMotion();
+  const { calmMotion } = useAdaptiveMotion();
   const today = localDateStr();
   const latestRecommendationRunner = useMemo(() => createLatestOnlyRunner(), []);
 
@@ -128,153 +147,216 @@ export default function DashboardHeroCard() {
   );
 
   const showAiColumn = hasKey || summary.totalAnswered > 0;
+  const detailText = text ?? (showAiColumn ? displayText : coachPlan.summary);
+  const digest = useMemo(() => digestRecommendation(detailText ?? coachPlan.summary), [detailText, coachPlan.summary]);
+  const preview = digest[0]?.line ?? plainPreview(detailText ?? coachPlan.summary);
+  // Offer the full text only when the digest actually dropped something (a plan table, extra sections…).
+  const hasFullPlan = Boolean(detailText) && (detailText ?? '').length > digest.reduce((total, item) => total + item.line.length, 0) * 1.6;
+  const [showFull, setShowFull] = useState(false);
+
+  const [expanded, setExpanded] = useState(readExpanded);
+  const toggleExpanded = () => {
+    setExpanded((value) => {
+      const next = !value;
+      try {
+        localStorage.setItem(EXPANDED_KEY, next ? '1' : '0');
+      } catch {
+        // storage blocked — the choice just lasts for this visit
+      }
+      return next;
+    });
+  };
 
   return (
-    <GlassCard variant="hero" animate padding="0" radius="34px" className="relative mb-8 overflow-hidden">
-      <motion.div
-        animate={calmMotion ? undefined : { opacity: [0.1, 0.2, 0.1], scale: [1, 1.1, 1] }}
-        transition={calmMotion ? undefined : { duration: 8, repeat: Infinity }}
-        className="pointer-events-none absolute inset-0"
-        style={{ background: `radial-gradient(circle at 80% 20%, ${theme.accent2}30, transparent 60%)` }}
-      />
+    <GlassCard animate padding="0" radius="22px" className="relative mb-5 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5 sm:px-5">
+        <span
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
+          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+        >
+          <Sparkles size={16} className="text-white" />
+        </span>
 
-      <div className="relative z-10 grid gap-6 p-6 sm:p-7 lg:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center gap-3">
-            <span
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl shadow-lg"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 10px 24px ${theme.accent}38` }}
-            >
-              <Sparkles size={17} className="text-white" />
-            </span>
-            <span className="secondary-label font-black tracking-[0.22em]" style={{ color: theme.accent2 }}>
-              AI STUDY COACH
-            </span>
-            <span
-              className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em]"
-              style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text3 }}
-            >
-              {coachPlan.sourceQualityLabel}
+        <button
+          type="button"
+          onClick={toggleExpanded}
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Restrânge Study Coach' : 'Extinde Study Coach'}
+          className="min-w-0 flex-1 basis-[220px] text-left"
+        >
+          <span className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: theme.accent2 }}>
+              Study Coach
             </span>
             {loading && (
-              <div className="flex gap-1">
+              <span className="flex gap-1" aria-hidden>
                 {[0, 1, 2].map((i) => (
-                  <motion.div
+                  <motion.span
                     key={i}
-                    animate={calmMotion ? undefined : { scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
-                    transition={calmMotion ? undefined : { duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
-                    className="h-1.5 w-1.5 rounded-full"
+                    animate={calmMotion ? undefined : { opacity: [0.35, 1, 0.35] }}
+                    transition={calmMotion ? undefined : { duration: 0.9, repeat: Infinity, delay: i * 0.15 }}
+                    className="h-1 w-1 rounded-full"
                     style={{ background: theme.accent2 }}
                   />
                 ))}
-              </div>
+              </span>
             )}
-          </div>
-
-          <h2 className="max-w-2xl text-[1.7rem] font-black tracking-[-0.05em] sm:text-[2.1rem]" style={{ color: theme.text }}>
+          </span>
+          <span className="block truncate text-[15px] font-bold leading-snug sm:text-base" style={{ color: theme.text }}>
             {coachPlan.headline}
-          </h2>
-
-          {showAiColumn ? (
-            loading && !displayText ? (
-              <div className="mt-4 space-y-3 max-w-xl">
-                <div className="skeleton-block h-3 w-3/4 rounded-full" />
-                <div className="skeleton-block h-3 w-5/6 rounded-full" />
-                <div className="skeleton-block h-3 w-1/2 rounded-full" />
-              </div>
-            ) : (
-              <div className="mt-3 max-w-2xl text-sm font-medium leading-[1.7] opacity-85 sm:text-[15px]" style={{ color: theme.text }}>
-                <AIRichText text={displayText} />
-              </div>
-            )
-          ) : (
-            <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed opacity-80 sm:text-[15px]" style={{ color: theme.text }}>
-              {coachPlan.summary}
-            </p>
-          )}
-
-          {!loading && text && (
-            <motion.button
-              whileHover={calmMotion ? undefined : { x: 4 }}
-              onClick={() => void generate()}
-              className="mt-4 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] opacity-70 transition-opacity hover:opacity-100"
-              style={{ color: theme.accent2 }}
-            >
-              Regenerează recomandarea <RefreshCw size={12} />
-            </motion.button>
-          )}
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            {coachPlan.actions.slice(0, 2).map((action) => {
-              const toneColor = action.tone === 'warning' ? theme.warning : action.tone === 'success' ? theme.success : theme.accent;
-              const chip = (
-                <span
-                  className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-bold"
-                  style={{ background: `${toneColor}14`, border: `1px solid ${toneColor}30`, color: theme.text }}
-                >
-                  {action.title}
-                </span>
-              );
-              return action.route ? (
-                <Link key={action.title} to={action.route} className="press-feedback no-underline">
-                  {chip}
-                </Link>
-              ) : (
-                <div key={action.title}>{chip}</div>
-              );
-            })}
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-bold"
-              style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text3 }}
-            >
-              {knowledgeSources.length} surse AI
+          </span>
+          {!expanded && (
+            <span className="block truncate text-[12.5px] leading-snug" style={{ color: theme.text3 }}>
+              {loading && !detailText ? 'Pregătesc recomandarea de azi…' : preview}
             </span>
-          </div>
-        </div>
+          )}
+        </button>
 
-        <div className="flex flex-shrink-0 flex-col items-center justify-center gap-3 lg:items-start lg:justify-between lg:border-l lg:pl-7" style={{ borderColor: theme.border }}>
-          <div className="flex flex-col items-center gap-3 lg:items-start">
-            <div className="relative h-24 w-24">
-              <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r={radius} fill="none" stroke={theme.surface2} strokeWidth="8" />
-                <motion.circle
-                  cx="50"
-                  cy="50"
-                  r={radius}
-                  fill="none"
-                  stroke={theme.accent}
-                  strokeWidth="8"
-                  strokeDasharray={circumference}
-                  initial={{ strokeDashoffset: circumference }}
-                  animate={{ strokeDashoffset: offset }}
-                  transition={calmMotion ? { duration: 0 } : { duration: 1.5, ease: 'easeOut' }}
-                  strokeLinecap="round"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-lg font-black" style={{ color: theme.text }}>{progressPercent}%</span>
-              </div>
-            </div>
-            <div className="text-center lg:text-left">
-              <div className="text-[11px] font-bold" style={{ color: theme.text3 }}>
-                {dueCount > 0 ? `${dueCount} de recapitulat` : 'Recapitulări la zi'}
-              </div>
-            </div>
+        <div className="flex flex-shrink-0 items-center gap-3">
+          <div className="relative h-11 w-11" title={dueCount > 0 ? `${dueCount} de recapitulat` : 'Recapitulări la zi'}>
+            <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100" aria-hidden>
+              <circle cx="50" cy="50" r={radius} fill="none" stroke={theme.surface2} strokeWidth="10" />
+              <motion.circle
+                cx="50"
+                cy="50"
+                r={radius}
+                fill="none"
+                stroke={theme.accent}
+                strokeWidth="10"
+                strokeDasharray={circumference}
+                initial={{ strokeDashoffset: circumference }}
+                animate={{ strokeDashoffset: offset }}
+                transition={calmMotion ? { duration: 0 } : { duration: 1, ease: 'easeOut' }}
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black" style={{ color: theme.text }}>
+              {progressPercent}%
+            </span>
           </div>
           <Link
             to="/daily-review"
-            className="press-feedback inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-white shadow-lg transition-transform"
-            style={{ background: theme.accent, boxShadow: `0 8px 20px ${theme.accent}40` }}
+            className="press-feedback inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-wider text-white"
+            style={{ background: theme.accent, boxShadow: `0 6px 16px ${theme.accent}33` }}
           >
-            Începe sesiunea <Zap size={13} fill="white" />
+            Începe <Zap size={12} fill="white" />
           </Link>
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            aria-label={expanded ? 'Restrânge' : 'Extinde'}
+            aria-expanded={expanded}
+            className="press-feedback flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{ color: theme.text3 }}
+          >
+            <ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s var(--ease-out-soft)' }} />
+          </button>
         </div>
       </div>
 
-      <div
-        className="pointer-events-none absolute -bottom-8 -right-8 h-40 w-40 opacity-10"
-        style={{ background: `radial-gradient(circle, ${theme.accent}, transparent 70%)`, filter: performanceLite ? 'blur(24px)' : 'blur(40px)' }}
-      />
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="coach-detail"
+            initial={calmMotion ? false : { height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={calmMotion ? undefined : { height: 0, opacity: 0 }}
+            transition={calmMotion ? { duration: 0 } : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="border-t px-4 pb-4 pt-4 sm:px-5" style={{ borderColor: theme.border }}>
+              {loading && !detailText ? (
+                <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+                  {[0, 1, 2].map((i) => <div key={i} className="skeleton-block h-[74px] rounded-2xl" />)}
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+                    {digest.map((item, index) => {
+                      const tone = [theme.accent, theme.accent2, theme.warning][index % 3];
+                      return (
+                        <motion.div
+                          key={`${item.title}-${index}`}
+                          initial={calmMotion ? false : { opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={calmMotion ? { duration: 0 } : { delay: 0.06 * index, duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+                          className="rounded-2xl p-3"
+                          style={{ background: `${tone}0f`, border: `1px solid ${tone}26` }}
+                        >
+                          <div className="mb-1.5 flex items-center gap-2">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-lg text-[13px]" style={{ background: `${tone}22` }} aria-hidden>
+                              {item.icon}
+                            </span>
+                            <span className="truncate text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: tone }}>
+                              {item.title}
+                            </span>
+                          </div>
+                          <p className="text-[12.5px] font-medium leading-snug" style={{ color: theme.text }}>{item.line}</p>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+
+                  {hasFullPlan && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFull((value) => !value)}
+                      aria-expanded={showFull}
+                      className="press-feedback mt-3 inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.14em]"
+                      style={{ color: theme.text3 }}
+                    >
+                      {showFull ? 'Ascunde planul' : 'Planul complet'}
+                      <ChevronDown size={12} style={{ transform: showFull ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s var(--ease-out-soft)' }} />
+                    </button>
+                  )}
+                  {showFull && detailText && (
+                    <div
+                      className="custom-scrollbar mt-2 max-h-64 max-w-2xl overflow-y-auto rounded-2xl p-3.5 text-[13px] leading-[1.65]"
+                      style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text }}
+                    >
+                      <AIRichText text={detailText} />
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                {coachPlan.actions.slice(0, 2).map((action) => {
+                  const toneColor = action.tone === 'warning' ? theme.warning : action.tone === 'success' ? theme.success : theme.accent;
+                  const chip = (
+                    <span
+                      className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-bold"
+                      style={{ background: `${toneColor}14`, border: `1px solid ${toneColor}30`, color: theme.text }}
+                    >
+                      {action.title}
+                    </span>
+                  );
+                  return action.route ? (
+                    <Link key={action.title} to={action.route} className="press-feedback no-underline">{chip}</Link>
+                  ) : (
+                    <div key={action.title}>{chip}</div>
+                  );
+                })}
+                <span className="ml-auto flex items-center gap-2 text-[11px] font-semibold" style={{ color: theme.text3 }} title={coachPlan.sourceQualityLabel}>
+                  {knowledgeSources.length} surse AI
+                  {!loading && text && (
+                    <button
+                      type="button"
+                      onClick={() => void generate()}
+                      aria-label="Regenerează recomandarea"
+                      title="Regenerează recomandarea"
+                      className="press-feedback flex h-7 w-7 items-center justify-center rounded-lg opacity-70 hover:opacity-100"
+                      style={{ color: theme.accent2 }}
+                    >
+                      <RefreshCw size={13} />
+                    </button>
+                  )}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </GlassCard>
   );
 }

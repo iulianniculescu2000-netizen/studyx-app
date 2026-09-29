@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Bot,
   Brain,
-  ChevronDown,
   Cpu,
   Database,
   Gauge,
@@ -34,7 +33,6 @@ import { useTutorialStore } from '../store/tutorialStore';
 import { useUpdateStore } from '../store/updateStore';
 import { useUserStore } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
-import { THEME_LIST, type ThemeId } from '../theme/themes';
 
 function ConfirmResetModal({
   open,
@@ -156,7 +154,7 @@ function ToggleRow({
         )}
       </div>
       <motion.button
-        whileTap={{ scale: 0.9 }}
+        whileTap={{ scale: 0.94 }}
         onClick={() => onChange(!checked)}
         className={`relative h-6 w-11 rounded-full transition-colors ${checked ? '' : 'bg-white/10'}`}
         style={{ background: checked ? color : theme.surface2 }}
@@ -225,7 +223,7 @@ function ActionRow({
 export default function Settings() {
   const theme = useTheme();
   const { addToast } = useToastStore();
-  const { themeId, setTheme, activeProfileId } = useUserStore();
+  const { activeProfileId } = useUserStore();
   const { screenshotProtection, setContentProtection } = useFocusModeStore();
   const { hasKey } = useAIStore();
   const { localVersion } = useUpdateStore();
@@ -246,8 +244,6 @@ export default function Settings() {
   const [showBackup, setShowBackup] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [uiTab, setUiTab] = useState<'ui2' | 'ui1'>(themeId === 'glass' ? 'ui2' : 'ui1');
   const deviceInfo = detectDeviceCapabilities();
 
   // A rollback snapshot is written before every content-pack install. Until now
@@ -274,58 +270,6 @@ export default function Settings() {
     } finally {
       setRestoring(false);
     }
-  };
-
-  const themeDescription = (id: string) => (
-    id === 'auto' ? 'Se adaptează sistemului' :
-    id === 'obsidian' ? 'Negru mat, iOS accent' :
-    id === 'bigsur' ? 'macOS luminos, curat' :
-    id === 'pearl' ? 'Cald, terracotta' :
-    id === 'aurora' ? 'Violet profund' :
-    id === 'midnight' ? 'GitHub dark, albastru' :
-    id === 'amber' ? 'Cald, seară' :
-    id === 'glass' ? 'Iconițe, hero unic, glass violet-cyan' :
-    'Previzualizare temă'
-  );
-
-  const activeThemeEntry = THEME_LIST.find((entry) => entry.id === themeId) ?? THEME_LIST[0];
-  const ui2Entries = THEME_LIST.filter((entry) => entry.id === 'glass');
-  const ui1Entries = THEME_LIST.filter((entry) => entry.id !== 'glass');
-
-  const renderThemeRow = (entry: typeof THEME_LIST[number]) => {
-    const active = themeId === entry.id;
-    return (
-      <motion.button
-        key={entry.id}
-        onClick={() => setTheme(entry.id as ThemeId)}
-        whileTap={{ scale: 0.98 }}
-        className="flex w-full items-center gap-3 rounded-[16px] px-3 py-2.5 text-left transition-colors hover:bg-white/5"
-        style={{ background: active ? `${theme.accent}14` : 'transparent' }}
-      >
-        <span
-          className="h-8 w-8 flex-shrink-0 rounded-full border-2 flex items-center justify-center text-sm"
-          style={{
-            background: entry.id === 'auto' ? '#F2F2F7' : entry.bg,
-            borderColor: active ? theme.accent : 'transparent',
-          }}
-        >
-          {entry.emoji}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold leading-tight" style={{ color: theme.text }}>{entry.name}</span>
-          <span className="block text-[11px] font-medium opacity-60" style={{ color: theme.text3 }}>{themeDescription(entry.id)}</span>
-        </span>
-        {active && (
-          <motion.span
-            layoutId="settings-theme-active"
-            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-black"
-            style={{ background: `${theme.accent}18`, color: theme.accent }}
-          >
-            ✓
-          </motion.span>
-        )}
-      </motion.button>
-    );
   };
 
   const handleReset = async () => {
@@ -378,86 +322,6 @@ export default function Settings() {
             Configurarea experienței tale premium StudyX.
           </p>
         </motion.div>
-
-        <Section title="Aparență" delay={0.1}>
-          {/* Compact Apple-style row instead of the old wall of big theme cards —
-              one row shows the active theme, a click opens a grouped list (UI 2.0 / UI 1.0). */}
-          <motion.button
-            onClick={() => setThemePickerOpen((v) => !v)}
-            whileTap={{ scale: 0.99 }}
-            className="glass-panel flex w-full items-center gap-3 rounded-[20px] px-4 py-3.5 text-left"
-            aria-expanded={themePickerOpen}
-          >
-            <span
-              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] text-lg"
-              style={{ background: activeThemeEntry.id === 'auto' ? '#F2F2F7' : activeThemeEntry.bg, border: `2px solid ${theme.accent}` }}
-            >
-              {activeThemeEntry.emoji}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>Temă</span>
-              <span className="flex items-center gap-1.5 text-sm font-bold" style={{ color: theme.text }}>
-                {activeThemeEntry.name}
-                {activeThemeEntry.id === 'glass' && (
-                  <span className="rounded-full px-1.5 py-0.5 text-[8.5px] font-black uppercase tracking-wider" style={{ background: `${theme.accent}18`, color: theme.accent }}>UI 2.0</span>
-                )}
-              </span>
-            </span>
-            <motion.span animate={{ rotate: themePickerOpen ? 180 : 0 }} transition={{ duration: 0.18 }} style={{ color: theme.text3 }}>
-              <ChevronDown size={16} />
-            </motion.span>
-          </motion.button>
-
-          <AnimatePresence initial={false}>
-            {themePickerOpen && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="overflow-hidden"
-              >
-                <div className="glass-panel mt-2 rounded-[20px] p-2">
-                  {/* Apple-style segmented control */}
-                  <div className="relative mb-2 flex items-center gap-1 rounded-[14px] p-1" style={{ background: theme.surface2 }}>
-                    {([{ id: 'ui2', label: 'UI II' }, { id: 'ui1', label: 'UI I' }] as const).map((seg) => (
-                      <button
-                        key={seg.id}
-                        onClick={() => setUiTab(seg.id)}
-                        className="relative flex-1 rounded-[11px] py-2 text-center text-[11.5px] font-black uppercase tracking-[0.08em] transition-colors"
-                        style={{ color: uiTab === seg.id ? '#fff' : theme.text3 }}
-                      >
-                        {uiTab === seg.id && (
-                          <motion.span
-                            layoutId="settings-ui-tab-thumb"
-                            className="absolute inset-0 rounded-[11px]"
-                            style={{ background: theme.accent }}
-                            transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-                          />
-                        )}
-                        <span className="relative z-10 inline-flex items-center gap-1.5">
-                          {seg.label}
-                          {seg.id === 'ui2' && (
-                            <span
-                              className="rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider"
-                              style={{ background: uiTab === seg.id ? 'rgba(255,255,255,0.22)' : `${theme.accent}18`, color: uiTab === seg.id ? '#fff' : theme.accent }}
-                            >
-                              Nou
-                            </span>
-                          )}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="space-y-0.5">
-                    {(uiTab === 'ui2' ? ui2Entries : ui1Entries).map(renderThemeRow)}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </Section>
 
         <Section title="Stabilitate & Performanță" delay={0.15}>
           <div className="glass-panel mb-5 rounded-[24px] p-4">
@@ -551,7 +415,7 @@ export default function Settings() {
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <motion.button
               whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileTap={{ scale: 0.97 }}
               onClick={() => void rerunHealthCheck()}
               className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all"
               style={{ background: `${theme.accent}10`, borderColor: `${theme.accent}30`, color: theme.accent }}
@@ -560,7 +424,7 @@ export default function Settings() {
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileTap={{ scale: 0.97 }}
               onClick={clearDiagnostics}
               className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all"
               style={{ background: theme.surface2, borderColor: theme.border, color: theme.text3 }}

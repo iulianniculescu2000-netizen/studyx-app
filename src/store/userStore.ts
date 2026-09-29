@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ThemeId } from '../theme/themes';
+import { DEFAULT_THEME_ID, normalizeThemeId, type ThemeId } from '../theme/themes';
 
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #0A84FF, #5E5CE6)',
@@ -44,12 +44,12 @@ export const useUserStore = create<UserStore>()(
       activeProfileId: null,
       pendingTutorialProfileId: null,
       username: null,
-      themeId: 'obsidian',
+      themeId: DEFAULT_THEME_ID,
 
       addProfile: (name, themeId) => {
         const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
         const gradient = AVATAR_GRADIENTS[get().profiles.length % AVATAR_GRADIENTS.length];
-        const profile: Profile = { id, username: name.trim(), themeId, gradient, createdAt: Date.now() };
+        const profile: Profile = { id, username: name.trim(), themeId: normalizeThemeId(themeId), gradient, createdAt: Date.now() };
         set((s) => ({ profiles: [...s.profiles, profile] }));
         return id;
       },
@@ -59,7 +59,7 @@ export const useUserStore = create<UserStore>()(
         const themeId = get().themeId;
         const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
         const gradient = AVATAR_GRADIENTS[get().profiles.length % AVATAR_GRADIENTS.length];
-        const profile: Profile = { id, username: name.trim(), themeId, gradient, createdAt: Date.now() };
+        const profile: Profile = { id, username: name.trim(), themeId: normalizeThemeId(themeId), gradient, createdAt: Date.now() };
         
         set((s) => ({ 
           profiles: [...s.profiles, profile],
@@ -70,7 +70,9 @@ export const useUserStore = create<UserStore>()(
         }));
       },
 
-      setTheme: (id) => {
+      // Kept for callers, but there is a single theme now.
+      setTheme: (rawId) => {
+        const id = normalizeThemeId(rawId);
         set((s) => ({
           themeId: id,
           profiles: s.activeProfileId
@@ -103,13 +105,22 @@ export const useUserStore = create<UserStore>()(
         activeProfileId: null,
         pendingTutorialProfileId: null,
         username: null,
-        themeId: 'obsidian',
+        themeId: DEFAULT_THEME_ID,
       }),
     }),
     {
       name: 'studyx-user',
-      version: 2,
-      migrate: (persisted) => persisted as unknown,
+      version: 3,
+      // v3: the UI 1.0 themes were retired — every saved theme id becomes the single remaining one.
+      migrate: (persisted) => {
+        const state = persisted as Partial<UserStore> | null;
+        if (!state) return persisted as unknown;
+        return {
+          ...state,
+          themeId: DEFAULT_THEME_ID,
+          profiles: (state.profiles ?? []).map((profile) => ({ ...profile, themeId: DEFAULT_THEME_ID })),
+        } as unknown;
+      },
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         // Migrate old single-user format to profiles array
@@ -118,7 +129,7 @@ export const useUserStore = create<UserStore>()(
           const profile: Profile = {
             id,
             username: state.username,
-            themeId: state.themeId ?? 'obsidian',
+            themeId: DEFAULT_THEME_ID,
             gradient: AVATAR_GRADIENTS[0],
             createdAt: Date.now(),
           };
@@ -130,9 +141,14 @@ export const useUserStore = create<UserStore>()(
           const active = state.profiles.find((p) => p.id === state.activeProfileId);
           if (active) {
             state.username = active.username;
-            state.themeId = active.themeId;
+            state.themeId = normalizeThemeId(active.themeId);
           }
         }
+        // Profiles restored from an old backup can still carry a retired theme id.
+        state.profiles = (state.profiles ?? []).map((profile) => (
+          profile.themeId === DEFAULT_THEME_ID ? profile : { ...profile, themeId: DEFAULT_THEME_ID }
+        ));
+        state.themeId = DEFAULT_THEME_ID;
       },
     }
   )

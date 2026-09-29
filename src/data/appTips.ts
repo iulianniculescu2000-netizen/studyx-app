@@ -100,6 +100,18 @@ export const APP_TIPS: AppTip[] = [
     when: (context) => context.hasFlashcards,
   },
   {
+    id: 'chat-fullscreen',
+    emoji: '🪟',
+    text: 'chatul AI se deschide și pe tot ecranul, ca un panou transparent — apasă Ctrl+Shift+F și reglează transparența',
+    when: (context) => !context.mobile,
+  },
+  {
+    id: 'chat-memory',
+    emoji: '🧠',
+    text: 'asistentul își amintește ce ți-e greu și cum înveți — vezi, editezi sau ștergi tot din Setări',
+    action: { label: 'Setări', route: '/settings' },
+  },
+  {
     id: 'explain-key',
     emoji: '🔍',
     text: 'la explicații AI-ul verifică și cheia grilei — dacă răspunsul marcat e greșit, ți-o spune',

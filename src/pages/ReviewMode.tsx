@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { RefreshCw, Trophy, Keyboard, Layers } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
@@ -36,7 +36,7 @@ function AnkiButton({ label, interval, keyHint, color, isDefault, onClick }: {
   return (
     <motion.button
       whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.95 }}
+      whileTap={{ scale: 0.94 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       onClick={onClick}
       className="flex flex-col items-center justify-center p-3.5 rounded-2xl transition-shadow relative press-feedback"
@@ -168,12 +168,28 @@ export default function ReviewMode() {
     }
   }, [currentIdx, items.length, recordStudySession, startedAt]);
 
-  const handleGrade = useCallback((correct: boolean, confidence?: Confidence) => {
+  const handleGrade = useCallback((wantCorrect: boolean, confidence?: Confidence) => {
     if (!current) return;
-    recordAnswer(current.stat.quizId, current.stat.questionId, correct, confidence);
+    // Răspunsul ales rămâne sursa adevărului: "Greu/Bine/Ușor" după o alegere greșită
+    // nu poate număra ca răspuns corect.
+    const correct = wantCorrect && isCorrectOutcome;
+    recordAnswer(current.stat.quizId, current.stat.questionId, correct, correct ? confidence : "blackout");
     setResults(prev => [...prev, correct]);
     handleNext();
-  }, [current, recordAnswer, handleNext]);
+  }, [current, isCorrectOutcome, recordAnswer, handleNext]);
+
+  // Ieșirea din sesiune după ce răspunsul a fost dezvăluit, dar înainte de notare, nu
+  // trebuie să piardă răspunsul: îl înregistrăm cu rezultatul real.
+  const pendingRef = useRef<{ quizId: string; questionId: string; correct: boolean } | null>(null);
+  useEffect(() => {
+    pendingRef.current = revealed && current
+      ? { quizId: current.stat.quizId, questionId: current.stat.questionId, correct: isCorrectOutcome }
+      : null;
+  }, [revealed, current, isCorrectOutcome]);
+  useEffect(() => () => {
+    const p = pendingRef.current;
+    if (p) useStatsStore.getState().recordAnswer(p.quizId, p.questionId, p.correct, p.correct ? undefined : "blackout");
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

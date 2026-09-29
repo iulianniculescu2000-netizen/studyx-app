@@ -197,7 +197,7 @@ export default function DailyReview() {
 
           <motion.button
             whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => {
               setSessionItems(items);
               setPhase('session');
@@ -421,7 +421,7 @@ export default function DailyReview() {
                   className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2"
                   style={{ background: theme.accent }}
                   whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.98 }}>
+                  whileTap={{ scale: 0.97 }}>
                   {currentIdx + 1 >= items.length ? '🏁 Vezi rezultatele' : (<>Următor <ChevronRight size={16} /></>)}
                 </motion.button>
               )}

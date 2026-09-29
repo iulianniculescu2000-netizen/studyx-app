@@ -21,6 +21,7 @@ import {
   PanelRightOpen,
   RotateCcw,
   SendHorizonal,
+  SlidersHorizontal,
   Sparkles,
   Square,
   Target,
@@ -49,6 +50,24 @@ import {
 import { detectChatIntent, shouldApplyIntent } from '../lib/ai/intentRouter';
 import { EXAM_STYLE_META, type ExamStyle } from '../lib/ai/examStyle';
 import { getProfileSummaryText, getWeakTopicsForProfile } from '../ai/UserProfile';
+import {
+  buildContinuityRecap,
+  clearThreadSummary,
+  deriveConversationTone,
+  formatMemoryBlock,
+  getThreadLastActive,
+  isMemoryEnabled,
+  loadMemories,
+  loadThreadSummary,
+  markMemoriesUsed,
+  mergeMemories,
+  needsClinicalVerification,
+  rebaseCoveredCount,
+  saveMemories,
+  saveThreadSummary,
+  selectRelevantMemories,
+  touchThreadActivity,
+} from '../ai/chatMemory';
 import type { Question, Quiz } from '../types';
 import GlassCard from './ui/GlassCard';
 import AgentJobCard from './ai-chat/AgentJobCard';
@@ -60,6 +79,10 @@ import { CHAT_STORAGE_KEY, useChatMessages } from './ai-chat/useChatMessages';
 import { useChatThread } from './ai-chat/useChatThread';
 import { useScopedSource } from './ai-chat/useScopedSource';
 import { useAgentCommands } from './ai-chat/useAgentCommands';
+import { useChatGlass } from './ai-chat/useChatGlass';
+import { useSidebarInset } from './ai-chat/useSidebarInset';
+import { useWindowSize } from '../hooks/useWindowSize';
+import ChatGlassControls from './ai-chat/ChatGlassControls';
 import { useStudioGeneration } from './ai-chat/useStudioGeneration';
 import {
   CHAT_MODES,
@@ -77,6 +100,8 @@ let aiChatRuntimePromise: Promise<{
   generateChatResponse: typeof import('../ai/AIEngine').generateChatResponse;
   generateChatResponseStream: typeof import('../ai/AIEngine').generateChatResponseStream;
   summarizeConversation: typeof import('../ai/AIEngine').summarizeConversation;
+  extractMemoryCandidates: typeof import('../ai/chatMemoryAI').extractMemoryCandidates;
+  verifyClinicalAnswer: typeof import('../ai/chatMemoryAI').verifyClinicalAnswer;
   retrieveRelevantChunks: typeof import('../ai/retriever').retrieveRelevantChunks;
   getVaultChunksBySource: typeof import('../ai/vectorStore').getVaultChunksBySource;
 }> | null = null;
@@ -87,10 +112,13 @@ function loadAIChatRuntime() {
       import('../ai/AIEngine'),
       import('../ai/retriever'),
       import('../ai/vectorStore'),
-    ]).then(([engine, retriever, vectorStore]) => ({
+      import('../ai/chatMemoryAI'),
+    ]).then(([engine, retriever, vectorStore, memoryAI]) => ({
       generateChatResponse: engine.generateChatResponse,
       generateChatResponseStream: engine.generateChatResponseStream,
       summarizeConversation: engine.summarizeConversation,
+      extractMemoryCandidates: memoryAI.extractMemoryCandidates,
+      verifyClinicalAnswer: memoryAI.verifyClinicalAnswer,
       retrieveRelevantChunks: retriever.retrieveRelevantChunks,
       getVaultChunksBySource: vectorStore.getVaultChunksBySource,
     }));
@@ -103,6 +131,11 @@ function loadAIChatRuntime() {
 // running summary so we keep continuity without resending the whole transcript.
 const CONVERSATION_SUMMARY_THRESHOLD = 12;
 const CONVERSATION_RECENT_KEEP = 6;
+// A few long answers should trigger compression as well, not only message count.
+const CONVERSATION_SUMMARY_CHARS = 5000;
+// Durable-fact extraction runs every N student messages (and when the drawer closes),
+// not on every turn — free-tier keys have tight rate limits.
+const MEMORY_EXTRACT_EVERY = 3;
 
 type DrawerView = 'chat' | 'studio';
 
@@ -136,6 +169,13 @@ export default function AIChatDrawer() {
   const getStatsByTag = useStatsStore((state) => state.getStatsByTag);
   const { calmMotion, performanceLite } = useAdaptiveMotion();
   const { mobile } = useViewportProfile();
+  // Full-window glass mode: the chat fills the window next to the app sidebar, with
+  // adjustable transparency + blur. Desktop only — phones already get a full-width sheet.
+  const glass = useChatGlass();
+  const immersive = glass.settings.immersive && !mobile;
+  const sidebarInset = useSidebarInset(open && immersive);
+  const windowSize = useWindowSize();
+  const [glassPanelOpen, setGlassPanelOpen] = useState(false);
 
   const { scopedSource, setScopedSource, contextCacheRef } = useScopedSource();
   // Rezidențiat gets its own isolated conversation, live anywhere inside that
@@ -178,6 +218,14 @@ export default function AIChatDrawer() {
   const conversationSummaryRef = useRef<string>('');
   const summaryCoveredCountRef = useRef<number>(0);
   const summarizingRef = useRef<boolean>(false);
+  // Which thread the summary refs currently belong to — an in-flight summarization
+  // that finishes after a thread switch must not overwrite the other thread's summary.
+  const summaryThreadRef = useRef<string>(chatThread);
+  const extractingRef = useRef(false);
+  const extractedUpToRef = useRef(0);
+  const wasOpenRef = useRef(false);
+  const flushRef = useRef<() => void>(() => {});
+  const [recapDismissed, setRecapDismissed] = useState(false);
 
   const readySources = useMemo(
     () => knowledgeSources.filter((source) => source.indexStatus === 'ready'),
@@ -319,6 +367,8 @@ export default function AIChatDrawer() {
         contextCacheRef.current.clear();
         conversationSummaryRef.current = '';
         summaryCoveredCountRef.current = 0;
+        extractedUpToRef.current = 0;
+        if (activeProfileId) clearThreadSummary(activeProfileId, chatThread);
       }
 
       if (detail.quizContext) {
@@ -344,7 +394,7 @@ export default function AIChatDrawer() {
 
     window.addEventListener('studyx:ai-prompt', handler as EventListener);
     return () => window.removeEventListener('studyx:ai-prompt', handler as EventListener);
-  }, [contextCacheRef, setChatOpen, setMessages, setScopedSource, setStudioHeading, setStudioSourceId, setStudioExamStyle]);
+  }, [activeProfileId, chatThread, contextCacheRef, setChatOpen, setMessages, setScopedSource, setStudioHeading, setStudioSourceId, setStudioExamStyle]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -405,7 +455,8 @@ export default function AIChatDrawer() {
   const maybeCompressConversation = async () => {
     if (summarizingRef.current) return;
     const current = messagesRef.current;
-    if (current.length < CONVERSATION_SUMMARY_THRESHOLD) return;
+    const uncoveredChars = current.slice(summaryCoveredCountRef.current).reduce((sum, m) => sum + m.content.length, 0);
+    if (current.length < CONVERSATION_SUMMARY_THRESHOLD && uncoveredChars < CONVERSATION_SUMMARY_CHARS) return;
     if (current.length - summaryCoveredCountRef.current < CONVERSATION_RECENT_KEEP) return;
 
     const cutoff = current.length - CONVERSATION_RECENT_KEEP;
@@ -415,13 +466,21 @@ export default function AIChatDrawer() {
       .map(({ role, content }) => ({ role, content }));
     if (olderSlice.length === 0) return;
 
+    const startedThread = summaryThreadRef.current;
+    const startedProfile = activeProfileId;
     summarizingRef.current = true;
     try {
       const { summarizeConversation } = await loadAIChatRuntime();
       const summary = await summarizeConversation(olderSlice, conversationSummaryRef.current);
       if (summary) {
-        conversationSummaryRef.current = summary;
-        summaryCoveredCountRef.current = cutoff;
+        if (startedProfile) {
+          saveThreadSummary(startedProfile, startedThread, { summary, covered: cutoff, total: current.length });
+        }
+        // The thread may have changed while we waited — only the live one owns the refs.
+        if (summaryThreadRef.current === startedThread) {
+          conversationSummaryRef.current = summary;
+          summaryCoveredCountRef.current = cutoff;
+        }
       }
     } catch {
       // best-effort — keep the previous summary
@@ -429,6 +488,95 @@ export default function AIChatDrawer() {
       summarizingRef.current = false;
     }
   };
+
+  // Long-term memory: distill durable facts about the student (goals, preferences,
+  // recurring difficulties) from the newest exchanges. Background, best-effort.
+  const maybeExtractMemory = async (force = false) => {
+    if (!activeProfileId || !isMemoryEnabled() || extractingRef.current) return;
+    const current = messagesRef.current;
+    const from = extractedUpToRef.current > current.length ? 0 : extractedUpToRef.current;
+    const fresh = current.slice(from).filter((m) => !m.agentJobId && m.content.trim());
+    const studentTurns = fresh.filter((m) => m.role === 'user').length;
+    if (studentTurns === 0 || (!force && studentTurns < MEMORY_EXTRACT_EVERY)) return;
+
+    const profileId = activeProfileId;
+    const scannedUpTo = current.length;
+    extractingRef.current = true;
+    try {
+      const { extractMemoryCandidates } = await loadAIChatRuntime();
+      const candidates = await extractMemoryCandidates(
+        fresh.map(({ role, content }) => ({ role, content })),
+        loadMemories(profileId),
+      );
+      extractedUpToRef.current = scannedUpTo;
+      if (candidates.length > 0) saveMemories(profileId, mergeMemories(loadMemories(profileId), candidates));
+    } catch {
+      // best-effort — the same turns are retried next time
+    } finally {
+      extractingRef.current = false;
+    }
+  };
+
+  // Second look at answers carrying doses/thresholds/scores. Runs after the reply is
+  // already on screen and only appends a note when a claim is confidently wrong.
+  const verifyAnswerInBackground = async (answer: string, grounding: string) => {
+    if (!needsClinicalVerification(answer)) return;
+    try {
+      const { verifyClinicalAnswer } = await loadAIChatRuntime();
+      const issues = await verifyClinicalAnswer(answer, grounding);
+      if (issues.length === 0) return;
+      const note = '\n\n⚠️ **Verificare automată** (poate greși și ea — confirmă în curs sau ghid):\n'
+        + issues.map((issue) => `- «${issue.claim}» — ${issue.reason}`).join('\n');
+      setMessages((prev) => {
+        const index = prev.map((m) => m.content).lastIndexOf(answer);
+        if (index < 0) return prev;
+        const next = [...prev];
+        next[index] = { ...next[index], content: answer + note };
+        return next;
+      });
+    } catch {
+      // fail open — no note
+    }
+  };
+
+  // Restore the persisted summary of whichever thread is live; the summary used to
+  // live only in refs, so it vanished on reload and leaked across thread switches.
+  useEffect(() => {
+    summaryThreadRef.current = chatThread;
+    const saved = activeProfileId ? loadThreadSummary(activeProfileId, chatThread) : null;
+    conversationSummaryRef.current = saved?.summary ?? '';
+    summaryCoveredCountRef.current = saved ? rebaseCoveredCount(saved, messagesRef.current.length) : 0;
+    // History that was already on disk was scanned in an earlier session.
+    extractedUpToRef.current = messagesRef.current.length;
+  }, [activeProfileId, chatThread, messagesRef]);
+
+  // Closing the drawer flushes pending compression + memory extraction.
+  useEffect(() => {
+    flushRef.current = () => {
+      void maybeCompressConversation();
+      void maybeExtractMemory(true);
+    };
+  });
+  useEffect(() => {
+    if (wasOpenRef.current && !open) flushRef.current();
+    wasOpenRef.current = open;
+  }, [open]);
+
+  // Deterministic "where we left off" card after a break (no LLM call).
+  const continuityRecap = useMemo(() => {
+    if (!open || !activeProfileId || !isMemoryEnabled()) return null;
+    return buildContinuityRecap({
+      memories: loadMemories(activeProfileId),
+      summary: loadThreadSummary(activeProfileId, chatThread)?.summary ?? '',
+      dueCount: performanceSummary.dueCount,
+      weakTopic: weakTopics[0]?.topic,
+      lastActiveAt: getThreadLastActive(activeProfileId, chatThread),
+    });
+  }, [open, activeProfileId, chatThread, performanceSummary.dueCount, weakTopics]);
+
+  useEffect(() => {
+    if (open) setRecapDismissed(false);
+  }, [open, chatThread]);
 
   const sendMessage = async (overrideText?: string, modeOverride?: ChatMode) => {
     const text = (overrideText || input).trim();
@@ -539,9 +687,20 @@ export default function AIChatDrawer() {
         .map((chunk, i) => `${i === 0 ? '⭐ ' : ''}[Sursă: ${chunk.source} | Relevanță: ${(chunk.score * 100).toFixed(0)}%]\n${chunk.text}`)
         .join('\n\n---\n\n');
 
-      const historyForAI = [...messages.slice(-14), userMsg]
-        .slice(-8)
+      // The engine trims this to a character budget; hand it a generous tail.
+      const historyForAI = [...messages.slice(-24), userMsg]
         .map(({ role, content }) => ({ role, content }));
+      const previousUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+      const relevantMemories = activeProfileId && isMemoryEnabled()
+        ? selectRelevantMemories(loadMemories(activeProfileId), `${text} ${previousUserText}`)
+        : [];
+      if (activeProfileId && relevantMemories.length > 0) {
+        markMemoriesUsed(activeProfileId, relevantMemories.map((m) => m.id));
+      }
+      const tone = deriveConversationTone(text, new Date().getHours());
+      let streamedAnswer = '';
+      setRecapDismissed(true);
+      if (activeProfileId) touchThreadActivity(activeProfileId, chatThread);
       const scopePrefix = scopedSource ? `Document țintă: ${scopedSource.name}\n` : '';
       const quizContextPrefix = activeQuizContext 
         ? `[CONTEXT TUTOR]\nUtilizatorul rezolvă o grilă și discută despre ea.\nÎntrebare: ${activeQuizContext.questionText}\nRăspuns corect: ${activeQuizContext.correctAnswerText}\nRăspunsul utilizatorului: ${activeQuizContext.userAnswerText}\nFocus recomandat: ${activeQuizContext.studyFocus ?? 'Niciunul'}\n\n` 
@@ -573,6 +732,7 @@ export default function AIChatDrawer() {
         historyForAI,
         (chunk) => {
           if (abortCtrl.signal.aborted) return;
+          streamedAnswer += chunk;
           setMessages((prev) => {
             const next = [...prev];
             const last = next[next.length - 1];
@@ -589,6 +749,8 @@ export default function AIChatDrawer() {
           studyContext,
           focusTopics: weakTopics.map((topic) => topic.topic),
           conversationSummary: conversationSummaryRef.current,
+          personalMemory: formatMemoryBlock(relevantMemories),
+          tone,
         },
         abortCtrl.signal,
       );
@@ -605,6 +767,8 @@ export default function AIChatDrawer() {
         });
         // Refresh the compressed conversation memory in the background.
         void maybeCompressConversation();
+        void maybeExtractMemory();
+        void verifyAnswerInBackground(streamedAnswer, contextSummary);
       }
     } catch (err: unknown) {
       if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) return;
@@ -641,6 +805,8 @@ export default function AIChatDrawer() {
     setActiveCitationKey(null);
     conversationSummaryRef.current = '';
     summaryCoveredCountRef.current = 0;
+    extractedUpToRef.current = 0;
+    if (activeProfileId) clearThreadSummary(activeProfileId, chatThread);
     const activeStorageKey = chatThread === 'rezidentiat' ? `${CHAT_STORAGE_KEY}:rezidentiat` : CHAT_STORAGE_KEY;
     try { localStorage.removeItem(activeStorageKey); } catch { /* ignore */ }
   };
@@ -768,6 +934,32 @@ export default function AIChatDrawer() {
     return () => window.removeEventListener('keydown', handleEscape, true);
   }, [zoomedBlock]);
 
+  // Ctrl/Cmd+Shift+F toggles the full-window glass chat; Esc steps back to the small sheet
+  // (it never closes the chat, and it leaves an open zoom overlay/menu to their own Esc).
+  const toggleImmersive = glass.toggleImmersive;
+  const setImmersive = glass.setImmersive;
+  useEffect(() => {
+    if (!open || mobile) return;
+    const handler = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        toggleImmersive();
+        return;
+      }
+      if (event.key !== 'Escape' || !immersive || zoomedBlock) return;
+      // Peel one layer per press: open popovers first, then the full-window mode itself.
+      if (glassPanelOpen) setGlassPanelOpen(false);
+      else if (overflowMenuOpen) setOverflowMenuOpen(false);
+      else setImmersive(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, mobile, immersive, zoomedBlock, overflowMenuOpen, glassPanelOpen, toggleImmersive, setImmersive]);
+
+  useEffect(() => {
+    if (!open || !immersive) setGlassPanelOpen(false);
+  }, [open, immersive]);
+
   /**
    * Message bodies are injected as HTML, so schemas and wide tables can't carry
    * React handlers. One delegated click lifts the block the user tapped into a
@@ -791,7 +983,40 @@ export default function AIChatDrawer() {
     const greeting = buildProactiveGreeting(weakTopics, performanceSummary.dueCount, recentSourceName);
 
     return (
-    <div className={compact ? 'space-y-4' : 'space-y-5'} onClick={handleZoomableClick}>
+    <div className={`${compact ? 'space-y-4' : 'space-y-5'}${immersive ? ' mx-auto w-full max-w-[800px]' : ''}`} onClick={handleZoomableClick}>
+      {continuityRecap && !recapDismissed && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="luxe-card rounded-[22px] p-4 text-left"
+          style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}
+        >
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+            <Sparkles size={12} /> Unde am rămas
+          </div>
+          <ul className="mb-3 space-y-1 text-[13px] leading-relaxed" style={{ color: theme.text2 }}>
+            {continuityRecap.lines.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="press-feedback rounded-full px-4 py-2 text-[12px] font-bold"
+              style={{ background: theme.accent, color: '#fff' }}
+              onClick={() => { setRecapDismissed(true); void sendMessage(continuityRecap.prompt); }}
+            >
+              Continuăm
+            </button>
+            <button
+              type="button"
+              className="press-feedback rounded-full px-4 py-2 text-[12px] font-bold"
+              style={{ color: theme.text2, border: `1px solid ${theme.border}` }}
+              onClick={() => setRecapDismissed(true)}
+            >
+              Nu acum
+            </button>
+          </div>
+        </motion.div>
+      )}
       {threadMessages.length === 0 ? (
         <div className={`text-center ${compact ? 'py-6' : 'py-8'}`}>
           <FreeKeysNotice
@@ -1093,14 +1318,31 @@ export default function AIChatDrawer() {
     );
   };
 
-  const drawerWidth = view === 'studio'
-    ? (mobile ? 'min(600px, calc(100vw - 20px))' : 'min(1080px, calc(100vw - 28px))')
+  // The panel's position is always spelled out in px (sheet or full window) so switching
+  // between the two can animate as one smooth morph instead of jumping between CSS models.
+  const sheetWidth = view === 'studio'
+    ? Math.min(mobile ? 600 : 1080, windowSize.width - (mobile ? 20 : 28))
     : mobile
-      ? 'min(520px, calc(100vw - 20px))'
-      : wideChat
-        ? 'min(1080px, calc(100vw - 28px))'
-        : 'min(560px, calc(100vw - 28px))';
-  const drawerHeight = view === 'studio' || (wideChat && view === 'chat') ? 'min(88vh, 880px)' : 'min(85vh, 860px)';
+      ? Math.min(520, windowSize.width - 20)
+      : Math.min(wideChat ? 1080 : 560, windowSize.width - 28);
+  const sheetHeight = view === 'studio' || (wideChat && view === 'chat')
+    ? Math.min(windowSize.height * 0.88, 880)
+    : Math.min(windowSize.height * 0.85, 860);
+  const panelGeometry = immersive
+    ? {
+        left: sidebarInset + 12,
+        top: 12,
+        width: windowSize.width - sidebarInset - 24,
+        height: windowSize.height - 24,
+        borderRadius: 28,
+      }
+    : {
+        left: windowSize.width - 20 - sheetWidth,
+        top: windowSize.height - 20 - sheetHeight,
+        width: sheetWidth,
+        height: sheetHeight,
+        borderRadius: 34,
+      };
 
   if (floatingUiSuppressed && !open) {
     return null;
@@ -1139,30 +1381,42 @@ export default function AIChatDrawer() {
       <AnimatePresence>
         {open && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={closeChat}
-              className="fixed inset-0 z-[9996] bg-black/18"
-            />
+            {/* The dimming backdrop would swallow clicks meant for the app sidebar, so the
+                full-window mode leaves it out: the page stays visible (blurred) behind the glass. */}
+            {!immersive && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={closeChat}
+                className="fixed inset-0 z-[9996] bg-black/18"
+              />
+            )}
 
             <motion.div
               initial={{ opacity: 0, scale: 0.985 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.985 }}
               transition={calmMotion ? { duration: 0.2, ease: 'easeOut' } : { duration: 0.28, ease: [0.2, 0.9, 0.28, 1] }}
-              className="assistant-sheet fixed bottom-5 right-5 z-[9999] flex flex-col overflow-hidden rounded-[34px]"
-              style={{
-                width: drawerWidth,
-                height: drawerHeight,
+              className={`assistant-sheet fixed z-[9999] flex flex-col overflow-hidden${immersive ? ' immersive-chat' : ''}${calmMotion ? '' : ' chat-panel-morph'}`}
+              style={immersive ? {
+                ...panelGeometry,
+                background: theme.isDark
+                  ? `rgba(14,18,32,${glass.settings.opacity})`
+                  : `rgba(250,251,255,${glass.settings.opacity})`,
+                backdropFilter: `blur(${performanceLite ? Math.min(glass.settings.blur, 10) : glass.settings.blur}px) saturate(150%)`,
+                WebkitBackdropFilter: `blur(${performanceLite ? Math.min(glass.settings.blur, 10) : glass.settings.blur}px) saturate(150%)`,
+                border: `1px solid ${theme.border}`,
+                boxShadow: performanceLite ? '0 12px 28px rgba(0,0,0,0.16)' : '0 24px 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08)',
+              } : {
+                ...panelGeometry,
                 background: theme.isDark ? 'rgba(18,18,22,0.88)' : 'rgba(252,252,255,0.88)',
                 backdropFilter: performanceLite ? 'blur(14px) saturate(124%)' : calmMotion ? 'blur(16px) saturate(132%)' : 'blur(30px) saturate(165%)',
                 border: `1px solid ${theme.border}`,
                 boxShadow: performanceLite ? '0 18px 36px rgba(0,0,0,0.14)' : calmMotion ? '0 20px 44px rgba(0,0,0,0.16)' : '0 28px 80px rgba(0,0,0,0.22), 0 6px 20px rgba(0,0,0,0.08)',
               }}
             >
-              <div className="sheet-handle" />
+              {!immersive && <div className="sheet-handle" />}
               <div className="relative z-10 flex h-full flex-col">
                 <div className="flex items-center gap-3 border-b px-5 py-4" style={{ borderColor: theme.border }}>
                   <AIOrb theme={theme} size={42} active={loading} calm={calmMotion} />
@@ -1216,6 +1470,50 @@ export default function AIChatDrawer() {
                     })}
                   </div>
 
+                  {!mobile && immersive && (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setGlassPanelOpen((value) => !value)}
+                        aria-label="Transparență și estompare"
+                        aria-expanded={glassPanelOpen}
+                        title="Transparență și estompare"
+                        className="press-feedback rounded-2xl p-2.5 transition-colors hover:bg-white/5"
+                        style={{ color: glassPanelOpen ? theme.accent : theme.text3, background: glassPanelOpen ? `${theme.accent}18` : undefined }}
+                      >
+                        <SlidersHorizontal size={18} />
+                      </button>
+                      {glassPanelOpen && (
+                        <>
+                          <div className="fixed inset-0 z-[10001]" onClick={() => setGlassPanelOpen(false)} />
+                          <div
+                            className="absolute right-0 top-full z-[10002] mt-2 overflow-hidden rounded-[18px] border"
+                            style={{
+                              background: theme.isDark ? 'rgba(28,26,34,0.96)' : 'rgba(255,255,255,0.97)',
+                              borderColor: theme.border,
+                              boxShadow: '0 24px 60px rgba(0,0,0,0.35)',
+                            }}
+                          >
+                            <ChatGlassControls settings={glass.settings} onChange={glass.update} onPreset={glass.applyPreset} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {!mobile && (
+                    <button
+                      type="button"
+                      onClick={glass.toggleImmersive}
+                      aria-label={immersive ? 'Restrânge chatul (Esc)' : 'Ecran complet (Ctrl+Shift+F)'}
+                      title={immersive ? 'Restrânge chatul (Esc)' : 'Ecran complet (Ctrl+Shift+F)'}
+                      className="press-feedback rounded-2xl p-2.5 transition-colors hover:bg-white/5"
+                      style={{ color: immersive ? theme.accent : theme.text3, background: immersive ? `${theme.accent}18` : undefined }}
+                    >
+                      {immersive ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </button>
+                  )}
+
                   <div className="relative">
                     <motion.button
                       whileHover={calmMotion ? undefined : { scale: 1.08 }}
@@ -1249,7 +1547,7 @@ export default function AIChatDrawer() {
                               boxShadow: '0 24px 60px rgba(0,0,0,0.35)',
                             }}
                           >
-                            {view === 'chat' && !mobile && (
+                            {view === 'chat' && !mobile && !immersive && (
                               <button
                                 onClick={() => { setWideChat((value) => !value); setOverflowMenuOpen(false); }}
                                 className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-white/5"
@@ -1308,7 +1606,16 @@ export default function AIChatDrawer() {
                 <div className="relative flex min-h-0 flex-1">
                   <div
                     className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-5"
-                    style={view === 'chat' ? { background: 'linear-gradient(180deg, rgba(255,255,255,0.04), transparent 28%)' } : undefined}
+                    style={view === 'chat'
+                      ? {
+                          background: 'linear-gradient(180deg, rgba(255,255,255,0.04), transparent 28%)',
+                          // On glass the text should dissolve under the header/composer, not get sliced by a hard edge.
+                          ...(immersive ? {
+                            maskImage: 'linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 26px), transparent 100%)',
+                            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 26px), transparent 100%)',
+                          } : {}),
+                        }
+                      : undefined}
                   >
                     {view === 'studio' && scopedSource && (
                       <div
@@ -1611,7 +1918,12 @@ export default function AIChatDrawer() {
 
                 <div
                   className="border-t px-4 pt-3 pb-4"
-                  style={{ borderColor: theme.border, background: theme.isDark ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.6)' }}
+                  style={{
+                    borderColor: theme.border,
+                    background: immersive ? 'transparent' : theme.isDark ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.6)',
+                    // keep the input aligned with the centred reading column
+                    ...(immersive ? { paddingLeft: 'max(16px, calc((100% - 800px) / 2))', paddingRight: 'max(16px, calc((100% - 800px) / 2))' } : {}),
+                  }}
                 >
                   <AnimatePresence>
                     {activeQuizContext && (
@@ -1644,7 +1956,7 @@ export default function AIChatDrawer() {
                     )}
                   </AnimatePresence>
                   
-                  <div className="rounded-[24px] p-1" style={{ background: theme.surface2, border: `1px solid ${theme.border}`, boxShadow: `0 2px 12px ${theme.accent}08` }}>
+                  <div className="rounded-[24px] p-1" style={{ background: immersive ? `color-mix(in srgb, ${theme.surface2} 55%, transparent)` : theme.surface2, border: `1px solid ${theme.border}`, boxShadow: `0 2px 12px ${theme.accent}08` }}>
                     {pastedImage && (
                       <div className="relative mx-2 mt-2 mb-1 inline-block">
                         <img

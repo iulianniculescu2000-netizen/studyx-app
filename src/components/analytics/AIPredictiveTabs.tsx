@@ -22,7 +22,7 @@ export default function AIPredictiveTabs({ activeTab, setActiveTab }: AIPredicti
           <motion.button
             key={tab.id}
             whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => setActiveTab(tab.id)}
             className="px-6 py-3 font-medium transition-all duration-200"
             style={{

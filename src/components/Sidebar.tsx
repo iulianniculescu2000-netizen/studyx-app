@@ -21,7 +21,6 @@ import ConfirmDialog from './ConfirmDialog';
 import Portal from './Portal';
 import Logo from './Logo';
 import ThemedSelect from './ThemedSelect';
-import ThemeQuickSwitcher from './ThemeQuickSwitcher';
 import { isFlashcardDeck } from '../lib/deckKind';
 import { isRezidentiatQuiz } from '../lib/rezidentiatBank';
 import { isRezidentiatRootFolder } from '../lib/rezidentiatRoot';
@@ -408,7 +407,7 @@ function NavItem({
       {({ isActive }) => (
         <motion.div
           whileHover={{ x: collapsed ? 0 : 2 }}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.97 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className="relative flex items-center transition-all press-feedback reveal-line"
           data-active={isActive}
@@ -1167,9 +1166,6 @@ export default function Sidebar() {
             <NavItem to="/settings" icon={<Settings size={16} />} label="Setări" collapsed={false} />
           )}
         </div>
-
-        {/* Quick UI-version / theme switcher */}
-        <ThemeQuickSwitcher collapsed={collapsed} />
 
         {/* Update button */}
         <UpdateButton

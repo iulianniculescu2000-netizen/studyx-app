@@ -1138,7 +1138,10 @@ export async function generateStudyRecommendation(
     { role: 'system', content: getMedicalSystemPrompt('advisor', userContext) },
     {
       role: 'user',
-      content: `Recomandă-mi ce să studiez azi.${dueCount > 0 ? ` Am ${dueCount} întrebări de recapitulat.` : ''}${weakTopics.length > 0 ? ` Cele mai slabe topicuri: ${weakTopics.join(', ')}.` : ''} Maxim 2 fraze scurte, concrete.`,
+      content: `Recomandă-mi ce să studiez azi.${dueCount > 0 ? ` Am ${dueCount} întrebări de recapitulat.` : ''}${weakTopics.length > 0 ? ` Cele mai slabe topicuri: ${weakTopics.join(', ')}.` : ''} Răspunde EXACT în acest format, fără tabele, fără titluri și fără text în plus:
+🎯 Focus: o singură propoziție scurtă (maxim 14 cuvinte)
+⏱ Plan: o singură propoziție scurtă cu durata totală (maxim 14 cuvinte)
+💡 Sfat: o singură propoziție scurtă (maxim 14 cuvinte)`,
     },
   ], 0.5);
 }

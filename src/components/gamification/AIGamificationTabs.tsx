@@ -23,7 +23,7 @@ export default function AIGamificationTabs({ activeTab, setActiveTab }: AIGamifi
             <motion.button
               key={tab.id}
               whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileTap={{ scale: 0.97 }}
               onClick={() => setActiveTab(tab.id)}
               className="px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
               style={active ? { background: theme.surface, color: theme.text } : { color: theme.text3 }}

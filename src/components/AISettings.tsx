@@ -11,6 +11,7 @@ import { useUserStore } from '../store/userStore';
 import { clearStudyPatterns, getProfileSummaryText } from '../ai/UserProfile';
 import { refreshAllProviderModels, type ProviderModelCheck } from '../lib/ai/modelHealing';
 import Portal from './Portal';
+import ChatMemoryPanel from './ai-chat/ChatMemoryPanel';
 
 const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; docs: string }[] = [
   {
@@ -362,7 +363,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                 </div>
                 <motion.button
                   whileHover={{ rotate: 90, scale: 1.1, background: theme.surface }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={onClose}
                   className="p-2 rounded-2xl transition-all"
                   style={{ color: theme.text3, background: theme.surface2, border: `1px solid ${theme.border}`, cursor: 'pointer' }}
@@ -508,7 +509,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                       <Cpu size={12} /> Model AI
                     </label>
                     <motion.button
-                      whileHover={{ scale: 1.015 }}
+                      whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.93, transition: { type: 'spring', stiffness: 500, damping: 15 } }}
                       onClick={() => void handleRefreshModel()}
                       disabled={refreshingModel || !hasAnyProviderKey}
@@ -568,6 +569,8 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                     </p>
                   )}
                 </div>
+
+                <ChatMemoryPanel profileId={activeProfileId} />
 
                 {/* Knowledge Library */}
                 <div className="rounded-[28px] p-1 border" style={{ borderColor: theme.border, background: theme.isDark ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.03)' }}>
@@ -685,7 +688,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.08, rotate: 90 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => setShowProviderCheck(false)}
                   className="rounded-xl p-2"
                   style={{ color: theme.text3, background: theme.surface2 }}
@@ -729,7 +732,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               </div>
 
               <motion.button
-                whileHover={{ scale: 1.015 }}
+                whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.95, transition: { type: 'spring', stiffness: 500, damping: 15 } }}
                 onClick={() => setShowProviderCheck(false)}
                 className="mt-5 w-full rounded-2xl py-3 text-sm font-black text-white"

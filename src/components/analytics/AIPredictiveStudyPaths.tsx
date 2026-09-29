@@ -57,7 +57,7 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: index * 0.1 }}
-          whileHover={{ scale: 1.015 }}
+          whileHover={{ scale: 1.02 }}
           className="glass-panel rounded-[24px] p-6"
         >
           {/* Path Header */}
@@ -175,7 +175,7 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
 
           {/* Action Button */}
           <motion.button
-            whileHover={{ scale: 1.015 }}
+            whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.93, transition: { type: 'spring', stiffness: 500, damping: 15 } }}
             className="press-feedback w-full py-3 rounded-lg font-medium transition-colors duration-200"
             style={{ background: theme.accent, color: '#fff' }}

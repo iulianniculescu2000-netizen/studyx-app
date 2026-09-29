@@ -209,7 +209,7 @@ Comportament:
                   style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text, outline: 'none' }}
                 />
                 <motion.button
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => void sendChat()}
                   disabled={!chatInput.trim() || chatLoading}
                   className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"

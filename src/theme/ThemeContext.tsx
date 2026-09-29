@@ -1,21 +1,9 @@
 import { createContext, useContext, useEffect, useState, useRef, type ReactNode, useLayoutEffect, useCallback } from 'react';
-import { THEMES, type Theme, type ThemeId } from './themes';
-import { useUserStore } from '../store/userStore';
+import { THEMES, DEFAULT_THEME_ID, type Theme, type ThemeId } from './themes';
 import { detectDeviceCapabilities, resolvePerformanceProfile } from '../lib/deviceTier';
 import { useRuntimeStore } from '../store/runtimeStore';
 
-const ThemeContext = createContext<Theme>(THEMES.obsidian);
-
-function useOSDark() {
-  const [dark, setDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => setDark(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-  return dark;
-}
+const ThemeContext = createContext<Theme>(THEMES[DEFAULT_THEME_ID]);
 
 function usePerformanceProfile() {
   const performanceMode = useRuntimeStore((state) => state.performanceMode);
@@ -42,12 +30,10 @@ function usePerformanceProfile() {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const themeId = useUserStore((s) => s.themeId);
-  const osDark = useOSDark();
   const performanceProfile = usePerformanceProfile();
   const lowPowerMode = useRuntimeStore((state) => state.lowPowerMode);
-  const resolved: ThemeId = themeId === 'auto' ? (osDark ? 'obsidian' : 'pearl') : themeId;
-  const theme = THEMES[resolved] ?? THEMES.obsidian;
+  const resolved: ThemeId = DEFAULT_THEME_ID;
+  const theme = THEMES[resolved];
   const prevThemeRef = useRef<ThemeId | null>(null);
 
   // Folosim useLayoutEffect pentru a aplica schimbarile inainte de randare

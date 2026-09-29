@@ -40,7 +40,7 @@ describe('UI integration', () => {
   });
 
   it('renders dashboard content for an active profile with quizzes', () => {
-    const profileId = useUserStore.getState().addProfile('Test User', 'obsidian');
+    const profileId = useUserStore.getState().addProfile('Test User', 'glass');
     useUserStore.getState().switchProfile(profileId);
     useQuizStore.getState()._hydrate({
       quizzes: [

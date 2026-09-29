@@ -34,7 +34,7 @@ export default function AIPredictiveTimeframe({ timeframe, setTimeframe }: AIPre
             return (
               <motion.button
                 key={period.id}
-                whileHover={{ scale: 1.015 }}
+                whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.93, transition: { type: 'spring', stiffness: 500, damping: 15 } }}
                 onClick={() => setTimeframe(period.id)}
                 className="press-feedback px-4 py-2 rounded-lg font-medium transition-colors duration-200"

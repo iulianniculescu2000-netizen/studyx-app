@@ -365,15 +365,29 @@
     cursor: pointer;
     transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94), background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), color 0.16s ease, opacity 0.16s ease;
   }
+  /* Motion tokens — one press/hover feel for buttons, .press-feedback and the
+     Framer presets in theme/motion.ts (keep the three in sync). */
+  :root {
+    --hover-lift: -1px;
+    --hover-scale: 1.01;
+    --press-scale: 0.97;
+    --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-release: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  /* Elements Framer Motion drives (inline transform) must not also get a CSS
+     transform transition — the two easings stack and the motion turns laggy. */
+  button[style*="transform"], a[style*="transform"], [role="button"][style*="transform"] {
+    transition-property: background-color, border-color, box-shadow, color, opacity;
+  }
   button:not(:disabled):hover,
   a[role="button"]:hover,
   [role="button"]:not(:disabled):hover {
-    transform: translateY(-1px);
+    transform: translateY(var(--hover-lift));
   }
   button:not(:disabled):active,
   a[role="button"]:active,
   [role="button"]:not(:disabled):active {
-    transform: translateY(0) scale(0.972);
+    transform: translateY(0) scale(var(--press-scale));
     transition-duration: 0.08s;
   }
   button:disabled {
@@ -672,18 +686,20 @@ button.citation-pill:hover {
  * transform transition back to rest.
  */
 .press-feedback {
-  transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.26s ease, opacity 0.16s ease, filter 0.2s ease;
+  transition: transform 0.32s var(--ease-release), box-shadow 0.26s ease, opacity 0.16s ease, filter 0.2s ease;
 }
 
-.press-feedback:hover {
-  transform: translateY(-1.5px) scale(1.015);
+.press-feedback:hover,
+button.press-feedback:not(:disabled):hover {
+  transform: translateY(var(--hover-lift)) scale(var(--hover-scale));
   filter: saturate(1.05);
   box-shadow: 0 10px 26px var(--shadow-color-soft);
   transition-duration: 0.16s;
 }
 
-.press-feedback:active {
-  transform: translateY(0.5px) scale(0.93);
+.press-feedback:active,
+button.press-feedback:not(:disabled):active {
+  transform: translateY(0) scale(var(--press-scale));
   transition: transform 0.09s cubic-bezier(0.4, 0, 0.6, 1), filter 0.1s ease, box-shadow 0.12s ease;
   filter: saturate(0.96);
   box-shadow: 0 2px 8px var(--shadow-color-soft);
@@ -1109,6 +1125,9 @@ button.citation-pill:hover {
     animation: none !important; opacity: 1 !important; transform: none !important;
   }
   .lift-card:hover, .icon-pop:hover { transform: none !important; }
+  button, a, [role="button"], .press-feedback { transition-property: background-color, border-color, box-shadow, color, opacity !important; }
+  button:hover, button:active, a[role="button"]:hover, a[role="button"]:active,
+  [role="button"]:hover, [role="button"]:active, .press-feedback:hover, .press-feedback:active { transform: none !important; }
 }
 
 /* ── Performance lite ── */
@@ -1119,3 +1138,24 @@ button.citation-pill:hover {
 :root[data-performance="lite"] .shimmer-text { animation: none; }
 
 
+
+/* ── Chat AI în ecran complet (sticlă) ── */
+.immersive-chat .message-bubble-assistant {
+  background: color-mix(in srgb, var(--surface2) 58%, transparent);
+}
+.immersive-chat .custom-scrollbar {
+  scrollbar-gutter: stable;
+}
+@media (prefers-reduced-motion: reduce) {
+  .immersive-chat { transition: none !important; }
+}
+
+/* Sheet <-> ecran complet: aceeași cutie, își schimbă geometria fluid */
+.chat-panel-morph {
+  transition:
+    left 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
+    top 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
+    width 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
+    height 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
+    border-radius 0.42s cubic-bezier(0.2, 0.9, 0.28, 1);
+}

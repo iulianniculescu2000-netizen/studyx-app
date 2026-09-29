@@ -175,7 +175,10 @@ export default function QuizCreate() {
         updateQuestion(qId, { imageUrl: compressed });
       }
     };
-    reader.onerror = () => {};
+    reader.onerror = () => {
+      console.error("[QuizCreate] Nu s-a putut citi imaginea", reader.error);
+      setAiError("Nu s-a putut citi imaginea selectată. Încearcă alt fișier.");
+    };
     reader.readAsDataURL(file);
     uploadTargetQId.current = null;
   };

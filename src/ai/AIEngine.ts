@@ -28,6 +28,7 @@ import type {
 import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile } from './UserProfile';
 import { validateJson } from './validator';
 import { verifyQuestionsMedically } from './medicalJudge';
+import { fitHistoryToBudget, type StudentState } from './chatMemory';
 
 type ContextChunk = ChunkRecord | RetrievedChunk;
 export type ChatMode = 'grounded' | 'explain' | 'summarize' | 'diagram' | 'test' | 'mnemonic';
@@ -51,6 +52,10 @@ interface ChatResponseOptions {
   focusTopics?: string[];
   /** Compressed summary of earlier turns, injected when the thread grows long. */
   conversationSummary?: string;
+  /** Durable facts about the student (already filtered for relevance), one per line. */
+  personalMemory?: string;
+  /** How the student seems to be doing right now, derived from their message and the clock. */
+  tone?: { state: StudentState; late: boolean };
 }
 
 async function buildRelevantContext(query: string, limit: number, userProfile?: UserProfileData | null) {
@@ -326,8 +331,8 @@ export async function generateQuestionsFromTopic(
   const malformedDroppedCount = Math.max(0, count - sanitized.length);
   const judged = await verifyQuestionsMedically(sanitized, undefined);
 
-  if (judged.questions.length === 0) {
-    // Temporary diagnostic: pinpoint WHERE the batch got dropped to zero —
+  if (judged.questions.length === 0 && import.meta.env.DEV) {
+    // Dev-only diagnostic: pinpoint WHERE the batch got dropped to zero —
     // the raw model output, or sanitize, or the medical judge — since the
     // generic "couldn't generate" error alone doesn't say which.
     console.error('[StudyX AI] generateQuestionsFromTopic produced 0 questions ' + JSON.stringify({
@@ -562,6 +567,16 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
   const studyContext = deepCleanText(options.studyContext ?? '');
   const conversationSummary = deepCleanText(options.conversationSummary ?? '');
   const focusTopics = (options.focusTopics ?? []).map((topic) => deepCleanText(topic)).filter(Boolean);
+  const personalMemory = deepCleanText(options.personalMemory ?? '');
+  const toneLines: string[] = [];
+  if (options.tone?.state === 'frustrated') {
+    toneLines.push('- studentul pare frustrat sau epuizat: recunoaște-o într-o jumătate de propoziție (fără dramatism), apoi simplifică — un singur pas concret, fără liste lungi');
+  } else if (options.tone?.state === 'confused') {
+    toneLines.push('- studentul spune că nu înțelege: NU repeta explicația la fel; schimbă unghiul (analogie, exemplu clinic, schemă) și verifică la final cu o singură întrebare scurtă');
+  }
+  if (options.tone?.late) {
+    toneLines.push('- e târziu noaptea: rămâi concis și, dacă se potrivește firesc, menționează o dată (nu insistent) că memoria se consolidează mai bine după somn');
+  }
 
   const modeInstructions: Record<ChatMode, string[]> = {
     grounded: [
@@ -629,6 +644,15 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
     '- „agentul"/„acțiunea agentului" se referă la asistentul AI integrat în aplicație care creează grile, flashcarduri și foldere direct în StudyX când i se cere — nu la un „agent patogen" sau alt sens medical al cuvântului, decât dacă întrebarea e clar despre un subiect medical concret.',
     '- când userul întreabă despre o acțiune recentă ("ce a făcut agentul", "de ce a eșuat", "unde s-a salvat X") — răspunsul e în istoricul conversației de mai jos (mesajele agentului conțin rezultatul real). Dacă nu găsești acolo un răspuns clar, spune sincer că nu ai destule detalii, nu inventa un scenariu plauzibil dar greșit.',
     '',
+    'STIL CONVERSAȚIONAL (cum vorbești, peste formatarea de mai jos):',
+    '- vorbești ca un mentor care îl cunoaște pe student, nu ca un manual: direct, cald, fără formule de umplutură („Desigur!", „Excelentă întrebare!") și fără să reiei salutul în fiecare mesaj',
+    '- folosește ce știi despre student NATURAL și rar, când ajută (ex. „ai zis că preferi scheme, uite una"); nu enumera ce ai reținut și nu spune „conform memoriei mele"',
+    '- dacă cererea e cu adevărat ambiguă, pune O SINGURĂ întrebare de clarificare în loc să ghicești; altfel răspunde direct',
+    '- dacă nu ești sigur de o valoare, doză sau prag, spune-o explicit în loc să pară sigur; nu inventa',
+    '- după o explicație grea, poți oferi (nu impune) o mini-întrebare de verificare, mai ales dacă studentul a mai greșit subiectul',
+    '- variază structura răspunsurilor; nu începe mai multe răspunsuri la rând cu aceeași formulă',
+    ...toneLines,
+    '',
     'STIL:',
     '- răspunde exclusiv în limba română',
     '- folosește paragrafe scurte și liste doar când clarifică; evită blocuri dense de text',
@@ -660,6 +684,9 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
     `MOD ACTIV: ${mode.toUpperCase()}`,
     ...modeInstructions[mode],
     '',
+    personalMemory ? `CE ȘTII DESPRE STUDENT (memorie persistentă, ajustabilă de el; folosește-o doar când e relevantă, nu o enumera):
+${personalMemory}
+` : '',
     conversationSummary ? `REZUMATUL CONVERSAȚIEI PÂNĂ ACUM (memorie de context — folosește-l ca să păstrezi continuitatea, nu îl repeta):\n${conversationSummary}\n` : '',
     studyContext ? `PROFIL DE STUDIU ȘI ADAPTARE:\n${studyContext}\n` : '',
     hasContext
@@ -675,7 +702,7 @@ export async function generateChatResponse(
   options: ChatResponseOptions = {},
 ): Promise<string> {
   const systemPrompt = buildChatSystemPrompt(contextSummary, options);
-  const recentHistory = history.slice(-10);
+  const recentHistory = fitHistoryToBudget(history);
 
   return groqRequest({
     task: 'chat',
@@ -698,7 +725,7 @@ export async function generateChatResponseStream(
   abortSignal?: AbortSignal,
 ): Promise<void> {
   const systemPrompt = buildChatSystemPrompt(contextSummary, options);
-  const recentHistory = history.slice(-10);
+  const recentHistory = fitHistoryToBudget(history);
 
   await groqStream(
     [

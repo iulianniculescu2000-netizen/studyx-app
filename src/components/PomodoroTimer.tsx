@@ -334,7 +334,7 @@ export default function PomodoroTimer() {
 
               <div className="mt-4 flex gap-2">
                 <motion.button
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => reset()}
                   aria-label="Reseteaza timerul"
                   title="Resetează timerul"
@@ -344,7 +344,7 @@ export default function PomodoroTimer() {
                   <RotateCcw size={14} />
                 </motion.button>
                 <motion.button
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => setRunning(!running)}
                   aria-label={running ? 'Pune pauza Pomodoro' : 'Porneste Pomodoro'}
                   className="flex h-10 w-24 items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white"

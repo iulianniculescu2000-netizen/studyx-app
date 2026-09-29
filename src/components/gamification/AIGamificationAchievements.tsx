@@ -146,8 +146,8 @@ export default function AIGamificationAchievements({
                   </div>
                 </div>
                 <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileHover={{ scale: 1.08 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => setSelectedAchievement(null)}
                   style={{ color: theme.text3 }}
                 >
