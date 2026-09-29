@@ -210,15 +210,13 @@ function ActionRow({
             {description}
           </div>
         )}
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+        <button
           onClick={onClick}
-          className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all"
+          className="press-feedback rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest hover:bg-white/5"
           style={{ background: `${color}10`, borderColor: `${color}30`, color }}
         >
           {buttonLabel}
-        </motion.button>
+        </button>
       </div>
     </div>
   );

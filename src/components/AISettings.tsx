@@ -603,10 +603,10 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                           </div>
                           <p className="text-sm font-black mb-4" style={{ color: theme.text }}>Încarcă materiale de studiu</p>
                           <div className="grid grid-cols-2 gap-2">
-                            <button onClick={importPdf} className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase bg-blue-500 text-white"><Upload size={12} /> PDF</button>
-                            <button onClick={importDocx} className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase bg-indigo-600 text-white"><FileText size={12} /> DOCX</button>
-                            <button onClick={importImage} className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase bg-orange-500 text-white"><Image size={12} /> Imagine</button>
-                            <button onClick={importTxt} className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase bg-emerald-600 text-white"><FileText size={12} /> TXT</button>
+                            <button onClick={importPdf} className="press-feedback flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase bg-blue-500 text-white"><Upload size={12} /> PDF</button>
+                            <button onClick={importDocx} className="press-feedback flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase bg-indigo-600 text-white"><FileText size={12} /> DOCX</button>
+                            <button onClick={importImage} className="press-feedback flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase bg-orange-500 text-white"><Image size={12} /> Imagine</button>
+                            <button onClick={importTxt} className="press-feedback flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase bg-emerald-600 text-white"><FileText size={12} /> TXT</button>
                           </div>
                         </>
                       )}
@@ -638,7 +638,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                                   : 'Pregatit pentru AI'}
                             </p>
                           </div>
-                          <button onClick={() => removeKnowledgeSource(s.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500"><Trash2 size={14} /></button>
+                          <button onClick={() => removeKnowledgeSource(s.id)} className="icon-pop press-feedback p-1.5 rounded-lg hover:bg-red-500/10 text-red-500"><Trash2 size={14} /></button>
                         </div>
                       ))}
                     </div>

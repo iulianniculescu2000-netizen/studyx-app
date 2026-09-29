@@ -1,21 +1,57 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronRight, RefreshCw, Trophy, Keyboard, Layers } from 'lucide-react';
+import { RefreshCw, Trophy, Keyboard, Layers } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import QuizImage from '../components/QuizImage';
 import { useQuizStore } from '../store/quizStore';
-import { useStatsStore } from '../store/statsStore';
+import { useStatsStore, calcNextReview } from '../store/statsStore';
 import { useUserStore } from '../store/userStore';
 import { cleanQuestionExplanation } from '../helpers/quizAi';
 import { buildAdaptiveExamQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
 import ReviewActionCard from './review-mode/ReviewActionCard';
-import type { Question, QuestionStat } from '../types';
+import type { Question, QuestionStat, Confidence } from '../types';
 
 interface ReviewItem {
   stat: QuestionStat;
   question: Question;
   quizTitle: string;
+}
+
+function formatInterval(days: number) {
+  if (days === 1) return '1 zi';
+  if (days < 30) return `${days} zile`;
+  if (days < 365) return `${Math.round(days / 30)} luni`;
+  return '1 an';
+}
+
+function AnkiButton({ label, interval, keyHint, color, isDefault, onClick }: {
+  label: string;
+  interval: number;
+  keyHint: string;
+  color: string;
+  isDefault?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.95 }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      onClick={onClick}
+      className="flex flex-col items-center justify-center p-3.5 rounded-2xl transition-shadow relative press-feedback"
+      style={{
+        background: `${color}12`,
+        color: color,
+        border: `1px solid ${color}35`,
+        boxShadow: isDefault ? `0 0 0 2px var(--background), 0 0 0 4px ${color}` : 'none',
+      }}
+    >
+      <span className="text-[14px] font-bold tracking-wide">{label}</span>
+      <span className="text-[11px] font-semibold opacity-70 mt-1">{formatInterval(interval)}</span>
+      <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[9px] font-mono opacity-60" style={{ background: `${color}25` }}>{keyHint}</div>
+    </motion.button>
+  );
 }
 
 export default function ReviewMode() {
@@ -106,13 +142,10 @@ export default function ReviewMode() {
   const isMultiple = current?.question.multipleCorrect ?? false;
   const correctIds = useMemo(() => current?.question.options.filter(o => o.isCorrect).map(o => o.id) ?? [], [current]);
 
-  const revealAnswer = useCallback((sel: string[]) => {
-    if (!current) return;
-    const isCorrect = sel.length === correctIds.length && correctIds.every((id: string) => sel.includes(id));
-    setRevealed(true);
-    setResults(prev => [...prev, isCorrect]);
-    recordAnswer(current.stat.quizId, current.stat.questionId, isCorrect);
-  }, [correctIds, current, recordAnswer]);
+  const isCorrectOutcome = useMemo(() => {
+    if (!current) return false;
+    return selected.length === correctIds.length && correctIds.every(id => selected.includes(id));
+  }, [current, selected, correctIds]);
 
   const handleSelect = useCallback((optId: string) => {
     if (revealed) return;
@@ -120,9 +153,9 @@ export default function ReviewMode() {
       setSelected(prev => prev.includes(optId) ? prev.filter(i => i !== optId) : [...prev, optId]);
     } else {
       setSelected([optId]);
-      revealAnswer([optId]);
+      setRevealed(true);
     }
-  }, [isMultiple, revealAnswer, revealed]);
+  }, [isMultiple, revealed]);
 
   const handleNext = useCallback(() => {
     if (currentIdx + 1 >= items.length) {
@@ -135,17 +168,52 @@ export default function ReviewMode() {
     }
   }, [currentIdx, items.length, recordStudySession, startedAt]);
 
+  const handleGrade = useCallback((correct: boolean, confidence?: Confidence) => {
+    if (!current) return;
+    recordAnswer(current.stat.quizId, current.stat.questionId, correct, confidence);
+    setResults(prev => [...prev, correct]);
+    handleNext();
+  }, [current, recordAnswer, handleNext]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const keyMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
-      const idx = keyMap[e.key.toLowerCase()];
-      if (idx !== undefined && current?.question.options[idx]) handleSelect(current.question.options[idx].id);
-      if ((e.key === 'Enter' || e.key === ' ') && revealed) { e.preventDefault(); handleNext(); }
-      if (e.key === 'Enter' && isMultiple && !revealed && selected.length > 0) revealAnswer(selected);
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.repeat) return; // tasta ținută apăsată ar nota automat cardurile următoare
+      if (mode !== 'review') return;
+      
+      if (!revealed) {
+        const keyMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3, '5': 4, 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+        const idx = keyMap[e.key.toLowerCase()];
+        if (idx !== undefined && current?.question.options[idx]) handleSelect(current.question.options[idx].id);
+        if ((e.key === 'Enter' || e.key === ' ') && isMultiple && selected.length > 0) {
+            e.preventDefault();
+            setRevealed(true);
+        }
+      } else {
+        if (e.key === '1') { e.preventDefault(); handleGrade(false, 'blackout'); }
+        if (e.key === '2') { e.preventDefault(); handleGrade(true, 'guess'); }
+        if (e.key === '3') { e.preventDefault(); handleGrade(true, undefined); }
+        if (e.key === '4') { e.preventDefault(); handleGrade(true, 'confident'); }
+        if (e.key === 'Enter' || e.key === ' ') {
+           e.preventDefault();
+           if (isCorrectOutcome) handleGrade(true, undefined);
+           else handleGrade(false, 'blackout');
+        }
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [current, revealed, selected, isMultiple, handleNext, revealAnswer, handleSelect]);
+  }, [mode, current, revealed, selected, isMultiple, isCorrectOutcome, handleGrade, handleSelect]);
+
+  const intervals = useMemo(() => {
+    if (!current) return { again: 1, hard: 1, good: 1, easy: 1 };
+    return {
+      again: calcNextReview(current.stat, false, 'blackout').interval,
+      hard:  calcNextReview(current.stat, true, 'guess').interval,
+      good:  calcNextReview(current.stat, true, undefined).interval,
+      easy:  calcNextReview(current.stat, true, 'confident').interval,
+    };
+  }, [current]);
 
   const reviewActions = [
     {
@@ -212,7 +280,7 @@ export default function ReviewMode() {
     return (
       <div className="premium-shell min-h-full px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-6xl">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="editorial-hero mb-8 overflow-hidden rounded-[38px] px-6 py-8 text-center sm:mb-10 sm:px-10">
             <div className="secondary-label mb-3 font-black tracking-[0.22em]" style={{ color: theme.text3 }}>
               REVIEW FLOW
@@ -222,7 +290,8 @@ export default function ReviewMode() {
                 background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
-                display: 'inline-block'
+                display: 'inline-block',
+                paddingBottom: '0.15em' /* Fixează tăierea literelor 'g', 'ț' etc */
               }}>Inteligentă</span>
             </h1>
             <p className="mx-auto max-w-2xl text-sm font-medium opacity-70 sm:text-[15px]" style={{ color: theme.text }}>
@@ -242,7 +311,7 @@ export default function ReviewMode() {
             </div>
           </motion.div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:gap-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:gap-5 card-pop-stagger">
             {reviewActions.map((action) => (
               <ReviewActionCard
                 key={action.id}
@@ -253,7 +322,7 @@ export default function ReviewMode() {
           </div>
 
           {dueCount === 0 && weakCount === 0 && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
               className="premium-empty-state mt-10 rounded-[30px] p-7 text-center"
               style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}25` }}>
               <p className="text-xl font-bold mb-1" style={{ color: theme.success }}>✨ Ești la zi!</p>
@@ -275,7 +344,8 @@ export default function ReviewMode() {
     const pct = Math.round((correct / results.length) * 100);
     return (
       <div className="min-h-full flex items-center justify-center px-4 py-8">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+        <motion.div initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="premium-modal text-center max-w-md rounded-[34px] px-8 py-10">
           <div className="text-6xl mb-4">{pct >= 80 ? '🏆' : pct >= 50 ? '💪' : '📚'}</div>
           <h2 className="text-3xl font-bold mb-2" style={{ color: theme.text }}>
@@ -288,14 +358,14 @@ export default function ReviewMode() {
             Recapitulare finalizată
           </div>
           <div className="flex gap-3 justify-center">
-            <button onClick={() => { setMode('pick'); setCurrentIdx(0); setResults([]); }}
-              className="premium-card-hover flex items-center gap-2 px-5 py-3 rounded-2xl font-medium text-sm"
+            <button onClick={() => { setMode('pick'); setCurrentIdx(0); setResults([]); setSelected([]); setRevealed(false); }}
+              className="premium-card-hover flex items-center gap-2 px-5 py-3 rounded-2xl font-medium text-sm transition-all"
               style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
               <RefreshCw size={14} />Altă sesiune
             </button>
             <Link to="/"
-              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-white text-sm"
-              style={{ background: theme.accent }}>
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-white text-sm transition-all"
+              style={{ background: theme.accent, boxShadow: `0 8px 24px ${theme.accent}40` }}>
               <Trophy size={14} />Dashboard
             </Link>
           </div>
@@ -319,7 +389,7 @@ export default function ReviewMode() {
   };
 
   return (
-    <div className="premium-shell min-h-full flex flex-col px-4 py-6 sm:px-6 lg:px-8">
+    <div className="premium-shell min-h-full flex flex-col px-4 py-6 sm:px-6 lg:px-8 overflow-x-hidden">
       {/* Progress */}
       <div className="max-w-2xl mx-auto w-full">
         <div className="flex items-center gap-4 mb-3">
@@ -327,7 +397,7 @@ export default function ReviewMode() {
           <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
             <motion.div className="h-full rounded-full"
               style={{ background: theme.accent }}
-              animate={{ width: `${progress}%` }} transition={{ duration: 0.4 }} />
+              animate={{ width: `${progress}%` }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }} />
           </div>
           <button onClick={() => setShowKeys(k => !k)}
             className="p-1.5 rounded-lg transition-all hover:opacity-80"
@@ -340,22 +410,25 @@ export default function ReviewMode() {
           {showKeys && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               className="mb-3 px-3 py-2 rounded-xl text-xs flex flex-wrap gap-3 overflow-hidden"
               style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text3 }}>
-              {['1-5 / A-E: selectează opțiune', 'Enter / Space: următor', 'Enter (multi): confirmă'].map(h => (
-                <span key={h} className="font-mono">{h}</span>
+              {['1-5 / A-E: alege', 'Enter: confirmă', 'După răspuns:', '1=Din nou', '2=Greu', '3=Bine', '4=Ușor', 'Enter=Implicit'].map((h, idx) => (
+                <span key={idx} className="font-mono opacity-80">{h}</span>
               ))}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      <div className="flex-1 flex flex-col max-w-2xl w-full mx-auto mt-3">
-        <AnimatePresence>
+      <div className="flex-1 flex flex-col max-w-2xl w-full mx-auto mt-3 relative">
+        <AnimatePresence mode="wait">
           <motion.div key={currentIdx}
-            initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }}
-            className="flex-1 flex flex-col">
+            initial={{ opacity: 0, x: 20, scale: 0.98 }} 
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -20, scale: 0.98 }} 
+            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-1 flex flex-col w-full h-full">
 
             <div className="luxe-card rounded-[28px] p-6 mb-5"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
@@ -389,13 +462,13 @@ export default function ReviewMode() {
               {current.question.options.map((opt, i) => (
                 <motion.button key={opt.id}
                   initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.04 }}
+                  transition={{ delay: i * 0.04, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                   onClick={() => handleSelect(opt.id)}
                   className="w-full flex items-center gap-3 p-4 rounded-xl text-left transition-all"
                   style={getOptStyle(opt.id)}
                   whileHover={!revealed ? { scale: 1.01 } : {}}
                   whileTap={!revealed ? { scale: 0.99 } : {}}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold border-2 flex-shrink-0"
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold border-2 flex-shrink-0 transition-colors"
                     style={{
                       borderColor: selected.includes(opt.id) ? (revealed ? (correctIds.includes(opt.id) ? theme.success : theme.danger) : theme.accent) : theme.border2,
                       background: selected.includes(opt.id) ? (revealed ? (correctIds.includes(opt.id) ? `${theme.success}20` : `${theme.danger}20`) : `${theme.accent}20`) : 'transparent',
@@ -403,19 +476,19 @@ export default function ReviewMode() {
                     }}>
                     {String.fromCharCode(65 + i)}
                   </div>
-                  <span className="text-sm font-medium" style={{ color: revealed ? (correctIds.includes(opt.id) ? theme.success : selected.includes(opt.id) ? theme.danger : theme.text3) : theme.text }}>
+                  <span className="text-sm font-medium transition-colors" style={{ color: revealed ? (correctIds.includes(opt.id) ? theme.success : selected.includes(opt.id) ? theme.danger : theme.text3) : theme.text }}>
                     {opt.text}
                   </span>
-                  <span className="ml-auto text-xs font-mono rounded px-1" style={{ background: theme.surface2, color: theme.text3 }}>{i + 1}</span>
+                  <span className="ml-auto text-xs font-mono rounded px-1.5 py-0.5 opacity-50" style={{ background: theme.surface2, color: theme.text3 }}>{i + 1}</span>
                 </motion.button>
               ))}
             </div>
 
             {isMultiple && !revealed && selected.length > 0 && (
               <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                onClick={() => revealAnswer(selected)}
-                className="w-full py-3.5 rounded-2xl font-semibold text-white mb-3 premium-card-hover"
-                style={{ background: `linear-gradient(135deg, ${theme.accent2}, ${theme.accent})` }}>
+                onClick={() => setRevealed(true)}
+                className="w-full py-4 rounded-2xl font-bold text-white mb-3 premium-card-hover"
+                style={{ background: `linear-gradient(135deg, ${theme.accent2}, ${theme.accent})`, boxShadow: `0 8px 24px ${theme.accent}40` }}>
                 Confirmă ({selected.length} selectate)
               </motion.button>
             )}
@@ -423,10 +496,11 @@ export default function ReviewMode() {
             <AnimatePresence>
               {revealed && cleanQuestionExplanation(current.question.explanation) && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                  className="mb-3 p-4 rounded-xl overflow-hidden"
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  className="mb-4 p-5 rounded-2xl overflow-hidden"
                   style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}>
-                  <p className="text-sm" style={{ color: theme.text2 }}>
-                    <span className="font-semibold" style={{ color: theme.accent }}>💡 </span>
+                  <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>
+                    <span className="font-semibold text-lg drop-shadow-sm mr-2" style={{ color: theme.accent }}>💡</span>
                     {cleanQuestionExplanation(current.question.explanation)}
                   </p>
                 </motion.div>
@@ -435,13 +509,14 @@ export default function ReviewMode() {
 
             <AnimatePresence>
               {revealed && (
-                <motion.button initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-                  onClick={handleNext}
-                  className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 premium-card-hover"
-                  style={{ background: theme.accent }}
-                  whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
-                  {currentIdx + 1 >= items.length ? '🏁 Finalizează' : <>Următor <ChevronRight size={16} /></>}
-                </motion.button>
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
+                  className="mt-auto grid grid-cols-4 gap-2.5 pb-4 pt-2">
+                  <AnkiButton label="Din nou" interval={intervals.again} keyHint="1" color={theme.danger} isDefault={!isCorrectOutcome} onClick={() => handleGrade(false, 'blackout')} />
+                  <AnkiButton label="Greu" interval={intervals.hard} keyHint="2" color={theme.warning} onClick={() => handleGrade(true, 'guess')} />
+                  <AnkiButton label="Bine" interval={intervals.good} keyHint="3" color={theme.success} isDefault={isCorrectOutcome} onClick={() => handleGrade(true, undefined)} />
+                  <AnkiButton label="Ușor" interval={intervals.easy} keyHint="4" color={theme.accent} onClick={() => handleGrade(true, 'confident')} />
+                </motion.div>
               )}
             </AnimatePresence>
           </motion.div>

@@ -62,6 +62,7 @@ export default function MobileNav() {
             onClick={() => navigate(to)}
             aria-label={label}
             aria-current={active ? 'page' : undefined}
+            className="press-feedback"
             style={{
               flex: 1,
               display: 'flex',

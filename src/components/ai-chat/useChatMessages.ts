@@ -42,14 +42,13 @@ export function useChatMessages(options: { open: boolean; calmMotion: boolean; t
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessages(storageKey));
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [prevStorageKey, setPrevStorageKey] = useState(storageKey);
   const messagesRef = useRef<ChatMessage[]>([]);
-  const storageKeyRef = useRef(storageKey);
 
-  useEffect(() => {
-    if (storageKeyRef.current === storageKey) return;
-    storageKeyRef.current = storageKey;
+  if (storageKey !== prevStorageKey) {
+    setPrevStorageKey(storageKey);
     setMessages(loadMessages(storageKey));
-  }, [storageKey]);
+  }
 
   useEffect(() => {
     if (open) {
@@ -61,11 +60,11 @@ export function useChatMessages(options: { open: boolean; calmMotion: boolean; t
     messagesRef.current = messages;
     try {
       const toSave = messages.slice(-PERSISTED_MESSAGE_LIMIT);
-      localStorage.setItem(storageKeyRef.current, JSON.stringify(toSave));
+      localStorage.setItem(storageKey, JSON.stringify(toSave));
     } catch {
       // quota exceeded — ignore
     }
-  }, [messages]);
+  }, [messages, storageKey]);
 
   return { messages, setMessages, messagesRef, chatEndRef };
 }

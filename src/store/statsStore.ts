@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Confidence, QuestionStat, StudyStreak } from '../types';
+import { localDateStr } from '../lib/studyPlan';
 
 const EMPTY_STREAK: StudyStreak = {
   currentStreak: 0,
@@ -24,7 +25,7 @@ interface StatsStore {
 }
 
 function getToday(): string {
-  return new Date().toISOString().split('T')[0];
+  return localDateStr();
 }
 
 type SM2Quality = 0 | 1 | 2 | 3 | 4 | 5;
@@ -52,7 +53,7 @@ function qualityFromOutcome(correct: boolean, confidence?: Confidence): SM2Quali
  * SuperMemo-2 (SM-2) algorithm, quality-driven (Anki/professional SRS).
  * `consecutiveCorrect` plays the role of SM-2 "repetitions".
  */
-function calcNextReview(
+export function calcNextReview(
   stat: QuestionStat,
   correct: boolean,
   confidence?: Confidence,
@@ -63,11 +64,13 @@ function calcNextReview(
   const n = stat.consecutiveCorrect ?? 0;
 
   if (quality < 3) {
-    // Lapse: restart the learning phase. SM-2 leaves EF untouched on failure.
+    // Lapse: restart the learning phase. SM-2 spec (and Anki) penalise the ease
+    // factor on every lapse so that genuinely hard cards stay at short intervals
+    // after relearning instead of jumping back to months straight away.
     return {
       nextReview: Date.now() + 86400000, // 1 zi
       interval: 1,
-      eFactor,
+      eFactor: Math.max(1.3, eFactor - 0.2),
       consecutiveCorrect: 0,
     };
   }
@@ -139,10 +142,11 @@ export const useStatsStore = create<StatsStore>()(
         
         // Accurate consecutive days streak calculation
         let current = 0;
-        const checkDate = new Date(today);
+        const [ty, tm, td] = today.split('-').map(Number);
+        const checkDate = new Date(ty, tm - 1, td); // local midnight (new Date('YYYY-MM-DD') e UTC)
         
         while (true) {
-          const dateStr = checkDate.toISOString().split('T')[0];
+          const dateStr = localDateStr(checkDate);
           if (newDates.includes(dateStr)) {
             current++;
             checkDate.setDate(checkDate.getDate() - 1);

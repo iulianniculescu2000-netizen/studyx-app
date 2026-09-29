@@ -33,7 +33,7 @@ async function parseQuestions(path: string, fromPage: number, toPage: number): P
   for (let page = fromPage; page <= Math.min(toPage, doc.numPages); page += 1) {
     const rendered = await doc.getPage(page);
     const content = await rendered.getTextContent();
-    text += content.items.map((item: any) => (item.str ?? '') + (item.hasEOL ? '\n' : ' ')).join('') + '\n';
+    text += content.items.map((item: { str?: string; hasEOL?: boolean }) => (item.str ?? '') + (item.hasEOL ? '\n' : ' ')).join('') + '\n';
     rendered.cleanup();
   }
   await doc.destroy();
@@ -82,10 +82,8 @@ describe.skipIf(available.length === 0)('the real exam scores high on its own ya
     expect(questions.length).toBeGreaterThan(50);
 
     const report = scoreExamConformance(questions, 'residency');
-    // eslint-disable-next-line no-console
     console.log(`${path.split('/').pop()}: ${report.score}/100 din ${report.questions} grile reale`);
     report.metrics.forEach((metric) => {
-      // eslint-disable-next-line no-console
       console.log(`  ${metric.ok ? '✓' : '✗'} ${metric.id}: ${metric.id.endsWith('Length') ? Math.round(metric.value) : `${Math.round(metric.value * 100)}%`} (țintă ${metric.target})`);
     });
 
@@ -111,7 +109,6 @@ describe.skipIf(!exportPath || !existsSync(exportPath))('a generated set, measur
     expect(questions.length).toBeGreaterThan(0);
 
     const style = JSON.stringify(quizzes).includes('grila-simpla') ? 'simple' : 'residency';
-    // eslint-disable-next-line no-console
     console.log(formatConformanceReport(scoreExamConformance(questions, style)));
   });
 });

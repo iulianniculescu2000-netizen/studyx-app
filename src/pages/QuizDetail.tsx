@@ -367,7 +367,7 @@ export default function QuizDetail() {
           >
             <Link
               to={`/play/${quiz.id}`}
-              className="flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-white text-lg shadow-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
+              className="press-feedback accent-shadow-hover flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-white text-lg shadow-2xl"
               style={{ background: colors.gradient, boxShadow: `0 12px 32px ${colors.glow}` }}
             >
               <Play size={22} fill="white" />
@@ -376,7 +376,7 @@ export default function QuizDetail() {
             <Link
               to={`/play/${quiz.id}`}
               state={{ mode: 'exam' }}
-              className="flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-lg transition-all hover:scale-[1.03] active:scale-[0.97] shadow-lg"
+              className="press-feedback flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-lg shadow-lg"
               style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text }}
             >
               <GraduationCap size={22} />
@@ -528,7 +528,7 @@ export default function QuizDetail() {
               </span>
               <button
                 onClick={() => window.dispatchEvent(new CustomEvent('studyx:open-ai-settings'))}
-                className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg transition-all hover:bg-white/5"
+                className="press-feedback text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg"
                 style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.accent }}
               >
                 Configurare
@@ -553,7 +553,7 @@ export default function QuizDetail() {
               <button
                 key={button.label}
                 onClick={button.action}
-                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all hover:scale-[1.05] active:scale-[0.95]"
+                className="press-feedback flex flex-col items-center gap-1.5 py-3 rounded-2xl"
                 style={{
                   background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                   border: `1px solid ${theme.border}`,

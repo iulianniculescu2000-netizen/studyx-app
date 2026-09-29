@@ -178,5 +178,12 @@
     "vite": "^8.0.1",
     "vitest": "^4.1.4",
     "wait-on": "^9.0.4"
+  },
+  "allowScripts": {
+    "electron@41.10.1": true,
+    "electron-winstaller@5.4.0": true,
+    "electron-winstaller@5.4.4": true,
+    "core-js@3.49.0": true,
+    "tesseract.js@6.0.1": true
   }
 }

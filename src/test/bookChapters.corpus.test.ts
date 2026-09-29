@@ -43,7 +43,7 @@ async function extract(path: string) {
   for (let page = 1; page <= doc.numPages; page += 1) {
     const rendered = await doc.getPage(page);
     const content = await rendered.getTextContent();
-    parts.push(content.items.map((item: any) => (item.str ?? '') + (item.hasEOL ? '\n' : ' ')).join(''));
+    parts.push(content.items.map((item: { str?: string; hasEOL?: boolean }) => (item.str ?? '') + (item.hasEOL ? '\n' : ' ')).join(''));
     rendered.cleanup();
   }
   await doc.destroy();
@@ -72,7 +72,6 @@ describe.skipIf(available.length === 0)('chapter attribution on the real books',
       chunks.some((chunk) => chunk.heading && normalize(chunk.heading).includes(normalize(chapter))));
     const withHeading = chunks.filter((chunk) => chunk.heading).length;
 
-    // eslint-disable-next-line no-console
     console.log(`${name}: ${covered.length}/${book!.chapters.length} capitole · ${Math.round((withHeading / chunks.length) * 100)}% fragmente etichetate (${chunks.length} fragmente)`);
 
     expect(covered.length).toBeGreaterThanOrEqual(minChapters);

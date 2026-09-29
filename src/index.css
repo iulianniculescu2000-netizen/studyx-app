@@ -933,3 +933,189 @@ button.citation-pill:hover {
 :root[data-overlay="open"] .animated-background-orb {
   display: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ── POLISH v2.2 — Serotonin UI (Lent, fluid, luxos, fără recul) ──
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Intrare pagini — fade + lift lung și catifelat ── */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.page-enter {
+  animation: page-enter 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Card pop-in — intrare organică ── */
+@keyframes card-pop {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.card-pop {
+  animation: card-pop 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.card-pop-stagger > *:nth-child(1)  { animation: card-pop 0.65s 0.00s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(2)  { animation: card-pop 0.65s 0.08s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(3)  { animation: card-pop 0.65s 0.16s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(4)  { animation: card-pop 0.65s 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(5)  { animation: card-pop 0.65s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(6)  { animation: card-pop 0.65s 0.34s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(n+7){ animation: card-pop 0.65s 0.40s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* ── Glow pulse — Respirație lentă ── */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0   var(--accent-soft), 0 4px 16px var(--shadow-color-soft); }
+  50%       { box-shadow: 0 0 0 8px transparent,        0 12px 32px var(--accent-soft); }
+}
+.glow-pulse {
+  animation: glow-pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── Float ambiant — foarte lent ── */
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-3px); }
+}
+.float-gentle {
+  animation: float-gentle 5s ease-in-out infinite;
+}
+
+/* ── Shimmer text — val de lumină lent ── */
+@keyframes shimmer-text {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+.shimmer-text {
+  background: linear-gradient(
+    105deg,
+    var(--text) 0%,
+    var(--text) 40%,
+    color-mix(in srgb, var(--accent) 90%, white) 50%,
+    var(--text) 60%,
+    var(--text) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer-text 5s linear infinite;
+}
+
+/* ── Hover lift — lent, de expansiune (serotonin) ── */
+.lift-card {
+  transition:
+    transform  0.55s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.4s ease;
+  will-change: transform, box-shadow;
+}
+.lift-card:hover {
+  transform: translateY(-2px) scale(1.012);
+  box-shadow:
+    0 24px 64px var(--shadow-color-soft),
+    0 8px  24px rgba(0,0,0,0.04),
+    inset 0 1px 0 rgba(255,255,255,0.12);
+}
+.lift-card:active {
+  transform: translateY(-0.5px) scale(0.995);
+  transition-duration: 0.2s;
+}
+
+/* ── Umbră colorată accent — extindere organică ── */
+.accent-shadow {
+  box-shadow:
+    0 8px 28px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 2px 8px  color-mix(in srgb, var(--accent) 8%, transparent),
+    inset 0 1px 0 rgba(255,255,255,0.10);
+}
+.accent-shadow-hover {
+  transition: box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.accent-shadow-hover:hover {
+  box-shadow:
+    0 16px 44px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 6px  16px color-mix(in srgb, var(--accent) 12%, transparent),
+    inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/* ── Reveal line — tranziție catifelată ── */
+.reveal-line { position: relative; }
+.reveal-line::after {
+  content: "";
+  position: absolute;
+  bottom: -1px; left: 50%; right: 50%;
+  height: 2px;
+  border-radius: 99px;
+  background: var(--accent);
+  transition:
+    left    0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    right   0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.4s ease;
+  opacity: 0;
+}
+.reveal-line:hover::after,
+.reveal-line[data-active="true"]::after {
+  left: 12%; right: 12%; opacity: 1;
+}
+
+/* ── Icon pop — respirație lentă fără rotire zbuciumată ── */
+.icon-pop {
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), color 0.4s ease, filter 0.4s ease;
+  display: inline-flex;
+}
+.icon-pop:hover {
+  transform: scale(1.08);
+  filter: drop-shadow(0 4px 12px var(--shadow-color-soft));
+}
+
+/* ── Badge entrance — catifelat ── */
+@keyframes badge-in {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.badge-in {
+  animation: badge-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Progress bar fill ── */
+@keyframes progress-fill { from { width: 0%; } }
+.progress-fill-anim {
+  animation: progress-fill 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Inset depth — suprafețe concave ── */
+.inset-depth {
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.06), inset 0 1px 3px rgba(0,0,0,0.04);
+}
+:root[data-theme="dark"] .inset-depth {
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.18), inset 0 1px 4px rgba(0,0,0,0.10);
+}
+
+/* ── Focus ring premium ── */
+.focus-ring-premium:focus-visible {
+  outline: none !important;
+  box-shadow:
+    0 0 0 2px   var(--bg),
+    0 0 0 4.5px var(--accent),
+    0 4px 20px  color-mix(in srgb, var(--accent) 30%, transparent) !important;
+  transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .card-pop, .card-pop-stagger > *,
+  .glow-pulse, .float-gentle, .shimmer-text, .badge-in, .progress-fill-anim {
+    animation: none !important; opacity: 1 !important; transform: none !important;
+  }
+  .lift-card:hover, .icon-pop:hover { transform: none !important; }
+}
+
+/* ── Performance lite ── */
+:root[data-performance="lite"] .lift-card:hover,
+:root[data-performance="lite"] .icon-pop:hover { transform: none; filter: none; }
+:root[data-performance="lite"] .glow-pulse,
+:root[data-performance="lite"] .float-gentle,
+:root[data-performance="lite"] .shimmer-text { animation: none; }
+
+

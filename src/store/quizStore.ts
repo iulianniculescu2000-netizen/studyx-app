@@ -71,6 +71,9 @@ export const useQuizStore = create<QuizStore>()(
         questions: original.questions.map((q) => ({
           ...q,
           id: uid(),
+          // Deep copy al opțiunilor — referința partajată ar face ca editele din
+          // copie să modifice și originalul (shallow copy bug).
+          options: (q.options ?? []).map((o) => ({ ...o, id: uid() })),
         })),
       };
       set((s) => ({ quizzes: [copy, ...s.quizzes] }));
@@ -139,8 +142,11 @@ export const useQuizStore = create<QuizStore>()(
       void (async () => {
         try {
           const store = await import('../lib/flashcardImageStore');
-          const owned = new Set(get().quizzes.map((q) => q.id));
           const stored = await store.listFlashcardImageQuizIds();
+          // Re-read AFTER the await — reading before would snapshot the quiz list
+          // before the IO, then any deck added concurrently during the await would
+          // not be in `owned` and its images would be wrongly deleted as "orphans".
+          const owned = new Set(get().quizzes.map((q) => q.id));
           await Promise.all(
             stored.filter((quizId) => !owned.has(quizId)).map((quizId) => store.deleteFlashcardImagesForQuiz(quizId)),
           );

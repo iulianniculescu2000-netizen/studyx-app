@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Check, CreditCard, Loader2, MessageCircle, Sparkles } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
@@ -61,11 +61,23 @@ export default function ExamPlanSessionRow({ folderId, session }: { folderId: st
   };
 
   return (
-    <div className="rounded-2xl p-3.5" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
+    <motion.div
+      layout
+      className="rounded-2xl p-3.5"
+      style={{
+        background: theme.surface2,
+        border: `1px solid ${session.done ? `${theme.success}30` : theme.border}`,
+        boxShadow: session.done ? `0 0 0 1px ${theme.success}15 inset` : 'none',
+        transition: 'border-color 0.25s, box-shadow 0.25s',
+      }}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <button
+          {/* Checkbox cu animație de bifare */}
+          <motion.button
             onClick={() => toggleExamPlanSession(folderId, session.id)}
+            whileHover={calmMotion ? undefined : { scale: 1.12, boxShadow: `0 0 0 3px ${theme.success}25` }}
+            whileTap={calmMotion ? undefined : { scale: 0.9 }}
             className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-all"
             style={{
               background: session.done ? theme.success : 'transparent',
@@ -73,11 +85,28 @@ export default function ExamPlanSessionRow({ folderId, session }: { folderId: st
             }}
             aria-label={session.done ? 'Marchează ca nebifat' : 'Marchează ca bifat'}
           >
-            {session.done && <Check size={12} color="#fff" strokeWidth={3} />}
-          </button>
-          <span className="text-xs font-black" style={{ color: session.done ? theme.text3 : theme.text2, textDecoration: session.done ? 'line-through' : 'none' }}>
+            <AnimatePresence mode="wait">
+              {session.done && (
+                <motion.span
+                  key="check"
+                  initial={{ scale: 0, rotate: -20 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  exit={{ scale: 0 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+                >
+                  <Check size={12} color="#fff" strokeWidth={3} />
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
+
+          <motion.span
+            animate={{ opacity: session.done ? 0.55 : 1 }}
+            className="text-xs font-black"
+            style={{ color: session.done ? theme.text3 : theme.text2, textDecoration: session.done ? 'line-through' : 'none' }}
+          >
             {passLabel(session)}
-          </span>
+          </motion.span>
         </div>
         <span className="text-[11px] font-semibold capitalize" style={{ color: theme.text3 }}>{DATE_FMT.format(date)}</span>
       </div>
@@ -86,9 +115,11 @@ export default function ExamPlanSessionRow({ folderId, session }: { folderId: st
         {session.chapters.map((chapter) => {
           const key = `${chapter.sourceId}::${chapter.heading}`;
           return (
-            <div
+            <motion.div
               key={key}
-              className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-3 py-2.5"
+              layout
+              whileHover={calmMotion ? undefined : { y: -1, boxShadow: `0 4px 12px ${theme.accent}12`, transition: { duration: 0.15 } }}
+              className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 transition-shadow"
               style={{ background: theme.surface }}
             >
               <div className="min-w-0">
@@ -96,37 +127,55 @@ export default function ExamPlanSessionRow({ folderId, session }: { folderId: st
                 <div className="truncate text-[10px] font-medium" style={{ color: theme.text3 }}>{chapter.sourceName}</div>
               </div>
               <div className="flex flex-shrink-0 items-center gap-1.5">
+                {/* Discută */}
                 <motion.button
-                  whileTap={calmMotion ? undefined : { scale: 0.97 }}
+                  whileHover={calmMotion ? undefined : { y: -1, boxShadow: `0 3px 10px ${theme.border}` }}
+                  whileTap={calmMotion ? undefined : { scale: 0.95 }}
                   onClick={() => discuss(chapter)}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[9.5px] font-black uppercase tracking-[0.06em]"
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[9.5px] font-black uppercase tracking-[0.06em] transition-all"
                   style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
                 >
                   <MessageCircle size={11} /> Discută
                 </motion.button>
+
+                {/* Grile */}
                 <motion.button
-                  whileTap={calmMotion ? undefined : { scale: 0.97 }}
+                  whileHover={calmMotion ? undefined : { y: -1, boxShadow: `0 3px 10px ${theme.accent}30` }}
+                  whileTap={calmMotion ? undefined : { scale: 0.95 }}
                   onClick={() => generate(chapter)}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[9.5px] font-black uppercase tracking-[0.06em]"
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[9.5px] font-black uppercase tracking-[0.06em] transition-all"
                   style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent }}
                 >
                   <Sparkles size={11} /> Grile
                 </motion.button>
+
+                {/* Flashcarduri */}
                 <motion.button
-                  whileTap={calmMotion ? undefined : { scale: 0.97 }}
+                  whileHover={calmMotion ? undefined : { y: -1, boxShadow: `0 3px 10px ${theme.success}30` }}
+                  whileTap={calmMotion ? undefined : { scale: 0.95 }}
                   onClick={() => void generateFlashcards(chapter)}
                   disabled={generatingKey === key}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[9.5px] font-black uppercase tracking-[0.06em] disabled:opacity-60"
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[9.5px] font-black uppercase tracking-[0.06em] transition-all disabled:opacity-60"
                   style={{ background: `${theme.success}15`, border: `1px solid ${theme.success}25`, color: theme.success }}
                 >
-                  {generatingKey === key ? <Loader2 size={11} className="animate-spin" /> : <CreditCard size={11} />}
+                  <AnimatePresence mode="wait">
+                    {generatingKey === key ? (
+                      <motion.span key="spin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                        <Loader2 size={11} className="animate-spin" />
+                      </motion.span>
+                    ) : (
+                      <motion.span key="card" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                        <CreditCard size={11} />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
                   Flashcarduri
                 </motion.button>
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>
-    </div>
+    </motion.div>
   );
 }

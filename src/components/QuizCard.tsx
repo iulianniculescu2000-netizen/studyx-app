@@ -82,58 +82,101 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
       draggable
       onDragStartCapture={handleDragStart}
       onDragEndCapture={handleDragEnd}
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.05, ease: [0.16, 1, 0.3, 1] }}
-      whileHover={{ y: -3, boxShadow: '0 16px 36px rgba(0,0,0,0.10)' }}
-      whileTap={{ scale: 0.98 }}
+      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.65, delay: index * 0.06, ease: [0.16, 1, 0.3, 1] }}
       onHoverStart={() => setHovered(true)}
       onHoverEnd={() => setHovered(false)}
-      className="relative group rounded-[32px] overflow-hidden glass-panel premium-shadow press-feedback"
+      className="relative group rounded-[32px] overflow-hidden glass-panel premium-card-hover"
       style={{
         background: hovered
-          ? `linear-gradient(135deg, ${colors.from}22 0%, ${colors.to}22 100%)`
+          ? `linear-gradient(135deg, ${colors.from}26 0%, ${colors.to}26 100%)`
           : `linear-gradient(135deg, ${colors.from}12 0%, ${colors.to}12 100%)`,
-        border: `1px solid ${hovered ? colors.badge + '55' : 'rgba(255,255,255,0.06)'}`,
+        border: `1px solid ${hovered ? colors.badge + '60' : 'rgba(255,255,255,0.06)'}`,
+        boxShadow: hovered
+          ? `0 24px 64px ${colors.badge}18, 0 8px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.12)`
+          : `0 8px 24px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.07)`,
         opacity: dragging ? 0.55 : 1,
-        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        transition: 'background 0.55s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s ease, box-shadow 0.55s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
-
     >
-      <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full pointer-events-none opacity-20 transition-opacity duration-500"
-        style={{ background: `radial-gradient(circle, ${colors.badge}80, transparent 70%)`, filter: 'blur(30px)', opacity: hovered ? 0.4 : 0.1 }} />
+      {/* Ambient glow orb - foarte lent */}
+      <div
+        className="absolute -top-20 -right-20 w-44 h-44 rounded-full pointer-events-none float-gentle"
+        style={{
+          background: `radial-gradient(circle, ${colors.badge}90, transparent 70%)`,
+          filter: 'blur(32px)',
+          opacity: hovered ? 0.45 : 0.08,
+          transition: 'opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      />
 
       <Link to={quizPath} className="block p-6 flex flex-col h-full relative z-10">
         <div className="flex items-start justify-between mb-5">
-          <div className="text-5xl drop-shadow-sm filter transition-transform duration-300 group-hover:scale-110 origin-bottom-left">
+          {/* Emoji cu respirație ușoară */}
+          <motion.div
+            className="text-5xl drop-shadow-sm origin-bottom-left select-none"
+            animate={hovered ? { scale: 1.08 } : { scale: 1 }}
+            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          >
             {quiz.emoji}
-          </div>
+          </motion.div>
+
           <div className="flex items-center gap-2 flex-wrap justify-end">
             {multipleCount > 0 && (
-              <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest backdrop-blur-md"
-                style={{ background: `${theme.accent}15`, color: theme.accent, border: `1px solid ${theme.accent}30` }}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: index * 0.06 + 0.1 }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest backdrop-blur-md"
+                style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}35` }}
+              >
                 <Layers size={10} />Multi
-              </div>
+              </motion.div>
             )}
-            {bestScore !== null && <ScoreRing score={bestScore} theme={theme} />}
+            {bestScore !== null && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: index * 0.06 + 0.15 }}
+              >
+                <ScoreRing score={bestScore} theme={theme} />
+              </motion.div>
+            )}
           </div>
         </div>
 
         <h3 className="font-black text-xl leading-tight mb-2 flex items-start gap-2" style={{ color: theme.text }}>
           <span className="line-clamp-2">{quiz.title}</span>
-          {quiz.pinned && <Pin size={16} fill={colors.badge} color={colors.badge} className="flex-shrink-0 mt-1 drop-shadow-sm" />}
+          {quiz.pinned && (
+            <motion.span
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <Pin size={16} fill={colors.badge} color={colors.badge} className="flex-shrink-0 mt-1 drop-shadow-sm" />
+            </motion.span>
+          )}
         </h3>
         <p className="text-sm mb-6 line-clamp-2 font-medium opacity-60" style={{ color: theme.text }}>{quiz.description}</p>
 
         <div className="mt-auto flex items-end justify-between">
           <div>
-            <div className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-white inline-block mb-2 shadow-lg transition-transform group-hover:scale-105 origin-left"
-              style={{ 
+            {/* Badge categorie expansiune lentă */}
+            <motion.div
+              className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-white inline-block mb-2 origin-left"
+              animate={hovered ? { scale: 1.04 } : { scale: 1 }}
+              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+              style={{
                 background: colors.badge,
-                boxShadow: `0 4px 12px ${colors.badge}40`
-              }}>
+                boxShadow: hovered
+                  ? `0 8px 24px ${colors.badge}55`
+                  : `0 4px 12px ${colors.badge}40`,
+                transition: 'box-shadow 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
               {quiz.category}
-            </div>
+            </motion.div>
             <p className="text-xs font-bold opacity-60 uppercase tracking-widest" style={{ color: theme.text }}>
               {quiz.questions.length} {isFlashcard ? (quiz.questions.length === 1 ? 'card' : 'carduri') : (quiz.questions.length === 1 ? 'întrebare' : 'întrebări')}
             </p>
@@ -141,39 +184,44 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
         </div>
       </Link>
 
-      {/* Floating Action Bar (Edit / Delete / Pin) */}
+      {/* Floating Action Bar (Edit / Delete / Pin) - fade + catifea */}
       <AnimatePresence>
         {hovered && !confirmDelete && (
           <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            initial={{ opacity: 0, y: -4, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            exit={{ opacity: 0, y: -4, scale: 0.96 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             className="absolute top-5 right-5 flex items-center gap-1 p-1.5 rounded-2xl shadow-2xl z-20"
-            style={{ background: theme.isDark ? 'rgba(20,20,25,0.82)' : 'rgba(255,255,255,0.88)', border: `1px solid ${theme.border}`, backdropFilter: 'blur(22px) saturate(145%)' }}>
-            
+            style={{
+              background: theme.isDark ? 'rgba(20,20,25,0.86)' : 'rgba(255,255,255,0.92)',
+              border: `1px solid ${theme.border}`,
+              backdropFilter: 'blur(22px) saturate(150%)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.10)',
+            }}
+          >
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePin(quiz.id); }}
-              className="p-2 rounded-xl transition-colors hover:bg-white/10 press-feedback"
-              style={{ color: quiz.pinned ? '#FFD60A' : theme.text2, transition: 'all 0.15s ease-out' }}
+              className="p-2 rounded-xl hover:bg-white/10 press-feedback"
+              style={{ color: quiz.pinned ? '#FFD60A' : theme.text2 }}
               title={quiz.pinned ? 'Scoate Pin' : 'Fixează (Pin)'}>
               {quiz.pinned ? <PinOff size={15} /> : <Pin size={15} />}
             </button>
-            
+
             {showDelete && (
               <>
                 <div className="w-px h-4 mx-1" style={{ background: theme.border }} />
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/create?edit=${quiz.id}`); }}
-                  className="p-2 rounded-xl transition-colors hover:bg-blue-500/15 press-feedback"
-                  style={{ color: '#0A84FF', transition: 'all 0.15s ease-out' }}
+                  className="p-2 rounded-xl hover:bg-blue-500/15 press-feedback"
+                  style={{ color: '#0A84FF' }}
                   title="Editează">
                   <Pencil size={15} />
                 </button>
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDelete(true); }}
-                  className="p-2 rounded-xl transition-colors hover:bg-red-500/15 press-feedback"
-                  style={{ color: '#FF453A', transition: 'all 0.15s ease-out' }}
+                  className="p-2 rounded-xl hover:bg-red-500/15 press-feedback"
+                  style={{ color: '#FF453A' }}
                   title="Șterge">
                   <Trash2 size={15} />
                 </button>
@@ -183,22 +231,22 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
         )}
       </AnimatePresence>
 
-      {/* Quick Play button — appears on hover */}
+      {/* Quick Play button — lift luxos */}
       <AnimatePresence>
         {hovered && !confirmDelete && (
           <motion.button
-            initial={{ opacity: 0, scale: 0.8, x: 10 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            exit={{ opacity: 0, scale: 0.8, x: 10 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            initial={{ opacity: 0, scale: 0.85, y: 4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 2 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(playPath); }}
-            className="absolute bottom-6 right-6 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-2xl transition-transform hover:scale-110 active:scale-95 press-feedback"
+            className="press-feedback absolute bottom-6 right-6 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest"
             style={{
               background: colors.badge,
               color: '#FFFFFF',
-              boxShadow: `0 8px 20px ${colors.badge}60`,
-              transition: 'all 0.15s ease-out'
-            }}>
+              boxShadow: `0 12px 32px ${colors.badge}55, inset 0 1px 0 rgba(255,255,255,0.18)`,
+            }}
+          >
             <Play size={13} fill="white" /> {isFlashcard ? 'Studiază' : 'Joacă'}
           </motion.button>
         )}

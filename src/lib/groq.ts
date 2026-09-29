@@ -912,12 +912,17 @@ Format JSON pur (${count} cazuri):
 [{"text":"Pacient...?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false},{"text":"E","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""}]`;
 
   let raw = '';
+  let lastClinicalJsonError = '';
   for (let attempt = 0; attempt < 3; attempt++) {
+    const retryNote = lastClinicalJsonError
+      ? `\n\nATENTIE: Ultima incercare a returnat JSON invalid (${lastClinicalJsonError}). Returneaza STRICT un array JSON valid, fara text sau markdown in afara lui.`
+      : '';
     raw = await groqChat([
       { role: 'system', content: getMedicalSystemPrompt('examiner') + '\nGenerează cazuri clinice EXCLUSIV din textul primit.' },
-      { role: 'user', content: userPrompt },
+      { role: 'user', content: userPrompt + retryNote },
     ], 0.3, { skipLibraryContext: true, task: 'questions' });
     if (raw.includes('[') && raw.includes(']')) break;
+    lastClinicalJsonError = 'lipsesc parantezele [ ]';
   }
 
   const jsonStr = extractJsonArray(raw);
@@ -999,12 +1004,17 @@ ${chunks[index]}
 Format: [{"front":"?","back":"..."}]`;
 
     let raw = '';
+    let lastJsonError = '';
     for (let attempt = 0; attempt < 3; attempt++) {
+      const retryNote = lastJsonError
+        ? `\n\nATENTIE: Ultima incercare a returnat JSON invalid (${lastJsonError}). Returneaza STRICT un array JSON valid, fara text sau markdown in afara lui.`
+        : '';
       raw = await groqChat([
         { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEsti expert in transformarea cursurilor medicale dense in flashcarduri de tip Active Recall, fara repetitii si fara umplutura.' },
-        { role: 'user', content: userPrompt },
+        { role: 'user', content: userPrompt + retryNote },
       ], attempt === 0 ? 0.32 : 0.45, { skipLibraryContext: true, task: 'questions' });
       if (raw.includes('[') && raw.includes(']')) break;
+      lastJsonError = 'lipsesc parantezele [ ]';
     }
 
     const jsonStr = extractJsonArray(raw);

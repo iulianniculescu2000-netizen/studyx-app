@@ -137,17 +137,25 @@ export default function QuizPlay() {
 
   const { focusMode, toggleFocusMode } = useFocusModeStore();
   const setChatOpen = useUIStore((state) => state.setChatOpen);
-  const openStudyChat = useCallback((mode: 'explain' | 'summarize' | 'test', prompt: string) => {
+  const openStudyChat = useCallback((
+    mode: 'explain' | 'summarize' | 'test',
+    prompt: string,
+    quizContext?: {
+      questionText: string;
+      correctAnswerText: string;
+      userAnswerText: string;
+      studyFocus?: string;
+    }
+  ) => {
     setChatOpen(true);
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
       detail: {
         open: true,
-        // Without this the drawer keeps whatever view it was last left in, so a
-        // conversational prompt could land in the AI Studio pane instead.
         view: 'chat',
         mode,
         resetConversation: true,
         prompt,
+        quizContext,
       },
     }));
   }, [setChatOpen]);
@@ -1398,7 +1406,13 @@ export default function QuizPlay() {
                     <button
                       onClick={() => openStudyChat(
                         'explain',
-                        `Explică-mi clar întrebarea aceasta și de ce răspunsul corect este "${correctAnswerText}". Întrebare: ${question.text}. Răspunsul meu: ${selectedAnswerText || "niciun răspuns"}.`,
+                        'Te rog să îmi explici această grilă. De ce am greșit și de ce este corect răspunsul indicat?',
+                        {
+                          questionText: question.text,
+                          correctAnswerText,
+                          userAnswerText: selectedAnswerText || "niciun răspuns",
+                          studyFocus: studyFocusTopic ?? undefined,
+                        }
                       )}
                       className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
                       style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
@@ -1415,7 +1429,13 @@ export default function QuizPlay() {
                     <button
                       onClick={() => openStudyChat(
                         'test',
-                        `Testează-mă rapid pe tema "${studyFocusTopic ?? question.text}". Pune-mi 3 întrebări scurte, una câte una, și verifică dacă am înțeles.`,
+                        `Testează-mă rapid pe acest subiect. Pune-mi 3 întrebări scurte, una câte una, ca să vezi dacă am înțeles.`,
+                        {
+                          questionText: question.text,
+                          correctAnswerText,
+                          userAnswerText: selectedAnswerText || "niciun răspuns",
+                          studyFocus: studyFocusTopic ?? undefined,
+                        }
                       )}
                       className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
                       style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
@@ -1432,7 +1452,13 @@ export default function QuizPlay() {
                     <button
                       onClick={() => openStudyChat(
                         'summarize',
-                        `Rezumă-mi pentru examen regula, capcanele și diferențele-cheie pentru această întrebare. Întrebare: ${question.text}. Răspuns corect: ${correctAnswerText}.${analysisResult?.rule ? ` Regulă actuală: ${analysisResult.rule}.` : ''}`,
+                        `Te rog să îmi rezumi regula pentru examen, capcanele și diferențele-cheie referitoare la această grilă.`,
+                        {
+                          questionText: question.text,
+                          correctAnswerText,
+                          userAnswerText: selectedAnswerText || "niciun răspuns",
+                          studyFocus: analysisResult?.rule ?? studyFocusTopic ?? undefined,
+                        }
                       )}
                       className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
                       style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}

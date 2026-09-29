@@ -115,7 +115,7 @@ export default function QuizList() {
             <div className="flex items-center gap-3">
               <div data-tutorial="btn-import"><ImportQuizButton /></div>
               <Link to="/create"
-                className="flex items-center gap-2.5 px-6 py-3 rounded-2xl font-black text-white transition-all shadow-xl hover:scale-[1.03] active:scale-[0.97]"
+                className="press-feedback accent-shadow-hover flex items-center gap-2.5 px-6 py-3 rounded-2xl font-black text-white shadow-xl"
                 style={{ background: theme.accent, boxShadow: `0 8px 24px ${theme.accent}40` }}>
                 <Plus size={18} strokeWidth={3} />
                 Grilă nouă
@@ -212,12 +212,12 @@ export default function QuizList() {
               <div className="flex items-center justify-center gap-4">
                 {(search || category !== 'Toate' || activeTag) && (
                   <button onClick={() => { setSearch(''); setCategory('Toate'); setActiveTag(null); }}
-                    className="px-6 py-3 rounded-2xl font-bold transition-all hover:bg-white/5"
+                    className="press-feedback px-6 py-3 rounded-2xl font-bold hover:bg-white/5"
                     style={{ color: theme.accent }}>
                     Resetează filtrele
                   </button>
                 )}
-                <Link to="/create" className="px-8 py-3 rounded-2xl font-black text-sm text-white shadow-xl transition-all hover:scale-105 active:scale-95"
+                <Link to="/create" className="press-feedback accent-shadow-hover px-8 py-3 rounded-2xl font-black text-sm text-white shadow-xl"
                   style={{ background: theme.accent, boxShadow: `0 8px 24px ${theme.accent}40` }}>
                   <Plus size={18} className="inline mr-2" /> Grilă nouă
                 </Link>
@@ -235,7 +235,7 @@ export default function QuizList() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   onClick={() => setPage(p => p + 1)}
-                  className="col-span-full flex items-center justify-center gap-3 py-5 rounded-[28px] font-black uppercase tracking-[0.2em] text-xs transition-all glass-panel border border-white/5 hover:border-accent/30"
+                  className="press-feedback col-span-full flex items-center justify-center gap-3 py-5 rounded-[28px] font-black uppercase tracking-[0.2em] text-xs glass-panel border border-white/5 hover:border-accent/30"
                   style={{ color: theme.text2 }}>
                   <Sparkles size={16} className="text-accent" /> Încarcă mai multe ({filtered.length - paginated.length} rămase)
                 </motion.button>

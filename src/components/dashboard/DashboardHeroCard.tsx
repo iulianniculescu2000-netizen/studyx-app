@@ -42,7 +42,7 @@ export default function DashboardHeroCard() {
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { calmMotion, performanceLite } = useAdaptiveMotion();
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   const latestRecommendationRunner = useMemo(() => createLatestOnlyRunner(), []);
 
   const dueCount = getDueQuestions().length;

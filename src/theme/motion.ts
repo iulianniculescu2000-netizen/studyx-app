@@ -40,7 +40,54 @@ export const heroIn: Variants = {
  * "back"-eased release on the CSS `.press-feedback` class.
  */
 export const pressFeedback = {
-  whileHover: { scale: 1.015 },
-  whileTap: { scale: 0.93 },
-  transition: { type: 'spring', stiffness: 500, damping: 15 },
+  whileHover: { scale: 1.01 },
+  whileTap: { scale: 0.98 },
+  transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
 };
+
+/* ── POLISH v2.2 — Serotonin UI Presets ───────────────────────────────────── */
+
+/**
+ * Serotonin Ease — tranziție foarte lungă, fluidă, cu decelerare lentă.
+ * Oferă senzația de obiect "greu" și luxos, fără niciun recul (no bounce).
+ */
+export const serotoninEase: Transition = { duration: 0.5, ease: [0.16, 1, 0.3, 1] };
+
+/** Hover card lift — expansiune lentă, blândă */
+export const cardHover = {
+  whileHover: { y: -2, scale: 1.012, transition: serotoninEase },
+  whileTap:   { y: -0.5, scale: 0.995, transition: { duration: 0.2 } },
+};
+
+/** Icon pop — respiră ușor la hover, fără să se rotească haotic */
+export const iconPop = {
+  whileHover: { scale: 1.08, transition: serotoninEase },
+  whileTap:   { scale: 0.96, transition: { duration: 0.15 } },
+};
+
+/** Badge entrance — apare fluid */
+export const badgeIn: Variants = {
+  hidden:  { opacity: 0, scale: 0.85 },
+  visible: { opacity: 1, scale: 1, transition: serotoninEase },
+};
+
+/** Container stagger — listă de carduri / elemente */
+export const staggerContainer: Variants = {
+  hidden:  {},
+  visible: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
+};
+
+/** Item individual din stagger — fade in organic */
+export const staggerItem: Variants = {
+  hidden:  { opacity: 0, y: 16, scale: 0.98 },
+  visible: { opacity: 1, y: 0,  scale: 1, transition: serotoninEase },
+};
+
+/** Intrare pagină — lungă și catifelată */
+export const pageEnter: Variants = {
+  hidden:  { opacity: 0, y: 12, scale: 0.99 },
+  visible: { opacity: 1, y: 0,  scale: 1, transition: { duration: 0.65, ease: [0.16, 1, 0.3, 1] } },
+  exit:    { opacity: 0, y: -4, scale: 0.995, transition: { duration: 0.25 } },
+};
+
+

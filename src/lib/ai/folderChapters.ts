@@ -25,12 +25,17 @@ export interface FolderChapterSource {
 export async function getFolderChapters(sources: FolderChapterSource[]): Promise<AggregatedChapter[]> {
   const ordered = [...sources].sort((a, b) => a.addedAt - b.addedAt);
   const perSource = await Promise.all(ordered.map(async (source) => {
-    const chunks = await getVaultChunksBySource(source.id);
-    return groupChunksIntoChapters(chunks).map((chapter) => ({
-      ...chapter,
-      sourceId: source.id,
-      sourceName: source.name,
-    }));
+    try {
+      const chunks = await getVaultChunksBySource(source.id);
+      return groupChunksIntoChapters(chunks).map((chapter) => ({
+        ...chapter,
+        sourceId: source.id,
+        sourceName: source.name,
+      }));
+    } catch {
+      console.warn(`[folderChapters] Failed to load chapters for source "${source.name}" (${source.id})`);
+      return [];
+    }
   }));
   return perSource.flat();
 }

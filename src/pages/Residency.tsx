@@ -470,6 +470,7 @@ function RealBankFolderLink({ theme, calmMotion }: { theme: Theme; calmMotion: b
 
 export default function Residency() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const { calmMotion } = useAdaptiveMotion();
   const knowledgeSources = useAIStore((state) => state.knowledgeSources);
   const libraryFolders = useAIStore((state) => state.libraryFolders);
@@ -525,6 +526,60 @@ export default function Residency() {
             )}
           </div>
         </motion.div>
+
+        {/* --- ANTRENAMENT RAPID (FLASHCARDS KUMAR) --- */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-10">
+          <div className="glass-panel relative overflow-hidden rounded-[24px] p-6 shadow-sm border border-black/5 dark:border-white/5">
+            <div className="absolute -right-8 -top-8 opacity-[0.03] dark:opacity-[0.02]">
+              <Stethoscope size={160} />
+            </div>
+            <div className="relative z-10 flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="flex h-6 items-center rounded-full px-2.5 text-[10px] font-black uppercase tracking-wider" style={{ background: `${theme.accent2}20`, color: theme.accent2 }}>
+                    Complement Simplu
+                  </span>
+                </div>
+                <h3 className="text-xl font-bold" style={{ color: theme.text }}>Baza Oficială: Kumar Flashcards</h3>
+                <p className="mt-1 max-w-lg text-sm font-medium" style={{ color: theme.text3 }}>
+                  Colecție de 550 concepte cheie extrase cu precizie. Apasă pe buton pentru a încărca setul.
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    const { useRezidentiatStore } = await import('../store/rezidentiatStore');
+                    const quizData = await useRezidentiatStore.getState().loadKumarFlashcards();
+
+                    if (quizData) {
+                      const { useQuizStore } = await import('../store/quizStore');
+                      const quizStore = useQuizStore.getState();
+                      const existing = quizStore.quizzes.find(q => q.id === quizData.id);
+
+                      // Dacă JSON-ul a fost actualizat, suprascrie versiunea veche din Zustand.
+                      if (existing) {
+                        quizStore.updateQuiz(quizData.id, { questions: quizData.questions, title: quizData.title });
+                      } else {
+                        const folderId = findOrCreateAiFlashcardsFolder();
+                        quizStore.addQuiz({ ...quizData, folderId });
+                      }
+
+                      navigate('/flashcards/session/' + quizData.id);
+                    }
+                  } catch (err) {
+                    console.error('Eroare la pornire:', err);
+                  }
+                }}
+                className="flex shrink-0 items-center gap-2 rounded-2xl px-6 py-3 font-black uppercase tracking-wider text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+                style={{ background: theme.accent }}
+              >
+                <BookOpen size={18} />
+                Începe (550 Carduri)
+              </button>
+            </div>
+          </div>
+        </motion.div>
+        {/* ------------------------------------------ */}
 
         <RealBankAnnounceBubble theme={theme} calmMotion={calmMotion} />
         <RealBankFolderLink theme={theme} calmMotion={calmMotion} />

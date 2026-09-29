@@ -39,9 +39,6 @@ const FOLDER_COLORS: { id: QuizColor; bg: string }[] = [
 const FOLDER_EMOJIS = ['\u{1F4C1}', '\u{1F4DA}', '\u{1F9E0}', '\u{1F4A1}', '\u{1F52C}', '\u{1F30D}', '\u{1F4BB}', '\u2764\uFE0F', '\u{1F9B4}', '\u{1F48A}', '\u2695\uFE0F', '\u{1F9EA}', '\u{1F4CB}', '\u{1F3AF}', '\u26A1', '\u{1F3E5}'];
 const QUIZ_DRAG_MIME = 'application/x-studyx-quiz-id';
 
-/** Slight "sticker" tilt per nav icon chip \u2014 cycled by index, not random, so it's stable across renders. */
-const NAV_TILTS = [-5, 4, -3, 5, -4];
-
 /**
  * IconChip \u2014 the reusable pictogram unit for nav items: a small glass slot,
  * tinted per category from the app's own folder-color palette (`FOLDER_COLORS`)
@@ -52,12 +49,11 @@ const NAV_TILTS = [-5, 4, -3, 5, -4];
  * content is colorful, tools stay quiet.
  */
 function IconChip({
-  icon, hue, tiltIndex = 0, active, size,
+  icon, hue, active, size,
 }: {
-  icon: React.ReactNode; hue?: string; tiltIndex?: number; active: boolean; size: number;
+  icon: React.ReactNode; hue?: string; active: boolean; size: number;
 }) {
   const theme = useTheme();
-  const tilt = NAV_TILTS[tiltIndex % NAV_TILTS.length];
 
   const colorStyle: React.CSSProperties = hue ? {
     background: active
@@ -76,11 +72,11 @@ function IconChip({
 
   return (
     <motion.span
-      initial={{ scale: 0.4, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1, rotate: hue && !active ? tilt : 0 }}
-      whileHover={hue ? { rotate: 0, scale: 1.12, y: -1 } : { scale: 1.06 }}
-      transition={{ type: 'spring', stiffness: 420, damping: 18 }}
-      className="flex items-center justify-center"
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1, rotate: 0 }}
+      whileHover={hue ? { scale: 1.06, y: -1 } : { scale: 1.04 }}
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      className="flex items-center justify-center accent-shadow-hover"
       style={{ width: size, height: size, flexShrink: 0, borderRadius: hue ? '11px 9px 12px 8px' : '10px', ...colorStyle }}
     >
       {icon}
@@ -109,16 +105,16 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
       <AnimatePresence>
         {show && (
           <motion.div
-            initial={{ opacity: 0, x: -6, scale: 0.95 }}
+            initial={{ opacity: 0, x: -4, scale: 0.96 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -4, scale: 0.95 }}
-            transition={{ duration: 0.13 }}
+            exit={{ opacity: 0, x: -2, scale: 0.98 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap z-50 pointer-events-none"
             style={{
               background: theme.isDark ? 'rgba(30,30,36,0.98)' : 'rgba(255,255,255,0.98)',
               border: `1px solid ${theme.border2}`,
               color: theme.text,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.22)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
             }}>
             {label}
           </motion.div>
@@ -181,20 +177,16 @@ function UpdateButton({
 
   return (
     <Tip label={collapsed ? label : ''}>
-      <motion.button
+      <button
         onClick={onOpen}
         aria-label={label}
-        whileHover={{ backgroundColor: `${color}14` }}
-        whileTap={{ scale: 0.94 }}
-        className="press-feedback w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-colors relative"
+        className="press-feedback w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-colors hover:bg-white/5 relative"
         style={{ color, justifyContent: collapsed ? 'center' : 'flex-start' }}
       >
         {/* Pulsing dot for actionable states */}
         {hasAction && (
           <motion.div
-            animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
-            transition={{ duration: 1.8, repeat: Infinity }}
-            className="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full"
+            className="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full glow-pulse"
             style={{ background: status === 'error' ? theme.danger : status === 'ready' ? theme.success : theme.accent }}
           />
         )}
@@ -205,13 +197,12 @@ function UpdateButton({
         {/* Inline download progress bar */}
         {!collapsed && isDownloading && (
           <div className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: theme.surface2 }}>
-            <motion.div className="h-full" style={{ background: theme.accent }}
+            <motion.div className="h-full progress-fill-anim" style={{ background: theme.accent }}
               animate={{ width: `${downloadPercent}%` }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
             />
           </div>
         )}
-      </motion.button>
+      </button>
     </Tip>
   );
 }
@@ -284,13 +275,13 @@ function NewFolderModal({
       }}
     >
       <motion.div
-        initial={{ scale: 0.9, opacity: 0, y: 18 }}
+        initial={{ scale: 0.95, opacity: 0, y: 12 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.9, opacity: 0, y: 18 }}
-        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+        exit={{ scale: 0.95, opacity: 0, y: 8 }}
+        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         onClick={(e) => e.stopPropagation()}
+        className="premium-modal"
         style={{
-          background: theme.modalBg,
           borderRadius: 28,
           maxWidth: 420,
           width: '92%',
@@ -298,8 +289,6 @@ function NewFolderModal({
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          border: `1px solid ${theme.border}`,
-          boxShadow: '0 36px 100px rgba(0,0,0,0.32)',
         }}
       >
         {/* Header */}
@@ -308,15 +297,13 @@ function NewFolderModal({
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: theme.text }}>Folder nou</h3>
             <p style={{ margin: '3px 0 0', fontSize: 12, color: theme.text3 }}>Organizează-ți grilele în foldere</p>
           </div>
-          <motion.button 
-            whileHover={{ scale: 1.1, rotate: 90 }}
-            whileTap={{ scale: 0.9 }}
+          <button 
             onClick={onClose}
             aria-label="Inchide dialogul"
-            className="press-feedback"
+            className="press-feedback icon-pop"
             style={{ color: theme.text3, background: theme.surface2, border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={16} />
-          </motion.button>
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-7 pt-5 custom-scrollbar" style={{ minHeight: 0 }}>
@@ -327,12 +314,13 @@ function NewFolderModal({
               {emojiOptions.map((e) => (
                 <button key={e} onClick={() => { setEmoji(e); setAppearanceTouched(true); }}
                   aria-label={`Alege pictograma ${e}`}
+                  className="press-feedback"
                   style={{
                     width: 38, height: 38, borderRadius: 11, fontSize: 19,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: emoji === e ? `${theme.accent}22` : theme.surface2,
                     border: `1.5px solid ${emoji === e ? theme.accent + '55' : 'transparent'}`,
-                    cursor: 'pointer', transition: 'all 0.15s',
+                    cursor: 'pointer', transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
                   }}>
                   {e}
                 </button>
@@ -347,14 +335,15 @@ function NewFolderModal({
               {FOLDER_COLORS.map((c) => (
                 <button key={c.id} onClick={() => { setColor(c.id); setAppearanceTouched(true); }}
                   aria-label={`Alege culoarea ${c.id}`}
+                  className="press-feedback"
                   style={{
                     width: 28, height: 28, borderRadius: '50%',
                     background: c.bg, border: 'none', cursor: 'pointer',
                     outline: color === c.id ? `3px solid ${c.bg}` : 'none',
                     outlineOffset: 3,
-                    transform: color === c.id ? 'scale(1.15)' : 'scale(1)',
-                    transition: 'all 0.15s',
-                    boxShadow: color === c.id ? `0 4px 12px ${c.bg}55` : 'none',
+                    transform: color === c.id ? 'scale(1.1)' : 'scale(1)',
+                    transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+                    boxShadow: color === c.id ? `0 6px 16px ${c.bg}44` : 'none',
                   }} />
               ))}
             </div>
@@ -365,6 +354,7 @@ function NewFolderModal({
             <input autoFocus value={name} onChange={(e) => handleNameChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               placeholder="Ex: Anatomie, Cardiologie..."
+              className="focus-ring-premium"
               style={{
                 width: '100%', padding: '14px 18px', borderRadius: 16, background: theme.surface2, border: `1px solid ${theme.border}`,
                 color: theme.text, outline: 'none', fontSize: 14, fontWeight: 600,
@@ -386,16 +376,15 @@ function NewFolderModal({
             />
           </div>
 
-          <motion.button onClick={handleCreate} disabled={!canCreate}
-            whileHover={canCreate ? { scale: 1.02, y: -2 } : {}}
-            whileTap={canCreate ? { scale: 0.98 } : {}}
+          <button onClick={handleCreate} disabled={!canCreate}
+            className={`glow-pulse press-feedback ${canCreate ? 'accent-shadow-hover' : ''}`}
             style={{
               width: '100%', padding: '16px', borderRadius: 18, border: 'none', fontWeight: 900, fontSize: 14,
               textTransform: 'uppercase', letterSpacing: '0.05em',
               cursor: canCreate ? 'pointer' : 'not-allowed', opacity: canCreate ? 1 : 0.5,
               background: theme.accent, color: '#fff',
-              boxShadow: `0 12px 30px ${theme.accent}40`,
-            }}>Creează folder</motion.button>
+              boxShadow: `0 12px 30px ${theme.accent}30`,
+            }}>Creează folder</button>
         </div>
       </motion.div>
     </motion.div>
@@ -408,20 +397,21 @@ function NewFolderModal({
  * to it (the chip itself carries the "you are here" signal via its glow).
  */
 function NavItem({
-  to, icon, label, badge, end, collapsed, hue, tiltIndex,
+  to, icon, label, badge, end, collapsed, hue,
 }: {
   to: string; icon: React.ReactNode; label: string; badge?: React.ReactNode;
-  end?: boolean; collapsed: boolean; hue?: string; tiltIndex?: number;
+  end?: boolean; collapsed: boolean; hue?: string;
 }) {
   const theme = useTheme();
   return (
     <NavLink to={to} end={end} style={{ textDecoration: 'none', display: 'block' }}>
       {({ isActive }) => (
         <motion.div
-          whileHover={{ x: collapsed ? 0 : 3 }}
-          whileTap={{ scale: 0.96 }}
-          transition={{ type: "spring", stiffness: 400, damping: 17 }}
-          className="relative flex items-center transition-all press-feedback"
+          whileHover={{ x: collapsed ? 0 : 2 }}
+          whileTap={{ scale: 0.98 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="relative flex items-center transition-all press-feedback reveal-line"
+          data-active={isActive}
           style={collapsed ? {
             width: 44,
             height: 44,
@@ -457,7 +447,7 @@ function NavItem({
             }
           }}
         >
-          <IconChip icon={icon} hue={hue} tiltIndex={tiltIndex} active={isActive} size={collapsed ? 30 : 27} />
+          <IconChip icon={icon} hue={hue} active={isActive} size={collapsed ? 30 : 27} />
           {!collapsed && (
             <>
               <span className="flex-1 truncate">{label}</span>
@@ -772,10 +762,10 @@ export default function Sidebar() {
         {collapsed ? (
           <>
             <Tip label="Dashboard">
-              <NavItem to="/" icon={<LayoutDashboard size={17} />} label="Dashboard" end collapsed hue="#0A84FF" tiltIndex={0} />
+              <NavItem to="/" icon={<LayoutDashboard size={17} />} label="Dashboard" end collapsed hue="#0A84FF" />
             </Tip>
             <Tip label={`Toate grilele (${activeQuizCount})`}>
-              <NavItem to="/quizzes" icon={<BookOpen size={17} />} label="Toate grilele" collapsed hue="#5E5CE6" tiltIndex={1} />
+              <NavItem to="/quizzes" icon={<BookOpen size={17} />} label="Toate grilele" collapsed hue="#5E5CE6" />
             </Tip>
             <Tip label={`Recapitulare${dueCount > 0 ? ` (${dueCount})` : ''}`}>
               <div data-tutorial="nav-review">
@@ -793,7 +783,7 @@ export default function Sidebar() {
                   label="Recapitulare"
                   collapsed
                   hue="#FF9F0A"
-                  tiltIndex={2}
+
                 />
               </div>
             </Tip>
@@ -813,20 +803,19 @@ export default function Sidebar() {
                   label="Sesiune zilnică"
                   collapsed
                   hue="#FF375F"
-                  tiltIndex={3}
                 />
               </div>
             </Tip>
             <Tip label="Statistici">
               <div data-tutorial="nav-stats">
-                <NavItem to="/stats" icon={<BarChart3 size={17} />} label="Statistici" collapsed hue="#5AC8FA" tiltIndex={4} />
+                <NavItem to="/stats" icon={<BarChart3 size={17} />} label="Statistici" collapsed hue="#5AC8FA" />
               </div>
             </Tip>
             <Tip label="Realizări">
-              <NavItem to="/gamification" icon={<Trophy size={17} />} label="Realizări" collapsed hue="#FF9F0A" tiltIndex={0} />
+              <NavItem to="/gamification" icon={<Trophy size={17} />} label="Realizări" collapsed hue="#FF9F0A" />
             </Tip>
             <Tip label="Perspective AI">
-              <NavItem to="/analytics" icon={<TrendingUp size={17} />} label="Perspective AI" collapsed hue="#5E5CE6" tiltIndex={1} />
+              <NavItem to="/analytics" icon={<TrendingUp size={17} />} label="Perspective AI" collapsed hue="#5E5CE6" />
             </Tip>
 
             {/* zone divider: Studiu ↑ / Resurse ↓ — a text label wouldn't fit collapsed, so a hairline stands in for it */}
@@ -834,22 +823,22 @@ export default function Sidebar() {
 
             <Tip label="Notițe">
               <div data-tutorial="nav-notes">
-                <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notițe" collapsed hue="#30D158" tiltIndex={1} />
+                <NavItem to="/notes" icon={<StickyNote size={17} />} label="Notițe" collapsed hue="#30D158" />
               </div>
             </Tip>
             <Tip label="Biblioteca AI">
               <div data-tutorial="nav-vault">
-                <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} hue="#0A84FF" tiltIndex={0} />
+                <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={collapsed} hue="#0A84FF" />
               </div>
             </Tip>
             <Tip label="Rezidențiat">
               <div>
-                <NavItem to="/rezidentiat" icon={<Stethoscope size={17} />} label="Rezidențiat" collapsed hue="#FF453A" tiltIndex={2} />
+                <NavItem to="/rezidentiat" icon={<Stethoscope size={17} />} label="Rezidențiat" collapsed hue="#FF453A" />
               </div>
             </Tip>
             <Tip label="Flashcarduri">
               <div data-tutorial="nav-flashcards">
-                <NavItem to="/flashcards" icon={<CreditCard size={17} />} label="Flashcarduri" collapsed hue="#5E5CE6" tiltIndex={3} />
+                <NavItem to="/flashcards" icon={<CreditCard size={17} />} label="Flashcarduri" collapsed hue="#5E5CE6" />
               </div>
             </Tip>
           </>
@@ -858,14 +847,14 @@ export default function Sidebar() {
             <div className="mb-1 px-2.5 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3, opacity: 0.55 }}>
               Studiu
             </div>
-            <NavItem to="/" icon={<LayoutDashboard size={16} />} label="Dashboard" end collapsed={false} hue="#0A84FF" tiltIndex={0} />
+            <NavItem to="/" icon={<LayoutDashboard size={16} />} label="Dashboard" end collapsed={false} hue="#0A84FF" />
             <NavItem
               to="/quizzes"
               icon={<BookOpen size={16} />}
               label="Toate grilele"
               collapsed={false}
               hue="#5E5CE6"
-              tiltIndex={1}
+
               badge={
                 <div className="flex gap-1.5 items-center">
                   {newQuizCount > 0 && (
@@ -885,7 +874,7 @@ export default function Sidebar() {
                 label="Recapitulare"
                 collapsed={false}
                 hue="#FF9F0A"
-                tiltIndex={2}
+
                 badge={dueCount > 0 ? (
                   <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
                     style={{ background: `${theme.warning}28`, color: theme.warning }}>
@@ -901,7 +890,7 @@ export default function Sidebar() {
                 label="Sesiune zilnică"
                 collapsed={false}
                 hue="#FF375F"
-                tiltIndex={3}
+
                 badge={dueCount > 0 ? (
                   <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
                     style={{ background: `${theme.accent}28`, color: theme.accent }}>
@@ -910,21 +899,21 @@ export default function Sidebar() {
                 ) : undefined}
               />
             </div>
-            <div data-tutorial="nav-stats"><NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} hue="#5AC8FA" tiltIndex={4} /></div>
-            <NavItem to="/gamification" icon={<Trophy size={16} />} label="Realizări" collapsed={false} hue="#FF9F0A" tiltIndex={0} />
-            <NavItem to="/analytics" icon={<TrendingUp size={16} />} label="Perspective AI" collapsed={false} hue="#5E5CE6" tiltIndex={1} />
+            <div data-tutorial="nav-stats"><NavItem to="/stats" icon={<BarChart3 size={16} />} label="Statistici" collapsed={false} hue="#5AC8FA" /></div>
+            <NavItem to="/gamification" icon={<Trophy size={16} />} label="Realizări" collapsed={false} hue="#FF9F0A" />
+            <NavItem to="/analytics" icon={<TrendingUp size={16} />} label="Perspective AI" collapsed={false} hue="#5E5CE6" />
 
             <div className="mb-1 mt-4 px-2.5 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3, opacity: 0.55 }}>
               Resurse
             </div>
             <div data-tutorial="nav-notes">
-              <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notițe" collapsed={false} hue="#30D158" tiltIndex={1} />
+              <NavItem to="/notes" icon={<StickyNote size={16} />} label="Notițe" collapsed={false} hue="#30D158" />
             </div>
 
             <div data-tutorial="nav-vault">
-              <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} hue="#0A84FF" tiltIndex={0} />
+              <NavItem to="/vault" icon={<Database size={16} />} label="Biblioteca AI" collapsed={false} hue="#0A84FF" />
             </div>
-            <NavItem to="/rezidentiat" icon={<Stethoscope size={16} />} label="Rezidențiat" collapsed={false} hue="#FF453A" tiltIndex={2} />
+            <NavItem to="/rezidentiat" icon={<Stethoscope size={16} />} label="Rezidențiat" collapsed={false} hue="#FF453A" />
             <div data-tutorial="nav-flashcards">
               <NavItem
                 to="/flashcards"
@@ -932,7 +921,7 @@ export default function Sidebar() {
                 label="Flashcarduri"
                 collapsed={false}
                 hue="#5E5CE6"
-                tiltIndex={3}
+
               />
             </div>
 

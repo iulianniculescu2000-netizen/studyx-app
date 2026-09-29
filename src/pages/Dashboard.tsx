@@ -66,7 +66,7 @@ function DashboardHero({
         STUDYX OVERVIEW
       </div>
       <h1 className={`${compact ? 'page-title-compact' : 'page-title'} mb-2`} style={{ color: theme.text }}>
-        {greeting}, <span style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}>{username}</span>
+        {greeting}{username ? <>, <span style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}>{username}</span></> : ''}
       </h1>
       <p className="page-subtitle max-w-2xl opacity-70" style={{ color: theme.text }}>
         {new Date().toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}. Un tablou calm, clar și orientat spre progres real.

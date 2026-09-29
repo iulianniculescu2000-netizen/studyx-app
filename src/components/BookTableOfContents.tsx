@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight, Library } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import type { AIKnowledgeSource } from '../store/aiStore';
 import { useSourceChapters, type SourceChapter } from '../hooks/useSourceChapters';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { KUMAR_TABLE_OF_CONTENTS } from '../data/rezidentiat/kumarTableOfContents';
 import { REZIDENTIAT_LIBRARY_BOOKS } from '../lib/rezidentiatLibrary';
 import { getChapterFullText } from '../lib/ai/bookChapterText';
@@ -21,6 +23,7 @@ interface ReaderState {
   pageLabel?: string;
   loading: boolean;
   content: string;
+  error?: boolean;
 }
 
 /**
@@ -35,6 +38,7 @@ interface ReaderState {
  * instead of silently missing or guessed.
  */
 export default function BookTableOfContents({ source, theme }: { source: AIKnowledgeSource; theme: Theme }) {
+  const { calmMotion } = useAdaptiveMotion();
   const isKumar = KUMAR_BOOK !== undefined && source.name === KUMAR_BOOK.name;
   const { chapters: indexedChapters, loading: indexedLoading } = useSourceChapters(source.id);
   const [reader, setReader] = useState<ReaderState | null>(null);
@@ -52,8 +56,12 @@ export default function BookTableOfContents({ source, theme }: { source: AIKnowl
 
   const openChapter = async (heading: string, label: string, pageLabel?: string) => {
     setReader({ title: label, pageLabel, loading: true, content: '' });
-    const text = await getChapterFullText(source.id, heading);
-    setReader({ title: label, pageLabel, loading: false, content: text });
+    try {
+      const text = await getChapterFullText(source.id, heading);
+      setReader({ title: label, pageLabel, loading: false, content: text });
+    } catch {
+      setReader({ title: label, pageLabel, loading: false, content: '⚠ Textul capitolului nu a putut fi extras.', error: true });
+    }
   };
 
   if (indexedLoading) {
@@ -65,6 +73,9 @@ export default function BookTableOfContents({ source, theme }: { source: AIKnowl
     );
   }
 
+  const buttonBase =
+    'flex w-full items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 text-left transition-all';
+
   if (isKumar) {
     return (
       <div className="py-4">
@@ -72,33 +83,53 @@ export default function BookTableOfContents({ source, theme }: { source: AIKnowl
           <Library size={13} /> Cuprins ({KUMAR_TABLE_OF_CONTENTS.length} capitole)
         </div>
         <div className="space-y-1.5">
-          {kumarEntries.map(({ entry, indexed }) => (
-            <button
+          {kumarEntries.map(({ entry, indexed }, i) => (
+            <motion.button
               key={entry.number}
               disabled={!indexed}
               onClick={() => indexed && void openChapter(indexed.heading, entry.title, `pagina ${entry.page}`)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 text-left transition-colors disabled:cursor-default"
-              style={{ background: theme.surface2, opacity: indexed ? 1 : 0.5 }}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: indexed ? 1 : 0.5, y: 0 }}
+              transition={calmMotion ? { duration: 0 } : { delay: i * 0.015, duration: 0.2 }}
+              whileHover={calmMotion || !indexed ? undefined : {
+                y: -2,
+                boxShadow: `0 4px 16px ${theme.accent}18`,
+                transition: { duration: 0.15 },
+              }}
+              whileTap={calmMotion || !indexed ? undefined : { scale: 0.98 }}
+              className={`${buttonBase} disabled:cursor-default`}
+              style={{ background: theme.surface2 }}
             >
               <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: indexed ? theme.text2 : theme.text3 }}>
                 {entry.number}. {entry.title}
               </span>
               <span className="flex flex-shrink-0 items-center gap-2 text-[11px] font-medium" style={{ color: theme.text3 }}>
                 pag. {entry.page}
-                {indexed ? <ChevronRight size={13} /> : <span className="text-[10px] italic">text indisponibil</span>}
+                {indexed ? (
+                  <motion.span
+                    animate={calmMotion ? undefined : { x: [0, 2, 0] }}
+                    transition={{ duration: 1.4, repeat: Infinity, repeatDelay: 2 }}
+                  >
+                    <ChevronRight size={13} />
+                  </motion.span>
+                ) : (
+                  <span className="text-[10px] italic">text indisponibil</span>
+                )}
               </span>
-            </button>
+            </motion.button>
           ))}
         </div>
-        {reader && (
-          <BookChapterReaderModal
-            title={reader.title}
-            pageLabel={reader.pageLabel}
-            loading={reader.loading}
-            content={reader.content}
-            onClose={() => setReader(null)}
-          />
-        )}
+        <AnimatePresence>
+          {reader && (
+            <BookChapterReaderModal
+              title={reader.title}
+              pageLabel={reader.pageLabel}
+              loading={reader.loading}
+              content={reader.content}
+              onClose={() => setReader(null)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -111,27 +142,45 @@ export default function BookTableOfContents({ source, theme }: { source: AIKnowl
         <Library size={13} /> Cuprins ({indexedChapters.length} capitole)
       </div>
       <div className="space-y-1.5">
-        {indexedChapters.map((chapter) => (
-          <button
+        {indexedChapters.map((chapter, i) => (
+          <motion.button
             key={chapter.heading}
             onClick={() => void openChapter(chapter.heading, chapter.label)}
-            className="flex w-full items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 text-left transition-colors hover:bg-white/5"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={calmMotion ? { duration: 0 } : { delay: i * 0.02, duration: 0.2 }}
+            whileHover={calmMotion ? undefined : {
+              y: -2,
+              boxShadow: `0 4px 16px ${theme.accent}18`,
+              transition: { duration: 0.15 },
+            }}
+            whileTap={calmMotion ? undefined : { scale: 0.98 }}
+            className={buttonBase}
             style={{ background: theme.surface2 }}
           >
             <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: theme.text2 }}>{chapter.label}</span>
-            <ChevronRight size={13} className="flex-shrink-0" style={{ color: theme.text3 }} />
-          </button>
+            <motion.span
+              animate={calmMotion ? undefined : { x: [0, 2, 0] }}
+              transition={{ duration: 1.4, repeat: Infinity, repeatDelay: 2 }}
+              className="flex-shrink-0"
+              style={{ color: theme.text3 }}
+            >
+              <ChevronRight size={13} />
+            </motion.span>
+          </motion.button>
         ))}
       </div>
-      {reader && (
-        <BookChapterReaderModal
-          title={reader.title}
-          pageLabel={reader.pageLabel}
-          loading={reader.loading}
-          content={reader.content}
-          onClose={() => setReader(null)}
-        />
-      )}
+      <AnimatePresence>
+        {reader && (
+          <BookChapterReaderModal
+            title={reader.title}
+            pageLabel={reader.pageLabel}
+            loading={reader.loading}
+            content={reader.content}
+            onClose={() => setReader(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

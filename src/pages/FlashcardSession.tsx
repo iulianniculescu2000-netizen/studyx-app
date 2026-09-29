@@ -80,15 +80,18 @@ export default function FlashcardSession() {
   const { quizzes } = useQuizStore();
   const { questionStats, recordAnswer, recordStudySession } = useStatsStore();
 
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   const modeAll = searchParams.get('mode') === 'all';
 
+  // `now` este captat o singură dată la montare — cardurile „due" sunt calculate
+  // la începutul sesiunii și nu se schimbă în timpul ei. Dacă `now` ar fi în
+  // state (actualizat din minut în minut) ar invalida `initialCards` și ar
+  // recalcula întreaga coadă de carduri în fundal la fiecare 60 s, schimbând
+  // silențios sesiunea activă.
+  const sessionStartRef = useRef(Date.now());
+
   const initialCards = useMemo<CardItem[]>(() => {
+    const sessionNow = sessionStartRef.current;
     if (id === 'all') {
       const items: CardItem[] = [];
       // Only real flashcard decks belong in a flip-card session. Without this
@@ -99,7 +102,7 @@ export default function FlashcardSession() {
         .forEach((quiz) => {
         quiz.questions.forEach((question) => {
           const stat = questionStats[`${quiz.id}:${question.id}`];
-          if (!stat || (stat.nextReview > 0 && stat.nextReview <= now)) {
+          if (!stat || (stat.nextReview > 0 && stat.nextReview <= sessionNow)) {
             items.push({ question, quiz });
           }
         });
@@ -114,12 +117,13 @@ export default function FlashcardSession() {
       .filter((question) => {
         if (modeAll) return true;
         const stat = questionStats[`${quiz.id}:${question.id}`];
-        return !stat || (stat.nextReview > 0 && stat.nextReview <= now);
+        return !stat || (stat.nextReview > 0 && stat.nextReview <= sessionNow);
       })
       .map((question) => ({ question, quiz }));
 
     return modeAll ? items : shuffleArr(items);
-  }, [id, quizzes, questionStats, modeAll, now]);
+  }, [id, quizzes, questionStats, modeAll]); // `sessionStartRef` e stabil — nu e nevoie în deps
+
 
   const sessionRouteKey = `${id ?? 'all'}:${modeAll ? 'all' : 'due'}`;
   const [activeRouteKey, setActiveRouteKey] = useState(sessionRouteKey);
@@ -437,7 +441,12 @@ export default function FlashcardSession() {
           >
             <div className={`flex items-center gap-3 ${mobile ? 'flex-wrap' : ''}`}>
               <button
-                onClick={() => navigate('/flashcards')}
+                onClick={() => {
+                  // Înregistrează timpul petrecut chiar dacă sesiunea e la mijloc —
+                  // altfel tot studiul dispare din statistici la ieșirea devreme.
+                  recordStudySession(getElapsedSeconds());
+                  navigate('/flashcards');
+                }}
                 className={`press-feedback inline-flex shrink-0 items-center gap-2 rounded-full font-black uppercase tracking-[0.18em] ${denseLayout ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-[11px]'}`}
                 style={{ background: theme.surface2, color: theme.text, border: `1px solid ${theme.border}` }}
               >

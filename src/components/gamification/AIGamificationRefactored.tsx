@@ -110,6 +110,8 @@ export default function AIGamificationRefactored({ username }: AIGamificationPro
     [accuracy, perfectSessions, quizzes.length, sessions.length, streak.currentStreak, streak.longestStreak, totalStudyTime, weeklyQuestions],
   );
 
+  const [currentTimestamp] = useState(() => Date.now());
+
   const achievements = useMemo<Achievement[]>(
     () => [
       {
@@ -162,7 +164,7 @@ export default function AIGamificationRefactored({ username }: AIGamificationPro
         aiGenerated: false,
         // Unlocked from the real streak — this used to carry a hard-coded date,
         // so the badge claimed to have been earned whether it had been or not.
-        ...(longestRun >= 7 ? { unlockedAt: new Date(streak.lastStudyDate || Date.now()) } : {}),
+        ...(longestRun >= 7 ? { unlockedAt: new Date(streak.lastStudyDate || currentTimestamp) } : {}),
         rewards: [
           { type: 'badge', value: '🔥 Saptamana de Studiu' },
           { type: 'points', value: 200 },
@@ -187,7 +189,7 @@ export default function AIGamificationRefactored({ username }: AIGamificationPro
         ],
       },
     ],
-    [masteredSubject, perfectSessions, quizzes.length, longestRun, streak.lastStudyDate],
+    [masteredSubject, perfectSessions, quizzes.length, longestRun, streak.lastStudyDate, currentTimestamp],
   );
 
   const challenges = useMemo<Challenge[]>(

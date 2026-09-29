@@ -143,6 +143,14 @@ export default function AIChatDrawer() {
   // the /rezidentiat route itself.
   const chatThread = useChatThread();
   const { messages, setMessages, messagesRef, chatEndRef } = useChatMessages({ open, calmMotion, thread: chatThread });
+  
+  const [activeQuizContext, setActiveQuizContext] = useState<{
+    questionText: string;
+    correctAnswerText: string;
+    userAnswerText: string;
+    studyFocus?: string;
+  } | null>(null);
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [thinkingPhase, setThinkingPhase] = useState<string | null>(null);
@@ -281,9 +289,15 @@ export default function AIChatDrawer() {
         resetConversation?: boolean;
         view?: DrawerView;
         examStyle?: 'residency';
+        quizContext?: {
+          questionText: string;
+          correctAnswerText: string;
+          userAnswerText: string;
+          studyFocus?: string;
+        };
       }>).detail;
 
-      if (!detail?.prompt) return;
+      if (!detail?.prompt && !detail?.quizContext) return;
       if (detail.open) setChatOpen(true);
       if (detail.view) setView(detail.view);
       // Explicit request (Residency page) — the Studio's exam-style track is
@@ -301,9 +315,14 @@ export default function AIChatDrawer() {
         setMessages([]);
         setActiveCitationKey(null);
         setManualMode(false);
+        setActiveQuizContext(null);
         contextCacheRef.current.clear();
         conversationSummaryRef.current = '';
         summaryCoveredCountRef.current = 0;
+      }
+
+      if (detail.quizContext) {
+        setActiveQuizContext(detail.quizContext);
       }
 
       if (detail.sourceId && detail.sourceName) {
@@ -319,7 +338,7 @@ export default function AIChatDrawer() {
         setManualMode(true);
       }
 
-      setInput(detail.prompt);
+      if (detail.prompt) setInput(detail.prompt);
       requestAnimationFrame(() => textareaRef.current?.focus());
     };
 
@@ -524,6 +543,9 @@ export default function AIChatDrawer() {
         .slice(-8)
         .map(({ role, content }) => ({ role, content }));
       const scopePrefix = scopedSource ? `Document țintă: ${scopedSource.name}\n` : '';
+      const quizContextPrefix = activeQuizContext 
+        ? `[CONTEXT TUTOR]\nUtilizatorul rezolvă o grilă și discută despre ea.\nÎntrebare: ${activeQuizContext.questionText}\nRăspuns corect: ${activeQuizContext.correctAnswerText}\nRăspunsul utilizatorului: ${activeQuizContext.userAnswerText}\nFocus recomandat: ${activeQuizContext.studyFocus ?? 'Niciunul'}\n\n` 
+        : '';
 
       const suggestions = buildFollowUpSuggestions(
         text,
@@ -547,7 +569,7 @@ export default function AIChatDrawer() {
 
       await generateChatResponseStream(
         text,
-        `${scopePrefix}${contextSummary}`,
+        `${quizContextPrefix}${scopePrefix}${contextSummary}`,
         historyForAI,
         (chunk) => {
           if (abortCtrl.signal.aborted) return;
@@ -1053,6 +1075,14 @@ export default function AIChatDrawer() {
                 <span className="text-[13px] font-semibold" style={{ color: theme.text2 }}>
                   {thinkingPhase ?? 'Mă gândesc…'}
                 </span>
+                <button
+                  onClick={stopGeneration}
+                  title="Oprește generarea"
+                  className="ml-1 flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide transition-colors hover:opacity-80"
+                  style={{ background: `${theme.danger}15`, color: theme.danger, border: `1px solid ${theme.danger}30` }}
+                >
+                  ⬛ Stop
+                </button>
               </div>
             </div>
           )}
@@ -1583,6 +1613,37 @@ export default function AIChatDrawer() {
                   className="border-t px-4 pt-3 pb-4"
                   style={{ borderColor: theme.border, background: theme.isDark ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.6)' }}
                 >
+                  <AnimatePresence>
+                    {activeQuizContext && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, height: 0 }}
+                        animate={{ opacity: 1, y: 0, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                        className="mb-3 overflow-hidden"
+                      >
+                        <div className="flex items-start gap-2 rounded-[16px] border px-3 py-2 text-xs"
+                          style={{
+                            background: `${theme.accent}10`,
+                            borderColor: `${theme.accent}25`,
+                            color: theme.text,
+                          }}>
+                          <div className="mt-0.5" style={{ color: theme.accent }}><Sparkles size={14} /></div>
+                          <div className="flex-1">
+                            <span className="font-bold opacity-80 uppercase tracking-widest text-[9px] block mb-1">Tutor Contextual</span>
+                            <span className="line-clamp-2 opacity-90">{activeQuizContext.questionText}</span>
+                          </div>
+                          <button
+                            onClick={() => setActiveQuizContext(null)}
+                            className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                            style={{ color: theme.text3 }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  
                   <div className="rounded-[24px] p-1" style={{ background: theme.surface2, border: `1px solid ${theme.border}`, boxShadow: `0 2px 12px ${theme.accent}08` }}>
                     {pastedImage && (
                       <div className="relative mx-2 mt-2 mb-1 inline-block">

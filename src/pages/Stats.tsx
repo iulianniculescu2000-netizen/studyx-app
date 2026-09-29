@@ -110,6 +110,8 @@ export default function Stats() {
   // and then went nowhere.
   const strongTopics = useMemo(
     () => (activeProfileId ? getStrongTopicsForProfile(activeProfileId).slice(0, 6) : []),
+    // questionStats re-triggers the read: the profile store is not a reactive dep
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeProfileId, questionStats],
   );
 

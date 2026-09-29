@@ -14,13 +14,21 @@ export function useSourceChapters(sourceId: string | null) {
   const [chapters, setChapters] = useState<SourceChapter[]>([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const [prevSourceId, setPrevSourceId] = useState(sourceId);
+
+  if (sourceId !== prevSourceId) {
+    setPrevSourceId(sourceId);
     if (!sourceId) {
       setChapters([]);
-      return;
+      setLoading(false);
+    } else {
+      setLoading(true);
     }
+  }
+
+  useEffect(() => {
+    if (!sourceId) return;
     let cancelled = false;
-    setLoading(true);
     void getVaultChunksBySource(sourceId).then((chunks) => {
       if (cancelled) return;
       setChapters(groupChunksIntoChapters(chunks));
