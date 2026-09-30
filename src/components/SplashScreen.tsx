@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Logo from './Logo';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
+import { useTheme } from '../theme/ThemeContext';
 
 interface SplashScreenProps {
   visible: boolean;
@@ -11,6 +12,7 @@ interface SplashScreenProps {
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
   const { calmMotion: calm } = useAdaptiveMotion();
+  const theme = useTheme();
   const [nearDone, setNearDone] = useState(false);
 
   // Quiet payoff right as the bar finishes filling, instead of an abrupt cut
@@ -37,7 +39,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'radial-gradient(circle at 50% 18%, rgba(167,139,250,0.16), transparent 32%), #0a0a0f',
+            background: `radial-gradient(circle at 50% 18%, color-mix(in srgb, ${theme.accent} 14%, transparent), transparent 32%), ${theme.bg}`,
           }}
         >
           <motion.div
@@ -45,7 +47,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: calm ? 0.12 : 0.2, ease: [0.16, 1, 0.3, 1] }}
             style={{
-              boxShadow: calm ? '0 10px 24px rgba(167,139,250,0.10)' : '0 12px 28px rgba(167,139,250,0.14)',
+              boxShadow: calm ? `0 10px 24px color-mix(in srgb, ${theme.accent} 10%, transparent)` : `0 12px 28px color-mix(in srgb, ${theme.accent} 14%, transparent)`,
               borderRadius: 30,
               padding: 12,
               willChange: 'transform, opacity',
@@ -62,7 +64,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
           >
             <h1
               style={{
-                color: 'white',
+                color: theme.text,
                 fontSize: '1.92rem',
                 fontWeight: 'bold',
                 letterSpacing: '1.8px',
@@ -72,7 +74,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
             >
               STUDY
               <span style={{
-                background: 'linear-gradient(135deg, #A78BFA, #22D3EE)',
+                background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
               }}>X</span>
@@ -81,14 +83,14 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
               style={{
                 height: 2,
                 width: 34,
-                background: 'linear-gradient(90deg, #A78BFA, #22D3EE)',
+                background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`,
                 margin: '10px auto',
                 borderRadius: 2,
               }}
             />
             <p
               style={{
-                color: '#aeb4c3',
+                color: theme.text2,
                 fontSize: '0.78rem',
                 fontWeight: 500,
                 textTransform: 'uppercase',
@@ -115,7 +117,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
               style={{
                 width: '100%',
                 height: 2,
-                background: 'rgba(255,255,255,0.05)',
+                background: theme.fillSubtle,
                 borderRadius: 10,
                 overflow: 'hidden',
                 position: 'relative',
@@ -131,7 +133,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
                 }
                 style={{
                   height: '100%',
-                  background: 'linear-gradient(90deg, #A78BFA, #22D3EE)',
+                  background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`,
                   willChange: 'width',
                 }}
               />
@@ -143,7 +145,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                style={{ color: 'rgba(255,255,255,0.28)', fontSize: '0.68rem', marginTop: 8 }}
+                style={{ color: theme.text3, fontSize: '0.68rem', marginTop: 8 }}
               >
                 {nearDone ? 'Bine ai venit.' : 'Se încarcă experiența premium...'}
               </motion.p>

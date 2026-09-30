@@ -136,16 +136,14 @@ test.describe('StudyX Application', () => {
           profiles: [{
             id: profileId,
             username: 'QA DnD',
-            themeId: 'obsidian',
             gradient: 'linear-gradient(135deg,#0A84FF,#5E5CE6)',
             createdAt: now,
           }],
           activeProfileId: profileId,
           pendingTutorialProfileId: null,
           username: 'QA DnD',
-          themeId: 'obsidian',
         },
-        version: 2,
+        version: 4,
       }));
       localStorage.setItem(`studyx-p-${profileId}-folders`, JSON.stringify({
         folders: [

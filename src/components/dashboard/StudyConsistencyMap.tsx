@@ -36,7 +36,7 @@ export default function StudyConsistencyMap({ compact = false }: { compact?: boo
 
   const levelStyle = (day: HeatmapDay) => {
     if (day.level === 0) {
-      return { background: theme.isDark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.05)', border: '1px solid transparent' };
+      return { background: 'var(--fill-subtle)', border: '1px solid transparent' };
     }
     const opacity = [0, 0.28, 0.48, 0.72, 1][day.level];
     return {

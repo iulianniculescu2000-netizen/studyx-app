@@ -27,16 +27,16 @@ function DashboardLoading({ compact }: { compact: boolean }) {
   return (
     <div className={`premium-shell h-full overflow-y-auto px-4 sm:px-8 ${compact ? 'py-5 sm:py-6' : 'py-6 sm:py-10'}`}>
       <div className={`${compact ? 'max-w-[1040px]' : 'max-w-[1120px]'} mx-auto shell-main-stage`}>
-        <div className="mb-10 h-10 w-48 animate-pulse rounded-xl bg-white/5" />
+        <div className="mb-10 h-10 w-48 animate-pulse rounded-xl bg-[var(--fill-subtle)]" />
         <div className="mb-12 grid grid-cols-2 gap-5 md:grid-cols-4">
           {[1, 2, 3, 4].map((item) => (
-            <div key={item} className="h-32 animate-pulse rounded-[32px] bg-white/5" />
+            <div key={item} className="h-32 animate-pulse rounded-[32px] bg-[var(--fill-subtle)]" />
           ))}
         </div>
-        <div className="mb-12 h-40 animate-pulse rounded-[32px] bg-white/5" />
+        <div className="mb-12 h-40 animate-pulse rounded-[32px] bg-[var(--fill-subtle)]" />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {[1, 2, 3, 4].map((item) => (
-            <div key={item} className="h-48 animate-pulse rounded-[32px] bg-white/5" />
+            <div key={item} className="h-48 animate-pulse rounded-[32px] bg-[var(--fill-subtle)]" />
           ))}
         </div>
       </div>
@@ -97,7 +97,7 @@ function DashboardActions({ compact }: { compact: boolean }) {
       <div data-tutorial="btn-import"><ImportQuizButton /></div>
       <MagneticButton
         to="/quizzes"
-        className={`press-feedback flex items-center gap-2.5 ${compact ? 'rounded-[20px] px-6 py-3.5' : 'rounded-[24px] px-8 py-4'} text-xs font-bold uppercase tracking-wider glass-panel transition-all hover:bg-white/5`}
+        className={`press-feedback flex items-center gap-2.5 ${compact ? 'rounded-[20px] px-6 py-3.5' : 'rounded-[24px] px-8 py-4'} text-xs font-bold uppercase tracking-wider glass-panel transition-all hover:bg-[var(--hover-fill)]`}
         style={{ color: theme.text, border: `1px solid ${theme.border}` }}
       >
         <BookOpen size={16} /> Explorează
@@ -114,9 +114,9 @@ function EmptyRecentQuizzes({ onStartTutorial }: { onStartTutorial: () => void }
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="glass-panel rounded-[40px] border border-dashed border-white/10 py-16 text-center"
+      className="glass-panel rounded-[40px] border border-dashed border-[var(--hairline)] py-16 text-center"
     >
-      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-white/5">
+      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[var(--fill-subtle)]">
         <BookOpen size={40} className="opacity-20" style={{ color: theme.text }} />
       </div>
       <h3 className="mb-2 text-xl font-bold" style={{ color: theme.text }}>Începe călătoria ta medicală</h3>

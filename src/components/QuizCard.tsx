@@ -8,6 +8,9 @@ import { useQuizStore } from '../store/quizStore';
 import { useTheme } from '../theme/ThemeContext';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
 import { isFlashcardDeck } from '../lib/deckKind';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
+
+const FOCUS_RING = 'outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]';
 
 interface Props {
   quiz: Quiz;
@@ -52,6 +55,7 @@ const CATEGORY_COLOR_MAP: Record<string, string> = {
 const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }: Props) {
   const { getBestScore, deleteQuiz, togglePin } = useQuizStore();
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const navigate = useNavigate();
   const bestScore = getBestScore(quiz.id);
   const colorId = quiz.color || CATEGORY_COLOR_MAP[quiz.category] || 'blue';
@@ -87,22 +91,22 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
       transition={{ duration: 0.65, delay: index * 0.06, ease: [0.16, 1, 0.3, 1] }}
       onHoverStart={() => setHovered(true)}
       onHoverEnd={() => setHovered(false)}
-      className="relative group rounded-[32px] overflow-hidden glass-panel premium-card-hover"
+      className="relative group rounded-[32px] overflow-hidden glass-panel premium-card-hover fine-card"
       style={{
         background: hovered
           ? `linear-gradient(135deg, ${colors.from}26 0%, ${colors.to}26 100%)`
           : `linear-gradient(135deg, ${colors.from}12 0%, ${colors.to}12 100%)`,
-        border: `1px solid ${hovered ? colors.badge + '60' : 'rgba(255,255,255,0.06)'}`,
+        border: `1px solid ${hovered ? colors.badge + '60' : 'var(--hairline)'}`,
         boxShadow: hovered
-          ? `0 24px 64px ${colors.badge}18, 0 8px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.12)`
-          : `0 8px 24px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.07)`,
+          ? `0 24px 64px ${colors.badge}18, 0 8px 24px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)`
+          : `0 8px 24px rgba(0,0,0,0.04), inset 0 1px 0 var(--glass-highlight)`,
         opacity: dragging ? 0.55 : 1,
         transition: 'background 0.55s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s ease, box-shadow 0.55s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       {/* Ambient glow orb - foarte lent */}
       <div
-        className="absolute -top-20 -right-20 w-44 h-44 rounded-full pointer-events-none float-gentle"
+        className="absolute -top-20 -right-20 w-44 h-44 rounded-full pointer-events-none"
         style={{
           background: `radial-gradient(circle, ${colors.badge}90, transparent 70%)`,
           filter: 'blur(32px)',
@@ -111,7 +115,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
         }}
       />
 
-      <Link to={quizPath} className="block p-6 flex flex-col h-full relative z-10">
+      <Link to={quizPath} className="block p-6 flex flex-col h-full relative z-10 rounded-[32px] outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--focus-ring)]">
         <div className="flex items-start justify-between mb-5">
           {/* Emoji cu respirație ușoară */}
           <motion.div
@@ -197,12 +201,12 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
               background: theme.isDark ? 'rgba(20,20,25,0.86)' : 'rgba(255,255,255,0.92)',
               border: `1px solid ${theme.border}`,
               backdropFilter: 'blur(22px) saturate(150%)',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.10)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 var(--glass-highlight)',
             }}
           >
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePin(quiz.id); }}
-              className="p-2 rounded-xl hover:bg-white/10 press-feedback"
+              className={`p-2 rounded-xl transition-colors hover:bg-[var(--hover-fill)] press-feedback ${FOCUS_RING}`}
               style={{ color: quiz.pinned ? '#FFD60A' : theme.text2 }}
               title={quiz.pinned ? 'Scoate Pin' : 'Fixează (Pin)'}>
               {quiz.pinned ? <PinOff size={15} /> : <Pin size={15} />}
@@ -213,14 +217,14 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
                 <div className="w-px h-4 mx-1" style={{ background: theme.border }} />
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/create?edit=${quiz.id}`); }}
-                  className="p-2 rounded-xl hover:bg-blue-500/15 press-feedback"
+                  className={`p-2 rounded-xl transition-colors hover:bg-blue-500/15 press-feedback ${FOCUS_RING}`}
                   style={{ color: '#0A84FF' }}
                   title="Editează">
                   <Pencil size={15} />
                 </button>
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDelete(true); }}
-                  className="p-2 rounded-xl hover:bg-red-500/15 press-feedback"
+                  className={`p-2 rounded-xl transition-colors hover:bg-red-500/15 press-feedback ${FOCUS_RING}`}
                   style={{ color: '#FF453A' }}
                   title="Șterge">
                   <Trash2 size={15} />
@@ -240,11 +244,11 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
             exit={{ opacity: 0, scale: 0.9, y: 2 }}
             transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(playPath); }}
-            className="press-feedback absolute bottom-6 right-6 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest"
+            className={`press-feedback absolute bottom-6 right-6 flex items-center gap-1.5 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest ${FOCUS_RING}`}
             style={{
               background: colors.badge,
               color: '#FFFFFF',
-              boxShadow: `0 12px 32px ${colors.badge}55, inset 0 1px 0 rgba(255,255,255,0.18)`,
+              boxShadow: `0 12px 32px ${colors.badge}55, inset 0 1px 0 var(--glass-highlight)`,
             }}
           >
             <Play size={13} fill="white" /> {isFlashcard ? 'Studiază' : 'Joacă'}
@@ -256,9 +260,10 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
       <AnimatePresence>
         {confirmDelete && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={calmMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={calmMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+            transition={{ duration: calmMotion ? 0.12 : 0.32, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => e.preventDefault()}
             className="absolute inset-0 z-30 rounded-[32px] flex flex-col items-center justify-center gap-4 p-6"
             style={{ background: theme.isDark ? 'rgba(0,0,0,0.88)' : 'rgba(255,255,255,0.95)', backdropFilter: 'blur(16px)' }}>
@@ -269,13 +274,13 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
             <div className="flex gap-3 w-full max-w-[220px]">
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDelete(false); }}
-                className="flex-1 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all hover:bg-white/10 press-feedback"
+                className={`flex-1 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all hover:brightness-95 press-feedback ${FOCUS_RING}`}
                 style={{ background: theme.surface2, color: theme.text2, transition: 'all 0.15s ease-out' }}>
                 Anulează
               </button>
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteQuiz(quiz.id); }}
-                className="flex-1 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider text-white transition-all hover:opacity-90 press-feedback"
+                className={`flex-1 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider text-white transition-all hover:opacity-90 press-feedback ${FOCUS_RING}`}
                 style={{ background: '#FF453A', boxShadow: '0 8px 20px rgba(255,69,58,0.3)', transition: 'all 0.15s ease-out' }}>
                 Șterge
               </button>

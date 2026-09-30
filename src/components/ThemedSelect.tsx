@@ -142,8 +142,9 @@ export default function ThemedSelect({
                           onChange(option.value);
                           setOpen(false);
                         }}
-                        className="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition-all"
-                        style={{ background: active ? `${theme.accent}18` : 'transparent' }}
+                        className="fine-row flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition-all"
+                        data-active={active ? 'true' : undefined}
+                        style={active ? { background: `${theme.accent}18` } : undefined}
                       >
                         <span
                           className="min-w-0 flex-1 truncate text-xs font-bold"

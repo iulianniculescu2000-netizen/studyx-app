@@ -27,7 +27,7 @@ function Key({ label }: { label: string }) {
     <kbd
       className="inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-semibold min-w-[24px]"
       style={{
-        background: theme.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+        background: 'var(--fill-subtle)',
         border: `1px solid ${theme.border2}`,
         color: theme.text2,
         fontFamily: 'monospace',
@@ -104,7 +104,7 @@ export default function KeyboardShortcuts() {
             style={{
               background: theme.modalBg,
               border: `1px solid ${theme.border2}`,
-              boxShadow: performanceLite ? '0 18px 42px rgba(0,0,0,0.28)' : '0 32px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.05)',
+              boxShadow: performanceLite ? '0 18px 42px rgba(0,0,0,0.28)' : '0 32px 80px rgba(0,0,0,0.45), 0 0 0 1px var(--hairline)',
             }}
           >
             {/* Header */}

@@ -530,7 +530,7 @@ export default function Residency() {
 
         {/* --- ANTRENAMENT RAPID (FLASHCARDS KUMAR) --- */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-10">
-          <div className="glass-panel relative overflow-hidden rounded-[24px] p-6 shadow-sm border border-black/5 dark:border-white/5">
+          <div className="glass-panel relative overflow-hidden rounded-[24px] p-6 shadow-sm border border-[var(--hairline)]">
             <div className="absolute -right-8 -top-8 opacity-[0.03] dark:opacity-[0.02]">
               <Stethoscope size={160} />
             </div>

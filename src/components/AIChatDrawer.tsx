@@ -1372,7 +1372,7 @@ export default function AIChatDrawer() {
           <motion.div
             animate={calmMotion ? undefined : { scale: [1, 1.18, 1], opacity: [0.45, 1, 0.45] }}
             transition={calmMotion ? undefined : { repeat: Infinity, duration: 2 }}
-            className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-white"
+            className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-[var(--bg)]"
             style={{ background: theme.success }}
           />
         </motion.button>
@@ -1389,7 +1389,7 @@ export default function AIChatDrawer() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={closeChat}
-                className="fixed inset-0 z-[9996] bg-black/18"
+                className="fixed inset-0 z-[9996] bg-[var(--overlay)]"
               />
             )}
 
@@ -1407,7 +1407,7 @@ export default function AIChatDrawer() {
                 backdropFilter: `blur(${performanceLite ? Math.min(glass.settings.blur, 10) : glass.settings.blur}px) saturate(150%)`,
                 WebkitBackdropFilter: `blur(${performanceLite ? Math.min(glass.settings.blur, 10) : glass.settings.blur}px) saturate(150%)`,
                 border: `1px solid ${theme.border}`,
-                boxShadow: performanceLite ? '0 12px 28px rgba(0,0,0,0.16)' : '0 24px 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08)',
+                boxShadow: performanceLite ? '0 12px 28px rgba(0,0,0,0.16)' : '0 24px 70px rgba(0,0,0,0.28), inset 0 1px 0 var(--glass-highlight)',
               } : {
                 ...panelGeometry,
                 background: theme.isDark ? 'rgba(18,18,22,0.88)' : 'rgba(252,252,255,0.88)',
@@ -1478,7 +1478,7 @@ export default function AIChatDrawer() {
                         aria-label="Transparență și estompare"
                         aria-expanded={glassPanelOpen}
                         title="Transparență și estompare"
-                        className="press-feedback rounded-2xl p-2.5 transition-colors hover:bg-white/5"
+                        className="fine-row press-feedback rounded-2xl p-2.5 transition-colors hover:bg-[var(--hover-fill)]"
                         style={{ color: glassPanelOpen ? theme.accent : theme.text3, background: glassPanelOpen ? `${theme.accent}18` : undefined }}
                       >
                         <SlidersHorizontal size={18} />
@@ -1507,7 +1507,7 @@ export default function AIChatDrawer() {
                       onClick={glass.toggleImmersive}
                       aria-label={immersive ? 'Restrânge chatul (Esc)' : 'Ecran complet (Ctrl+Shift+F)'}
                       title={immersive ? 'Restrânge chatul (Esc)' : 'Ecran complet (Ctrl+Shift+F)'}
-                      className="press-feedback rounded-2xl p-2.5 transition-colors hover:bg-white/5"
+                      className="fine-row press-feedback rounded-2xl p-2.5 transition-colors hover:bg-[var(--hover-fill)]"
                       style={{ color: immersive ? theme.accent : theme.text3, background: immersive ? `${theme.accent}18` : undefined }}
                     >
                       {immersive ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
@@ -1521,7 +1521,7 @@ export default function AIChatDrawer() {
                       onClick={() => setOverflowMenuOpen((value) => !value)}
                       aria-label="Mai multe opțiuni"
                       title="Mai multe opțiuni"
-                      className="rounded-2xl p-2.5 transition-colors hover:bg-white/5 press-feedback"
+                      className="fine-row rounded-2xl p-2.5 transition-colors hover:bg-[var(--hover-fill)] press-feedback"
                       style={{
                         color: overflowMenuOpen ? theme.accent : theme.text3,
                         background: overflowMenuOpen ? `${theme.accent}18` : undefined,
@@ -1550,7 +1550,7 @@ export default function AIChatDrawer() {
                             {view === 'chat' && !mobile && !immersive && (
                               <button
                                 onClick={() => { setWideChat((value) => !value); setOverflowMenuOpen(false); }}
-                                className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-white/5"
+                                className="fine-row flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-[var(--hover-fill)]"
                                 style={{ color: theme.text }}
                               >
                                 {wideChat ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -1563,7 +1563,7 @@ export default function AIChatDrawer() {
                               return (
                                 <button
                                   onClick={() => { setOverflowMenuOpen(false); regenerateAnswer(lastAssistantIndex); }}
-                                  className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-white/5"
+                                  className="fine-row flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-[var(--hover-fill)]"
                                   style={{ color: theme.text }}
                                 >
                                   <RotateCcw size={15} />
@@ -1576,7 +1576,7 @@ export default function AIChatDrawer() {
                                 <div className="my-1 h-px" style={{ background: theme.border }} />
                                 <button
                                   onClick={() => { clearConversation(); setOverflowMenuOpen(false); }}
-                                  className="flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-white/5"
+                                  className="fine-row flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-[var(--hover-fill)]"
                                   style={{ color: theme.danger }}
                                 >
                                   <Trash2 size={15} />
@@ -1595,7 +1595,7 @@ export default function AIChatDrawer() {
                     whileTap={calmMotion ? undefined : { scale: 0.92 }}
                     onClick={closeChat}
                     aria-label="Inchide chatul AI"
-                    className="rounded-2xl p-2.5 transition-colors hover:bg-white/5 press-feedback"
+                    className="fine-row rounded-2xl p-2.5 transition-colors hover:bg-[var(--hover-fill)] press-feedback"
                     style={{ color: theme.text3 }}
                   >
                     <X size={20} />
@@ -1946,7 +1946,7 @@ export default function AIChatDrawer() {
                           </div>
                           <button
                             onClick={() => setActiveQuizContext(null)}
-                            className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                            className="fine-row p-1 rounded-full hover:bg-[var(--hover-fill)] transition-colors"
                             style={{ color: theme.text3 }}
                           >
                             <X size={12} />
@@ -2153,7 +2153,7 @@ export default function AIChatDrawer() {
               <button
                 onClick={() => setZoomedBlock(null)}
                 aria-label="Închide"
-                className="absolute right-3 top-3 rounded-2xl p-2 transition-colors hover:bg-white/10"
+                className="fine-row absolute right-3 top-3 rounded-2xl p-2 transition-colors hover:bg-[var(--hover-fill)]"
                 style={{ color: theme.text3 }}
               >
                 <X size={18} />

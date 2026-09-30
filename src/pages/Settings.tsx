@@ -1,3 +1,4 @@
+import ThemeModeSwitcher from '../components/ThemeModeSwitcher';
 import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import BackupExport from '../components/BackupExport';
 import AISettings from '../components/AISettings';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { detectDeviceCapabilities } from '../lib/deviceTier';
 import { getHealthBadgeLabel } from '../lib/healthReporter';
 import { runStartupHealthCheck } from '../lib/startupHealthCheck';
@@ -54,7 +56,7 @@ function ConfirmResetModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onCancel}
-            className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[1000] bg-[var(--overlay)] backdrop-blur-sm"
           />
           <motion.div
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -96,13 +98,14 @@ function ConfirmResetModal({
 
 function Section({ title, children, delay }: { title: string; children: ReactNode; delay: number }) {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={calmMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.4 }}
-      className="premium-shadow mb-6 rounded-[28px] border border-white/5 glass-panel p-5 sm:p-6"
+      transition={calmMotion ? { duration: 0 } : { delay, duration: 0.4 }}
+      className="premium-shadow mb-6 rounded-[28px] border border-[var(--hairline)] glass-panel p-5 sm:p-6"
     >
       <h3 className="mb-6 text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: theme.text3 }}>
         {title}
@@ -113,8 +116,7 @@ function Section({ title, children, delay }: { title: string; children: ReactNod
 }
 
 function Divider() {
-  const theme = useTheme();
-  return <div className="my-4 h-px w-full" style={{ background: theme.border }} />;
+  return <div className="my-1 h-[0.5px] w-full" style={{ background: 'var(--hairline)' }} />;
 }
 
 function ToggleRow({
@@ -133,10 +135,11 @@ function ToggleRow({
   accent?: string;
 }) {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const color = accent ?? theme.accent;
 
   return (
-    <div className="flex items-center gap-3 py-3 sm:gap-4">
+    <div className="fine-row -mx-2 flex items-center gap-3 px-2 py-3 sm:gap-4">
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
         style={{ background: `${color}15`, color }}
@@ -154,13 +157,18 @@ function ToggleRow({
         )}
       </div>
       <motion.button
-        whileTap={{ scale: 0.94 }}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        whileTap={calmMotion ? undefined : { scale: 0.94 }}
         onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 rounded-full transition-colors ${checked ? '' : 'bg-white/10'}`}
-        style={{ background: checked ? color : theme.surface2 }}
+        className="relative h-6 w-11 rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+        style={{ background: checked ? color : 'var(--fill-subtle)', boxShadow: checked ? undefined : 'inset 0 0 0 0.5px var(--hairline)' }}
       >
         <motion.div
           animate={{ x: checked ? 22 : 4 }}
+          transition={calmMotion ? { duration: 0 } : undefined}
           className="absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm"
         />
       </motion.button>
@@ -189,7 +197,7 @@ function ActionRow({
   const color = danger ? theme.danger : theme.accent;
 
   return (
-    <div className="flex flex-col gap-4 py-3 sm:flex-row sm:items-start">
+    <div className="fine-row -mx-2 flex flex-col gap-4 px-2 py-3 sm:flex-row sm:items-start">
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
         style={{ background: `${color}15`, color }}
@@ -210,7 +218,7 @@ function ActionRow({
         )}
         <button
           onClick={onClick}
-          className="press-feedback rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest hover:bg-white/5"
+          className="press-feedback rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
           style={{ background: `${color}10`, borderColor: `${color}30`, color }}
         >
           {buttonLabel}
@@ -222,6 +230,7 @@ function ActionRow({
 
 export default function Settings() {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const { addToast } = useToastStore();
   const { activeProfileId } = useUserStore();
   const { screenshotProtection, setContentProtection } = useFocusModeStore();
@@ -323,6 +332,13 @@ export default function Settings() {
           </p>
         </motion.div>
 
+        <Section title="Aspect" delay={0.1}>
+          <p className="mb-3 text-[13px] leading-relaxed" style={{ color: theme.text2 }}>
+            Alege între tema luminoasă, cea întunecată sau lasă aplicația să urmeze sistemul (se schimbă singură seara).
+          </p>
+          <ThemeModeSwitcher />
+        </Section>
+
         <Section title="Stabilitate & Performanță" delay={0.15}>
           <div className="glass-panel mb-5 rounded-[24px] p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -349,11 +365,13 @@ export default function Settings() {
                 <button
                   key={mode}
                   onClick={() => setPerformanceMode(mode)}
-                  className="rounded-xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
+                  aria-pressed={performanceMode === mode}
+                  data-active={performanceMode === mode}
+                  className="fine-chip rounded-xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
                   style={{
-                    background: performanceMode === mode ? theme.accent : theme.surface,
-                    color: performanceMode === mode ? '#fff' : theme.text,
-                    border: `1px solid ${performanceMode === mode ? 'transparent' : theme.border}`,
+                    background: performanceMode === mode ? 'var(--accent-soft)' : theme.surface,
+                    color: performanceMode === mode ? theme.accent : theme.text,
+                    border: `1px solid ${performanceMode === mode ? `${theme.accent}40` : theme.border}`,
                   }}
                 >
                   {mode === 'auto' ? 'Auto' : mode === 'lite' ? 'Lite' : 'Full'}
@@ -414,19 +432,19 @@ export default function Settings() {
           <Divider />
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={calmMotion ? undefined : { scale: 1.02 }}
+              whileTap={calmMotion ? undefined : { scale: 0.97 }}
               onClick={() => void rerunHealthCheck()}
-              className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all"
+              className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
               style={{ background: `${theme.accent}10`, borderColor: `${theme.accent}30`, color: theme.accent }}
             >
               Rulează health check
             </motion.button>
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={calmMotion ? undefined : { scale: 1.02 }}
+              whileTap={calmMotion ? undefined : { scale: 0.97 }}
               onClick={clearDiagnostics}
-              className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all"
+              className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
               style={{ background: theme.surface2, borderColor: theme.border, color: theme.text3 }}
             >
               Resetează diagnosticul

@@ -138,8 +138,8 @@ export default function QuizImage({
   const imageRadius = variant === 'flashcard' ? 18 : variant === 'compact' ? 10 : 12;
   const framePadding = variant === 'flashcard' ? 10 : variant === 'compact' ? 6 : 8;
   const shadow = variant === 'flashcard'
-    ? 'inset 0 1px 0 rgba(255,255,255,0.10), 0 22px 44px rgba(0,0,0,0.18)'
-    : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 24px rgba(0,0,0,0.10)';
+    ? 'inset 0 1px 0 var(--glass-highlight), 0 22px 44px rgba(0,0,0,0.18)'
+    : 'inset 0 1px 0 var(--glass-highlight), 0 10px 24px rgba(0,0,0,0.10)';
 
   return (
     <>

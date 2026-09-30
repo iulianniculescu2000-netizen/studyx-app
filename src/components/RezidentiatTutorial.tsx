@@ -41,7 +41,7 @@ function DemoFrame({ theme, children }: { theme: Theme; children: React.ReactNod
           ? 'linear-gradient(160deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012))'
           : 'linear-gradient(160deg, rgba(255,255,255,0.9), rgba(244,246,255,0.7))',
         borderColor: theme.border,
-        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.07), 0 18px 44px ${theme.accent}12`,
+        boxShadow: `inset 0 1px 0 var(--glass-highlight), 0 18px 44px ${theme.accent}12`,
       }}
     >
       {children}
@@ -432,7 +432,7 @@ export default function RezidentiatTutorial() {
               <button
                 onClick={close}
                 aria-label="Închide tutorialul"
-                className="rounded-[12px] p-2 transition-colors hover:bg-white/5"
+                className="rounded-full p-2 transition-colors hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
                 style={{ color: theme.text3 }}
               >
                 <X size={18} />

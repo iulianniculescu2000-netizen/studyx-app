@@ -24,10 +24,20 @@ export interface Theme {
   gridColor: string;
   isDark: boolean;
   /**
+   * Neutral "ink" tokens that used to be written as `white/5`, `white/10`… in
+   * components — invisible on a light surface. They flip with the theme:
+   * a faint wash for hovered rows/buttons, a subtle fill for placeholders and
+   * switches, a hairline for separators, the scrim behind dialogs, and the
+   * base tone of skeleton shimmers.
+   */
+  hoverFill: string;
+  fillSubtle: string;
+  hairline: string;
+  overlay: string;
+  skeleton: string;
+  /**
    * Optional overrides for the `--glass-panel`/`--glass-panel-strong`/`--glass-border`
-   * CSS variables ThemeContext computes. Without them those variables are derived
-   * from a flat `isDark` branch (a neutral grey glass); a theme that wants its own
-   * hue in the glass itself (not just in bg/accent) sets these instead.
+   * CSS variables ThemeContext computes.
    */
   glassPanel?: string;
   glassPanelStrong?: string;
@@ -36,53 +46,110 @@ export interface Theme {
 }
 
 /**
- * StudyX has one look: "Glass" (UI 2.0) — near-black with a violet cast, a
- * violet→cyan accent duo (matched chroma/lightness, hue-only variation) and its
- * own tinted glass recipe. The earlier UI 1.0 themes (Big Sur, Obsidian, Pearl,
- * Aurora, Midnight, Ambră, System) were retired; anything a profile saved for
- * them resolves to this one through `normalizeThemeId`.
+ * StudyX has two looks, both in the Apple idiom: system-blue accent, hairline
+ * separators, translucent chrome over a calm canvas.
+ *  - `light` ("Luminos"): macOS — grey canvas, white cards.
+ *  - `dark`  ("Întunecat"): near-black canvas, graphite cards.
+ * The user picks Luminos / Întunecat / Automat (follow the system); see
+ * `ThemeMode` and store/themeStore.ts.
  */
 export const THEMES = {
-  glass: {
-    id: 'glass',
-    name: 'Glass',
-    emoji: '\u{1FA9F}',
-    bg: '#0E0B15',
-    surface: 'rgba(167, 139, 250, 0.07)',
-    surface2: 'rgba(167, 139, 250, 0.13)',
-    modalBg: 'rgba(14, 11, 21, 0.97)',
-    border: 'rgba(167, 139, 250, 0.18)',
-    border2: 'rgba(167, 139, 250, 0.34)',
-    text: '#F5F3FF',
-    text2: '#C9C2DE',
-    text3: '#8B84A3',
-    accent: '#A78BFA',
-    accent2: '#22D3EE',
-    success: '#4ADE80',
-    danger: '#F87171',
-    warning: '#FBBF24',
-    navBg: 'rgba(14, 11, 21, 0.90)',
-    orb1: 'rgba(167, 139, 250, 0.30)',
-    orb2: 'rgba(34, 211, 238, 0.20)',
-    orb3: 'rgba(139, 92, 246, 0.16)',
-    inputBg: 'rgba(14, 11, 21, 0.72)',
-    gridColor: 'rgba(167, 139, 250, 0.055)',
+  light: {
+    id: 'light',
+    name: 'Luminos',
+    emoji: '\u{2600}\u{FE0F}',
+    bg: '#F5F5F7',
+    surface: '#FFFFFF',
+    surface2: 'rgba(60, 60, 67, 0.07)',
+    modalBg: '#FFFFFF',
+    border: 'rgba(60, 60, 67, 0.15)',
+    border2: 'rgba(60, 60, 67, 0.26)',
+    text: '#1D1D1F',
+    text2: '#48484A',
+    text3: '#6E6E73',
+    accent: '#007AFF',
+    accent2: '#5E5CE6',
+    success: '#34C759',
+    danger: '#FF3B30',
+    warning: '#FF9500',
+    navBg: 'rgba(236, 236, 241, 0.86)',
+    orb1: 'rgba(0, 122, 255, 0.05)',
+    orb2: 'rgba(94, 92, 230, 0.04)',
+    orb3: 'rgba(52, 199, 89, 0.03)',
+    inputBg: '#FFFFFF',
+    gridColor: 'rgba(60, 60, 67, 0.03)',
+    isDark: false,
+    hoverFill: 'rgba(60, 60, 67, 0.06)',
+    fillSubtle: 'rgba(60, 60, 67, 0.07)',
+    hairline: 'rgba(60, 60, 67, 0.15)',
+    overlay: 'rgba(0, 0, 0, 0.34)',
+    skeleton: 'rgba(60, 60, 67, 0.08)',
+    glassPanel: 'linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.90))',
+    glassPanelStrong: 'linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(250, 250, 252, 0.97))',
+    glassBorder: 'rgba(60, 60, 67, 0.15)',
+    glassHighlight: 'rgba(255, 255, 255, 0.9)',
+  },
+  dark: {
+    id: 'dark',
+    name: 'Întunecat',
+    emoji: '\u{1F319}',
+    bg: '#0B0B0E',
+    surface: '#161618',
+    surface2: 'rgba(255, 255, 255, 0.07)',
+    modalBg: '#1C1C1F',
+    border: 'rgba(255, 255, 255, 0.10)',
+    border2: 'rgba(255, 255, 255, 0.18)',
+    text: '#F5F5F7',
+    text2: '#C7C7CC',
+    text3: '#8E8E93',
+    accent: '#0A84FF',
+    accent2: '#5E5CE6',
+    success: '#30D158',
+    danger: '#FF453A',
+    warning: '#FF9F0A',
+    navBg: 'rgba(20, 20, 23, 0.82)',
+    orb1: 'rgba(10, 132, 255, 0.10)',
+    orb2: 'rgba(94, 92, 230, 0.08)',
+    orb3: 'rgba(48, 209, 88, 0.04)',
+    inputBg: '#1C1C1F',
+    gridColor: 'rgba(255, 255, 255, 0.03)',
     isDark: true,
-    glassPanel: 'linear-gradient(180deg, rgba(48, 38, 74, 0.60), rgba(20, 15, 32, 0.62))',
-    glassPanelStrong: 'linear-gradient(180deg, rgba(58, 46, 88, 0.72), rgba(22, 17, 36, 0.80))',
-    glassBorder: 'rgba(199, 178, 255, 0.16)',
-    glassHighlight: 'rgba(199, 178, 255, 0.10)',
+    hoverFill: 'rgba(255, 255, 255, 0.06)',
+    fillSubtle: 'rgba(255, 255, 255, 0.07)',
+    hairline: 'rgba(255, 255, 255, 0.12)',
+    overlay: 'rgba(0, 0, 0, 0.55)',
+    skeleton: 'rgba(255, 255, 255, 0.08)',
+    glassPanel: 'linear-gradient(180deg, rgba(38, 38, 42, 0.72), rgba(24, 24, 27, 0.66))',
+    glassPanelStrong: 'linear-gradient(180deg, rgba(44, 44, 48, 0.90), rgba(28, 28, 31, 0.86))',
+    glassBorder: 'rgba(255, 255, 255, 0.10)',
+    glassHighlight: 'rgba(255, 255, 255, 0.08)',
   },
 } satisfies Record<string, Theme>;
 
 export type ThemeId = keyof typeof THEMES;
 
-export const DEFAULT_THEME_ID: ThemeId = 'glass';
+/** What the user picks. `auto` follows the operating system. */
+export type ThemeMode = ThemeId | 'auto';
 
-export const THEME_LIST: Theme[] = Object.values(THEMES);
+export const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'auto'];
 
-/** Any theme id ever saved (profiles, backups, old settings) → the one theme that exists now. */
-export function normalizeThemeId(id?: unknown): ThemeId {
-  void id; // whatever was saved, there is only one theme left
-  return DEFAULT_THEME_ID;
+export const DEFAULT_THEME_MODE: ThemeMode = 'auto';
+
+export function isThemeMode(value: unknown): value is ThemeMode {
+  return typeof value === 'string' && (THEME_MODES as readonly string[]).includes(value);
+}
+
+/** Anything unreadable — including the retired theme ids ('glass', 'obsidian', …) — becomes "follow the system". */
+export function normalizeThemeMode(value: unknown): ThemeMode {
+  return isThemeMode(value) ? value : DEFAULT_THEME_MODE;
+}
+
+/** Next mode when a single button cycles them: Luminos → Întunecat → Automat → Luminos. */
+export function nextThemeMode(mode: ThemeMode): ThemeMode {
+  return THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length];
+}
+
+export function resolveThemeMode(mode: ThemeMode, systemPrefersDark: boolean): ThemeId {
+  if (mode === 'auto') return systemPrefersDark ? 'dark' : 'light';
+  return mode;
 }

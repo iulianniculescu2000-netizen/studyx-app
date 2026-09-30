@@ -182,7 +182,7 @@ export default function DashboardHeroCard() {
           onClick={toggleExpanded}
           aria-expanded={expanded}
           aria-label={expanded ? 'Restrânge Study Coach' : 'Extinde Study Coach'}
-          className="min-w-0 flex-1 basis-[220px] text-left"
+          className="min-w-0 flex-1 basis-[220px] rounded-xl text-left outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
         >
           <span className="flex items-center gap-2">
             <span className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: theme.accent2 }}>
@@ -236,7 +236,7 @@ export default function DashboardHeroCard() {
           </div>
           <Link
             to="/daily-review"
-            className="press-feedback inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-wider text-white"
+            className="press-feedback inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-wider text-white transition-[filter,box-shadow] duration-300 hover:brightness-110 outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
             style={{ background: theme.accent, boxShadow: `0 6px 16px ${theme.accent}33` }}
           >
             Începe <Zap size={12} fill="white" />
@@ -246,7 +246,7 @@ export default function DashboardHeroCard() {
             onClick={toggleExpanded}
             aria-label={expanded ? 'Restrânge' : 'Extinde'}
             aria-expanded={expanded}
-            className="press-feedback flex h-8 w-8 items-center justify-center rounded-lg"
+            className="fine-row press-feedback flex h-8 w-8 items-center justify-center hover:!text-[var(--text)]"
             style={{ color: theme.text3 }}
           >
             <ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s var(--ease-out-soft)' }} />
@@ -302,7 +302,7 @@ export default function DashboardHeroCard() {
                       type="button"
                       onClick={() => setShowFull((value) => !value)}
                       aria-expanded={showFull}
-                      className="press-feedback mt-3 inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.14em]"
+                      className="fine-row press-feedback -ml-2 mt-3 inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-black uppercase tracking-[0.14em] hover:!text-[var(--text)]"
                       style={{ color: theme.text3 }}
                     >
                       {showFull ? 'Ascunde planul' : 'Planul complet'}
@@ -325,14 +325,14 @@ export default function DashboardHeroCard() {
                   const toneColor = action.tone === 'warning' ? theme.warning : action.tone === 'success' ? theme.success : theme.accent;
                   const chip = (
                     <span
-                      className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-bold"
+                      className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-bold transition-[filter,box-shadow] duration-300 group-hover:brightness-110 group-hover:shadow-[0_2px_10px_var(--shadow-color-soft)]"
                       style={{ background: `${toneColor}14`, border: `1px solid ${toneColor}30`, color: theme.text }}
                     >
                       {action.title}
                     </span>
                   );
                   return action.route ? (
-                    <Link key={action.title} to={action.route} className="press-feedback no-underline">{chip}</Link>
+                    <Link key={action.title} to={action.route} className="group press-feedback rounded-full no-underline outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]">{chip}</Link>
                   ) : (
                     <div key={action.title}>{chip}</div>
                   );
@@ -345,7 +345,7 @@ export default function DashboardHeroCard() {
                       onClick={() => void generate()}
                       aria-label="Regenerează recomandarea"
                       title="Regenerează recomandarea"
-                      className="press-feedback flex h-7 w-7 items-center justify-center rounded-lg opacity-70 hover:opacity-100"
+                      className="fine-row press-feedback flex h-7 w-7 items-center justify-center opacity-70 hover:opacity-100"
                       style={{ color: theme.accent2 }}
                     >
                       <RefreshCw size={13} />

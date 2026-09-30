@@ -18,7 +18,7 @@ export default function AccuracyTrendChart({ data, theme, tooltip }: { data: Cha
   return (
     <ResponsiveContainer width="100%" height={160}>
       <LineChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-        {detail.showGrid && <CartesianGrid strokeDasharray="3 3" stroke={theme.border} />}
+        {detail.showGrid && <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />}
         <XAxis dataKey="day" tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
         <YAxis domain={[0, 100]} tick={{ fill: theme.text3, fontSize: 11 }} axisLine={false} tickLine={false} />
         <Tooltip content={tooltip} />

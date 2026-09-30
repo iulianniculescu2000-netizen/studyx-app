@@ -515,7 +515,7 @@ export default function FlashcardSession() {
                       animate={faceAnimate}
                       exit={faceExit}
                       transition={faceTransition}
-                      className={`absolute inset-0 overflow-hidden rounded-[34px] border border-white/10 ${frontPanelPaddingClass} text-center shadow-2xl glass-panel flex flex-col items-center justify-center`}
+                      className={`absolute inset-0 overflow-hidden rounded-[34px] border border-[var(--hairline)] ${frontPanelPaddingClass} text-center shadow-2xl glass-panel flex flex-col items-center justify-center`}
                       style={{ position: 'absolute', background: theme.surface, backfaceVisibility: 'hidden' }}
                     >
                   {frontUsesSplitMedia && current.question.imageUrl ? (
@@ -560,10 +560,10 @@ export default function FlashcardSession() {
                       animate={faceAnimate}
                       exit={faceExit}
                       transition={faceTransition}
-                      className={`absolute inset-0 rounded-[34px] border border-white/10 ${backPanelPaddingClass} text-center shadow-2xl glass-panel flex flex-col overflow-hidden`}
+                      className={`absolute inset-0 rounded-[34px] border border-[var(--hairline)] ${backPanelPaddingClass} text-center shadow-2xl glass-panel flex flex-col overflow-hidden`}
                       style={{ position: 'absolute', background: theme.isDark ? 'rgba(30,30,35,0.95)' : 'rgba(255,255,255,0.95)', backfaceVisibility: 'hidden' }}
                     >
-                  <div className="mx-auto mb-3 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+                  <div className="mx-auto mb-3 flex items-center gap-2 rounded-full border border-[var(--hairline)] bg-[var(--fill-subtle)] px-3 py-1.5">
                     <Check size={14} style={{ color: theme.success }} />
                     <span className="text-[10px] font-black uppercase tracking-widest opacity-60" style={{ color: theme.text }}>
                       Răspuns corect
@@ -582,8 +582,8 @@ export default function FlashcardSession() {
                             className={`rounded-[22px] border text-left ${answerCardPaddingClass}`}
                             style={{
                               background: theme.isDark ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.78)',
-                              borderColor: theme.isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.08)',
-                              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10), 0 10px 26px rgba(0,0,0,0.07)',
+                              borderColor: 'var(--hairline)',
+                              boxShadow: 'inset 0 1px 0 var(--glass-highlight), 0 10px 26px rgba(0,0,0,0.07)',
                             }}
                           >
                             <p
@@ -606,8 +606,8 @@ export default function FlashcardSession() {
                         <div
                           className="rounded-[20px] border p-4 text-left"
                           style={{
-                            background: theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.035)',
-                            borderColor: theme.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(15,23,42,0.07)',
+                            background: 'var(--fill-subtle)',
+                            borderColor: 'var(--hairline)',
                           }}
                         >
                           <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: theme.text3 }}>

@@ -1,3 +1,4 @@
+import ThemeModeSwitcher from '../components/ThemeModeSwitcher';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { ArrowRight, ChevronLeft } from 'lucide-react';
@@ -47,6 +48,9 @@ export default function Welcome({ onBack }: Props) {
   return (
     <div className="min-h-screen flex flex-col items-center px-6 pt-12 pb-10 relative"
       style={{ background: theme.bg, overflowX: 'hidden' }}>
+      <div className="absolute right-5 top-5 z-20">
+        <ThemeModeSwitcher variant="compact" />
+      </div>
 
       {/* Ambient orbs */}
       <motion.div className="absolute rounded-full pointer-events-none"

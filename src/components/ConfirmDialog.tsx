@@ -109,10 +109,10 @@ export default function ConfirmDialog({
               {/* Close X button */}
               <motion.button
                 onClick={onCancel}
-                whileHover={calmMotion ? undefined : { rotate: 90, scale: 1.15, background: 'rgba(255,255,255,0.1)' }}
+                whileHover={calmMotion ? undefined : { scale: 1.08, background: 'var(--hover-fill)' }}
                 whileTap={calmMotion ? undefined : { scale: 0.88 }}
                 transition={{ duration: 0.2 }}
-                className="absolute top-4 right-4 p-1.5 rounded-lg press-feedback"
+                className="fine-row absolute top-4 right-4 p-1.5 rounded-lg press-feedback"
                 style={{ color: theme.text3, cursor: 'pointer' }}
               >
                 <X size={14} />

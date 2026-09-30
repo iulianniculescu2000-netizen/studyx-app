@@ -1,3 +1,4 @@
+import ThemeModeSwitcher from './ThemeModeSwitcher';
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import type { DragEvent } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
@@ -17,6 +18,7 @@ import { useStatsStore } from '../store/statsStore';
 import { useUpdateStore } from '../store/updateStore';
 import { useToastStore } from '../store/toastStore';
 import { useViewportProfile } from '../hooks/useViewportProfile';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import ConfirmDialog from './ConfirmDialog';
 import Portal from './Portal';
 import Logo from './Logo';
@@ -53,16 +55,17 @@ function IconChip({
   icon: React.ReactNode; hue?: string; active: boolean; size: number;
 }) {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
 
   const colorStyle: React.CSSProperties = hue ? {
     background: active
-      ? `color-mix(in srgb, ${hue} 30%, ${theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)'})`
-      : `color-mix(in srgb, ${hue} 14%, ${theme.isDark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.02)'})`,
+      ? `color-mix(in srgb, ${hue} 30%, var(--fill-subtle))`
+      : `color-mix(in srgb, ${hue} 14%, var(--fill-subtle))`,
     border: `1px solid color-mix(in srgb, ${hue} ${active ? 55 : 24}%, transparent)`,
     color: active ? hue : `color-mix(in srgb, ${hue} 68%, ${theme.text2})`,
     boxShadow: active
-      ? `inset 0 1px 0 rgba(255,255,255,0.12), 0 6px 14px color-mix(in srgb, ${hue} 32%, transparent)`
-      : 'inset 0 1px 0 rgba(255,255,255,0.05)',
+      ? `inset 0 1px 0 var(--glass-highlight), 0 6px 14px color-mix(in srgb, ${hue} 32%, transparent)`
+      : 'inset 0 1px 0 var(--glass-highlight)',
   } : {
     background: active ? theme.surface2 : 'transparent',
     border: `1px solid ${active ? theme.border2 : 'transparent'}`,
@@ -71,10 +74,10 @@ function IconChip({
 
   return (
     <motion.span
-      initial={{ scale: 0.8, opacity: 0 }}
+      initial={calmMotion ? false : { scale: 0.8, opacity: 0 }}
       animate={{ scale: 1, opacity: 1, rotate: 0 }}
-      whileHover={hue ? { scale: 1.06, y: -1 } : { scale: 1.04 }}
-      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={calmMotion ? undefined : hue ? { scale: 1.06, y: -1 } : { scale: 1.04 }}
+      transition={calmMotion ? { duration: 0 } : { duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       className="flex items-center justify-center accent-shadow-hover"
       style={{ width: size, height: size, flexShrink: 0, borderRadius: hue ? '11px 9px 12px 8px' : '10px', ...colorStyle }}
     >
@@ -98,16 +101,17 @@ function useCollapsed() {
 function Tip({ label, children }: { label: string; children: React.ReactNode }) {
   const [show, setShow] = useState(false);
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   return (
     <div className="relative" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
       {children}
       <AnimatePresence>
         {show && (
           <motion.div
-            initial={{ opacity: 0, x: -4, scale: 0.96 }}
+            initial={calmMotion ? { opacity: 0 } : { opacity: 0, x: -4, scale: 0.96 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -2, scale: 0.98 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            exit={calmMotion ? { opacity: 0 } : { opacity: 0, x: -2, scale: 0.98 }}
+            transition={calmMotion ? { duration: 0.12 } : { duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap z-50 pointer-events-none"
             style={{
               background: theme.isDark ? 'rgba(30,30,36,0.98)' : 'rgba(255,255,255,0.98)',
@@ -134,6 +138,7 @@ function UpdateButton({
   onOpen: () => void;
   theme: import('../theme/themes').Theme;
 }) {
+  const { calmMotion } = useAdaptiveMotion();
   if (!window.electronAPI?.updaterCheck) return null;
 
   const hasAction = status === 'available' || status === 'error' || status === 'ready';
@@ -144,7 +149,9 @@ function UpdateButton({
   let color: string = theme.text3;
 
   if (isChecking) {
-    icon = <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}><RefreshCw size={14} /></motion.span>;
+    icon = calmMotion
+      ? <span><RefreshCw size={14} /></span>
+      : <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}><RefreshCw size={14} /></motion.span>;
     color = theme.text3;
   } else if (status === 'up-to-date') {
     icon = <Check size={14} />;
@@ -179,7 +186,7 @@ function UpdateButton({
       <button
         onClick={onOpen}
         aria-label={label}
-        className="press-feedback w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-colors hover:bg-white/5 relative"
+        className="press-feedback w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-colors hover:bg-[var(--hover-fill)] relative"
         style={{ color, justifyContent: collapsed ? 'center' : 'flex-start' }}
       >
         {/* Pulsing dot for actionable states */}
@@ -402,21 +409,27 @@ function NavItem({
   end?: boolean; collapsed: boolean; hue?: string;
 }) {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   return (
-    <NavLink to={to} end={end} style={{ textDecoration: 'none', display: 'block' }}>
+    <NavLink
+      to={to}
+      end={end}
+      className="rounded-[14px] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
+      style={{ textDecoration: 'none', display: 'block' }}
+    >
       {({ isActive }) => (
         <motion.div
-          whileHover={{ x: collapsed ? 0 : 2 }}
-          whileTap={{ scale: 0.97 }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="relative flex items-center transition-all press-feedback reveal-line"
+          whileHover={calmMotion ? undefined : { x: collapsed ? 0 : 2 }}
+          whileTap={calmMotion ? undefined : { scale: 0.97 }}
+          transition={calmMotion ? { duration: 0 } : { duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className={`relative flex items-center transition-all press-feedback reveal-line ${isActive ? '' : 'hover:bg-[var(--hover-fill)]'}`}
           data-active={isActive}
           style={collapsed ? {
             width: 44,
             height: 44,
             margin: '0 auto',
             justifyContent: 'center',
-            background: isActive ? 'var(--accent-soft)' : 'transparent',
+            background: isActive ? 'var(--accent-soft)' : undefined,
             border: `1px solid ${isActive ? `${theme.accent}40` : 'transparent'}`,
             color: isActive ? theme.text : theme.text3,
             cursor: 'pointer',
@@ -426,7 +439,7 @@ function NavItem({
             gap: 10,
             padding: '6px 10px',
             justifyContent: 'flex-start' as const,
-            background: isActive ? 'var(--accent-soft)' : 'transparent',
+            background: isActive ? 'var(--accent-soft)' : undefined,
             border: `1px solid ${isActive ? `${theme.accent}30` : 'transparent'}`,
             color: isActive ? theme.text : theme.text2,
             fontSize: 13.5,
@@ -434,16 +447,6 @@ function NavItem({
             cursor: 'pointer',
             borderRadius: '13px',
             boxShadow: isActive ? `0 4px 18px ${theme.accent}26` : 'none',
-          }}
-          onMouseEnter={(e) => {
-            if (!isActive) {
-              e.currentTarget.style.background = theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isActive) {
-              e.currentTarget.style.background = 'transparent';
-            }
           }}
         >
           <IconChip icon={icon} hue={hue} active={isActive} size={collapsed ? 30 : 27} />
@@ -461,6 +464,7 @@ function NavItem({
 
 export default function Sidebar() {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const navigate = useNavigate();
   const compact = typeof window !== 'undefined' && (window.innerHeight < 820 || window.innerWidth < 1240);
   const { username, logout } = useUserStore();
@@ -637,11 +641,12 @@ export default function Sidebar() {
   return (
     <motion.div
       animate={{ width: collapsed ? 64 : compact ? 242 : 260 }}
-      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      transition={calmMotion ? { duration: 0 } : { duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className="studyx-sidebar flex flex-col flex-shrink-0 select-none overflow-hidden glass-panel"
       style={{
         height: '100dvh',
-        borderRight: `0.5px solid ${theme.border}`,
+        borderRight: '1px solid var(--hairline)',
+        boxShadow: '6px 0 24px -14px var(--shadow-color)',
         position: 'relative',
         zIndex: 50,
         background: collapsed ? theme.navBg : `linear-gradient(180deg, ${theme.navBg}, color-mix(in srgb, ${theme.surface} 88%, transparent))`,
@@ -1177,18 +1182,24 @@ export default function Sidebar() {
           theme={theme}
         />
 
+        {/* Aspect: Luminos / Întunecat / Automat */}
+        <div className={collapsed ? 'flex justify-center py-1' : 'flex items-center gap-2 px-3 py-1'}>
+          <ThemeModeSwitcher variant="compact" />
+          {!collapsed && <span className="text-[12px]" style={{ color: theme.text3 }}>Aspect</span>}
+        </div>
+
         {/* Collapse toggle */}
         <Tip label={collapsed ? 'Extinde sidebar' : ''}>
           <motion.button
             onClick={toggleCollapsed}
             aria-label={collapsed ? 'Extinde sidebar' : 'Restrange sidebar'}
             whileHover={{ backgroundColor: `${theme.accent}12` }}
-            whileTap={{ scale: 0.94 }}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm press-feedback"
+            whileTap={calmMotion ? undefined : { scale: 0.94 }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm press-feedback focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
             style={{ color: theme.text3, justifyContent: collapsed ? 'center' : 'flex-start' }}>
             <motion.span
               animate={{ rotate: collapsed ? 0 : 180 }}
-              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              transition={calmMotion ? { duration: 0 } : { duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
               style={{ display: 'flex' }}>
               <PanelLeftOpen size={15} />
             </motion.span>

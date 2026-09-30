@@ -1,5 +1,5 @@
 console.log('[StudyX] Main process starting...');
-const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, nativeImage, Menu, session, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Notification, Tray, nativeImage, Menu, session, screen, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
@@ -19,6 +19,35 @@ app.setPath('userData', sharedUserDataPath);
 
 // 1. Dev vs Prod userData isolation
 let mainWindow = null;
+
+// ── Window background follows the app theme ────────────────────────────────
+// The renderer reports its background on every theme change (theme:set); we keep
+// the last one on disk so the next launch opens in the right colour instead of
+// flashing the wrong one until the page paints.
+const DARK_WINDOW_BG = '#0B0B0E';
+const LIGHT_WINDOW_BG = '#F5F5F7';
+
+function windowBackgroundFile() {
+  return path.join(app.getPath('userData'), 'window-background.json');
+}
+
+function loadWindowBackground() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(windowBackgroundFile(), 'utf8'));
+    if (saved && /^#[0-9a-fA-F]{6}$/.test(saved.background || '')) return saved.background;
+  } catch {
+    // first launch or unreadable file — follow the system
+  }
+  return nativeTheme.shouldUseDarkColors ? DARK_WINDOW_BG : LIGHT_WINDOW_BG;
+}
+
+function saveWindowBackground(background) {
+  try {
+    fs.writeFileSync(windowBackgroundFile(), JSON.stringify({ background }), 'utf8');
+  } catch (err) {
+    console.warn('[Theme] Could not persist window background:', err?.message);
+  }
+}
 let tray = null;
 let isQuitting = false;
 let saveWindowStateTimer = null;
@@ -671,6 +700,16 @@ const extractOCRText = async (filePath) => {
 
 function registerIpcHandlers() {
   // Window controls
+  // Theme sync (renderer -> main): keep the native window colour and nativeTheme in step with the app.
+  ipcMain.on('theme:set', (_event, payload) => {
+    const mode = payload && ['light', 'dark', 'auto'].includes(payload.mode) ? payload.mode : 'auto';
+    const background = payload && /^#[0-9a-fA-F]{6}$/.test(payload.background || '') ? payload.background : null;
+    nativeTheme.themeSource = mode === 'auto' ? 'system' : mode;
+    if (background) {
+      mainWindow?.setBackgroundColor(background);
+      saveWindowBackground(background);
+    }
+  });
   ipcMain.on('win:minimize', () => mainWindow?.minimize());
   ipcMain.on('win:maximize', () => {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
@@ -982,7 +1021,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 520,
     frame: false,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: loadWindowBackground(),
     titleBarStyle: 'hidden',
     webPreferences: {
       nodeIntegration: false,

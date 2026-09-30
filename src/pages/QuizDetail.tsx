@@ -436,12 +436,12 @@ export default function QuizDetail() {
             <Link
               to={`/play/${quiz.id}`}
               state={{ mode: 'timed' }}
-              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-white/5 active:scale-[0.98]"
+              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-[var(--hover-fill)] active:scale-[0.98] outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
               style={{
                 background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                 border: `1px solid ${theme.border}`,
                 color: theme.text2,
-                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)',
               }}
             >
               <Timer size={16} />
@@ -449,12 +449,12 @@ export default function QuizDetail() {
             </Link>
             <Link
               to={`/flashcards/session/${quiz.id}?mode=all`}
-              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-white/5 active:scale-[0.98]"
+              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-[var(--hover-fill)] active:scale-[0.98] outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
               style={{
                 background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                 border: `1px solid ${theme.border}`,
                 color: theme.text2,
-                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)',
               }}
             >
               <CreditCard size={16} />
@@ -475,7 +475,7 @@ export default function QuizDetail() {
                 background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                 border: `1px solid ${wrongCount > 0 ? `${theme.danger}40` : theme.border}`,
                 color: wrongCount > 0 ? theme.danger : theme.text3,
-                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)',
               }}
             >
               <RotateCcw size={16} />
@@ -557,7 +557,7 @@ export default function QuizDetail() {
                 style={{
                   background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                   border: `1px solid ${theme.border}`,
-                  boxShadow: '0 12px 26px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+                  boxShadow: '0 12px 26px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)',
                 }}
               >
                 <button.icon size={16} style={{ color: button.color }} />
@@ -606,7 +606,7 @@ export default function QuizDetail() {
                 .map(({ question, actualIndex }) => (
                   <div
                     key={question.id}
-                    className="glass-panel p-4 rounded-2xl transition-all hover:bg-white/5 border border-transparent hover:border-white/10"
+                    className="glass-panel p-4 rounded-2xl transition-all hover:bg-[var(--hover-fill)] border border-transparent hover:border-[var(--border2)]"
                   >
                     <div className="flex items-start gap-3">
                       <span className="text-[10px] font-black opacity-30 mt-1" style={{ color: theme.text }}>

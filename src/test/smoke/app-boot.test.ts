@@ -56,7 +56,7 @@ describe('App Boot Smoke Tests', () => {
 
     let profileId = '';
     act(() => {
-      profileId = userResult.current.addProfile('Test User', 'glass');
+      profileId = userResult.current.addProfile('Test User');
       userResult.current.switchProfile(profileId);
     });
     

@@ -8,18 +8,18 @@ export const SkeletonCard: React.FC = () => {
         <motion.div
           animate={{ opacity: [0.3, 0.6, 0.3] }}
           transition={{ duration: 1.5, repeat: Infinity }}
-          className="w-12 h-12 rounded-2xl bg-white/5"
+          className="w-12 h-12 rounded-2xl bg-[var(--fill-subtle)]"
         />
         <div className="flex-1 space-y-2">
           <motion.div
             animate={{ opacity: [0.3, 0.6, 0.3] }}
             transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
-            className="h-4 w-3/4 rounded-full bg-white/5"
+            className="h-4 w-3/4 rounded-full bg-[var(--fill-subtle)]"
           />
           <motion.div
             animate={{ opacity: [0.3, 0.6, 0.3] }}
             transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
-            className="h-3 w-1/2 rounded-full bg-white/5"
+            className="h-3 w-1/2 rounded-full bg-[var(--fill-subtle)]"
           />
         </div>
       </div>
@@ -27,12 +27,12 @@ export const SkeletonCard: React.FC = () => {
         <motion.div
           animate={{ opacity: [0.3, 0.6, 0.3] }}
           transition={{ duration: 1.5, repeat: Infinity, delay: 0.6 }}
-          className="h-3 w-full rounded-full bg-white/5"
+          className="h-3 w-full rounded-full bg-[var(--fill-subtle)]"
         />
         <motion.div
           animate={{ opacity: [0.3, 0.6, 0.3] }}
           transition={{ duration: 1.5, repeat: Infinity, delay: 0.8 }}
-          className="h-3 w-full rounded-full bg-white/5"
+          className="h-3 w-full rounded-full bg-[var(--fill-subtle)]"
         />
       </div>
     </div>

@@ -91,7 +91,7 @@ export default function DashboardTipStrip({ context }: { context: AppTipContext 
             {tip.action && (
               <button
                 onClick={() => navigate(tip.action!.route)}
-                className="inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black transition-opacity hover:opacity-80"
+                className="press-feedback inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black transition-[filter,box-shadow] duration-300 hover:brightness-110 hover:shadow-[0_2px_10px_var(--shadow-color-soft)] outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
                 style={{ background: `${theme.accent}14`, color: theme.accent }}
               >
                 {tip.action.label}
@@ -108,10 +108,11 @@ export default function DashboardTipStrip({ context }: { context: AppTipContext 
             {tips.slice(0, 6).map((entry, dotIndex) => (
               <span
                 key={entry.id}
-                className="h-1 rounded-full transition-all"
+                className="h-1 rounded-full"
                 style={{
                   width: dotIndex === index % Math.min(tips.length, 6) ? 12 : 4,
                   background: dotIndex === index % Math.min(tips.length, 6) ? theme.accent : theme.border,
+                  transition: calmMotion ? 'none' : 'width 0.45s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.3s ease',
                 }}
               />
             ))}
@@ -121,7 +122,7 @@ export default function DashboardTipStrip({ context }: { context: AppTipContext 
           onClick={dismiss}
           aria-label="Ascunde sfaturile pentru azi"
           title="Ascunde pentru azi"
-          className="rounded-lg p-1 transition-colors hover:bg-white/5"
+          className="fine-row press-feedback p-1.5 hover:!text-[var(--text)]"
           style={{ color: theme.text3 }}
         >
           <X size={13} />

@@ -1,9 +1,10 @@
+import ThemeModeSwitcher from '../components/ThemeModeSwitcher';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { Plus, X, Sparkles } from 'lucide-react';
 import { useUserStore, type Profile } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
-import { THEMES, type Theme } from '../theme/themes';
+import type { Theme } from '../theme/themes';
 
 interface Props {
   onAddNew: () => void;
@@ -52,6 +53,9 @@ export default function ProfileSelect({ onAddNew }: Props) {
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
+      <div className="absolute right-5 top-5 z-20">
+        <ThemeModeSwitcher variant="compact" />
+      </div>
       {/* Ambient orbs */}
       <motion.div className="absolute rounded-full pointer-events-none"
         style={{ width: 700, height: 700, top: '-20%', left: '-15%', background: `radial-gradient(circle, ${theme.orb1}, transparent 65%)`, filter: 'blur(90px)', opacity: 0.7 }}
@@ -172,8 +176,7 @@ function ProfileAvatar({ profile, index, isHovered, isSelected, isRemoving, isCo
   onRemove: (e: React.MouseEvent, id: string) => void;
   theme: Theme;
 }) {
-  const profileTheme = THEMES.glass;
-  const accentColor = profileTheme.accent;
+  const accentColor = theme.accent;
 
   return (
     <motion.div

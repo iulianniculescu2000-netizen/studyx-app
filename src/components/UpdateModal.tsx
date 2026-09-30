@@ -397,16 +397,17 @@ export default function UpdateModal() {
                   )}
                 </motion.button>
                 <motion.button
-                  whileHover={{ scale: 1.08, rotate: 90 }}
-                  whileTap={{ scale: 0.94 }}
+                  whileTap={calmMotion ? undefined : { scale: 0.94 }}
                   onClick={close}
+                  aria-label="Închide"
+                  className="hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
                   style={{
                     width: 36,
                     height: 36,
-                    borderRadius: 12,
+                    borderRadius: 999,
                     border: 'none',
                     cursor: 'pointer',
-                    background: theme.surface2,
+                    background: 'transparent',
                     color: theme.text3,
                     display: 'flex',
                     alignItems: 'center',

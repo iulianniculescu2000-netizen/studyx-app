@@ -96,7 +96,7 @@ export default function ToastContainer() {
               <button
                 onClick={() => removeToast(toast.id)}
                 aria-label="Inchide notificarea"
-                className="flex-shrink-0 rounded-lg p-1 transition-colors hover:bg-white/5"
+                className="fine-row flex-shrink-0 rounded-lg p-1 transition-colors hover:bg-[var(--hover-fill)]"
                 style={{ color: theme.text3 }}
               >
                 <X size={13} />

@@ -329,7 +329,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={onClose}
-              className="fixed inset-0 bg-black/60 backdrop-blur-[14px] z-[200]"
+              className="fixed inset-0 bg-[var(--overlay)] backdrop-blur-[14px] z-[200]"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.93, y: 20 }}
@@ -389,7 +389,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                       className="w-full px-4 py-3 rounded-2xl text-sm pr-10 font-medium"
                       style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text, outline: 'none' }}
                     />
-                    <button onClick={() => setShowKey(!showKey)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: theme.text3 }}>
+                    <button onClick={() => setShowKey(!showKey)} className="fine-row absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg hover:bg-[var(--hover-fill)] transition-colors" style={{ color: theme.text3 }}>
                       {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
@@ -663,7 +663,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowProviderCheck(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-[14px] z-[210]"
+              className="fixed inset-0 bg-[var(--overlay)] backdrop-blur-[14px] z-[210]"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.93, y: 20 }}

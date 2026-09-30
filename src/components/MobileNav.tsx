@@ -8,6 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, ListChecks, Layers, BarChart3, Settings } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useViewportProfile } from '../hooks/useViewportProfile';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 
 const TABS = [
   { to: '/', label: 'Acasă', icon: Home },
@@ -27,6 +28,7 @@ export default function MobileNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { mobile } = useViewportProfile();
+  const { calmMotion } = useAdaptiveMotion();
 
   if (!mobile) return null;
 
@@ -62,7 +64,7 @@ export default function MobileNav() {
             onClick={() => navigate(to)}
             aria-label={label}
             aria-current={active ? 'page' : undefined}
-            className="press-feedback"
+            className="press-feedback hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
             style={{
               flex: 1,
               display: 'flex',
@@ -72,12 +74,12 @@ export default function MobileNav() {
               gap: 3,
               margin: '8px 4px',
               borderRadius: 18,
-              border: 'none',
-              outline: 'none',
-              background: active ? `${theme.accent}18` : 'transparent',
+              background: active ? 'var(--accent-soft)' : undefined,
+              border: `1px solid ${active ? `${theme.accent}30` : 'transparent'}`,
+              boxShadow: active ? `0 4px 14px ${theme.accent}26` : undefined,
               cursor: 'pointer',
               color: active ? theme.accent : theme.text3,
-              transition: 'color 0.15s ease, background 0.15s ease',
+              transition: calmMotion ? 'none' : 'color 0.3s ease, background-color 0.5s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
             <Icon size={21} strokeWidth={active ? 2.6 : 2} />

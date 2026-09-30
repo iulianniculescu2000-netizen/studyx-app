@@ -1,9 +1,8 @@
 @import "tailwindcss";
 
-/* ── Glass concept typography (self-hosted — Electron has no network guarantee) ──
- * Available globally as soon as loaded, but only actually USED as the body font
- * under the "glass" theme (see `:root[data-theme-id="glass"] body` below) so the
- * other five themes render exactly as before. `.display` is opt-in anywhere. */
+/* ── Display typography (self-hosted — Electron has no network guarantee) ──
+ * Bricolage Grotesque is opt-in through the `.display` class; the app body itself
+ * uses the system font stack (SF Pro / Segoe UI / Roboto). */
 @font-face {
   font-family: "Bricolage Grotesque";
   font-style: normal;
@@ -241,33 +240,28 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "SF Pro Display", "SF Pro Text", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", Roboto, system-ui, sans-serif;
     -webkit-app-region: no-drag;
     user-select: none;
     transition: background-color 0.25s ease-out, color 0.2s ease-out;
     transform: translateZ(0);
     text-rendering: optimizeLegibility;
   }
-  /* Glass theme gets its own signature typography; every other theme keeps the
-   * SF Pro/Segoe stack above untouched. */
-  :root[data-theme-id="glass"] body {
-    font-family: "Manrope", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-  }
   .display {
     font-family: "Bricolage Grotesque", "SF Pro Display", "Segoe UI Variable Display", system-ui, sans-serif;
   }
   :root[data-theme="light"] body {
     background-image:
-      radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 20%),
-      radial-gradient(circle at 86% 14%, color-mix(in srgb, var(--accent2) 10%, transparent), transparent 22%),
+      radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 22%),
+      radial-gradient(circle at 86% 14%, color-mix(in srgb, var(--accent2) 4%, transparent), transparent 24%),
       radial-gradient(circle at 56% 100%, rgba(255,255,255,0.42), transparent 34%),
       linear-gradient(180deg, rgba(255,255,255,0.48), transparent 18%);
     background-attachment: fixed;
   }
   :root[data-theme="dark"] body {
     background-image:
-      radial-gradient(circle at 12% 6%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 26%),
-      radial-gradient(circle at 88% 10%, color-mix(in srgb, var(--accent2) 7%, transparent), transparent 24%),
+      radial-gradient(circle at 12% 6%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 26%),
+      radial-gradient(circle at 88% 10%, color-mix(in srgb, var(--accent2) 4%, transparent), transparent 24%),
       radial-gradient(circle at 50% 112%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 32%);
     background-attachment: fixed;
   }
@@ -339,7 +333,7 @@
     background: color-mix(in srgb, var(--input-bg) 82%, transparent);
     border-radius: 16px;
     padding: 10px 14px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px var(--shadow-color-soft);
+    box-shadow: inset 0 1px 0 var(--glass-highlight), 0 1px 2px var(--shadow-color-soft);
     transition: background-color 0.18s ease, border-color 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   }
   .dark input, .dark textarea {
@@ -353,8 +347,10 @@
   input:focus, textarea:focus {
     background: color-mix(in srgb, var(--input-bg) 94%, transparent);
     border-color: var(--accent) !important;
-    box-shadow: 0 0 0 3.5px var(--focus-ring), 0 8px 28px var(--shadow-color-soft), inset 0 1px 0 rgba(255,255,255,0.10);
-    transform: scale(1.003);
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring), inset 0 1px 0 var(--glass-highlight);
+  }
+  input:hover:not(:focus):not(:disabled), textarea:hover:not(:focus):not(:disabled) {
+    border-color: color-mix(in srgb, var(--border2) 100%, var(--text3) 12%);
   }
   button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
     outline: none !important;
@@ -414,7 +410,7 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(255,255,255,0.12), transparent 32%);
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 32%);
   opacity: 0.9;
 }
 
@@ -424,7 +420,7 @@
   inset: 1px;
   border-radius: inherit;
   pointer-events: none;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-sheen);
   mask: linear-gradient(180deg, rgba(255,255,255,0.85), transparent 44%);
   opacity: 0.42;
 }
@@ -447,7 +443,7 @@
   inset: 10px 10px 14px 10px;
   border-radius: calc(var(--shell-curve) + 10px);
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.08), transparent 20%),
+    linear-gradient(180deg, var(--glass-sheen), transparent 20%),
     radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 36%);
   pointer-events: none;
   opacity: 0.85;
@@ -462,7 +458,7 @@
   border: 1px solid color-mix(in srgb, var(--border2) 68%, transparent);
   background: color-mix(in srgb, var(--glass-panel) 96%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 1px 0 var(--glass-highlight),
     0 26px 70px var(--shadow-color-soft),
     0 6px 18px rgba(0,0,0,0.04);
 }
@@ -476,7 +472,7 @@
     linear-gradient(180deg, color-mix(in srgb, var(--surface2) 92%, transparent), color-mix(in srgb, var(--surface) 86%, transparent));
   border: 1px solid color-mix(in srgb, var(--border2) 70%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.09),
+    inset 0 1px 0 var(--glass-highlight),
     0 32px 76px var(--shadow-color-soft);
 }
 
@@ -498,7 +494,7 @@
   background: color-mix(in srgb, var(--glass-panel) 98%, transparent);
   border: 1px solid color-mix(in srgb, var(--border2) 70%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 1px 0 var(--glass-highlight),
     0 22px 52px var(--shadow-color-soft),
     0 2px 10px rgba(0,0,0,0.03);
 }
@@ -507,7 +503,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(165deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.04) 38%, transparent 58%);
+  background: linear-gradient(165deg, var(--glass-sheen) 0%, color-mix(in srgb, var(--glass-sheen) 35%, transparent) 38%, transparent 58%);
   pointer-events: none;
 }
 
@@ -516,7 +512,7 @@
     linear-gradient(180deg, color-mix(in srgb, var(--glass-panel-strong) 98%, transparent), color-mix(in srgb, var(--glass-panel) 92%, transparent));
   border: 1px solid color-mix(in srgb, var(--border2) 72%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 1px 0 var(--glass-highlight),
     0 34px 90px rgba(0,0,0,0.22),
     0 10px 24px rgba(0,0,0,0.06);
 }
@@ -538,7 +534,7 @@
 .message-bubble-assistant {
   background: color-mix(in srgb, var(--surface2) 94%, transparent);
   border: 1px solid color-mix(in srgb, var(--border2) 64%, transparent);
-  box-shadow: 0 10px 26px var(--shadow-color-soft), inset 0 1px 0 rgba(255,255,255,0.07);
+  box-shadow: 0 10px 26px var(--shadow-color-soft), inset 0 1px 0 var(--glass-highlight);
 }
 
 .citation-pill {
@@ -550,7 +546,7 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 14px var(--shadow-color-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 6px 14px var(--shadow-color-soft);
   transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease, box-shadow 0.22s ease, transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
@@ -558,7 +554,7 @@ button.citation-pill:hover {
   border-color: var(--accent-glow);
   background: var(--accent-soft);
   color: var(--accent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 20px var(--accent-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 8px 20px var(--accent-soft);
   transform: translateY(-1px);
 }
 
@@ -571,24 +567,24 @@ button.citation-pill:hover {
   position: absolute;
   inset: 1px;
   border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255,255,255,0.10), transparent 32%);
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 32%);
   opacity: 0.9;
   pointer-events: none;
 }
 
 .premium-option-card:hover {
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.10),
+    inset 0 1px 0 var(--glass-highlight),
     0 26px 60px var(--shadow-color-soft),
     0 8px 18px rgba(0,0,0,0.06);
 }
 
 .premium-option-badge {
-  box-shadow: 0 14px 28px var(--shadow-color-soft), inset 0 1px 0 rgba(255,255,255,0.14);
+  box-shadow: 0 14px 28px var(--shadow-color-soft), inset 0 1px 0 var(--glass-highlight);
 }
 
 .premium-empty-state {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 22px 48px var(--shadow-color-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 22px 48px var(--shadow-color-soft);
 }
 
 /* ── Custom Thin Scrollbar ── */
@@ -664,13 +660,13 @@ button.citation-pill:hover {
 .skeleton-block {
   background:
     linear-gradient(105deg,
-      rgba(255,255,255,0.00) 0%,
-      rgba(255,255,255,0.00) 30%,
-      rgba(255,255,255,0.07) 48%,
-      rgba(255,255,255,0.11) 52%,
-      rgba(255,255,255,0.07) 56%,
-      rgba(255,255,255,0.00) 72%,
-      rgba(255,255,255,0.00) 100%
+      transparent 0%,
+      transparent 30%,
+      color-mix(in srgb, var(--skeleton) 70%, transparent) 48%,
+      var(--skeleton) 52%,
+      color-mix(in srgb, var(--skeleton) 70%, transparent) 56%,
+      transparent 72%,
+      transparent 100%
     );
   background-size: 260% 100%;
   animation: skeleton-shimmer 1.7s linear infinite;
@@ -708,13 +704,13 @@ button.press-feedback:not(:disabled):active {
 .premium-chip {
   background: color-mix(in srgb, var(--glass-panel-strong) 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--border2) 72%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 20px var(--shadow-color-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 20px var(--shadow-color-soft);
   transition: border-color 0.18s ease, box-shadow 0.22s ease;
 }
 
 .premium-chip:hover {
   border-color: var(--accent-glow);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 26px var(--accent-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 12px 26px var(--accent-soft);
 }
 
 /* ── Theme switch crossfade (View Transitions API) ── */
@@ -735,7 +731,7 @@ button.press-feedback:not(:disabled):active {
 
 .premium-card-hover:hover {
   transform: translateY(-3px);
-  box-shadow: 0 28px 60px var(--shadow-color-soft), 0 6px 18px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.10);
+  box-shadow: 0 28px 60px var(--shadow-color-soft), 0 6px 18px rgba(0,0,0,0.04), inset 0 1px 0 var(--glass-highlight);
 }
 
 .soft-divider {
@@ -764,7 +760,7 @@ button.press-feedback:not(:disabled):active {
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 24px rgba(0,0,0,0.03);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 24px rgba(0,0,0,0.03);
 }
 
 :root[data-theme="light"] .glass-panel,
@@ -772,8 +768,16 @@ button.press-feedback:not(:disabled):active {
 :root[data-theme="light"] .matte-surface {
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.88),
+    0 0 0 0.5px rgba(60,60,67,0.10),
+    0 1px 3px rgba(26,33,56,0.07),
     0 22px 48px rgba(26,33,56,0.08),
     0 4px 16px rgba(26,33,56,0.04);
+}
+
+:root[data-theme="dark"] .apple-titlebar {
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 8px 20px rgba(0,0,0,0.28);
 }
 
 :root[data-theme="light"] .apple-titlebar {
@@ -817,6 +821,12 @@ button.press-feedback:not(:disabled):active {
 :root[data-performance="lite"] [role="button"],
 :root[data-performance="lite"] label {
   transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+:root[data-performance="lite"] button:not(:disabled):hover,
+:root[data-performance="lite"] a[role="button"]:hover,
+:root[data-performance="lite"] [role="button"]:not(:disabled):hover {
+  transform: none;
 }
 
 :root[data-performance="lite"] .interactive-lift:hover {
@@ -1031,7 +1041,7 @@ button.press-feedback:not(:disabled):active {
   box-shadow:
     0 24px 64px var(--shadow-color-soft),
     0 8px  24px rgba(0,0,0,0.04),
-    inset 0 1px 0 rgba(255,255,255,0.12);
+    inset 0 1px 0 var(--glass-highlight);
 }
 .lift-card:active {
   transform: translateY(-0.5px) scale(0.995);
@@ -1043,7 +1053,7 @@ button.press-feedback:not(:disabled):active {
   box-shadow:
     0 8px 28px color-mix(in srgb, var(--accent) 18%, transparent),
     0 2px 8px  color-mix(in srgb, var(--accent) 8%, transparent),
-    inset 0 1px 0 rgba(255,255,255,0.10);
+    inset 0 1px 0 var(--glass-highlight);
 }
 .accent-shadow-hover {
   transition: box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1052,7 +1062,7 @@ button.press-feedback:not(:disabled):active {
   box-shadow:
     0 16px 44px color-mix(in srgb, var(--accent) 24%, transparent),
     0 6px  16px color-mix(in srgb, var(--accent) 12%, transparent),
-    inset 0 1px 0 rgba(255,255,255,0.12);
+    inset 0 1px 0 var(--glass-highlight);
 }
 
 /* ── Reveal line — tranziție catifelată ── */
@@ -1158,4 +1168,62 @@ button.press-feedback:not(:disabled):active {
     width 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
     height 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
     border-radius 0.42s cubic-bezier(0.2, 0.9, 0.28, 1);
+}
+
+/* ── Interacțiuni fine (rețeta din bara laterală, pe tokeni) ─────────────────
+   .fine-row  – rând / buton plat: fundal discret la hover, tint accent când e activ
+   .fine-card – card: linia de sus se luminează și marginea se apropie de accent
+   .fine-chip – etichetă / filtru: hover discret, activ = tint + margine accent   */
+.fine-row {
+  border-radius: 12px;
+  transition: background-color 0.5s var(--ease-out-soft), color 0.3s var(--ease-out-soft), box-shadow 0.5s var(--ease-out-soft);
+}
+.fine-row:hover:not([aria-current="page"]):not([data-active="true"]) {
+  background-color: var(--hover-fill);
+}
+.fine-row[aria-current="page"],
+.fine-row[data-active="true"] {
+  background-color: var(--accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 19%, transparent), 0 4px 18px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.fine-card {
+  border: 1px solid var(--hairline);
+  transition: border-color 0.4s var(--ease-out-soft), box-shadow 0.5s var(--ease-out-soft), transform 0.5s var(--ease-out-soft);
+}
+.fine-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--hairline));
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 28px var(--shadow-color-soft);
+}
+
+.fine-chip {
+  border: 1px solid var(--hairline);
+  background: transparent;
+  transition: background-color 0.3s var(--ease-out-soft), border-color 0.3s var(--ease-out-soft), color 0.3s var(--ease-out-soft), box-shadow 0.4s var(--ease-out-soft);
+}
+.fine-chip:hover:not([aria-pressed="true"]):not([data-active="true"]) {
+  background-color: var(--hover-fill);
+}
+.fine-chip[aria-pressed="true"],
+.fine-chip[data-active="true"] {
+  background-color: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+/* Inel de focus consecvent pe tastatură (spațiu de fundal + accent), pentru tot ce poate primi focus. */
+.fine-row:focus-visible,
+.fine-card:focus-visible,
+.fine-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fine-row, .fine-card, .fine-chip { transition-duration: 0.01ms !important; }
+}
+:root[data-performance="lite"] .fine-row,
+:root[data-performance="lite"] .fine-card,
+:root[data-performance="lite"] .fine-chip {
+  transition-duration: 0.12s;
 }

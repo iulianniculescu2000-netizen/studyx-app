@@ -23,7 +23,7 @@ export default function BookChapterReaderModal({ title, pageLabel, loading, cont
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 z-50 bg-black/35"
+        className="fixed inset-0 z-50 bg-[var(--overlay)]"
         style={{ backdropFilter: performanceLite ? 'blur(4px)' : 'blur(8px)' }}
       />
       <motion.div

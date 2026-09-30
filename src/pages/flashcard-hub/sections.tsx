@@ -185,7 +185,7 @@ function FolderTargetSelect({
               <button
                 type="button"
                 onClick={() => setBrowseParentId(browseFolder.parentId ?? null)}
-                className="mb-1 flex w-full items-center gap-2 rounded-[12px] px-2 py-1.5 text-left transition-all hover:bg-white/5"
+                className="mb-1 flex w-full items-center gap-2 rounded-[12px] px-2 py-1.5 text-left transition-all hover:bg-[var(--hover-fill)]"
                 style={{ color: theme.text3 }}
               >
                 <ChevronDown size={13} className="rotate-90" />
@@ -230,7 +230,7 @@ function FolderTargetSelect({
                     key={folder.id}
                     type="button"
                     onClick={() => setBrowseParentId(folder.id)}
-                    className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left transition-all hover:bg-white/5"
+                    className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left transition-all hover:bg-[var(--hover-fill)]"
                     style={{
                       background: active ? `${theme.accent}1c` : 'transparent',
                       color: theme.text,
@@ -287,7 +287,7 @@ function FolderTargetSelect({
                 <button
                   type="button"
                   onClick={() => setCreating(true)}
-                  className="flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-left transition-all hover:bg-white/5"
+                  className="flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-left transition-all hover:bg-[var(--hover-fill)]"
                   style={{ color: theme.accent }}
                 >
                   <FolderPlus size={15} />

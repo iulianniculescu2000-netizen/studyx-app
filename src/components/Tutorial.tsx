@@ -622,11 +622,10 @@ export default function Tutorial({ profileId }: { profileId: string }) {
                 </span>
               </div>
               <motion.button
-                whileHover={{ scale: 1.08, rotate: 90 }}
-                whileTap={{ scale: 0.94 }}
                 onClick={skip}
-                className="p-2 rounded-xl transition-all flex-shrink-0"
-                style={{ color: theme.text3, background: theme.surface2, cursor: 'pointer' }}>
+                aria-label="Închide tutorialul"
+                className="p-2 rounded-full transition-colors flex-shrink-0 hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+                style={{ color: theme.text3, cursor: 'pointer' }}>
                 <X size={14} />
               </motion.button>
             </div>

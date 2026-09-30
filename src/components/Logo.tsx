@@ -30,12 +30,12 @@ export default function Logo({ size = 40, className = '' }: LogoProps) {
     >
       <defs>
         <linearGradient id={gradientId} x1="112" y1="76" x2="152" y2="134" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#A78BFA" />
-          <stop offset="100%" stopColor="#22D3EE" />
+          <stop offset="0%" stopColor="#0A84FF" />
+          <stop offset="100%" stopColor="#5E5CE6" />
         </linearGradient>
       </defs>
 
-      <rect width="200" height="200" rx="52" fill="#0F0F12" />
+      <rect width="200" height="200" rx="52" fill="#0F0F12" style={{ stroke: 'var(--hairline)', strokeWidth: 3 }} />
 
       {/* Pages */}
       <path d="M40,56 Q40,50 46,50 L94,54 L94,150 L46,154 Q40,154 40,148 Z" fill="white" />

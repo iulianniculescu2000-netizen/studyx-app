@@ -100,10 +100,9 @@ export default function PremiumSelect({ options, value, onChange, icon }: Props)
                           onChange(opt.value);
                           setOpen(false);
                         }}
-                        className="flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all group"
-                        style={{
-                          background: isActive ? `${theme.accent}15` : 'transparent',
-                        }}
+                        className="fine-row flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all group"
+                        data-active={isActive ? 'true' : undefined}
+                        style={isActive ? { background: `${theme.accent}15` } : undefined}
                       >
                         <span className="text-xs font-bold" style={{ color: isActive ? theme.accent : theme.text2 }}>
                           {opt.label}
