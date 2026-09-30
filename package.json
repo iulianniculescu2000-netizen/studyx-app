@@ -5,6 +5,9 @@
   "version": "2.2.0",
   "type": "module",
   "description": "Aplicatie de grile pentru studenti la medicina",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "author": "StudyX",
   "main": "electron/main.cjs",
   "scripts": {
