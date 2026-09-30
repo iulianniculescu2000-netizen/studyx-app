@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Layers, Loader2, Play } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Layers, Loader2, Play, Plus, Shuffle } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import type { Quiz } from '../types';
 import { useToastStore } from '../store/toastStore';
@@ -12,6 +12,7 @@ import BookShelf from '../components/residency/BookShelf';
 import { useRezidentiatOverview, useResidencyBooks } from '../components/residency/useResidencyData';
 import { bookDisciplineHint, disciplineKey, type SpecialtyOverview } from '../lib/rezidentiatOverview';
 import { startKumarDeck } from '../lib/startKumarDeck';
+import { startQuizMix } from '../lib/quizMixSession';
 import { REZIDENTIAT_BANKS } from '../lib/rezidentiatBank';
 import { REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME } from '../lib/rezidentiatRoot';
 
@@ -33,6 +34,7 @@ function shortTitle(title: string, specialty: string): string {
 /** Which bundled bank a quiz came from, so one specialty's tests can be shown grouped by source. */
 function bankLabel(quiz: { tags?: string[] }): string {
   const tag = quiz.tags?.find((t) => t.startsWith('rezidentiat-bank:'));
+  if (!tag && quiz.tags?.includes('ai-studio')) return 'Generate cu AI';
   return REZIDENTIAT_BANKS.find((bank) => bank.tag === tag)?.label ?? 'Alte grile';
 }
 
@@ -67,6 +69,7 @@ function SegmentedTabs({ value, onChange }: { value: Tab; onChange: (tab: Tab) =
 
 function SpecialtyDetail({ specialty }: { specialty: SpecialtyOverview }) {
   const theme = useTheme();
+  const navigate = useNavigate();
   const sessions = useQuizStore((state) => state.sessions);
 
   const bestByQuiz = useMemo(() => {
@@ -96,7 +99,7 @@ function SpecialtyDetail({ specialty }: { specialty: SpecialtyOverview }) {
       <div className="rounded-2xl p-4" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-[17px] font-semibold" style={{ color: theme.text }}>{specialty.folder.name}</div>
+            <div className="truncate text-[17px] font-semibold" style={{ color: theme.text }}>{specialty.name}</div>
             <div className="text-[12.5px]" style={{ color: theme.text3 }}>
               {specialty.quizzes.length} teste · {number(specialty.questionCount)} grile · {specialty.progress}% parcurs
             </div>
@@ -113,6 +116,28 @@ function SpecialtyDetail({ specialty }: { specialty: SpecialtyOverview }) {
         </div>
         <div className="mt-3 h-1 overflow-hidden rounded-full" style={{ background: 'var(--fill-subtle)' }}>
           <div className="h-full rounded-full" style={{ width: `${specialty.progress}%`, background: theme.accent }} />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {specialty.quizzes.length > 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                const id = startQuizMix(specialty.folder, specialty.quizzes, `${specialty.name} — sesiune completă`);
+                if (id) navigate(`/play/${id}`);
+              }}
+              className="fine-chip press-feedback flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium"
+              style={{ color: theme.text2 }}
+            >
+              <Shuffle size={13} /> Joacă tot
+            </button>
+          )}
+          <Link
+            to={`/create?folder=${specialty.folder.id}`}
+            className="fine-chip press-feedback flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium"
+            style={{ color: theme.text2 }}
+          >
+            <Plus size={13} /> Grilă nouă
+          </Link>
         </div>
       </div>
 
@@ -133,7 +158,7 @@ function SpecialtyDetail({ specialty }: { specialty: SpecialtyOverview }) {
                   style={{ borderRadius: 0, borderTop: index === 0 ? undefined : '1px solid var(--hairline)' }}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14px] font-semibold" style={{ color: theme.text }}>{shortTitle(quiz.title, specialty.folder.name)}</div>
+                    <div className="truncate text-[14px] font-semibold" style={{ color: theme.text }}>{shortTitle(quiz.title, specialty.name)}</div>
                     <div className="text-[12px]" style={{ color: theme.text3 }}>{quiz.questions.length} grile</div>
                   </div>
                   <span className="text-[12.5px] font-semibold" style={{ color }}>{best === undefined ? 'Neîncercat' : `${best}%`}</span>
@@ -159,7 +184,8 @@ export default function ResidencyDiscipline() {
   const folders = useFolderStore((state) => state.folders);
   const quizzes = useQuizStore((state) => state.quizzes);
   const [tab, setTab] = useState<Tab>('specialitati');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('s'));
   const [startingDeck, setStartingDeck] = useState(false);
 
   const discipline = overview.disciplines.find((d) => d.folder.id === folderId) ?? null;
@@ -239,7 +265,7 @@ export default function ResidencyDiscipline() {
                     style={{ borderRadius: 0, borderTop: index === 0 ? undefined : '1px solid var(--hairline)', boxShadow: 'none' }}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13.5px] font-semibold" style={{ color: active ? theme.accent : theme.text }}>{specialty.folder.name}</div>
+                      <div className="truncate text-[13.5px] font-semibold" style={{ color: active ? theme.accent : theme.text }}>{specialty.name}</div>
                       <div className="text-[11.5px]" style={{ color: theme.text3 }}>{specialty.quizzes.length} teste · {number(specialty.questionCount)} grile</div>
                     </div>
                     <span className="text-[11.5px] font-semibold" style={{ color: active ? theme.accent : theme.text3 }}>{specialty.progress}%</span>

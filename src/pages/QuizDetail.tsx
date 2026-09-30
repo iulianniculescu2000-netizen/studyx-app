@@ -1,3 +1,4 @@
+import { folderHref } from '../lib/rezidentiatRoutes';
 import { motion } from 'framer-motion';
 import { lazy, Suspense, useEffect, useState, type CSSProperties } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -76,7 +77,7 @@ export default function QuizDetail() {
   // subfolders, or any user-made subfolder) used to always bounce to "Toate
   // grilele", losing the user's place in the tree.
   const backFolder = quiz?.folderId ? folders.find((f) => f.id === quiz.folderId) : null;
-  const backHref = backFolder ? `/folder/${backFolder.id}` : '/quizzes';
+  const backHref = backFolder ? folderHref(backFolder.id, folders) : '/quizzes';
   const backLabel = backFolder ? backFolder.name : 'Toate grilele';
 
   // A flashcard deck must always study as flashcards — if one is opened via the

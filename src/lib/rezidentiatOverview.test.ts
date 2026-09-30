@@ -76,6 +76,18 @@ describe('buildRezidentiatOverview', () => {
   });
 });
 
+describe('quizzes filed straight into a discipline', () => {
+  it('shows them as one "Alte grile" entry instead of dropping them', () => {
+    const withLoose = [...folders, folder('own', 'Grile', 'root')];
+    const quizzes = [quiz('a', 'Set propriu', 'own', 5), quiz('b', 'Esofagul — Test 1', 's1', 3)];
+    const o = buildRezidentiatOverview(withLoose, quizzes, {}, []);
+    const own = o.disciplines.find((d) => d.folder.id === 'own');
+    expect(own?.specialties).toHaveLength(1);
+    expect(own?.specialties[0]).toMatchObject({ name: 'Alte grile', loose: true, questionCount: 5 });
+    expect(o.disciplines.find((d) => d.folder.id === 'd1')?.specialties[0].loose).toBe(false);
+  });
+});
+
 describe('discipline matching', () => {
   it('matches books and folders regardless of diacritics', () => {
     expect(bookDisciplineHint('Lawrence – Chirurgie generală.pdf')).toBe('chirurgie');

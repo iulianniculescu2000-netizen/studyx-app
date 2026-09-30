@@ -17,7 +17,8 @@ import { suggestFolderAppearance } from '../../lib/folderAppearance';
 import { useFolderStore } from '../../store/folderStore';
 import { useQuizStore } from '../../store/quizStore';
 import { useToastStore } from '../../store/toastStore';
-import type { AIKnowledgeSource } from '../../store/aiStore';
+import { useAIStore, type AIKnowledgeSource } from '../../store/aiStore';
+import { ensureResidencyFolder, isResidencySource } from '../../lib/rezidentiatPlacement';
 import type { Question } from '../../types';
 import type { ChatMessage, ChatMode } from './shared';
 import { formatFolderPath } from './chatHelpers';
@@ -125,7 +126,7 @@ export function useStudioGeneration({
 
   const runStudioGeneration = async ({
     source,
-    folder,
+    folder: requestedFolder,
     packCount,
     questionsPerPack,
     difficulty,
@@ -145,6 +146,16 @@ export function useStudioGeneration({
     announceMode?: ChatMode;
   }) => {
     generationAbortedRef.current = false;
+    const isChapterScoped = heading !== WHOLE_DOCUMENT_HEADING;
+
+    // Anything generated for the Rezidențiat section is filed straight into its
+    // discipline → specialty folder, so it shows up on the Rezidențiat pages.
+    const forResidency = studioExamStyle === 'residency'
+      || isResidencySource(source, useAIStore.getState().libraryFolders);
+    const folder = forResidency
+      ? ensureResidencyFolder(source.name, isChapterScoped ? heading : null)
+      : requestedFolder;
+
     setStudioGenerating(true);
     setGeneratedSummary(null);
     setStudioSourceId(source.id);
@@ -153,8 +164,6 @@ export function useStudioGeneration({
     setStudioPackCount(packCount);
     setStudioQuestionsPerPack(questionsPerPack);
     setStudioDifficulty(difficulty);
-
-    const isChapterScoped = heading !== WHOLE_DOCUMENT_HEADING;
 
     try {
       const result = isChapterScoped
@@ -188,9 +197,13 @@ export function useStudioGeneration({
 
       if (generationAbortedRef.current) return false; // user pressed Stop — discard
 
-      result.quizzes.forEach((quiz) => addQuiz(quiz));
+      result.quizzes.forEach((quiz) => addQuiz(
+        forResidency && folder
+          ? { ...quiz, folderId: folder.id, category: folder.name, tags: [...new Set([...(quiz.tags ?? []), 'rezidentiat'])] }
+          : quiz,
+      ));
 
-      const folderLabel = folder?.name ?? 'Neclasificate';
+      const folderLabel = folder ? formatFolderPath(useFolderStore.getState().folders, folder) : 'Neclasificate';
       const sourceLabel = isChapterScoped ? `${source.name} · ${heading}` : source.name;
       const summary = result.fallbackQuestionCount > 0
         ? `Am generat ${result.quizzes.length} pachete din "${sourceLabel}" și le-am trimis în folderul "${folderLabel}". ${result.aiQuestionCount} întrebări au venit din AI, iar ${result.fallbackQuestionCount} au fost completate inteligent din document pentru stabilitate. Dificultate folosită: ${result.difficulty}.`

@@ -4,6 +4,10 @@ import { findRezidentiatRootFolder } from './rezidentiatRoot';
 
 export interface SpecialtyOverview {
   folder: Folder;
+  /** Display name — the folder's own, or "Alte grile" for quizzes filed straight into a discipline. */
+  name: string;
+  /** True when these quizzes sit directly in the discipline folder rather than in a specialty subfolder. */
+  loose: boolean;
   quizzes: Quiz[];
   questionCount: number;
   answered: number;
@@ -76,10 +80,18 @@ export function buildRezidentiatOverview(
           const list = (quizzesByFolder.get(specialtyFolder.id) ?? []).slice().sort(byTitle);
           const questionCount = list.reduce((sum, q) => sum + q.questions.length, 0);
           const answered = list.reduce((sum, q) => sum + answeredIn(q), 0);
-          return { folder: specialtyFolder, quizzes: list, questionCount, answered, progress: percent(answered, questionCount) };
+          return { folder: specialtyFolder, name: specialtyFolder.name, loose: false, quizzes: list, questionCount, answered, progress: percent(answered, questionCount) };
         })
         .filter((s) => s.quizzes.length > 0)
-        .sort((a, b) => a.folder.name.localeCompare(b.folder.name, 'ro'));
+        .sort((a, b) => a.name.localeCompare(b.name, 'ro'));
+      // Quizzes filed straight into a discipline (e.g. a hand-made "Grile" folder)
+      // would otherwise vanish from this view — surface them as one entry.
+      const loose = (quizzesByFolder.get(disciplineFolder.id) ?? []).slice().sort(byTitle);
+      if (loose.length > 0) {
+        const looseQuestions = loose.reduce((sum, q) => sum + q.questions.length, 0);
+        const looseAnswered = loose.reduce((sum, q) => sum + answeredIn(q), 0);
+        specialties.push({ folder: disciplineFolder, name: 'Alte grile', loose: true, quizzes: loose, questionCount: looseQuestions, answered: looseAnswered, progress: percent(looseAnswered, looseQuestions) });
+      }
       const questionCount = specialties.reduce((sum, s) => sum + s.questionCount, 0);
       const answered = specialties.reduce((sum, s) => sum + s.answered, 0);
       return {
@@ -98,6 +110,7 @@ export function buildRezidentiatOverview(
   const disciplineOfFolder = new Map<string, string>();
   for (const discipline of disciplines) {
     for (const specialty of discipline.specialties) disciplineOfFolder.set(specialty.folder.id, discipline.folder.id);
+    disciplineOfFolder.set(discipline.folder.id, discipline.folder.id);
   }
   let resume: ResumeTarget | null = null;
   for (const session of sessions) {

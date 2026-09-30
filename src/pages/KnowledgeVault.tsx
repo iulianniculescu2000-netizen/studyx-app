@@ -1,21 +1,17 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
-  Brain,
   ChevronRight,
-  Database,
   FileText,
-  FileType,
-  FolderOpen,
   FolderPlus,
   Image,
   Layers3,
   Library,
   Loader2,
-  MessageSquare,
+  MoreHorizontal,
   Plus,
   Search,
   Trash2,
@@ -31,6 +27,7 @@ import { dispatchGenerateFromChapter } from '../lib/ai/chapterEvents';
 import ThemedSelect from '../components/ThemedSelect';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ExamPlanCard from '../components/ExamPlanCard';
+import { isRezidentiatRootFolder } from '../lib/rezidentiatRoot';
 
 function SourceStatusBadge({
   source,
@@ -39,109 +36,26 @@ function SourceStatusBadge({
   source: AIKnowledgeSource;
   theme: ReturnType<typeof useTheme>;
 }) {
-  if (source.indexStatus === 'error') {
-    return (
-      <span
-        className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
-        style={{ background: `${theme.danger}18`, color: theme.danger }}
-      >
-        Eroare
-      </span>
-    );
-  }
-
-  if (source.indexStatus === 'indexing') {
-    return (
-      <span
-        className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
-        style={{ background: `${theme.accent}18`, color: theme.accent }}
-      >
-        Indexare {Math.round(source.indexProgress ?? 0)}%
-      </span>
-    );
-  }
-
+  if (source.indexStatus === 'ready' || source.indexStatus === undefined) return null;
+  const isError = source.indexStatus === 'error';
+  const color = isError ? theme.danger : theme.accent;
   return (
     <span
-      className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
-      style={{ background: `${theme.success}18`, color: theme.success }}
+      className="flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+      style={{ background: `${color}18`, color }}
     >
-      Gata
+      {isError ? 'Eroare' : `Indexare ${Math.round(source.indexProgress ?? 0)}%`}
     </span>
   );
 }
 
 const FOLDER_EMOJIS = ['📚', '🧠', '🫀', '🩸', '🦷', '🔬', '📋', '🩻', '🧬', '💊'];
 
-/**
- * A single folder card. The delete action and the open arrow live in one flex
- * cluster on the right, so they never overlap — the trash fades in on hover to
- * the left of the arrow instead of stacking on top of it.
- */
-function FolderTile({
-  folder,
-  docCount,
-  subCount,
-  theme,
-  index,
-  onOpen,
-  onDelete,
-}: {
-  folder: AILibraryFolder;
-  docCount: number;
-  subCount: number;
-  theme: ReturnType<typeof useTheme>;
-  index: number;
-  onOpen: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.04 + index * 0.04 }}
-      className="glass-panel premium-shadow group relative flex cursor-pointer flex-col gap-3 rounded-[24px] p-5 transition-all hover:-translate-y-0.5"
-      onClick={onOpen}
-    >
-      <div className="flex items-center justify-between">
-        <div
-          className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl"
-          style={{ background: `${theme.accent}15` }}
-        >
-          {folder.emoji ?? '📚'}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="flex h-7 w-7 items-center justify-center rounded-xl opacity-0 transition-all hover:bg-red-500/15 group-hover:opacity-100"
-            style={{ color: theme.danger }}
-            aria-label={`Șterge folderul ${folder.name}`}
-            title="Șterge folderul"
-          >
-            <Trash2 size={13} />
-          </button>
-          <ArrowRight
-            size={16}
-            style={{ color: theme.text3 }}
-            className="opacity-40 transition-opacity group-hover:opacity-100"
-          />
-        </div>
-      </div>
-      <div>
-        <div className="text-sm font-black" style={{ color: theme.text }}>{folder.name}</div>
-        <div className="mt-0.5 text-[11px] font-medium" style={{ color: theme.text3 }}>
-          {docCount} {docCount === 1 ? 'document' : 'documente'}
-          {docCount > 0 && <span style={{ color: theme.accent }}> · indexate</span>}
-          {subCount > 0 && <span> · {subCount} {subCount === 1 ? 'subfolder' : 'subfoldere'}</span>}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
+type TypeFilter = 'all' | 'pdf' | 'image' | 'indexing';
 
 export default function KnowledgeVault() {
   const theme = useTheme();
-  const { calmMotion, performanceLite } = useAdaptiveMotion();
+  const { performanceLite } = useAdaptiveMotion();
   const knowledgeSources = useAIStore((state) => state.knowledgeSources);
   const addKnowledgeSource = useAIStore((state) => state.addKnowledgeSource);
   const removeKnowledgeSource = useAIStore((state) => state.removeKnowledgeSource);
@@ -157,6 +71,8 @@ export default function KnowledgeVault() {
   // Navigation: null = top level (folders view), folderId = inside a folder
   const [activeFolderId, setActiveFolderId] = useState<string | null | '__unfiled__'>(null);
   const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [menuSourceId, setMenuSourceId] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -509,95 +425,283 @@ export default function KnowledgeVault() {
 
   const isTopLevel = activeFolderId === null;
 
+  const showFolderList = isTopLevel && !search.trim();
+  const isSearchingTop = isTopLevel && !!search.trim();
+  const showRecents = showFolderList && knowledgeSources.length >= 4;
+  const recentSources = showRecents
+    ? [...knowledgeSources].sort((a, b) => b.addedAt - a.addedAt).slice(0, 3)
+    : [];
+  const showEmptyHint = showFolderList && knowledgeSources.length === 0 && rootFolders.length === 0;
+
+  const typeFilteredSources = visibleSources.filter((source) => {
+    if (typeFilter === 'all') return true;
+    if (typeFilter === 'image') return source.type === 'image';
+    if (typeFilter === 'pdf') return source.type !== 'image';
+    return source.indexStatus === 'indexing' || source.indexStatus === 'error';
+  });
+
+  const headerTitle = isTopLevel
+    ? <>Biblioteca <span style={{ color: theme.accent }}>AI</span></>
+    : activeFolderId === '__unfiled__'
+      ? 'Neclasificate'
+      : (activeFolder ? activeFolder.name : 'Bibliotecă');
+
+  const headerSubtitle = isTopLevel
+    ? `${knowledgeSources.length} ${knowledgeSources.length === 1 ? 'document' : 'documente'} · ${totalWords.toLocaleString('ro-RO')} cuvinte · ${stats.chunkCount.toLocaleString('ro-RO')} fragmente indexate`
+    : `${sourcesInActiveFolder.length || (activeFolderId === '__unfiled__' ? folderCounts.unfiled : 0)} ${(sourcesInActiveFolder.length || (activeFolderId === '__unfiled__' ? folderCounts.unfiled : 0)) === 1 ? 'document' : 'documente'}${activeSubfolders.length > 0 ? ` · ${activeSubfolders.length} ${activeSubfolders.length === 1 ? 'subfolder' : 'subfoldere'}` : ''}`;
+
+  const renderSourceRow = (source: AIKnowledgeSource, index: number) => {
+    const isReady = source.indexStatus !== 'indexing' && source.indexStatus !== 'error';
+    const menuOpen = menuSourceId === source.id;
+    const folderName = source.folderId ? libraryFolders.find((f) => f.id === source.folderId)?.name : null;
+    return (
+      <motion.div
+        key={source.id}
+        layout={!performanceLite}
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ delay: Math.min(index, 8) * 0.02 }}
+        className="relative px-4 py-3"
+        style={{ borderTop: index === 0 ? undefined : '1px solid var(--hairline)' }}
+      >
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => isReady && void openReader(source)}
+            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            aria-label={`Deschide ${source.name}`}
+          >
+            <div
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]"
+              style={{
+                background: source.type === 'image' ? `${theme.warning}18` : `${theme.accent}18`,
+                color: source.type === 'image' ? theme.warning : theme.accent,
+              }}
+            >
+              {source.type === 'image' ? <Image size={18} /> : <FileText size={18} />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[14px] font-semibold" style={{ color: theme.text }}>{source.name.replace(/\.(pdf|docx|txt|md)$/i, '')}</div>
+              <div className="truncate text-[12px]" style={{ color: theme.text3 }}>
+                {source.type.toUpperCase()}
+                {(source.chunkCount ?? 0) > 0 && ` · ${source.chunkCount!.toLocaleString('ro-RO')} fragmente`}
+                {` · ${source.wordCount.toLocaleString('ro-RO')} cuvinte`}
+                {` · ${new Date(source.addedAt).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}`}
+                {isSearchingTop && folderName ? ` · ${folderName}` : ''}
+              </div>
+            </div>
+          </button>
+
+          <SourceStatusBadge source={source} theme={theme} />
+          <button
+            type="button"
+            onClick={() => isReady && askAIAboutSource(source)}
+            disabled={!isReady}
+            className="fine-chip press-feedback hidden rounded-full px-3 py-1.5 text-[12.5px] font-semibold disabled:opacity-40 sm:block"
+            style={{ color: theme.accent }}
+          >
+            Întreabă
+          </button>
+          <button
+            type="button"
+            onClick={() => setMenuSourceId(menuOpen ? null : source.id)}
+            aria-label="Mai multe acțiuni"
+            aria-expanded={menuOpen}
+            className="fine-row press-feedback flex h-8 w-8 items-center justify-center rounded-full"
+            style={{ color: theme.text3 }}
+          >
+            <MoreHorizontal size={18} />
+          </button>
+        </div>
+
+        {source.indexStatus === 'indexing' && (
+          <div className="mt-2.5 h-[3px] overflow-hidden rounded-full" style={{ background: 'var(--fill-subtle)' }}>
+            <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(4, Math.round(source.indexProgress ?? 0))}%`, background: theme.accent }} />
+          </div>
+        )}
+        {source.indexStatus === 'error' && source.indexError && (
+          <p className="mt-2 text-[11.5px] font-medium" style={{ color: theme.danger }}>{source.indexError}</p>
+        )}
+
+        {movingSourceId === source.id && (
+          <div className="mt-2.5 flex items-center gap-2" style={{ maxWidth: 320 }}>
+            <div className="flex-1">
+              <ThemedSelect
+                size="sm"
+                defaultOpen
+                value={source.folderId ?? ''}
+                onChange={(folderId) => {
+                  moveSourceToLibraryFolder(source.id, folderId || null);
+                  setMovingSourceId(null);
+                }}
+                onRequestClose={() => setMovingSourceId(null)}
+                options={[{ value: '', label: '📂 Neclasificate' }, ...libraryFolderOptions]}
+              />
+            </div>
+            <button type="button" onClick={() => setMovingSourceId(null)} aria-label="Renunță" style={{ color: theme.text3 }}><X size={14} /></button>
+          </div>
+        )}
+
+        {menuOpen && (
+          <>
+            <button type="button" aria-label="Închide meniul" className="fixed inset-0 z-30 cursor-default" onClick={() => setMenuSourceId(null)} />
+            <div
+              className="absolute right-3 top-11 z-40 w-52 overflow-hidden rounded-xl py-1"
+              style={{ background: theme.modalBg, border: '1px solid var(--hairline)', boxShadow: '0 12px 32px var(--shadow-color-soft)' }}
+              role="menu"
+            >
+              {[
+                { label: 'Deschide', run: () => void openReader(source), needsReady: true },
+                { label: 'Întreabă AI', run: () => askAIAboutSource(source), needsReady: true },
+                { label: 'AI Studio', run: () => openAIStudioForSource(source), needsReady: true },
+                { label: 'Mută în folder', run: () => setMovingSourceId(source.id), needsReady: false },
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  role="menuitem"
+                  disabled={item.needsReady && !isReady}
+                  onClick={() => { setMenuSourceId(null); item.run(); }}
+                  className="fine-row block w-full px-3.5 py-2 text-left text-[13px] disabled:opacity-40"
+                  style={{ color: theme.text, borderRadius: 0 }}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <div className="my-1" style={{ borderTop: '1px solid var(--hairline)' }} />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuSourceId(null); removeKnowledgeSource(source.id); }}
+                className="fine-row block w-full px-3.5 py-2 text-left text-[13px]"
+                style={{ color: theme.danger, borderRadius: 0 }}
+              >
+                Șterge documentul
+              </button>
+            </div>
+          </>
+        )}
+      </motion.div>
+    );
+  };
+
+  const renderFolderRow = (folder: AILibraryFolder, index: number, onOpen: () => void) => {
+    const docCount = folderCounts.counts.get(folder.id) ?? 0;
+    const subCount = subfoldersByParent.get(folder.id)?.length ?? 0;
+    const isEmpty = docCount === 0 && subCount === 0;
+    const isRezidentiat = isRezidentiatRootFolder(folder);
+    const fragments = knowledgeSources.reduce((sum, s) => (s.folderId === folder.id ? sum + (s.chunkCount ?? 0) : sum), 0);
+    return (
+      <div key={folder.id} className="group relative" style={{ borderTop: index === 0 ? undefined : '1px solid var(--hairline)' }}>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="fine-row flex w-full items-center gap-3 px-4 py-3 text-left"
+          style={{ borderRadius: 0 }}
+        >
+          <div
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] text-lg"
+            style={{ background: isEmpty ? 'var(--fill-subtle)' : `${theme.accent}18`, opacity: isEmpty ? 0.7 : 1 }}
+          >
+            {folder.emoji ?? '📚'}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[14px] font-semibold" style={{ color: isEmpty ? theme.text2 : theme.text }}>{folder.name}</div>
+            <div className="truncate text-[12px]" style={{ color: theme.text3 }}>
+              {isEmpty
+                ? 'Gol'
+                : `${docCount} ${docCount === 1 ? 'document' : 'documente'}${fragments > 0 ? ` · ${fragments.toLocaleString('ro-RO')} fragmente` : ''}${subCount > 0 ? ` · ${subCount} ${subCount === 1 ? 'subfolder' : 'subfoldere'}` : ''}`}
+            </div>
+          </div>
+          {isRezidentiat && !isEmpty && <span className="w-0 sm:w-40" aria-hidden="true" />}
+          <ChevronRight size={16} style={{ color: theme.text3 }} />
+        </button>
+        {isRezidentiat && !isEmpty && (
+          <Link
+            to="/rezidentiat"
+            className="press-feedback absolute right-11 top-1/2 hidden -translate-y-1/2 text-[12.5px] font-semibold sm:block"
+            style={{ color: theme.accent }}
+          >
+            Deschide în Rezidențiat
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={() => setFolderToDelete({ id: folder.id, name: folder.name })}
+          aria-label={`Șterge folderul ${folder.name}`}
+          title="Șterge folderul"
+          className="fine-row absolute right-9 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+          style={{ color: theme.danger }}
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+    );
+  };
+
+  const FILTERS: Array<{ id: TypeFilter; label: string }> = [
+    { id: 'all', label: 'Toate' },
+    { id: 'pdf', label: 'Documente' },
+    { id: 'image', label: 'Imagini' },
+    { id: 'indexing', label: 'În indexare' },
+  ];
+
   return (
     <div className="h-full overflow-y-auto px-4 py-6 sm:px-8 sm:py-10">
-      <div className="mx-auto max-w-5xl">
-
+      <div className="mx-auto max-w-3xl space-y-6">
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="flex flex-wrap items-end justify-between gap-6">
-            <div>
-              <div className="mb-2 flex items-center gap-3">
-                {!isTopLevel && (
+        <motion.header initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+          {!isTopLevel && (
+            <div className="mb-2 flex flex-wrap items-center gap-0.5 text-[13.5px] font-medium">
+              <button
+                type="button"
+                onClick={() => { setActiveFolderId(null); setSearch(''); setTypeFilter('all'); }}
+                className="press-feedback inline-flex items-center gap-0.5"
+                style={{ color: theme.accent }}
+              >
+                <ArrowLeft size={15} /> Biblioteca AI
+              </button>
+              {folderPath.slice(0, -1).map((ancestor) => (
+                <span key={ancestor.id} className="flex items-center gap-0.5" style={{ color: theme.text3 }}>
+                  <ChevronRight size={13} />
                   <button
-                    onClick={() => {
-                      setActiveFolderId(activeFolderId === '__unfiled__' ? null : (activeFolder?.parentId ?? null));
-                      setSearch('');
-                    }}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl transition-all hover:scale-105"
-                    style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
-                    aria-label="Înapoi"
+                    type="button"
+                    onClick={() => { setActiveFolderId(ancestor.id); setSearch(''); setTypeFilter('all'); }}
+                    style={{ color: theme.accent }}
                   >
-                    <ArrowLeft size={16} />
+                    {ancestor.name}
                   </button>
-                )}
-                <div
-                  className="flex h-10 w-10 items-center justify-center rounded-2xl shadow-lg"
-                  style={{ background: theme.accent, color: '#fff' }}
-                >
-                  {!isTopLevel ? <FolderOpen size={20} /> : <Database size={20} />}
-                </div>
-                <div>
-                  <h1 className="page-title-compact" style={{ color: theme.text }}>
-                    {isTopLevel
-                      ? <>Biblioteca <span style={{ color: theme.accent }}>AI</span></>
-                      : activeFolderId === '__unfiled__'
-                        ? 'Neclasificate'
-                        : (activeFolder ? `${activeFolder.emoji} ${activeFolder.name}` : 'Bibliotecă')}
-                  </h1>
-                  {!isTopLevel && (
-                    <div className="flex flex-wrap items-center gap-1 text-[11px] font-medium" style={{ color: theme.text3 }}>
-                      <button
-                        onClick={() => { setActiveFolderId(null); setSearch(''); }}
-                        className="transition-opacity hover:opacity-80"
-                        style={{ color: theme.accent }}
-                      >
-                        Toate folderele
-                      </button>
-                      {folderPath.slice(0, -1).map((ancestor) => (
-                        <span key={ancestor.id} className="flex items-center gap-1">
-                          <ChevronRight size={11} />
-                          <button
-                            onClick={() => { setActiveFolderId(ancestor.id); setSearch(''); }}
-                            className="transition-opacity hover:opacity-80"
-                            style={{ color: theme.accent }}
-                          >
-                            {ancestor.name}
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {isTopLevel && (
-                <p className="max-w-md text-sm font-medium opacity-60" style={{ color: theme.text }}>
-                  Organizează cursurile pe materii. AI-ul folosește aceste documente pentru răspunsuri ancorate.
-                </p>
-              )}
+                </span>
+              ))}
             </div>
-
-            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
-              <motion.button
-                whileHover={calmMotion ? undefined : { scale: 1.02 }}
-                whileTap={calmMotion ? undefined : { scale: 0.98 }}
-                onClick={() => openAIStudioForSource()}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border px-5 py-3 font-bold transition-all sm:w-auto"
-                style={{ background: `${theme.accent}14`, borderColor: `${theme.accent}24`, color: theme.accent }}
-              >
-                <Layers3 size={18} /> AI Studio
-              </motion.button>
-
-              <motion.button
-                whileHover={calmMotion ? undefined : { scale: 1.02 }}
-                whileTap={calmMotion ? undefined : { scale: 0.98 }}
-                onClick={() => setChatOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border px-5 py-3 font-bold transition-all sm:w-auto"
-                style={{ background: theme.surface2, borderColor: theme.border, color: theme.text2 }}
-              >
-                <MessageSquare size={18} /> Chat AI
-              </motion.button>
-
+          )}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h1 className="page-title-compact" style={{ color: theme.text }}>{headerTitle}</h1>
+              <p className="mt-1 text-[13px]" style={{ color: theme.text3 }}>{headerSubtitle}</p>
+            </div>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              {!isTopLevel && activeFolder && !creatingSubfolder && (
+                <button
+                  type="button"
+                  onClick={() => setCreatingSubfolder(true)}
+                  className="fine-chip press-feedback flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-medium"
+                  style={{ color: theme.text2 }}
+                >
+                  <FolderPlus size={14} /> Subfolder nou
+                </button>
+              )}
+              {isTopLevel && (
+                <button
+                  type="button"
+                  onClick={() => openAIStudioForSource()}
+                  className="fine-chip press-feedback flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-medium"
+                  style={{ color: theme.text2 }}
+                >
+                  <Layers3 size={14} /> AI Studio
+                </button>
+              )}
               <input
                 type="file"
                 ref={fileInputRef}
@@ -606,182 +710,161 @@ export default function KnowledgeVault() {
                 className="hidden"
                 onChange={handleFileUpload}
               />
-
-              <motion.button
-                whileHover={calmMotion ? undefined : { scale: 1.02 }}
-                whileTap={calmMotion ? undefined : { scale: 0.98 }}
+              <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-3 rounded-2xl px-6 py-3 font-black text-white shadow-xl transition-all sm:w-auto sm:min-w-[180px]"
-                style={{ background: theme.accent, boxShadow: `0 8px 24px ${theme.accent}40` }}
+                className="press-feedback flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-[filter] duration-300 hover:brightness-110 disabled:opacity-70"
+                style={{ background: theme.accent }}
               >
-                {loading ? (
-                  <><Loader2 size={18} className="animate-spin" /> Procesăm...</>
-                ) : (
-                  <><Plus size={18} /> {isTopLevel ? 'Adaugă documente' : 'Adaugă în folder'}</>
-                )}
-              </motion.button>
+                {loading ? <><Loader2 size={14} className="animate-spin" /> Procesăm…</> : <><Plus size={14} /> {isTopLevel ? 'Adaugă' : 'Adaugă în folder'}</>}
+              </button>
             </div>
           </div>
-
           {loading && processStep && (
-            <div
-              className="mt-4 inline-flex rounded-full px-4 py-2 text-xs font-bold"
-              style={{ background: `${theme.accent}12`, border: `1px solid ${theme.accent}22`, color: theme.accent }}
-            >
+            <div className="mt-3 inline-flex rounded-full px-3.5 py-1.5 text-[12px] font-medium" style={{ background: `${theme.accent}12`, color: theme.accent }}>
               {processStep}
             </div>
           )}
-        </motion.div>
+        </motion.header>
 
-        {/* Stats bar — top level only */}
-        {isTopLevel && (
-          <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-            {[
-              { label: 'Documente', value: knowledgeSources.length, icon: <Library size={18} />, color: theme.accent },
-              { label: 'Total cuvinte', value: totalWords.toLocaleString(), icon: <FileType size={18} />, color: theme.accent2 },
-              { label: 'Fragmente RAG', value: stats.chunkCount.toLocaleString(), icon: <Brain size={18} />, color: theme.success },
-              { label: 'Foldere', value: libraryFolders.length, icon: <FolderOpen size={18} />, color: theme.warning },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="premium-shadow rounded-[24px] p-5 glass-panel"
-              >
-                <div className="mb-3 flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: `${item.color}15`, color: item.color }}>
-                    {item.icon}
-                  </div>
-                  <span className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: theme.text }}>
-                    {item.label}
-                  </span>
-                </div>
-                <div className="text-2xl font-black tracking-tight" style={{ color: theme.text }}>{item.value}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Search (+ type filters inside a folder) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] px-3 py-2" style={{ background: 'var(--fill-subtle)' }}>
+            <Search size={15} style={{ color: theme.text3 }} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={isTopLevel ? 'Caută în toate documentele' : 'Caută în folder'}
+              aria-label="Caută documente"
+              className="w-full bg-transparent text-[13.5px] outline-none"
+              style={{ color: theme.text }}
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} aria-label="Șterge căutarea" style={{ color: theme.text3 }}><X size={14} /></button>
+            )}
+          </label>
+          {!isTopLevel && FILTERS.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              data-active={typeFilter === filter.id}
+              aria-pressed={typeFilter === filter.id}
+              onClick={() => setTypeFilter(filter.id)}
+              className="fine-chip press-feedback rounded-full px-3 py-1.5 text-[12.5px] font-medium"
+              style={{ color: typeFilter === filter.id ? undefined : theme.text2 }}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
 
-        {/* ── TOP LEVEL: folder grid ── */}
-        {isTopLevel && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Neclasificate tile */}
-              <motion.button
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                onClick={() => setActiveFolderId('__unfiled__')}
-                className="glass-panel premium-shadow group flex flex-col gap-3 rounded-[24px] p-5 text-left transition-all hover:-translate-y-0.5"
-              >
-                <div className="flex items-center justify-between">
-                  <div
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl"
-                    style={{ background: `${theme.text3}12` }}
-                  >
-                    📂
+        {/* ── TOP LEVEL ── */}
+        {showRecents && (
+          <section>
+            <h2 className="mb-2 px-1 text-[12px] font-medium tracking-wide" style={{ color: theme.text3 }}>RECENTE</h2>
+            <div className="grid gap-2.5 sm:grid-cols-3">
+              {recentSources.map((source) => (
+                <button
+                  key={source.id}
+                  type="button"
+                  onClick={() => source.indexStatus !== 'indexing' && source.indexStatus !== 'error' && void openReader(source)}
+                  className="fine-card press-feedback rounded-2xl p-3 text-left"
+                  style={{ background: theme.surface }}
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                    {source.type === 'image' ? <Image size={18} /> : <FileText size={18} />}
                   </div>
-                  <ArrowRight size={16} style={{ color: theme.text3 }} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-                <div>
-                  <div className="text-sm font-black" style={{ color: theme.text }}>Neclasificate</div>
-                  <div className="mt-0.5 text-[11px] font-medium" style={{ color: theme.text3 }}>
-                    {folderCounts.unfiled} {folderCounts.unfiled === 1 ? 'document' : 'documente'}
+                  <div className="mt-2.5 truncate text-[13.5px] font-semibold" style={{ color: theme.text }}>{source.name.replace(/\.(pdf|docx|txt|md)$/i, '')}</div>
+                  <div className="text-[12px]" style={{ color: theme.text3 }}>
+                    {source.folderId ? libraryFolders.find((f) => f.id === source.folderId)?.name ?? 'Bibliotecă' : 'Neclasificate'}
+                    {source.indexStatus === 'ready' || source.indexStatus === undefined ? ' · indexat' : source.indexStatus === 'indexing' ? ' · se indexează' : ' · eroare'}
                   </div>
-                </div>
-              </motion.button>
-
-              {/* Folder tiles (root level only — subfolders live inside them) */}
-              {rootFolders.map((folder, i) => (
-                <FolderTile
-                  key={folder.id}
-                  folder={folder}
-                  docCount={folderCounts.counts.get(folder.id) ?? 0}
-                  subCount={subfoldersByParent.get(folder.id)?.length ?? 0}
-                  theme={theme}
-                  index={i}
-                  onOpen={() => setActiveFolderId(folder.id)}
-                  onDelete={() => setFolderToDelete({ id: folder.id, name: folder.name })}
-                />
+                </button>
               ))}
-
-              {/* New folder tile */}
-              {creatingFolder ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex flex-col gap-3 rounded-[24px] p-5"
-                  style={{ background: theme.surface2, border: `1.5px dashed ${theme.accent}55` }}
-                >
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl" style={{ background: `${theme.accent}15` }}>
-                    📚
-                  </div>
-                  <input
-                    autoFocus
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') submitNewFolder();
-                      if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName(''); }
-                    }}
-                    onBlur={submitNewFolder}
-                    placeholder="Nume folder..."
-                    className="rounded-[12px] border px-3 py-2 text-sm font-bold outline-none"
-                    style={{ background: theme.surface, border: `1px solid ${theme.accent}55`, color: theme.text }}
-                  />
-                </motion.div>
-              ) : (
-                <motion.button
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.08 + libraryFolders.length * 0.04 }}
-                  onClick={() => setCreatingFolder(true)}
-                  className="flex flex-col items-center justify-center gap-2 rounded-[24px] py-8 transition-all hover:-translate-y-0.5"
-                  style={{ background: 'transparent', border: `1.5px dashed ${theme.accent}40`, color: theme.accent }}
-                >
-                  <Plus size={22} />
-                  <span className="text-[11px] font-black uppercase tracking-widest">Folder nou</span>
-                </motion.button>
-              )}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* ── FOLDER LEVEL: subfolders + documents inside folder ── */}
-        {!isTopLevel && (
-          <div className="space-y-6">
-            {/* Subfolders of the current folder (Neclasificate has none) */}
-            {activeFolder && (activeSubfolders.length > 0 || creatingSubfolder) && (
-              <div>
-                <div className="mb-2.5 flex items-center gap-2 px-1">
-                  <FolderOpen size={14} style={{ color: theme.text3 }} />
-                  <h2 className="text-[13px] font-black tracking-tight" style={{ color: theme.text }}>Subfoldere</h2>
-                  <span className="text-[11px] font-bold opacity-45" style={{ color: theme.text }}>
-                    {activeSubfolders.length}
-                  </span>
+        {showFolderList && (
+          <section>
+            <h2 className="mb-2 px-1 text-[12px] font-medium tracking-wide" style={{ color: theme.text3 }}>FOLDERE</h2>
+            {showEmptyHint ? (
+              <div className="rounded-2xl px-5 py-10 text-center" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18` }}>
+                  <Library size={22} style={{ color: theme.accent }} />
                 </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {activeSubfolders.map((folder, i) => (
-                    <FolderTile
-                      key={folder.id}
-                      folder={folder}
-                      docCount={folderCounts.counts.get(folder.id) ?? 0}
-                      subCount={subfoldersByParent.get(folder.id)?.length ?? 0}
-                      theme={theme}
-                      index={i}
-                      onOpen={() => { setActiveFolderId(folder.id); setSearch(''); }}
-                      onDelete={() => setFolderToDelete({ id: folder.id, name: folder.name })}
-                    />
-                  ))}
-
-                  {creatingSubfolder && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="flex flex-col gap-3 rounded-[24px] p-5"
-                      style={{ background: theme.surface2, border: `1.5px dashed ${theme.accent}55` }}
+                <p className="text-[15px] font-semibold" style={{ color: theme.text }}>Biblioteca e goală</p>
+                <p className="mx-auto mt-1 max-w-sm text-[13px]" style={{ color: theme.text3 }}>
+                  Adaugă PDF-uri, documente Word sau imagini, iar AI-ul le folosește ca sursă pentru răspunsuri.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
+                {folderCounts.unfiled > 0 && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setActiveFolderId('__unfiled__')}
+                      className="fine-row flex w-full items-center gap-3 px-4 py-3 text-left"
+                      style={{ borderRadius: 0 }}
                     >
-                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl" style={{ background: `${theme.accent}15` }}>
-                        📁
+                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] text-lg" style={{ background: 'var(--fill-subtle)' }}>📂</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[14px] font-semibold" style={{ color: theme.text }}>Neclasificate</div>
+                        <div className="text-[12px]" style={{ color: theme.text3 }}>{folderCounts.unfiled} {folderCounts.unfiled === 1 ? 'document' : 'documente'}</div>
                       </div>
+                      <ChevronRight size={16} style={{ color: theme.text3 }} />
+                    </button>
+                  </div>
+                )}
+                {rootFolders.map((folder, i) => renderFolderRow(folder, i + (folderCounts.unfiled > 0 ? 1 : 0), () => setActiveFolderId(folder.id)))}
+                {creatingFolder && (
+                  <div className="flex items-center gap-3 px-4 py-3" style={{ borderTop: '1px solid var(--hairline)' }}>
+                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] text-lg" style={{ background: `${theme.accent}18` }}>📚</div>
+                    <input
+                      autoFocus
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') submitNewFolder();
+                        if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName(''); }
+                      }}
+                      onBlur={submitNewFolder}
+                      placeholder="Nume folder"
+                      aria-label="Nume folder nou"
+                      className="w-full rounded-[10px] px-3 py-2 text-[14px] font-medium outline-none"
+                      style={{ background: 'var(--fill-subtle)', color: theme.text }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {!creatingFolder && (
+              <button
+                type="button"
+                onClick={() => setCreatingFolder(true)}
+                className="press-feedback mt-3 flex items-center gap-1.5 px-1 text-[13px] font-semibold"
+                style={{ color: theme.accent }}
+              >
+                <FolderPlus size={14} /> Folder nou
+              </button>
+            )}
+          </section>
+        )}
+
+        {/* ── SEARCH RESULTS (top level) and FOLDER LEVEL: documents ── */}
+        {(isSearchingTop || !isTopLevel) && (
+          <div className="space-y-5">
+            {!isTopLevel && activeFolder && (activeSubfolders.length > 0 || creatingSubfolder) && (
+              <section>
+                <h2 className="mb-2 px-1 text-[12px] font-medium tracking-wide" style={{ color: theme.text3 }}>SUBFOLDERE</h2>
+                <div className="overflow-hidden rounded-2xl" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
+                  {activeSubfolders.map((folder, i) => renderFolderRow(folder, i, () => { setActiveFolderId(folder.id); setSearch(''); setTypeFilter('all'); }))}
+                  {creatingSubfolder && (
+                    <div className="flex items-center gap-3 px-4 py-3" style={{ borderTop: activeSubfolders.length > 0 ? '1px solid var(--hairline)' : undefined }}>
+                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] text-lg" style={{ background: `${theme.accent}18` }}>📁</div>
                       <input
                         autoFocus
                         value={newSubfolderName}
@@ -791,220 +874,38 @@ export default function KnowledgeVault() {
                           if (e.key === 'Escape') { setCreatingSubfolder(false); setNewSubfolderName(''); }
                         }}
                         onBlur={submitNewSubfolder}
-                        placeholder="Nume subfolder..."
-                        className="rounded-[12px] border px-3 py-2 text-sm font-bold outline-none"
-                        style={{ background: theme.surface, border: `1px solid ${theme.accent}55`, color: theme.text }}
+                        placeholder="Nume subfolder"
+                        aria-label="Nume subfolder nou"
+                        className="w-full rounded-[10px] px-3 py-2 text-[14px] font-medium outline-none"
+                        style={{ background: 'var(--fill-subtle)', color: theme.text }}
                       />
-                    </motion.div>
+                    </div>
                   )}
                 </div>
-              </div>
+              </section>
             )}
-
-            {activeFolder && !creatingSubfolder && (
-              <button
-                onClick={() => setCreatingSubfolder(true)}
-                className="flex items-center gap-2 rounded-[14px] border px-3.5 py-2 text-[11px] font-black uppercase tracking-wider transition-all hover:-translate-y-0.5"
-                style={{ background: 'transparent', borderColor: `${theme.accent}40`, borderStyle: 'dashed', color: theme.accent }}
-              >
-                <FolderPlus size={14} />
-                Subfolder nou
-              </button>
-            )}
-
-            <div className="relative">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-40">
-                <Search size={18} style={{ color: theme.text }} />
-              </div>
-              <input
-                type="text"
-                placeholder="Caută în acest folder..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-[20px] py-4 pl-12 pr-4 text-sm font-medium transition-all focus:ring-2"
-                style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text, outline: 'none' }}
-              />
-            </div>
 
             {activeFolder && <ExamPlanCard folder={activeFolder} sources={sourcesInActiveFolder} />}
 
-            <AnimatePresence mode="popLayout">
-              {visibleSources.length === 0 ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="py-16 text-center"
-                >
-                  <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}15` }}>
-                    <Library size={28} style={{ color: theme.accent }} />
-                  </div>
-                  <p className="mb-1 text-base font-bold" style={{ color: theme.text }}>
-                    {search ? 'Niciun document găsit.' : 'Folderul e gol.'}
-                  </p>
-                  <p className="mb-5 text-sm" style={{ color: theme.text3 }}>
-                    {search ? 'Încearcă altă căutare.' : 'Adaugă documente cu butonul „Adaugă în folder" de sus.'}
-                  </p>
-                </motion.div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3">
-                  {visibleSources.map((source, index) => {
-                    const isReady = source.indexStatus !== 'indexing' && source.indexStatus !== 'error';
-
-                    return (
-                      <motion.div
-                        key={source.id}
-                        layout
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ delay: index * 0.02 }}
-                        className="group premium-shadow flex flex-wrap items-start gap-4 rounded-[22px] p-4 glass-panel"
-                      >
-                        <div
-                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-inner"
-                          style={{
-                            background: source.type === 'image' ? '#FF9F0A15' : `${theme.accent}15`,
-                            color: source.type === 'image' ? '#FF9F0A' : theme.accent,
-                          }}
-                        >
-                          {source.type === 'image' ? <Image size={22} /> : <FileText size={22} />}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-1 flex flex-wrap items-center gap-2">
-                            <h3 className="truncate text-[15px] font-bold" style={{ color: theme.text }}>{source.name}</h3>
-                            <span className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider" style={{ background: theme.surface2, color: theme.text3 }}>
-                              {source.type}
-                            </span>
-                            <SourceStatusBadge source={source} theme={theme} />
-                          </div>
-
-                          <p className="truncate text-[11px] font-medium opacity-50" style={{ color: theme.text }}>
-                            {source.preview}
-                          </p>
-
-                          {source.indexStatus === 'indexing' && (
-                            <div className="mt-3">
-                              <div className="h-1.5 overflow-hidden rounded-full" style={{ background: theme.surface2 }}>
-                                <div
-                                  className="h-full rounded-full transition-all"
-                                  style={{ width: `${Math.max(4, Math.round(source.indexProgress ?? 0))}%`, background: theme.accent }}
-                                />
-                              </div>
-                            </div>
-                          )}
-
-                          {source.indexStatus === 'error' && source.indexError && (
-                            <p className="mt-2 text-[10px] font-semibold" style={{ color: theme.danger }}>{source.indexError}</p>
-                          )}
-
-                          <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] font-bold uppercase tracking-tighter" style={{ color: theme.text3 }}>
-                            <span>{source.wordCount} cuvinte</span>
-                            <span>•</span>
-                            <span>{source.charCount.toLocaleString()} caractere</span>
-                            {(source.chunkCount ?? 0) > 0 && (
-                              <><span>•</span><span style={{ color: theme.accent }}>{source.chunkCount} fragmente</span></>
-                            )}
-                            <span>•</span>
-                            <span>{new Date(source.addedAt).toLocaleDateString()}</span>
-
-                            {/* Move to folder — inline */}
-                            {movingSourceId === source.id ? (
-                              <div className="flex items-center gap-1" style={{ minWidth: 160 }}>
-                                <ThemedSelect
-                                  size="sm"
-                                  defaultOpen
-                                  value={source.folderId ?? ''}
-                                  onChange={(folderId) => {
-                                    moveSourceToLibraryFolder(source.id, folderId || null);
-                                    setMovingSourceId(null);
-                                  }}
-                                  onRequestClose={() => setMovingSourceId(null)}
-                                  options={[
-                                    { value: '', label: '📂 Neclasificate' },
-                                    ...libraryFolderOptions,
-                                  ]}
-                                />
-                                <button onClick={() => setMovingSourceId(null)} style={{ color: theme.text3 }}><X size={12} /></button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setMovingSourceId(source.id)}
-                                className="rounded-lg px-2 py-1 text-[10px] font-bold normal-case tracking-normal transition-colors hover:opacity-80"
-                                style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
-                              >
-                                📂 {source.folderId ? (libraryFolders.find((f) => f.id === source.folderId)?.name ?? 'Folder') : 'Mută'}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="hidden items-center gap-2 lg:flex">
-                          <button
-                            onClick={() => void openReader(source)}
-                            disabled={!isReady}
-                            className="rounded-2xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
-                            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text, opacity: isReady ? 1 : 0.45 }}
-                          >
-                            Deschide
-                          </button>
-                          <button
-                            onClick={() => isReady && askAIAboutSource(source)}
-                            disabled={!isReady}
-                            className="rounded-2xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
-                            style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent, opacity: isReady ? 1 : 0.45 }}
-                          >
-                            Întreabă AI
-                          </button>
-                          <button
-                            onClick={() => isReady && openAIStudioForSource(source)}
-                            disabled={!isReady}
-                            className="rounded-2xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
-                            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2, opacity: isReady ? 1 : 0.45 }}
-                          >
-                            AI Studio
-                          </button>
-                        </div>
-
-                        <button
-                          onClick={() => removeKnowledgeSource(source.id)}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl text-red-500 opacity-100 transition-all hover:bg-red-500/10 lg:opacity-0 lg:group-hover:opacity-100"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-
-                        <div className="flex w-full flex-wrap gap-2 lg:hidden">
-                          <button
-                            onClick={() => void openReader(source)}
-                            disabled={!isReady}
-                            className="flex-1 rounded-2xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
-                            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text, opacity: isReady ? 1 : 0.45 }}
-                          >
-                            Deschide
-                          </button>
-                          <button
-                            onClick={() => isReady && askAIAboutSource(source)}
-                            disabled={!isReady}
-                            className="flex-1 rounded-2xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
-                            style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent, opacity: isReady ? 1 : 0.45 }}
-                          >
-                            Întreabă AI
-                          </button>
-                          <button
-                            onClick={() => isReady && openAIStudioForSource(source)}
-                            disabled={!isReady}
-                            className="flex-1 rounded-2xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
-                            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2, opacity: isReady ? 1 : 0.45 }}
-                          >
-                            AI Studio
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
+            {typeFilteredSources.length === 0 ? (
+              <div className="py-14 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18` }}>
+                  <Library size={26} style={{ color: theme.accent }} />
                 </div>
-              )}
-            </AnimatePresence>
+                <p className="text-[15px] font-semibold" style={{ color: theme.text }}>
+                  {search || typeFilter !== 'all' ? 'Niciun document găsit.' : 'Folderul e gol.'}
+                </p>
+                <p className="mt-1 text-[13px]" style={{ color: theme.text3 }}>
+                  {search || typeFilter !== 'all' ? 'Încearcă altă căutare sau alt filtru.' : 'Adaugă documente cu butonul „Adaugă în folder".'}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
+                <AnimatePresence initial={false}>
+                  {typeFilteredSources.map((source, index) => renderSourceRow(source, index))}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
         )}
       </div>

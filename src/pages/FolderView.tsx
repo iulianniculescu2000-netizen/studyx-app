@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, Navigate } from 'react-router-dom';
+import { rezidentiatHrefForFolder } from '../lib/rezidentiatRoutes';
 import { ArrowLeft, Check, CalendarDays, FolderPlus, Layers, Pencil, Plus, Shuffle, Trash2, X } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useFolderStore } from '../store/folderStore';
@@ -36,6 +37,9 @@ export default function FolderView() {
   const [editChildEmoji, setEditChildEmoji] = useState('📁');
   const [editChildColor, setEditChildColor] = useState<QuizColor>('blue');
   const [deleteChildTarget, setDeleteChildTarget] = useState<{ id: string; name: string } | null>(null);
+
+  // Folders in the Rezidențiat tree are browsed on the Rezidențiat pages, not here.
+  const rezidentiatHref = id ? rezidentiatHrefForFolder(id, folders) : null;
 
   const isNull = id === 'null';
   const folder = isNull ? null : folders.find(f => f.id === id);
@@ -173,6 +177,8 @@ export default function FolderView() {
     deleteFolder(deleteChildTarget.id);
     setDeleteChildTarget(null);
   };
+
+  if (rezidentiatHref) return <Navigate to={rezidentiatHref} replace />;
 
   return (
     <div className="h-full overflow-y-auto px-8 py-8">
