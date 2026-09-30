@@ -1008,7 +1008,7 @@ export default function QuizPlay() {
                   <button
                     onClick={() => setAutoAdvance(!autoAdvance)}
                     title={autoAdvance ? 'Dezactivează auto-avansarea' : 'Activează auto-avansarea (2 secunde)'}
-                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125"
                     style={{
                       background: autoAdvance ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.10)',
                       borderColor: autoAdvance ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.14)',
@@ -1025,7 +1025,7 @@ export default function QuizPlay() {
                   <button
                     onClick={handleGoPrevious}
                     title="Revino la întrebarea anterioară pentru a revedea sau schimba răspunsul"
-                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125"
                     style={{
                       background: 'rgba(255,255,255,0.10)',
                       borderColor: 'rgba(255,255,255,0.14)',
@@ -1043,7 +1043,7 @@ export default function QuizPlay() {
                     onClick={handleSkipQuestion}
                     disabled={isLast || questionQueue.length <= 1}
                     title="Sari peste această întrebare și revino la final"
-                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] disabled:opacity-45"
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125 disabled:opacity-45"
                     style={{
                       background: 'rgba(255,255,255,0.10)',
                       borderColor: 'rgba(255,255,255,0.14)',
@@ -1058,7 +1058,7 @@ export default function QuizPlay() {
                 )}
                 <button
                   onClick={() => setShowKeys(!showKeys)}
-                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125"
                   style={{ background: 'rgba(255,255,255,0.10)', borderColor: 'rgba(255,255,255,0.14)', color: '#FFFFFF' }}
                 >
                   <span className="inline-flex items-center gap-1.5">
@@ -1069,7 +1069,7 @@ export default function QuizPlay() {
                 <button
                   onClick={toggleFocusMode}
                   title={focusMode ? 'Ieși din Modul Focus' : 'Intră în Modul Focus'}
-                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125"
                   style={{
                     background: focusMode ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.10)',
                     borderColor: focusMode ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.14)',
@@ -1291,23 +1291,17 @@ export default function QuizPlay() {
               <div className="mb-3 flex items-center gap-2">
                 <button
                   onClick={() => setActiveAIPanel('explanation')}
-                  className="rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em] transition-all"
-                  style={{
-                    background: activeAIPanel === 'explanation' ? theme.accent : theme.surface2,
-                    color: activeAIPanel === 'explanation' ? '#fff' : theme.text3,
-                    border: `1px solid ${activeAIPanel === 'explanation' ? 'transparent' : theme.border}`,
-                  }}
+                  className="fine-chip rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em]"
+                  data-active={activeAIPanel === 'explanation'}
+                  style={{ color: activeAIPanel === 'explanation' ? undefined : theme.text3 }}
                 >
                   Explicație
                 </button>
                 <button
                   onClick={() => setActiveAIPanel('mnemonic')}
-                  className="rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em] transition-all"
-                  style={{
-                    background: activeAIPanel === 'mnemonic' ? `linear-gradient(135deg, ${theme.warning}, ${theme.warning})` : theme.surface2,
-                    color: activeAIPanel === 'mnemonic' ? '#fff' : theme.text3,
-                    border: `1px solid ${activeAIPanel === 'mnemonic' ? 'transparent' : theme.border}`,
-                  }}
+                  className="fine-chip rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em]"
+                  data-active={activeAIPanel === 'mnemonic'}
+                  style={{ color: activeAIPanel === 'mnemonic' ? undefined : theme.text3 }}
                 >
                   Mnemonic
                 </button>
