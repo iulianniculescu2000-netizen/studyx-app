@@ -122,9 +122,9 @@ function FolderTargetPicker({
                     onChange(option.id);
                     setOpen(false);
                   }}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all"
+                  className="fine-row press-feedback flex w-full items-center gap-3 px-3 py-2.5 text-left"
                   style={{
-                    background: active ? theme.accent : 'transparent',
+                    ...(active ? { background: theme.accent, boxShadow: 'none' } : {}),
                     color: active ? '#fff' : theme.text,
                   }}
                 >
@@ -764,20 +764,18 @@ export function QuizQuestionEditor({
             <div className="flex items-center gap-2">
               <button
                 onClick={onPreview}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-all hover:opacity-80"
-                style={{ background: theme.surface2, color: theme.text3 }}
+                className="fine-chip press-feedback flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
+                style={{ color: theme.text3 }}
               >
                 <Eye size={11} />
                 Previzualizare
               </button>
               <button
                 onClick={onToggleMultiple}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-all"
-                style={{
-                  background: currentQ.multipleCorrect ? `${theme.accent2}20` : theme.surface2,
-                  color: currentQ.multipleCorrect ? theme.accent2 : theme.text3,
-                  border: `1px solid ${currentQ.multipleCorrect ? `${theme.accent2}40` : 'transparent'}`,
-                }}
+                className="fine-chip press-feedback flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
+                data-active={!!currentQ.multipleCorrect}
+                aria-pressed={!!currentQ.multipleCorrect}
+                style={{ color: currentQ.multipleCorrect ? undefined : theme.text3 }}
               >
                 <Layers size={11} />
                 Multi
@@ -785,7 +783,7 @@ export function QuizQuestionEditor({
               {canRemoveQuestion && (
                 <button
                   onClick={onQuestionRemove}
-                  className="p-1 rounded-lg transition-all hover:opacity-80"
+                  className="fine-row press-feedback p-1"
                   style={{ color: theme.danger }}
                 >
                   <Trash2 size={14} />
@@ -821,8 +819,8 @@ export function QuizQuestionEditor({
           ) : (
             <button
               onClick={onImageUpload}
-              className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface2, color: theme.text3, border: `1px dashed ${theme.border2}` }}
+              className="fine-chip press-feedback mt-3 flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
+              style={{ color: theme.text3, borderStyle: 'dashed', borderColor: theme.border2 }}
             >
               <ImagePlus size={14} />
               Adaugă imagine opțională
@@ -902,8 +900,8 @@ export function QuizQuestionEditor({
           {currentQ.options.length < OPTION_IDS.length && (
             <button
               onClick={onAddOption}
-              className="w-full py-2.5 rounded-2xl text-sm transition-all hover:opacity-80 flex items-center justify-center gap-1.5"
-              style={{ background: theme.surface2, border: `1px dashed ${theme.border2}`, color: theme.text3 }}
+              className="fine-chip press-feedback w-full py-2.5 rounded-2xl text-sm flex items-center justify-center gap-1.5"
+              style={{ color: theme.text3, borderStyle: 'dashed', borderColor: theme.border2 }}
             >
               <Plus size={13} />
               Adaugă opțiune

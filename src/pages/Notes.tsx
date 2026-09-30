@@ -205,7 +205,7 @@ export default function Notes() {
             />
             {search && (
               <button onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg"
+                className="fine-row press-feedback absolute right-3 top-1/2 -translate-y-1/2 p-1"
                 style={{ color: theme.text3 }}>
                 <X size={14} />
               </button>
@@ -229,7 +229,7 @@ export default function Notes() {
               Adaugă notițe personale în timp ce rezolvi grile. Apar după ce răspunzi la o întrebare.
             </p>
             <Link to="/quizzes"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white press-feedback transition-[filter] duration-300 hover:brightness-110"
               style={{ background: theme.accent }}>
               <BookOpen size={15} /> Deschide o grilă
             </Link>
@@ -326,14 +326,14 @@ export default function Notes() {
                           >
                             <button
                               onClick={() => { deleteNote(n.questionId); setConfirmDelete(null); }}
-                              className="px-2 py-1 rounded-lg text-xs font-semibold text-white"
+                              className="press-feedback px-2 py-1 rounded-lg text-xs font-semibold text-white transition-[filter] duration-300 hover:brightness-110"
                               style={{ background: theme.danger }}>
                               Șterge
                             </button>
                             <button
                               onClick={() => setConfirmDelete(null)}
-                              className="px-2 py-1 rounded-lg text-xs"
-                              style={{ background: theme.surface2, color: theme.text3 }}>
+                              className="fine-chip press-feedback px-2 py-1 rounded-lg text-xs"
+                              style={{ color: theme.text3 }}>
                               Nu
                             </button>
                           </motion.div>
