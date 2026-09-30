@@ -1,9 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import pkg from './package.json' with { type: 'json' }
-
-const appVersion = pkg.version
 
 // Plugin to remove crossorigin from stylesheet links (fixes Electron file:// protocol)
 function removeStylesheetCrossorigin() {
@@ -18,12 +15,6 @@ function removeStylesheetCrossorigin() {
 export default defineConfig({
   plugins: [react(), tailwindcss(), removeStylesheetCrossorigin()],
   base: './',
-  // Read by nativeUpdateCheck.ts (Android build only) to compare the running
-  // app against the latest GitHub Release tag — package.json is the single
-  // source of truth for the version, not duplicated anywhere else.
-  define: {
-    __APP_VERSION__: JSON.stringify(appVersion),
-  },
   server: {
     port: Number(process.env.PORT) || 5173,
     strictPort: true,

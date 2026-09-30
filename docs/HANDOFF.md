@@ -1,7 +1,7 @@
 # StudyX — stare curentă și predare (2026-09-30)
 
 Nota asta e pentru cine (om sau chat nou) reia lucrul. Versiunea în `package.json` este încă **2.2.0**; lansarea țintă este **v2.3.0**, dar **nu s-a lansat nimic** și nu s-a creat niciun tag.
-Atenție: un tag `v*` pornește fluxul `android-release.yml` (build Android + GitHub Release). Nu crea tag-uri fără acordul utilizatorului.
+Atenție: nu crea tag-uri fără acordul utilizatorului.
 
 ## Ramuri (toate pornesc una din alta)
 ```
@@ -21,10 +21,9 @@ Nu s-a făcut merge în `main`. Pentru lansare: PR de pe `chore/maintenance-2026
 
 ## Încă de făcut (fără ordine strictă)
 1. **Verificare manuală pe desktop** (`npm run electron:dev`): ambele teme, culoarea ferestrei la pornire, importul unui PDF (pdf.js 6), chatul pe ecran complet.
-2. **Android:** bara de stare și splash-ul nu urmează tema (`@capacitor/status-bar`, `values-night`, `splash`). Recomandat înainte de lansare.
+2. **Android:** eliminat complet (cod, workflow, Capacitor); nu se mai livrează.
 3. **Interacțiuni fine incomplete** în `QuizPlay`, `ReviewMode`, `DailyReview`, `quiz-create`, `Notes` (au primit doar înlocuirile de culori). Contrast de verificat în `QuizPlay`/`FlashcardSession` pe tema luminoasă (stări corect/greșit).
 4. **Pachete amânate:** componente Apple noi (tooltip global, dropdown cu tastatură), scrollbar macOS, tranziții suplimentare, listă de conversații în chat (aplicația are doar două fire: General și Rezidențiat).
-5. **CI:** `.github/workflows/ci-cd.yml` apelează scripturi inexistente (`test:coverage`, `test:integration`, `test:e2e`).
 6. **Majore amânate:** `eslint` 10 (cere `eslint-plugin-react-hooks` ≥ 7.1 → 32 de erori de stil), `typescript` 7, `tesseract.js` 7.
 7. **Decizii de produs deschise:** `calcNextReview` (scăderea `eFactor` la lapse, schimbare SM-2 neconfirmată), `ReviewMode` (răspunsul se înregistrează la notare; ieșirea înainte de notare acum salvează rezultatul real), verificarea băncilor `lawrence-kumar.json`/`modele-grile.json` (~4200 de grile) față de PDF-urile din `Rezidentiat/Grile`.
 8. **Necomise, locale:** `scripts/fixStoreEncoding.js`, `injectBanner*.js`, `reparseFlashcards.js`, `testExtractPdf*.js`, `test_kumar.txt` (unelte de unică folosință; de șters sau comis).
