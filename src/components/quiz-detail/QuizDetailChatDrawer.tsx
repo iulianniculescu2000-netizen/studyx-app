@@ -111,7 +111,7 @@ Comportament:
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 350, damping: 32 }}
             className="fixed right-0 top-0 bottom-0 z-[101] flex flex-col"
-            style={{ width: 380, background: theme.modalBg, borderLeft: `1px solid ${theme.border}` }}
+            style={{ width: 'min(380px, 100vw)', background: theme.modalBg, borderLeft: `1px solid ${theme.border}` }}
           >
             <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ borderBottom: `1px solid ${theme.border}` }}>
               <div
@@ -120,7 +120,7 @@ Comportament:
               >
                 <Bot size={15} className="text-white" />
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold" style={{ color: theme.text }}>Chat AI</p>
                 <p className="text-xs truncate" style={{ color: theme.text3 }}>{quiz.title}</p>
               </div>
@@ -128,6 +128,8 @@ Comportament:
                 whileHover={{ rotate: 90 }}
                 whileTap={{ scale: 0.88 }}
                 onClick={onClose}
+                aria-label="Închide chatul"
+                className="flex-shrink-0 p-2"
                 style={{ color: theme.text3, cursor: 'pointer' }}
               >
                 <X size={16} />
@@ -201,6 +203,7 @@ Comportament:
                 <motion.button
                   whileTap={{ scale: 0.94 }}
                   onClick={() => void sendChat()}
+                  aria-label="Trimite"
                   disabled={!chatInput.trim() || chatLoading}
                   className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                   style={{

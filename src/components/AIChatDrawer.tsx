@@ -35,6 +35,8 @@ import { useUserStore } from '../store/userStore';
 import { useStatsStore } from '../store/statsStore';
 import { useQuizStore } from '../store/quizStore';
 import { useAIStore } from '../store/aiStore';
+import { useFolderStore } from '../store/folderStore';
+import { isResidencySource, resolveResidencyPlacement } from '../lib/rezidentiatPlacement';
 import { useToastStore } from '../store/toastStore';
 import { useAgentJobsStore } from '../store/agentJobsStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
@@ -176,6 +178,8 @@ export default function AIChatDrawer() {
   const immersive = glass.settings.immersive && !mobile;
   const sidebarInset = useSidebarInset(open && immersive);
   const windowSize = useWindowSize();
+  const quizFolders = useFolderStore((state) => state.folders);
+  const aiLibraryFolders = useAIStore((state) => state.libraryFolders);
   const [glassPanelOpen, setGlassPanelOpen] = useState(false);
 
   const { scopedSource, setScopedSource, contextCacheRef } = useScopedSource();
@@ -266,6 +270,17 @@ export default function AIChatDrawer() {
     loadAIChatRuntime,
     isResidencyThread: chatThread === 'rezidentiat',
   });
+
+  // Where Studio will file the generated packs for Rezidențiat material (shown instead of a folder picker).
+  const studioResidencyPlacement = useMemo(() => {
+    if (!selectedStudioSource) return null;
+    if (chatThread !== 'rezidentiat' && !isResidencySource(selectedStudioSource, aiLibraryFolders)) return null;
+    return resolveResidencyPlacement(
+      selectedStudioSource.name,
+      studioHeading === WHOLE_DOCUMENT_HEADING ? null : studioHeading,
+      quizFolders,
+    );
+  }, [selectedStudioSource, chatThread, aiLibraryFolders, studioHeading, quizFolders]);
 
   const {
     runAgentJob,
@@ -630,6 +645,10 @@ export default function AIChatDrawer() {
       const commandHandled = !imageSnapshot && await tryHandleStudioCommand(text, activeMode);
       if (commandHandled) return;
 
+      // A normal question sent while the Studio drawer is open would stream its answer
+      // behind the drawer's backdrop, so bring the conversation back into view.
+      if (view === 'studio') setView('chat');
+
       // ── Vision path: user pasted an image ────────────────────────────────
       if (imageSnapshot) {
         const { groqVisionRequest, supportsVision } = await import('../lib/groq');
@@ -773,18 +792,24 @@ export default function AIChatDrawer() {
         void verifyAnswerInBackground(streamedAnswer, contextSummary);
       }
     } catch (err: unknown) {
-      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) return;
+      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+        // Stopped before the first chunk: don't leave an empty bubble behind (it was also being saved).
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          return last?.role === 'assistant' && !last.content ? prev.slice(0, -1) : prev;
+        });
+        return;
+      }
       const errorMessage = friendlyAIError(err);
       setMessages((prev) => {
-        // The streaming path already pushed an empty assistant placeholder
-        // (line ~522) before the request could fail — if it never received a
-        // single chunk, filling IT with the error avoids leaving a blank
-        // bubble sitting above a second, separate error message.
+        // The streaming path already pushed an empty assistant placeholder before the request
+        // could fail. Replace it with a plain error message, dropping the placeholder's
+        // citations/suggestions, which would otherwise render context chips and quiz/flashcard
+        // actions under an error text.
         const last = prev[prev.length - 1];
-        if (last?.role === 'assistant' && !last.content) {
-          return [...prev.slice(0, -1), { ...last, content: `Eroare: ${errorMessage}` }];
-        }
-        return [...prev, { role: 'assistant', content: `Eroare: ${errorMessage}` }];
+        const errorBubble = { role: 'assistant' as const, content: `Eroare: ${errorMessage}` };
+        if (last?.role === 'assistant' && !last.content) return [...prev.slice(0, -1), errorBubble];
+        return [...prev, errorBubble];
       });
     } finally {
       streamAbortRef.current = null;
@@ -957,6 +982,19 @@ export default function AIChatDrawer() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [open, mobile, immersive, zoomedBlock, overflowMenuOpen, glassPanelOpen, toggleImmersive, setImmersive]);
+
+  useEffect(() => {
+    if (!open || view !== 'studio') return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || zoomedBlock || glassPanelOpen || overflowMenuOpen) return;
+      // A dropdown inside the form handles its own Escape first.
+      if (event.defaultPrevented) return;
+      event.stopPropagation();
+      setView('chat');
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, view, zoomedBlock, glassPanelOpen, overflowMenuOpen, setView]);
 
   useEffect(() => {
     if (!open || !immersive) setGlassPanelOpen(false);
@@ -1250,7 +1288,7 @@ export default function AIChatDrawer() {
                   )}
 
                   {message.role === 'assistant' && !message.agentJobId && message.content.trim() && !(isLastAssistant && loading) && (
-                    <div className={`mt-3 flex flex-wrap gap-1.5 transition-opacity duration-150 ${isLastAssistant ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+                    <div className={`mt-3 flex flex-wrap gap-1.5 transition-opacity duration-150 ${isLastAssistant ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100'}`}>
                       {([
                         { key: 'copy', label: 'Copiază', icon: <Copy size={12} />, onClick: () => void copyMessageToClipboard(message.content) },
                         { key: 'flashcard', label: 'Flashcard', icon: <CreditCard size={12} />, onClick: () => saveAnswerAsFlashcard(index) },
@@ -1330,12 +1368,15 @@ export default function AIChatDrawer() {
   const sheetHeight = view === 'studio' || (wideChat && view === 'chat')
     ? Math.min(windowSize.height * 0.88, 880)
     : Math.min(windowSize.height * 0.85, 860);
+  // The Electron window is frameless: minimize/maximize/close float at the top-right,
+  // so the full-window chat starts below them instead of covering (and stealing clicks from) them.
+  const immersiveTop = typeof window !== 'undefined' && window.electronAPI ? 54 : 12;
   const panelGeometry = immersive
     ? {
         left: sidebarInset + 12,
-        top: 12,
+        top: immersiveTop,
         width: windowSize.width - sidebarInset - 24,
-        height: windowSize.height - 24,
+        height: windowSize.height - immersiveTop - 12,
         borderRadius: 28,
       }
     : {
@@ -1752,14 +1793,31 @@ export default function AIChatDrawer() {
                             />
                           )}
 
-                          <StudioSelect
-                            label="Folder țintă"
-                            value={studioFolderId}
-                            onChange={setStudioFolderId}
-                            options={studioFolderOptions}
-                            placeholder="Alege unde salvăm pachetele"
-                            theme={theme}
-                          />
+                          {studioResidencyPlacement ? (
+                            <div>
+                              <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                                Folder țintă
+                              </span>
+                              <div className="rounded-2xl border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
+                                <div className="flex items-center gap-2 text-sm font-semibold [overflow-wrap:anywhere]" style={{ color: theme.text }}>
+                                  <FolderOpen size={14} className="flex-shrink-0" style={{ color: theme.accent }} />
+                                  Rezidențiat › {studioResidencyPlacement.disciplineName} › {studioResidencyPlacement.specialtyName}
+                                </div>
+                                <div className="mt-1 text-[11px]" style={{ color: theme.text3 }}>
+                                  Se creează și se completează automat, ca să apară în pagina Rezidențiat.
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <StudioSelect
+                              label="Folder țintă"
+                              value={studioFolderId}
+                              onChange={setStudioFolderId}
+                              options={studioFolderOptions}
+                              placeholder="Alege unde salvăm pachetele"
+                              theme={theme}
+                            />
+                          )}
 
                           <div className={studioHeading === WHOLE_DOCUMENT_HEADING ? 'grid grid-cols-2 gap-3' : ''}>
                             {studioHeading === WHOLE_DOCUMENT_HEADING && (
@@ -1845,7 +1903,7 @@ export default function AIChatDrawer() {
                                       color: active ? '#fff' : theme.text,
                                     }}
                                   >
-                                    <div className="text-xs font-black uppercase tracking-[0.14em]">{meta.short}</div>
+                                    <div className="text-xs font-black uppercase tracking-[0.06em] [overflow-wrap:anywhere]">{meta.short}</div>
                                     <div className="mt-0.5 text-[10px] font-semibold opacity-80">{meta.description}</div>
                                   </button>
                                 );
@@ -1884,10 +1942,10 @@ export default function AIChatDrawer() {
                           <button
                             onClick={() => void handleGeneratePackages()}
                             disabled={!selectedStudioSource || studioGenerating}
-                            className="press-feedback flex w-full items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-45"
+                            className="press-feedback sticky bottom-0 z-10 flex w-full items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-45"
                             style={{
                               background: theme.accent,
-                              boxShadow: `0 18px 30px ${theme.accent}24`,
+                              boxShadow: `0 10px 24px ${theme.accent}30, 0 0 0 6px ${theme.isDark ? 'rgba(20,16,30,0.98)' : 'rgba(255,255,255,0.98)'}`,
                             }}
                           >
                             {studioGenerating ? (

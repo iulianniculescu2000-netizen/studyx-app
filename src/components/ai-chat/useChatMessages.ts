@@ -50,10 +50,20 @@ export function useChatMessages(options: { open: boolean; calmMotion: boolean; t
     setMessages(loadMessages(storageKey));
   }
 
+  // Follow the conversation, but never fight the reader: a new message always scrolls into
+  // view, while streaming chunks only do so if the reader is already near the bottom (so they can
+  // scroll up during a long answer), and without restarting a smooth animation on every chunk.
+  const lastCountRef = useRef(0);
   useEffect(() => {
-    if (open) {
-      chatEndRef.current?.scrollIntoView({ behavior: calmMotion ? 'auto' : 'smooth' });
-    }
+    if (!open) return;
+    const end = chatEndRef.current;
+    if (!end) return;
+    const isNewMessage = messages.length !== lastCountRef.current;
+    lastCountRef.current = messages.length;
+    const scroller = end.closest('.custom-scrollbar') as HTMLElement | null;
+    const nearBottom = !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
+    if (!isNewMessage && !nearBottom) return;
+    end.scrollIntoView({ behavior: calmMotion || !isNewMessage ? 'auto' : 'smooth' });
   }, [messages, open, calmMotion]);
 
   useEffect(() => {
