@@ -255,10 +255,14 @@ async function attemptOnProvider(
         if (response.status === 429 && attempt < maxAttempts - 1) {
           const retryAfter = response.headers.get('retry-after');
           const delayMs = getRetryDelayMs(attempt, retryAfter);
+          // A daily/minute quota that resets in minutes would otherwise hold the request queue
+          // (and the Stop button) hostage; fail fast so the fallback provider or the user can act.
+          if (delayMs > MAX_RATE_LIMIT_WAIT_MS + 500) throw new NonRetryableError(msg);
           logAIDebug('groq:ratelimit', { task, provider: cfg.name, retryAfter, delayMs });
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
         }
+        if (NON_RETRYABLE_STATUSES.has(response.status)) throw new NonRetryableError(msg);
         throw new Error(msg);
       }
 
@@ -267,6 +271,8 @@ async function attemptOnProvider(
       logAIDebug('groq:response', { task, provider: cfg.name, output });
       return output;
     } catch (error: unknown) {
+      // Stop pressed, or a failure retrying cannot fix: surface it now instead of after the backoff.
+      if (error instanceof NonRetryableError || (error instanceof Error && error.name === 'AbortError')) throw error;
       lastError = error instanceof Error ? error.message : String(error);
       logAIDebug('groq:error', { task, provider: cfg.name, attempt, error: lastError });
       if (attempt < maxAttempts - 1) {
@@ -453,6 +459,13 @@ function chunkText(text: string, maxSize = 4500, overlap = 350, maxChunks = 4): 
 //  - generationGovernor: question generation — 2 concurrent, tighter spacing
 const groqGovernor = createRequestGovernor({ concurrency: 1, baseSpacingMs: 400 });
 const generationGovernor = createRequestGovernor({ concurrency: 2, baseSpacingMs: 450 });
+
+/** An error another attempt cannot fix (bad key, oversized request, a limit that resets in minutes). */
+class NonRetryableError extends Error {}
+
+/** A 429 whose reset is further away than this is not worth waiting out inside one request. */
+const MAX_RATE_LIMIT_WAIT_MS = 8000;
+const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 413, 422]);
 
 function getRetryDelayMs(attempt: number, retryAfterHeader: string | null) {
   const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : 0;

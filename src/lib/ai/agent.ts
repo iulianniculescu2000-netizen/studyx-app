@@ -23,6 +23,7 @@ import { suggestFolderAppearance } from '../folderAppearance';
 import { extractJsonFromText } from '../quizImport';
 import { findOrCreateRezidentiatQuizRoot, findOrCreateRezidentiatLibraryRoot, REZIDENTIAT_ROOT_NAME } from '../rezidentiatRoot';
 import { ensureResidencyFolder, ensureTopicFolder, isResidencySource } from '../rezidentiatPlacement';
+import { friendlyAIError } from './friendlyError';
 import type { Difficulty, Folder, Question, Quiz } from '../../types';
 
 function shortId() {
@@ -391,7 +392,8 @@ export function isRetryPhrase(text: string): boolean {
     /\bmai incearca\b/, /\bincearca din nou\b/, /\bincearca iar\b/, /\breincearca\b/,
     /\binca o data\b/, /\binca odata\b/, /\bmai fa o data\b/, /\bfa din nou\b/,
     /\bmai fa\b/, /\breia\b/, /\brepeta\b/, /\bmai incearca o data\b/,
-    /^din nou\b/, /^iar(asi)?\b/, /\btry again\b/, /\bretry\b/,
+    // Only the bare phrase: "Iar dacă pacientul are diabet?" is a new question, not a retry.
+    /^din nou$/, /^iar(asi)?$/, /\btry again\b/, /\bretry\b/,
   ];
   return RETRY_PATTERNS.some((pattern) => pattern.test(norm));
 }
@@ -1140,7 +1142,7 @@ export async function executeAgentPlan(
           const totalGenerated = result.aiQuestionCount + result.fallbackQuestionCount;
           const mostlyFallback = totalGenerated > 0 && result.fallbackQuestionCount >= totalGenerated / 2;
           if (mostlyFallback) {
-            errors.push(`„${source.name}": AI-ul nu a răspuns, am folosit generare locală de rezervă (calitate redusă). Verifică cheia AI în Setări.`);
+            errors.push(`„${source.name}": AI-ul nu a răspuns, am folosit generare locală de rezervă (calitate redusă). Cel mai probabil e o limită de utilizare sau o cheie nevalidă — verifică Setări AI și încearcă din nou.`);
           }
           if (result.medicallyFlaggedCount > 0) {
             errors.push(`„${source.name}": ${result.medicallyFlaggedCount} întrebări eliminate de verificarea medicală (răspuns marcat greșit).`);
@@ -1575,7 +1577,7 @@ export async function executeAgentPlan(
           callbacks.onStep(index, 'skipped');
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Pas eșuat.';
+      const message = error instanceof Error ? friendlyAIError(error) : 'Pas eșuat.';
       // Surfaced only as a short message in the confirm card otherwise — log the
       // full error (with stack) so a real crash is diagnosable, not just "X failed".
       console.error(`[Agent] step "${step.action}" failed:`, error);

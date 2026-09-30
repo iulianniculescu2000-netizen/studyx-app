@@ -227,7 +227,7 @@ export function useStudioGeneration({
         ? `Am generat ${result.quizzes.length} pachete din "${sourceLabel}" și le-am trimis în folderul "${folderLabel}". ${result.aiQuestionCount} întrebări au venit din AI, iar ${result.fallbackQuestionCount} au fost completate inteligent din document pentru stabilitate. Dificultate folosită: ${result.difficulty}.`
         : `Am generat ${result.quizzes.length} pachete din "${sourceLabel}" și le-am trimis în folderul "${folderLabel}". Dificultate folosită: ${result.difficulty}.`;
       const fullSummary = result.warnings.length > 0
-        ? `${summary}\n\nNotă: ${result.warnings[0]}`
+        ? `${summary}\n\nNotă: ${friendlyAIError(result.warnings[0])}`
         : summary;
 
       setGeneratedSummary(fullSummary);
@@ -323,8 +323,11 @@ export function useStudioGeneration({
   // command but builds a flashcard deck. Runs WITHOUT the LLM planner, so
   // "fă-mi 3 flashcarduri din X" works even when the planner is rate-limited.
   const tryHandleFlashcardCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
-    const wantsFlashcards = /\b(flash\s?carduri|flash\s?card|fi[șs]e|carduri)\b/i.test(text);
-    const wantsGeneration = /\b(f[ăa]|f[ăa][- ]?mi|genereaz[ăa]|cre(?:e|ea)z[ăa]?|creaz[ăa]?|vreau|preg[ăa]te|construie)\b/i.test(text);
+    // Lookarounds instead of \b: a word boundary does not exist next to ă/ș/ț, so
+    // "Generează 20 flashcarduri" and "Fă 20 flashcarduri" never matched.
+    const plainText = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const wantsFlashcards = /(?<![a-z])(flash\s?carduri|flash\s?card|fise|carduri)(?![a-z])/i.test(plainText);
+    const wantsGeneration = /(?<![a-z])(fa|fa[- ]?mi|da[- ]?mi|genereaza|creeaza|creaza|vreau|pregateste|construieste|adauga)(?![a-z])/i.test(plainText);
     if (!wantsFlashcards || !wantsGeneration) return false;
 
     if (!hasKey) {
@@ -365,7 +368,7 @@ export function useStudioGeneration({
 
     const countMatch = text
       .normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .match(/(\d+)\s*(?:de\s+)?(?:flash\s?carduri|flash\s?card|carduri|fise|card)/i);
+      .match(/(\d+)\s*(?:de\s+)?(?:flash\s?carduri|flash\s?card|carduri|fise|card)(?![a-z])/i);
     const count = Math.max(1, Math.min(60, countMatch ? Number(countMatch[1]) : 15));
 
     setThinkingPhase(`Generez ${count} flashcarduri din „${source.name}"…`);
