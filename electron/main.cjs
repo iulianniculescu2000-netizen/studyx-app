@@ -1072,8 +1072,11 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
-    mainWindow.webContents.on('console-message', (_, level, message, line, sourceId) => {
-      if (level >= 2) console.error(`[Renderer] ${message} (${sourceId}:${line})`);
+    // Event-object form (the positional-arguments form is deprecated in Electron 35+).
+    mainWindow.webContents.on('console-message', (event) => {
+      if (event.level === 'warning' || event.level === 'error') {
+        console.error(`[Renderer] ${event.message} (${event.sourceId}:${event.lineNumber})`);
+      }
     });
     setTimeout(() => { if (mainWindow && !mainWindow.isVisible()) mainWindow.show(); }, 3000);
   } else {
