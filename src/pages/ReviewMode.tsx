@@ -380,7 +380,7 @@ export default function ReviewMode() {
               <RefreshCw size={14} />Altă sesiune
             </button>
             <Link to="/"
-              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-white text-sm transition-all"
+              className="flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-white text-sm press-feedback transition-[filter] duration-300 hover:brightness-110"
               style={{ background: theme.accent, boxShadow: `0 8px 24px ${theme.accent}40` }}>
               <Trophy size={14} />Dashboard
             </Link>
@@ -416,8 +416,10 @@ export default function ReviewMode() {
               animate={{ width: `${progress}%` }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }} />
           </div>
           <button onClick={() => setShowKeys(k => !k)}
-            className="p-1.5 rounded-lg transition-all hover:opacity-80"
-            style={{ color: showKeys ? theme.accent : theme.text3, background: showKeys ? `${theme.accent}15` : 'transparent' }}>
+            className="fine-row press-feedback p-1.5"
+            data-active={showKeys}
+            aria-pressed={showKeys}
+            style={{ color: showKeys ? theme.accent : theme.text3 }}>
             <Keyboard size={14} />
           </button>
         </div>

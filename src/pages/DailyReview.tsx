@@ -141,7 +141,7 @@ export default function DailyReview() {
         >
           <Link
             to="/"
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-white"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-white press-feedback transition-[filter] duration-300 hover:brightness-110"
             style={{ background: theme.accent }}
           >
             Înapoi la Dashboard
@@ -266,13 +266,13 @@ export default function DailyReview() {
           <div className="space-y-2">
             <button
               onClick={() => { setPhase('ready'); setCurrentIdx(0); setSelected([]); setRevealed(false); setResults([]); }}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-semibold text-white"
+              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-semibold text-white press-feedback transition-[filter] duration-300 hover:brightness-110"
               style={{ background: theme.accent }}>
               <RotateCcw size={14} />Repetă sesiunea
             </button>
             <Link to="/"
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text2 }}>
+              className="fine-chip press-feedback w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium"
+              style={{ color: theme.text2 }}>
               <Home size={14} />Acasă
             </Link>
           </div>
@@ -302,8 +302,8 @@ export default function DailyReview() {
                   recordStudySession(Math.floor((Date.now() - startedAt) / 1000));
                   setPhase('done');
                 }}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-all hover:opacity-80"
-                style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}
+                className="fine-chip press-feedback flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold"
+                style={{ color: theme.text3 }}
                 title="Ieși din sesiune"
               >
                 <LogOut size={11} />
