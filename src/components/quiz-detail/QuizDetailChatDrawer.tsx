@@ -1,3 +1,4 @@
+import AIRichText from '../ai-chat/AIRichText';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { Bot, SendHorizonal, Loader2, X } from 'lucide-react';
@@ -172,19 +173,7 @@ Comportament:
                   >
                     {message.content
                       ? message.role === 'assistant'
-                        ? (
-                          <span
-                            dangerouslySetInnerHTML={{
-                              __html: message.content
-                                .replace(/&/g, '&amp;')
-                                .replace(/</g, '&lt;')
-                                .replace(/>/g, '&gt;')
-                                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                                .replace(/\*(.+?)\*/g, '<em>$1</em>')
-                                .replace(/\n/g, '<br/>'),
-                            }}
-                          />
-                        )
+                        ? <AIRichText text={message.content} />
                         : message.content
                       : <span style={{ opacity: 0.4 }}>...</span>}
                   </div>
