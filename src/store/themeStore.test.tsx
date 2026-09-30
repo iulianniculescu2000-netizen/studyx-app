@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { THEME_MODE_STORAGE_KEY, useThemeStore } from './themeStore';
 import { ThemeProvider } from '../theme/ThemeContext';
-import { DEFAULT_THEME_MODE, THEMES, normalizeThemeMode, resolveThemeMode } from '../theme/themes';
+import { DEFAULT_THEME_MODE, THEMES, normalizeThemeMode, resolveThemeMode, nextVisibleThemeMode } from '../theme/themes';
 
 describe('theme mode', () => {
   beforeEach(() => {
@@ -61,5 +61,21 @@ describe('ThemeProvider applies the resolved theme to <html>', () => {
     expect(root.style.colorScheme).toBe('light');
     expect(root.classList.contains('dark')).toBe(false);
     expect(root.style.getPropertyValue('--hairline')).toBe(THEMES.light.hairline);
+  });
+});
+
+describe('nextVisibleThemeMode', () => {
+  it('never returns a mode that looks the same as the current one', () => {
+    for (const systemDark of [false, true]) {
+      for (const mode of ['light', 'dark', 'auto'] as const) {
+        const next = nextVisibleThemeMode(mode, systemDark);
+        expect(resolveThemeMode(next, systemDark)).not.toBe(resolveThemeMode(mode, systemDark));
+      }
+    }
+  });
+
+  it('from Automat on a light system goes straight to Întunecat', () => {
+    expect(nextVisibleThemeMode('auto', false)).toBe('dark');
+    expect(nextVisibleThemeMode('auto', true)).toBe('light');
   });
 });

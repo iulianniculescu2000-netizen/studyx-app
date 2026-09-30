@@ -4,7 +4,7 @@ import { Monitor, Moon, Sun } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useThemeStore } from '../store/themeStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
-import { THEME_MODES, nextThemeMode, type ThemeMode } from '../theme/themes';
+import { THEME_MODES, nextVisibleThemeMode, type ThemeMode } from '../theme/themes';
 
 const LABELS: Record<ThemeMode, string> = {
   light: 'Luminos',
@@ -19,7 +19,7 @@ const ICONS: Record<ThemeMode, typeof Sun> = { light: Sun, dark: Moon, auto: Mon
  *  - `segmented`: the Apple-style control with a sliding pill (Settings, onboarding).
  *  - `compact`: one small round button that cycles the three modes (sidebar, corners).
  */
-export default function ThemeModeSwitcher({ variant = 'segmented' }: { variant?: 'segmented' | 'compact' }) {
+export default function ThemeModeSwitcher({ variant = 'segmented', label }: { variant?: 'segmented' | 'compact'; label?: string }) {
   const theme = useTheme();
   const mode = useThemeStore((state) => state.mode);
   const setMode = useThemeStore((state) => state.setMode);
@@ -28,17 +28,44 @@ export default function ThemeModeSwitcher({ variant = 'segmented' }: { variant?:
 
   if (variant === 'compact') {
     const Icon = ICONS[mode];
-    return (
-      <button
-        type="button"
-        onClick={() => setMode(nextThemeMode(mode))}
-        aria-label={`Aspect: ${LABELS[mode]}. Apasă pentru a schimba.`}
-        title={`Aspect: ${LABELS[mode]}`}
-        data-testid="theme-toggle-compact"
-        className="press-feedback focus-ring-premium flex h-9 w-9 items-center justify-center rounded-full"
+    const systemDark = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const cycle = () => setMode(nextVisibleThemeMode(mode, systemDark));
+    const circle = (
+      <span
+        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full"
         style={{ background: 'var(--fill-subtle)', color: theme.text2, border: `0.5px solid ${theme.hairline}` }}
       >
         <Icon size={16} strokeWidth={2} />
+      </span>
+    );
+    if (!label) {
+      return (
+        <button
+          type="button"
+          onClick={cycle}
+          aria-label={`Aspect: ${LABELS[mode]}. Apasă pentru a schimba.`}
+          title={`Aspect: ${LABELS[mode]}`}
+          data-testid="theme-toggle-compact"
+          className="press-feedback focus-ring-premium rounded-full"
+        >
+          {circle}
+        </button>
+      );
+    }
+    // With a label the whole row is the button, so tapping the text works too.
+    return (
+      <button
+        type="button"
+        onClick={cycle}
+        aria-label={`${label}: ${LABELS[mode]}. Apasă pentru a schimba.`}
+        title={`${label}: ${LABELS[mode]}`}
+        data-testid="theme-toggle-compact"
+        className="fine-row press-feedback focus-ring-premium flex w-full items-center gap-2 rounded-full py-0.5 pl-0.5 pr-3 text-left"
+      >
+        {circle}
+        <span className="flex-1 text-[12px]" style={{ color: theme.text3 }}>{label}</span>
+        <span className="text-[11.5px] font-medium" style={{ color: theme.text3 }}>{LABELS[mode]}</span>
       </button>
     );
   }

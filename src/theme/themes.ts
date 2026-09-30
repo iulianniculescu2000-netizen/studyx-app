@@ -149,6 +149,21 @@ export function nextThemeMode(mode: ThemeMode): ThemeMode {
   return THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length];
 }
 
+/**
+ * Next mode for a single cycling button, skipping any step that would look the
+ * same as now. With "Automat" on a light OS, "Luminos" is the same picture — a
+ * plain cycle made that click look broken, so it took 2–3 presses to see a change.
+ */
+export function nextVisibleThemeMode(mode: ThemeMode, systemPrefersDark: boolean): ThemeMode {
+  const current = resolveThemeMode(mode, systemPrefersDark);
+  let candidate = mode;
+  for (let step = 0; step < THEME_MODES.length; step += 1) {
+    candidate = nextThemeMode(candidate);
+    if (resolveThemeMode(candidate, systemPrefersDark) !== current) return candidate;
+  }
+  return nextThemeMode(mode);
+}
+
 export function resolveThemeMode(mode: ThemeMode, systemPrefersDark: boolean): ThemeId {
   if (mode === 'auto') return systemPrefersDark ? 'dark' : 'light';
   return mode;

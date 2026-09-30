@@ -1183,9 +1183,8 @@ export default function Sidebar() {
         />
 
         {/* Aspect: Luminos / Întunecat / Automat */}
-        <div className={collapsed ? 'flex justify-center py-1' : 'flex items-center gap-2 px-3 py-1'}>
-          <ThemeModeSwitcher variant="compact" />
-          {!collapsed && <span className="text-[12px]" style={{ color: theme.text3 }}>Aspect</span>}
+        <div className={collapsed ? 'flex justify-center py-1' : 'px-2 py-1'}>
+          <ThemeModeSwitcher variant="compact" label={collapsed ? undefined : 'Aspect'} />
         </div>
 
         {/* Collapse toggle */}
