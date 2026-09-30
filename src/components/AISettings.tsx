@@ -50,8 +50,8 @@ const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; spee
     { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B', desc: 'Ultra rapid', speed: 'Instant' },
   ],
   google: [
-    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', desc: 'Echilibrat, rapid și inteligent', speed: 'Rapid' },
-    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', desc: 'Ultra rapid pentru chat', speed: 'Instant' },
+    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', desc: 'Cel mai nou, rapid și inteligent', speed: 'Rapid' },
+    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', desc: 'Echilibrat, foarte stabil', speed: 'Rapid' },
     { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', desc: 'Cel mai bun pentru raționament', speed: 'Smart' },
   ],
   cerebras: [

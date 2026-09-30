@@ -20,6 +20,8 @@ export type AIModel =
   | 'gemini-2.5-flash'
   | 'gemini-2.0-flash'
   | 'gemini-2.5-pro'
+  | 'gemini-3.8-flash'
+  | 'gemini-3.7-flash'
   | 'gemini-3.6-flash'
   | 'gemini-3.5-flash'
   | 'gemini-3.1-pro-preview'
@@ -229,7 +231,7 @@ export interface AIActions {
 const DEFAULT_MODEL: AIModel = 'openai/gpt-oss-120b';
 const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
   groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
-  google: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
+  google: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.1-pro-preview'],
   cerebras: ['gpt-oss-120b', 'qwen-3.8-27b'],
   mistral: ['mistral-small-latest', 'mistral-large-latest'],
 };
@@ -248,7 +250,7 @@ function isValidProviderKey(provider: AIProvider, apiKey: string) {
 }
 
 function getDefaultModelForProvider(provider: AIProvider): AIModel {
-  if (provider === 'google') return 'gemini-3.6-flash';
+  if (provider === 'google') return 'gemini-3.8-flash';
   if (provider === 'cerebras') return 'gpt-oss-120b';
   if (provider === 'mistral') return 'mistral-small-latest';
   // groq

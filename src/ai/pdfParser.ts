@@ -7,7 +7,8 @@ async function extractPdfTextInBrowser(file: File): Promise<string> {
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const pdf = await loadingTask.promise;
   const parts: string[] = [];
 
   try {
@@ -29,7 +30,7 @@ async function extractPdfTextInBrowser(file: File): Promise<string> {
       page.cleanup();
     }
   } finally {
-    await pdf.destroy();
+    await loadingTask.destroy();
   }
 
   return parts.join('\n');

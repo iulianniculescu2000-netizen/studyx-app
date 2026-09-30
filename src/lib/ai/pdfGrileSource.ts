@@ -57,7 +57,8 @@ export async function pdfToSourceLines(file: File): Promise<PdfGrileSource> {
   const OPS = pdfjs.OPS as unknown as Record<string, number>;
 
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const pdf = await loadingTask.promise;
   const rawLines: RawLine[] = [];
   const colorWeight = new Map<string, number>(); // hex -> total chars, to find the body color
   const imagePages: number[] = [];
@@ -177,6 +178,6 @@ export async function pdfToSourceLines(file: File): Promise<PdfGrileSource> {
       pageImages,
     };
   } finally {
-    await pdf.destroy();
+    await loadingTask.destroy();
   }
 }

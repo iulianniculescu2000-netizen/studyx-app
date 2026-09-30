@@ -23,11 +23,12 @@ const available = CORPUS.filter((path) => existsSync(path));
 
 async function parseQuestions(path: string, fromPage: number, toPage: number): Promise<Question[]> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const doc = await pdfjs.getDocument({
+  const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(readFileSync(path)),
     useSystemFonts: true,
     isEvalSupported: false,
-  }).promise;
+  });
+  const doc = await loadingTask.promise;
 
   let text = '';
   for (let page = fromPage; page <= Math.min(toPage, doc.numPages); page += 1) {
@@ -36,7 +37,7 @@ async function parseQuestions(path: string, fromPage: number, toPage: number): P
     text += content.items.map((item: { str?: string; hasEOL?: boolean }) => (item.str ?? '') + (item.hasEOL ? '\n' : ' ')).join('') + '\n';
     rendered.cleanup();
   }
-  await doc.destroy();
+  await loadingTask.destroy();
 
   const lines = text.split('\n').map((line) => line.replace(/\s+/g, ' ').replace(/\s+([,;:.])/g, '$1').trim()).filter(Boolean);
   const questions: Question[] = [];

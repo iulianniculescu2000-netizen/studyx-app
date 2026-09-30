@@ -255,7 +255,8 @@ export async function renderPdfPagesAsImages(file: File, options: SmartImageOpti
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const pdf = await loadingTask.promise;
   const maxLongEdge = options.maxLongEdge ?? DEFAULT_MAX_LONG_EDGE;
   const quality = options.quality ?? DEFAULT_QUALITY;
   const mimeType = options.mimeType ?? 'image/jpeg';
@@ -289,7 +290,7 @@ export async function renderPdfPagesAsImages(file: File, options: SmartImageOpti
       canvas.height = 0;
     }
   } finally {
-    await pdf.destroy();
+    await loadingTask.destroy();
   }
 
   return images;
@@ -300,7 +301,8 @@ export async function renderPdfPagesWithText(file: File, options: SmartImageOpti
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const pdf = await loadingTask.promise;
   const maxLongEdge = options.maxLongEdge ?? DEFAULT_MAX_LONG_EDGE;
   const quality = options.quality ?? DEFAULT_QUALITY;
   const mimeType = options.mimeType ?? 'image/jpeg';
@@ -346,7 +348,7 @@ export async function renderPdfPagesWithText(file: File, options: SmartImageOpti
       canvas.height = 0;
     }
   } finally {
-    await pdf.destroy();
+    await loadingTask.destroy();
   }
 
   return pages;
@@ -560,7 +562,8 @@ export async function extractCaptionedImagesFromPdf(
   const ops = pdfjs.OPS as unknown as Record<string, number>;
 
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const pdf = await loadingTask.promise;
   const maxLongEdge = options.maxLongEdge ?? 2800;
   const quality = options.quality ?? 0.94;
   const mimeType = options.mimeType ?? 'image/png';
@@ -736,7 +739,7 @@ export async function extractCaptionedImagesFromPdf(
       canvas.height = 0;
     }
   } finally {
-    await pdf.destroy();
+    await loadingTask.destroy();
   }
 
   // Guard against duplicate tags (e.g. repeated section names across the document).

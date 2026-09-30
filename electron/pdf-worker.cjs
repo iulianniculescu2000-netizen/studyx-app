@@ -97,11 +97,12 @@ async function extractWithPdfjs(buffer) {
     return '';
   }
 
-  const doc = await pdfjs.getDocument({
+  const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(buffer),
     useSystemFonts: true,
     isEvalSupported: false,
-  }).promise;
+  });
+  const doc = await loadingTask.promise;
 
   const parts = [];
   let batch = [];
@@ -132,7 +133,7 @@ async function extractWithPdfjs(buffer) {
       }
     }
   } finally {
-    await doc.destroy().catch(() => {});
+    await loadingTask.destroy().catch(() => {});
   }
 
   return cleanText(parts.join('\n'));

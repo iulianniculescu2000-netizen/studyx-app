@@ -98,7 +98,8 @@ export async function extractGrileFromScannedPdf(
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const pdf = await loadingTask.promise;
   const pagesTotal = pdf.numPages;
   const pagesToDo = Math.min(pagesTotal, MAX_SCANNED_PAGES);
   const questions: ParsedQuestion[] = [];
@@ -132,7 +133,7 @@ export async function extractGrileFromScannedPdf(
       onProgress?.(p, pagesToDo);
     }
   } finally {
-    await pdf.destroy();
+    await loadingTask.destroy();
   }
 
   return { questions, pagesProcessed: pagesToDo, pagesTotal };

@@ -33,11 +33,12 @@ function cleanText(input: string) {
 /** Same extraction as the packaged app: line breaks preserved via `hasEOL`. */
 async function extract(path: string) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const doc = await pdfjs.getDocument({
+  const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(readFileSync(path)),
     useSystemFonts: true,
     isEvalSupported: false,
-  }).promise;
+  });
+  const doc = await loadingTask.promise;
 
   const parts: string[] = [];
   for (let page = 1; page <= doc.numPages; page += 1) {
@@ -46,7 +47,7 @@ async function extract(path: string) {
     parts.push(content.items.map((item: { str?: string; hasEOL?: boolean }) => (item.str ?? '') + (item.hasEOL ? '\n' : ' ')).join(''));
     rendered.cleanup();
   }
-  await doc.destroy();
+  await loadingTask.destroy();
   return cleanText(parts.join('\n'));
 }
 

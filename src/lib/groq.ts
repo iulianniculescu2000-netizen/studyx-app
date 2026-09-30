@@ -147,7 +147,7 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
 /** Default model to use when we fall back to another provider mid-request. */
 const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras' | 'mistral', string> = {
   groq: 'openai/gpt-oss-120b',
-  google: 'gemini-3.6-flash',
+  google: 'gemini-3.8-flash',
   cerebras: 'gpt-oss-120b',
   mistral: 'mistral-small-latest',
 };
@@ -292,7 +292,7 @@ export async function validateApiKey(
 
   const config = getProviderConfig(provider);
   let testModel =
-    provider === 'google' ? 'gemini-3.6-flash'
+    provider === 'google' ? 'gemini-3.8-flash'
     : provider === 'cerebras' ? 'gpt-oss-120b'
     : provider === 'mistral' ? 'mistral-small-latest'
     : 'openai/gpt-oss-20b';

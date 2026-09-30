@@ -36,7 +36,8 @@ const MODEL_CANDIDATES: Record<ProviderId, AIModel[]> = {
   // though `/models` still lists them (the catalog entry outlives actual
   // invocability, so checkModelAvailability's liveIds check alone isn't
   // enough to catch this class of retirement).
-  google: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
+  // 2026-09-30: gemini-3.8-flash is the newest stable Flash; older 3.x Flash models have no shutdown announced.
+  google: ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'],
   // 2026-09-08, confirmed against Cerebras's own docs: 'qwen-3-235b-a22b-instruct-2507'
   // was renamed to 'qwen-3.8-27b'; 'zai-glm-4.7' hit its announced 2026-08-17
   // deprecation date and no longer appears in the model catalog at all.
