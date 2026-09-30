@@ -13,6 +13,7 @@ import {
 import { useTheme } from '../theme/ThemeContext';
 import { useUserStore } from '../store/userStore';
 import { useFolderStore } from '../store/folderStore';
+import { useNewFolderDialog } from '../store/newFolderDialogStore';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useUpdateStore } from '../store/updateStore';
@@ -277,14 +278,16 @@ function NewFolderModal({
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)',
+        // Dim only: the panel inside already blurs its own backdrop. A second, nested
+        // blur on this full-screen layer was re-rendered every frame of the open animation.
+        background: 'rgba(0,0,0,0.5)',
       }}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0, y: 12 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: 8 }}
-        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         onClick={(e) => e.stopPropagation()}
         className="premium-modal"
         style={{
@@ -462,13 +465,40 @@ function NavItem({
   );
 }
 
+/**
+ * Owns the "Folder nou" dialog end to end, subscribed only to its own tiny
+ * store, so opening it never re-renders the Sidebar itself.
+ */
+function NewFolderDialogHost() {
+  const open = useNewFolderDialog((state) => state.open);
+  const parentId = useNewFolderDialog((state) => state.parentId);
+  const hide = useNewFolderDialog((state) => state.hide);
+  const folders = useFolderStore((state) => state.folders);
+  const addFolder = useFolderStore((state) => state.addFolder);
+  const navigate = useNavigate();
+
+  const handleCreate = (name: string, emoji: string, color: QuizColor, targetParentId?: string | null) => {
+    const id = addFolder(name, emoji, color, targetParentId);
+    hide();
+    navigate(`/folder/${id}`);
+  };
+
+  return (
+    <Portal>
+      <AnimatePresence>
+        {open && <NewFolderModal folders={folders} initialParentId={parentId} onClose={hide} onAdd={handleCreate} />}
+      </AnimatePresence>
+    </Portal>
+  );
+}
+
 export default function Sidebar() {
   const theme = useTheme();
   const { calmMotion } = useAdaptiveMotion();
   const navigate = useNavigate();
   const compact = typeof window !== 'undefined' && (window.innerHeight < 820 || window.innerWidth < 1240);
   const { username, logout } = useUserStore();
-  const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
+  const { folders, updateFolder, deleteFolder } = useFolderStore();
   const { quizzes, bulkDeleteQuizzes, moveToFolder } = useQuizStore();
   const { streak, getDueQuestions, questionStats } = useStatsStore();
   const addToast = useToastStore((state) => state.addToast);
@@ -487,8 +517,6 @@ export default function Sidebar() {
   const [showAISettings, setShowAISettings] = useState(false);
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [showNewFolder, setShowNewFolder] = useState(false);
-  const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
@@ -533,13 +561,6 @@ export default function Sidebar() {
     window.addEventListener('studyx:open-ai-settings', handler);
     return () => window.removeEventListener('studyx:open-ai-settings', handler);
   }, []);
-
-  const handleCreateFolder = (name: string, emoji: string, color: QuizColor, parentId?: string | null) => {
-    const id = addFolder(name, emoji, color, parentId);
-    setShowNewFolder(false);
-    setNewFolderParentId(null);
-    navigate(`/folder/${id}`);
-  };
 
   const handleRenameFolder = (id: string) => {
     if (!editName.trim()) return;
@@ -937,8 +958,7 @@ export default function Sidebar() {
                 </span>
                 <button
                   onClick={() => {
-                    setNewFolderParentId(null);
-                    setShowNewFolder(true);
+                    useNewFolderDialog.getState().show(null);
                   }}
                   aria-label="Creeaza folder"
                   className="p-1 rounded-lg transition-all press-feedback"
@@ -1080,8 +1100,7 @@ export default function Sidebar() {
                             <button
                               onClick={(e) => {
                                 e.preventDefault();
-                                setNewFolderParentId(folder.id);
-                                setShowNewFolder(true);
+                                useNewFolderDialog.getState().show(folder.id);
                               }}
                               aria-label={`Creeaza subfolder in ${folder.name}`}
                               className="p-1 rounded hover:opacity-80" style={{ color: theme.accent }}>
@@ -1129,21 +1148,7 @@ export default function Sidebar() {
       </Suspense>
 
       {/* Centered folder creation modal */}
-      <Portal>
-        <AnimatePresence>
-          {showNewFolder && (
-            <NewFolderModal
-              folders={folders}
-              initialParentId={newFolderParentId}
-              onClose={() => {
-                setShowNewFolder(false);
-                setNewFolderParentId(null);
-              }}
-              onAdd={handleCreateFolder}
-            />
-          )}
-        </AnimatePresence>
-      </Portal>
+      <NewFolderDialogHost />
 
       {/* Bottom: version + collapse */}
       <div className="p-2 flex-shrink-0 space-y-1" style={{ borderTop: `1px solid ${theme.border}` }}>

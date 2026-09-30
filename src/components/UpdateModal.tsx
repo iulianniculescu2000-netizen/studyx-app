@@ -310,7 +310,6 @@ export default function UpdateModal() {
               justifyContent: 'center',
               padding: 20,
               background: 'rgba(0,0,0,0.60)',
-              backdropFilter: 'blur(10px)',
             }}
           >
             <motion.div
