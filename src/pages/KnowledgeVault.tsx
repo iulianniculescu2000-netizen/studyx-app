@@ -28,6 +28,7 @@ import ThemedSelect from '../components/ThemedSelect';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ExamPlanCard from '../components/ExamPlanCard';
 import { isRezidentiatRootFolder } from '../lib/rezidentiatRoot';
+import { suggestFolderAppearance } from '../lib/folderAppearance';
 
 function SourceStatusBadge({
   source,
@@ -48,8 +49,6 @@ function SourceStatusBadge({
     </span>
   );
 }
-
-const FOLDER_EMOJIS = ['📚', '🧠', '🫀', '🩸', '🦷', '🔬', '📋', '🩻', '🧬', '💊'];
 
 type TypeFilter = 'all' | 'pdf' | 'image' | 'indexing';
 
@@ -197,8 +196,7 @@ export default function KnowledgeVault() {
   const submitNewFolder = () => {
     const name = newFolderName.trim();
     if (!name) { setCreatingFolder(false); return; }
-    const emoji = FOLDER_EMOJIS[libraryFolders.length % FOLDER_EMOJIS.length] ?? '📚';
-    const id = addLibraryFolder(name, emoji);
+    const id = addLibraryFolder(name, suggestFolderAppearance(name).emoji);
     setNewFolderName('');
     setCreatingFolder(false);
     setActiveFolderId(id);
@@ -208,7 +206,7 @@ export default function KnowledgeVault() {
   const submitNewSubfolder = () => {
     const name = newSubfolderName.trim();
     if (!name || !activeFolder) { setCreatingSubfolder(false); setNewSubfolderName(''); return; }
-    const id = addLibraryFolder(name, '📁', activeFolder.id);
+    const id = addLibraryFolder(name, suggestFolderAppearance(name).emoji, activeFolder.id);
     setNewSubfolderName('');
     setCreatingSubfolder(false);
     setActiveFolderId(id);
@@ -593,11 +591,15 @@ export default function KnowledgeVault() {
     const isRezidentiat = isRezidentiatRootFolder(folder);
     const fragments = knowledgeSources.reduce((sum, s) => (s.folderId === folder.id ? sum + (s.chunkCount ?? 0) : sum), 0);
     return (
-      <div key={folder.id} className="group relative" style={{ borderTop: index === 0 ? undefined : '1px solid var(--hairline)' }}>
+      <div
+        key={folder.id}
+        className="group flex items-center"
+        style={{ borderTop: index === 0 ? undefined : '1px solid var(--hairline)' }}
+      >
         <button
           type="button"
           onClick={onOpen}
-          className="fine-row flex w-full items-center gap-3 px-4 py-3 text-left"
+          className="fine-row flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left"
           style={{ borderRadius: 0 }}
         >
           <div
@@ -614,28 +616,29 @@ export default function KnowledgeVault() {
                 : `${docCount} ${docCount === 1 ? 'document' : 'documente'}${fragments > 0 ? ` · ${fragments.toLocaleString('ro-RO')} fragmente` : ''}${subCount > 0 ? ` · ${subCount} ${subCount === 1 ? 'subfolder' : 'subfoldere'}` : ''}`}
             </div>
           </div>
-          {isRezidentiat && !isEmpty && <span className="w-0 sm:w-40" aria-hidden="true" />}
-          <ChevronRight size={16} style={{ color: theme.text3 }} />
         </button>
-        {isRezidentiat && !isEmpty && (
-          <Link
-            to="/rezidentiat"
-            className="press-feedback absolute right-11 top-1/2 hidden -translate-y-1/2 text-[12.5px] font-semibold sm:block"
-            style={{ color: theme.accent }}
+        <div className="flex flex-shrink-0 items-center gap-1 pr-3">
+          {isRezidentiat && !isEmpty && (
+            <Link
+              to="/rezidentiat"
+              className="press-feedback hidden whitespace-nowrap px-2 text-[12.5px] font-semibold sm:block"
+              style={{ color: theme.accent }}
+            >
+              Deschide în Rezidențiat
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => setFolderToDelete({ id: folder.id, name: folder.name })}
+            aria-label={`Șterge folderul ${folder.name}`}
+            title="Șterge folderul"
+            className="fine-row flex h-7 w-7 items-center justify-center rounded-full opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+            style={{ color: theme.danger }}
           >
-            Deschide în Rezidențiat
-          </Link>
-        )}
-        <button
-          type="button"
-          onClick={() => setFolderToDelete({ id: folder.id, name: folder.name })}
-          aria-label={`Șterge folderul ${folder.name}`}
-          title="Șterge folderul"
-          className="fine-row absolute right-9 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
-          style={{ color: theme.danger }}
-        >
-          <Trash2 size={13} />
-        </button>
+            <Trash2 size={13} />
+          </button>
+          <ChevronRight size={16} style={{ color: theme.text3 }} aria-hidden="true" />
+        </div>
       </div>
     );
   };
@@ -730,7 +733,7 @@ export default function KnowledgeVault() {
 
         {/* Search (+ type filters inside a folder) */}
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] px-3 py-2" style={{ background: 'var(--fill-subtle)' }}>
+          <label className="search-field flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] px-3 py-2" style={{ background: 'var(--fill-subtle)' }}>
             <Search size={15} style={{ color: theme.text3 }} />
             <input
               type="text"
@@ -738,7 +741,7 @@ export default function KnowledgeVault() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder={isTopLevel ? 'Caută în toate documentele' : 'Caută în folder'}
               aria-label="Caută documente"
-              className="w-full bg-transparent text-[13.5px] outline-none"
+              className="input-bare w-full text-[13.5px]"
               style={{ color: theme.text }}
             />
             {search && (

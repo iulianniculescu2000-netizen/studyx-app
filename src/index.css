@@ -1174,6 +1174,27 @@ button.press-feedback:not(:disabled):active {
    .fine-row  – rând / buton plat: fundal discret la hover, tint accent când e activ
    .fine-card – card: linia de sus se luminează și marginea se apropie de accent
    .fine-chip – etichetă / filtru: hover discret, activ = tint + margine accent   */
+/* Textul generat de AI (coduri, adrese lungi) nu are voie să iasă din balon. */
+.ai-rich-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Câmp de text fără chenar propriu, pentru cazul în care un input stă într-un container deja stilat
+   (ex. câmpul de căutare): altfel regula globală pentru input desenează un al doilea chenar. */
+.input-bare,
+.input-bare:hover,
+.input-bare:focus {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0;
+  padding: 0;
+}
+.search-field:focus-within {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring);
+}
+
 .fine-row {
   border-radius: 12px;
   transition: background-color 0.5s var(--ease-out-soft), color 0.3s var(--ease-out-soft), box-shadow 0.5s var(--ease-out-soft);

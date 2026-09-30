@@ -18,6 +18,7 @@ import { useFolderStore } from '../../store/folderStore';
 import { useQuizStore } from '../../store/quizStore';
 import { useToastStore } from '../../store/toastStore';
 import { useAIStore, type AIKnowledgeSource } from '../../store/aiStore';
+import { friendlyAIError } from '../../lib/ai/friendlyError';
 import { ensureResidencyFolder, isResidencySource } from '../../lib/rezidentiatPlacement';
 import type { Question } from '../../types';
 import type { ChatMessage, ChatMode } from './shared';
@@ -38,6 +39,8 @@ interface UseStudioGenerationOptions {
   setView: (view: DrawerView) => void;
   generationAbortedRef: React.RefObject<boolean>;
   loadAIChatRuntime: () => Promise<{ getVaultChunksBySource: typeof import('../../ai/vectorStore').getVaultChunksBySource }>;
+  /** True in the dedicated "AI · Rezidențiat" conversation, where everything generated belongs to Rezidențiat. */
+  isResidencyThread?: boolean;
 }
 
 /**
@@ -64,6 +67,7 @@ export function useStudioGeneration({
   setView,
   generationAbortedRef,
   loadAIChatRuntime,
+  isResidencyThread = false,
 }: UseStudioGenerationOptions) {
   const folders = useFolderStore((state) => state.folders);
   const addFolder = useFolderStore((state) => state.addFolder);
@@ -150,7 +154,7 @@ export function useStudioGeneration({
 
     // Anything generated for the Rezidențiat section is filed straight into its
     // discipline → specialty folder, so it shows up on the Rezidențiat pages.
-    const forResidency = studioExamStyle === 'residency'
+    const forResidency = isResidencyThread
       || isResidencySource(source, useAIStore.getState().libraryFolders);
     const folder = forResidency
       ? ensureResidencyFolder(source.name, isChapterScoped ? heading : null)
@@ -230,7 +234,7 @@ export function useStudioGeneration({
       const message = error instanceof Error ? error.message : 'Generarea pachetelor a eșuat.';
       addToast(message, 'error');
       if (announceInChat) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${message}`, mode: announceMode }]);
+        setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${friendlyAIError(message)}`, mode: announceMode }]);
       }
       return false;
     } finally {
@@ -407,7 +411,7 @@ export function useStudioGeneration({
       addToast(`${questions.length} flashcarduri generate.`, 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generarea flashcardurilor a eșuat.';
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${message}`, mode: activeMode }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${friendlyAIError(message)}`, mode: activeMode }]);
       addToast(message, 'error');
     }
     return true;

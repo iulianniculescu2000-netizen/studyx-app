@@ -2,6 +2,7 @@ import { useFolderStore } from '../store/folderStore';
 import type { Folder } from '../types';
 import { REZIDENTIAT_ROOT_NAME, findRezidentiatRootFolder, isUnderRezidentiatRoot } from './rezidentiatRoot';
 import { bookDisciplineHint, disciplineKey } from './rezidentiatOverview';
+import { suggestFolderAppearance } from './folderAppearance';
 
 interface NamedFolder {
   id: string;
@@ -89,12 +90,14 @@ export function resolveResidencyPlacement(
 }
 
 /** Finds a same-named child folder, or creates it — case- and diacritic-insensitive on the name. */
-function findOrCreateChild(name: string, parentId: string | null, emoji: string): Folder {
+function findOrCreateChild(name: string, parentId: string | null, fallbackEmoji: string): Folder {
   const { folders, addFolder } = useFolderStore.getState();
   const wanted = plain(name).trim();
   const found = folders.find((f) => (f.parentId ?? null) === parentId && plain(f.name).trim() === wanted);
   if (found) return found;
-  const id = addFolder(name, emoji, 'blue', parentId);
+  // Icon and color follow the name (Cardiologie gets a heart), so new folders look intentional.
+  const appearance = suggestFolderAppearance(name);
+  const id = addFolder(name, appearance.emoji || fallbackEmoji, appearance.color, parentId);
   return useFolderStore.getState().folders.find((f) => f.id === id) as Folder;
 }
 

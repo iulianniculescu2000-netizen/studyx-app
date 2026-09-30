@@ -1,4 +1,5 @@
 import AIRichText from '../ai-chat/AIRichText';
+import { friendlyAIError } from '../../lib/ai/friendlyError';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { Bot, SendHorizonal, Loader2, X } from 'lucide-react';
@@ -84,7 +85,7 @@ Comportament:
       const errorMessage = error instanceof Error ? error.message : 'Eroare necunoscută.';
       setChatMessages((messages) => {
         const updated = [...messages];
-        updated[updated.length - 1] = { role: 'assistant', content: `Eroare: ${errorMessage}` };
+        updated[updated.length - 1] = { role: 'assistant', content: `Eroare: ${friendlyAIError(errorMessage)}` };
         return updated;
       });
     } finally {

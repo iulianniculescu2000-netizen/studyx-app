@@ -41,6 +41,7 @@ import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildPerformanceSummary, buildUserContextString } from '../lib/aiContext';
 import { WHOLE_DOCUMENT_HEADING } from '../lib/ai/chapterQuizGeneration';
+import { friendlyAIError } from '../lib/ai/friendlyError';
 import {
   STUDIO_MAX_PACK_COUNT,
   STUDIO_MAX_QUESTIONS_PER_PACK,
@@ -263,6 +264,7 @@ export default function AIChatDrawer() {
     setView,
     generationAbortedRef,
     loadAIChatRuntime,
+    isResidencyThread: chatThread === 'rezidentiat',
   });
 
   const {
@@ -772,7 +774,7 @@ export default function AIChatDrawer() {
       }
     } catch (err: unknown) {
       if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) return;
-      const errorMessage = err instanceof Error ? err.message : 'Nu am putut genera un răspuns.';
+      const errorMessage = friendlyAIError(err);
       setMessages((prev) => {
         // The streaming path already pushed an empty assistant placeholder
         // (line ~522) before the request could fail — if it never received a
@@ -1149,11 +1151,11 @@ export default function AIChatDrawer() {
 
                   {isLastAssistant && loading ? (
                     <>
-                      <span className="font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
+                      <span className="ai-rich-text font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
                       <span className="streaming-cursor" style={{ color: theme.accent }}>▌</span>
                     </>
                   ) : (
-                    <span className="font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
+                    <span className="ai-rich-text font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
                   )}
 
                   {message.role === 'assistant' && message.agentJobId && (
@@ -1422,14 +1424,15 @@ export default function AIChatDrawer() {
                   <AIOrb theme={theme} size={42} active={loading} calm={calmMotion} />
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-black tracking-tight" style={{ color: theme.text }}>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h3 className="min-w-0 truncate whitespace-nowrap text-base font-black tracking-tight" style={{ color: theme.text }}>
                         StudyX AI{chatThread === 'rezidentiat' ? ' · Rezidențiat' : ''}
                       </h3>
-                      <div className="flex items-center gap-1 rounded-full px-2 py-0.5"
+                      <div className="flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5"
+                        title="Online"
                         style={{ background: `${theme.success}18`, border: `1px solid ${theme.success}30` }}>
                         <div className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: theme.success }} />
-                        <span className="text-[10px] font-bold" style={{ color: theme.success }}>Online</span>
+                        {immersive && <span className="text-[10px] font-bold" style={{ color: theme.success }}>Online</span>}
                       </div>
                     </div>
                     <p className="mt-0.5 text-[11px] font-medium truncate" style={{ color: theme.text3 }}>
@@ -1447,7 +1450,7 @@ export default function AIChatDrawer() {
                     </p>
                   </div>
 
-                  <div className="hidden items-center gap-2 rounded-full border px-2 py-1.5 sm:flex" style={{ borderColor: theme.border, background: theme.surface2 }}>
+                  <div className="hidden flex-shrink-0 items-center gap-1 rounded-full border p-1 sm:flex" style={{ borderColor: theme.border, background: theme.surface2 }}>
                     {([
                       { id: 'chat', label: 'Chat', icon: <PanelRightClose size={14} /> },
                       { id: 'studio', label: 'Studio', icon: <PanelRightOpen size={14} /> },
@@ -1457,7 +1460,7 @@ export default function AIChatDrawer() {
                         <button
                           key={entry.id}
                           onClick={() => setView(entry.id)}
-                          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em]"
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.1em]"
                           style={{
                             background: active ? theme.accent : 'transparent',
                             color: active ? '#fff' : theme.text3,

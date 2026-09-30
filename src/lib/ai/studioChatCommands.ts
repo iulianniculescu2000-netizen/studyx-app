@@ -39,6 +39,11 @@ function titleCase(value: string) {
     .join(' ');
 }
 
+/** True when `needle` appears in `haystack` as whole words (both already normalized). */
+function containsWholePhrase(haystack: string, needle: string) {
+  return ` ${haystack} `.includes(` ${needle} `);
+}
+
 function matchEntityByName<T extends { name: string }>(text: string, items: T[]) {
   const normalizedText = normalize(text);
   let best: T | null = null;
@@ -48,7 +53,9 @@ function matchEntityByName<T extends { name: string }>(text: string, items: T[])
     const candidate = normalize(item.name);
     if (!candidate) continue;
 
-    if (normalizedText.includes(candidate)) {
+    // Whole words only: a folder called "Test" must not match "testez", nor
+    // one called "Grile" match every "…5 grile…" in a request.
+    if (containsWholePhrase(normalizedText, candidate)) {
       const score = candidate.length;
       if (score > bestScore) {
         best = item;
@@ -144,13 +151,16 @@ export function resolveStudioFolderFromCommand<T extends StudioChatFolder>(
     return { kind: 'uncategorized' as const };
   }
 
-  const directMatch = matchEntityByName(text, folders);
-  if (directMatch) {
-    return { kind: 'existing' as const, folder: directMatch };
-  }
-
+  // A folder is only chosen when the request names one ("în folderul X").
+  // Matching folder names anywhere in the sentence used to file "fă-mi 5 grile
+  // din …" into a folder that happened to be called "Grile".
   const namedFolder = parseStudioChatCommand(text).folderName;
   if (namedFolder) {
+    const wanted = normalize(namedFolder);
+    const exact = folders.find((folder) => normalize(folder.name) === wanted);
+    const contained = exact ? null : matchEntityByName(namedFolder, folders);
+    const match = exact ?? contained;
+    if (match) return { kind: 'existing' as const, folder: match };
     return { kind: 'create' as const, name: namedFolder };
   }
 
