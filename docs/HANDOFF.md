@@ -10,6 +10,7 @@ main
      └─ feat/ui-apple                          (interfață Apple: teme Luminos/Întunecat/Automat, interacțiuni fine)
          └─ chore/maintenance-2026-09          (dependențe, securitate, Electron 44, pdf.js 6, Gemini 3.8, CI, ghid) ← ramura cea mai nouă, conține tot
 ```
+`feat/rezidentiat-redesign` (din `chore/maintenance-2026-09`): pagina Rezidențiat redesenată (discipline → specialități, ecran `/rezidentiat/:folderId`); nu e împinsă în GitHub.
 `preview/apple-birou` e doar un prototip local (nu e în GitHub); poate fi ștearsă.
 Nu s-a făcut merge în `main`. Pentru lansare: PR de pe `chore/maintenance-2026-09` spre `main`, apoi versiune + tag.
 

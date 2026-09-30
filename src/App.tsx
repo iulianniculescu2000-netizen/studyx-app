@@ -58,6 +58,7 @@ const DailyReview = lazy(() => import('./pages/DailyReview'));
 const FlashcardHub = lazy(() => import('./pages/FlashcardHub'));
 const KnowledgeVault = lazy(() => import('./pages/KnowledgeVault'));
 const Residency = lazy(() => import('./pages/Residency'));
+const ResidencyDiscipline = lazy(() => import('./pages/ResidencyDiscipline'));
 const FlashcardSession = lazy(() => import('./pages/FlashcardSession'));
 const Notes = lazy(() => import('./pages/Notes'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -343,6 +344,7 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
                   <Route path="/daily-review" element={<RouteView><DailyReview /></RouteView>} />
                   <Route path="/vault" element={<RouteView><KnowledgeVault /></RouteView>} />
                   <Route path="/rezidentiat" element={<RouteView><Residency /></RouteView>} />
+                  <Route path="/rezidentiat/:folderId" element={<RouteView><ResidencyDiscipline /></RouteView>} />
                   <Route path="/flashcards" element={<RouteView><FlashcardHub /></RouteView>} />
                   <Route path="/flashcards/session/:id" element={<RouteView><FlashcardSession /></RouteView>} />
                   <Route path="/notes" element={<RouteView><Notes /></RouteView>} />
