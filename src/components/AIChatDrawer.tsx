@@ -1374,6 +1374,10 @@ export default function AIChatDrawer() {
   // The Electron window is frameless: minimize/maximize/close float at the top-right,
   // so the full-window chat starts below them instead of covering (and stealing clicks from) them.
   const immersiveTop = typeof window !== 'undefined' && window.electronAPI ? 54 : 12;
+  // Wide enough: Studio is a real column next to the conversation (nothing is covered, and the form
+  // gets the full height). Narrow: it stays a slide-over drawer above the messages.
+  const panelInnerWidth = immersive ? windowSize.width - sidebarInset - 24 : sheetWidth;
+  const studioAsColumn = view === 'studio' && !mobile && panelInnerWidth >= 820;
   const panelGeometry = immersive
     ? {
         left: sidebarInset + 12,
@@ -1694,6 +1698,7 @@ export default function AIChatDrawer() {
                   <AnimatePresence>
                     {view === 'studio' && (
                       <>
+                        {!studioAsColumn && (
                         <motion.div
                           key="studio-backdrop"
                           initial={{ opacity: 0 }}
@@ -1702,22 +1707,24 @@ export default function AIChatDrawer() {
                           transition={{ duration: calmMotion ? 0.1 : 0.18 }}
                           onClick={() => setView('chat')}
                           className="absolute inset-0 z-10"
-                          style={{ background: 'rgba(0,0,0,0.28)' }}
+                          style={{ background: 'rgba(0,0,0,0.14)' }}
                         />
+                        )}
                         <motion.div
                           key="studio-drawer"
                           initial={calmMotion ? { opacity: 0 } : { x: '100%' }}
                           animate={calmMotion ? { opacity: 1 } : { x: 0 }}
                           exit={calmMotion ? { opacity: 0 } : { x: '100%' }}
                           transition={{ type: 'spring', stiffness: 340, damping: 32 }}
-                          className={`custom-scrollbar absolute right-0 top-0 bottom-0 z-20 overflow-y-auto border-l px-5 py-5 ${mobile ? 'w-full' : 'w-full max-w-[320px]'}`}
+                          className={`relative z-20 flex flex-col overflow-hidden border-l ${studioAsColumn ? 'w-[340px] flex-shrink-0' : `absolute right-0 top-0 bottom-0 ${mobile ? 'w-full' : 'w-full max-w-[340px]'}`}`}
                           style={{
                             borderColor: theme.border,
                             background: theme.isDark ? 'rgba(20,16,30,0.98)' : 'rgba(255,255,255,0.98)',
                             backdropFilter: 'blur(28px) saturate(160%)',
-                            boxShadow: '-24px 0 60px rgba(0,0,0,0.35)',
+                            boxShadow: studioAsColumn ? 'none' : '-24px 0 60px rgba(0,0,0,0.35)',
                           }}
                         >
+                      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-5">
                       <GlassCard variant="strong" radius="28px" padding="16px">
                         <div className="mb-3 flex items-center gap-2">
                           <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18`, color: theme.accent }}>
@@ -1936,33 +1943,14 @@ export default function AIChatDrawer() {
                                 </div>
                                 <div className="mt-2 flex items-center gap-2 text-sm font-semibold" style={{ color: theme.text }}>
                                   <FolderOpen size={14} style={{ color: theme.accent }} />
-                                  {selectedStudioFolder ? `${selectedStudioFolder.emoji} ${selectedStudioFolder.name}` : 'Neclasificate'}
+                                  {studioResidencyPlacement
+                                    ? describePlacement(studioResidencyPlacement)
+                                    : selectedStudioFolder ? `${selectedStudioFolder.emoji} ${selectedStudioFolder.name}` : 'Neclasificate'}
                                 </div>
                               </div>
                             </div>
                           )}
 
-                          <button
-                            onClick={() => void handleGeneratePackages()}
-                            disabled={!selectedStudioSource || studioGenerating}
-                            className="press-feedback sticky bottom-0 z-10 flex w-full items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-45"
-                            style={{
-                              background: theme.accent,
-                              boxShadow: `0 10px 24px ${theme.accent}30, 0 0 0 6px ${theme.isDark ? 'rgba(20,16,30,0.98)' : 'rgba(255,255,255,0.98)'}`,
-                            }}
-                          >
-                            {studioGenerating ? (
-                              <>
-                                <Loader2 size={16} className="animate-spin" />
-                                Generez pachetele...
-                              </>
-                            ) : (
-                              <>
-                                <Layers3 size={16} />
-                                Generează pachetele
-                              </>
-                            )}
-                          </button>
 
                           {generatedSummary && (
                             <div
@@ -1974,6 +1962,33 @@ export default function AIChatDrawer() {
                           )}
                         </div>
                       </GlassCard>
+                      </div>
+                          <div
+                            className="flex-shrink-0 border-t px-5 py-4"
+                            style={{ borderColor: theme.border }}
+                          >
+                  <button
+                    onClick={() => void handleGeneratePackages()}
+                    disabled={!selectedStudioSource || studioGenerating}
+                    className="press-feedback flex w-full items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-45"
+                    style={{
+                      background: theme.accent,
+                      boxShadow: `0 10px 24px ${theme.accent}30`,
+                    }}
+                  >
+                    {studioGenerating ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Generez pachetele...
+                      </>
+                    ) : (
+                      <>
+                        <Layers3 size={16} />
+                        Generează pachetele
+                      </>
+                    )}
+                  </button>
+                          </div>
                         </motion.div>
                       </>
                     )}
