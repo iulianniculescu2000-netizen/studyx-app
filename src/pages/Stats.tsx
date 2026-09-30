@@ -8,6 +8,7 @@ import { useStatsStore } from '../store/statsStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useAIStore } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
+import AIRichText from '../components/ai-chat/AIRichText';
 import { getStrongTopicsForProfile, loadUserProfile } from '../ai/UserProfile';
 
 const ActivityBarChart = lazy(() => import('../components/stats/ActivityBarChart'));
@@ -293,7 +294,7 @@ export default function Stats() {
                 className="rounded-2xl px-4 py-3.5 text-sm leading-relaxed"
                 style={{ background: `${theme.accent}08`, border: `1px solid ${theme.accent}18`, color: theme.text2 }}
               >
-                {aiReport}
+                <AIRichText text={aiReport} />
                 {aiReportLoading && (
                   <span className="inline-block w-0.5 h-4 ml-0.5 align-text-bottom animate-pulse rounded-sm"
                     style={{ background: theme.accent }} />

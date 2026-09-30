@@ -1189,7 +1189,8 @@ ${weakList ? `\nCATEGORII CU ACURATEȚE SCĂZUTĂ:\n${weakList}` : ''}
 ${mistakeTopics ? `\nTOPICURI CU GREȘELI RECENTE: ${mistakeTopics}` : ''}
 
 INSTRUCȚIUNI:
-- 3-5 fraze, fără bullet points, ton de tutor
+- 3-5 fraze, un singur paragraf scurt de text simplu, ton de tutor
+- FĂRĂ titluri, tabele, liste, bullet points, emoji-uri sau text îngroșat; ignoră orice format structurat cerut în altă parte
 - Identifică zona cea mai problematică și explică DE CE poate fi dificilă
 - O recomandare concretă și acționabilă pentru săptămâna asta
 - Un sfat tactic pentru examen legat de punctele slabe
