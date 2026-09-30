@@ -19,7 +19,7 @@ import { useQuizStore } from '../../store/quizStore';
 import { useToastStore } from '../../store/toastStore';
 import { useAIStore, type AIKnowledgeSource } from '../../store/aiStore';
 import { friendlyAIError } from '../../lib/ai/friendlyError';
-import { ensureResidencyFolder, isResidencySource } from '../../lib/rezidentiatPlacement';
+import { ensureFolderForPlacement, isResidencySource, resolveResidencyPlacement } from '../../lib/rezidentiatPlacement';
 import type { Question } from '../../types';
 import type { ChatMessage, ChatMode } from './shared';
 import { formatFolderPath } from './chatHelpers';
@@ -38,6 +38,8 @@ interface UseStudioGenerationOptions {
   setThinkingPhase: (phase: string | null) => void;
   setView: (view: DrawerView) => void;
   generationAbortedRef: React.RefObject<boolean>;
+  /** Bumped by every Stop press. A run remembers its value at start, so a stopped run can never save its result later, even if a new request reset the boolean flag in the meantime. */
+  generationStopCountRef?: React.RefObject<number>;
   loadAIChatRuntime: () => Promise<{ getVaultChunksBySource: typeof import('../../ai/vectorStore').getVaultChunksBySource }>;
   /** True in the dedicated "AI · Rezidențiat" conversation, where everything generated belongs to Rezidențiat. */
   isResidencyThread?: boolean;
@@ -66,6 +68,7 @@ export function useStudioGeneration({
   setThinkingPhase,
   setView,
   generationAbortedRef,
+  generationStopCountRef,
   loadAIChatRuntime,
   isResidencyThread = false,
 }: UseStudioGenerationOptions) {
@@ -150,21 +153,31 @@ export function useStudioGeneration({
     announceMode?: ChatMode;
   }) => {
     generationAbortedRef.current = false;
+    const stopsAtStart = generationStopCountRef?.current ?? 0;
+    const wasStopped = () => generationAbortedRef.current || (generationStopCountRef?.current ?? 0) !== stopsAtStart;
     const isChapterScoped = heading !== WHOLE_DOCUMENT_HEADING;
 
-    // Anything generated for the Rezidențiat section is filed straight into its
+    // Anything generated for the Rezidențiat section is filed into its
     // discipline → specialty folder, so it shows up on the Rezidențiat pages.
+    // The placement is only decided here; the folders are created after the
+    // generation succeeds, so a failed or stopped run leaves no empty folders.
     const forResidency = isResidencyThread
       || isResidencySource(source, useAIStore.getState().libraryFolders);
-    const folder = forResidency
-      ? ensureResidencyFolder(source.name, isChapterScoped ? heading : null)
-      : requestedFolder;
+    const residencyPlacement = forResidency
+      ? resolveResidencyPlacement(source.name, isChapterScoped ? heading : null, useFolderStore.getState().folders)
+      : null;
+    const existingSpecialty = residencyPlacement?.specialtyId
+      ? useFolderStore.getState().folders.find((entry) => entry.id === residencyPlacement.specialtyId) ?? null
+      : null;
+    const folder = forResidency ? existingSpecialty : requestedFolder;
 
     setStudioGenerating(true);
     setGeneratedSummary(null);
     setStudioSourceId(source.id);
     setScopedSource({ id: source.id, name: source.name });
-    setStudioFolderId(folder?.id ?? '__uncategorized__');
+    // The Studio's folder picker keeps the user's own choice: an automatic Rezidențiat
+    // destination must not become the "sticky" target of the next, unrelated command.
+    setStudioFolderId(requestedFolder?.id ?? '__uncategorized__');
     setStudioPackCount(packCount);
     setStudioQuestionsPerPack(questionsPerPack);
     setStudioDifficulty(difficulty);
@@ -199,15 +212,16 @@ export function useStudioGeneration({
             existingQuizzes: quizzes,
           });
 
-      if (generationAbortedRef.current) return false; // user pressed Stop — discard
+      if (wasStopped()) return false; // user pressed Stop — discard
 
+      const targetFolder = residencyPlacement ? ensureFolderForPlacement(residencyPlacement) : folder;
       result.quizzes.forEach((quiz) => addQuiz(
-        forResidency && folder
-          ? { ...quiz, folderId: folder.id, category: folder.name, tags: [...new Set([...(quiz.tags ?? []), 'rezidentiat'])] }
+        residencyPlacement && targetFolder
+          ? { ...quiz, folderId: targetFolder.id, category: targetFolder.name, tags: [...new Set([...(quiz.tags ?? []), 'rezidentiat'])] }
           : quiz,
       ));
 
-      const folderLabel = folder ? formatFolderPath(useFolderStore.getState().folders, folder) : 'Neclasificate';
+      const folderLabel = targetFolder ? formatFolderPath(useFolderStore.getState().folders, targetFolder) : 'Neclasificate';
       const sourceLabel = isChapterScoped ? `${source.name} · ${heading}` : source.name;
       const summary = result.fallbackQuestionCount > 0
         ? `Am generat ${result.quizzes.length} pachete din "${sourceLabel}" și le-am trimis în folderul "${folderLabel}". ${result.aiQuestionCount} întrebări au venit din AI, iar ${result.fallbackQuestionCount} au fost completate inteligent din document pentru stabilitate. Dificultate folosită: ${result.difficulty}.`
@@ -371,8 +385,9 @@ export function useStudioGeneration({
       const existingFronts = quizzes
         .filter((quiz) => (quiz.tags ?? []).some((tag) => /flashcard|deck|anki/i.test(tag)))
         .flatMap((quiz) => quiz.questions.map((question) => question.text));
+      const flashStopsAtStart = generationStopCountRef?.current ?? 0;
       const pairs = await notesToFlashcards(sourceText, { count, sourceName: source.name, avoidFronts: existingFronts });
-      if (generationAbortedRef.current) return true; // user pressed Stop — drop the result
+      if (generationAbortedRef.current || (generationStopCountRef?.current ?? 0) !== flashStopsAtStart) return true; // user pressed Stop — drop the result
       if (pairs.length === 0) throw new Error('Nu am putut genera flashcarduri din acest curs.');
 
       const deckId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);

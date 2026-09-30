@@ -54,13 +54,41 @@ describe('buildRezidentiatOverview', () => {
     expect(o.disciplines[0].progress).toBe(50);
   });
 
-  it('ignores archived quizzes, flashcard decks and non-Rezidențiat quizzes', () => {
+  it('ignores archived quizzes, flashcard decks, combined sessions and quizzes filed outside Rezidențiat', () => {
     const quizzes = [
       quiz('a', 'A', 's1', 3, { archived: true }),
       quiz('b', 'B', 's1', 3, { kind: 'flashcard' }),
-      quiz('c', 'C', 's1', 3, { tags: ['altceva'] }),
+      quiz('c', 'C', 'elsewhere', 3, { tags: ['altceva'] }),
+      quiz('d', 'D', 's1', 3, { tags: ['folder-session:s1', 'rezidentiat'] }),
     ];
-    expect(buildRezidentiatOverview(folders, quizzes, {}, []).disciplines).toEqual([]);
+    expect(buildRezidentiatOverview([...folders, folder('elsewhere', 'Altceva')], quizzes, {}, []).disciplines).toEqual([]);
+  });
+
+  it('counts a test filed in a specialty even without the Rezidențiat tag (e.g. made with "Grilă nouă")', () => {
+    const o = buildRezidentiatOverview(folders, [quiz('n', 'Test propriu', 's1', 4, { tags: [] })], {}, []);
+    expect(o.disciplines[0].specialties[0].quizzes.map((q) => q.id)).toEqual(['n']);
+  });
+
+  it('rolls quizzes in deeper folders up into their specialty', () => {
+    const deep = [...folders, folder('sub', 'Subfolder', 's1')];
+    const o = buildRezidentiatOverview(deep, [quiz('x', 'X', 'sub', 2, { tags: [] })], {}, []);
+    expect(o.disciplines[0].specialties[0].folder.id).toBe('s1');
+    expect(o.disciplines[0].specialties[0].loose).toBe(false);
+  });
+
+  it('keeps quizzes filed in the root, and bank quizzes whose folder was deleted, under "Alte grile"', () => {
+    const inRoot = quiz('r', 'În rădăcină', 'root', 3, { tags: [] });
+    const orphan = quiz('o', 'Fără folder', null as unknown as string, 2, { tags: ['rezidentiat', 'rezidentiat-bank:x'] });
+    const o = buildRezidentiatOverview(folders, [inRoot, orphan], {}, []);
+    const loose = o.disciplines.find((d) => d.folder.name === 'Alte grile');
+    expect(loose?.specialties[0].quizzes.map((q) => q.id).sort()).toEqual(['o', 'r']);
+  });
+
+  it('counts answers given in the combined session toward the specialty progress', () => {
+    const quizzes = [quiz('a', 'Esofagul — Test 1', 's1', 4)];
+    const stats = { 'mix-s1:a-q0': stat(1, 0), 'mix-s1:a-q1': stat(0, 1), 'a:a-q1': stat(1, 0) };
+    const o = buildRezidentiatOverview(folders, quizzes, stats, []);
+    expect(o.disciplines[0].specialties[0].answered).toBe(2);
   });
 
   it('resumes from the most recent session on a bank quiz', () => {

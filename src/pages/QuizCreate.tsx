@@ -20,6 +20,8 @@ import {
 import { SortableQuestionTab } from './quiz-create/ui';
 import ImportFromDocument from '../components/ImportFromDocument';
 import Portal from '../components/Portal';
+import { isUnderRezidentiatRoot } from '../lib/rezidentiatRoot';
+import { REZIDENTIAT_TAG } from '../lib/rezidentiatBank';
 import type { ParsedQuestion } from '../lib/ai/grileParser';
 
 let quizCreateAIPromise: Promise<typeof import('../lib/groq')> | null = null;
@@ -264,6 +266,13 @@ export default function QuizCreate() {
     const finalTags = pendingTag && !tags.includes(pendingTag)
       ? [...tags, pendingTag]
       : tags;
+    // A test saved into the Rezidențiat tree belongs to that section like the imported ones
+    // (kept out of "Toate grilele"); without the tag it showed up in both places.
+    const tagsForFolder = (list: string[]) => (
+      selectedFolderId !== '__uncategorized__' && isUnderRezidentiatRoot(selectedFolderId, useFolderStore.getState().folders)
+        ? [...new Set([...list, REZIDENTIAT_TAG])]
+        : list
+    );
     if (editId && existingQuiz) {
       updateQuiz(editId, {
         title: title.trim(),
@@ -271,7 +280,7 @@ export default function QuizCreate() {
         emoji, color, category,
         folderId: selectedFolderId === '__uncategorized__' ? null : selectedFolderId,
         shuffleQuestions, shuffleAnswers, penaltyMode,
-        tags: finalTags,
+        tags: tagsForFolder(finalTags),
         questions,
       });
       navigate(`/quiz/${editId}`);
@@ -284,7 +293,7 @@ export default function QuizCreate() {
         kind: 'quiz',
         folderId: selectedFolderId === '__uncategorized__' ? null : selectedFolderId,
         shuffleQuestions, shuffleAnswers, penaltyMode,
-        tags: finalTags,
+        tags: tagsForFolder(finalTags),
         questions,
         createdAt: Date.now(),
       });

@@ -22,6 +22,7 @@ import { useQuizChatContextStore } from '../../store/quizChatContextStore';
 import { suggestFolderAppearance } from '../folderAppearance';
 import { extractJsonFromText } from '../quizImport';
 import { findOrCreateRezidentiatQuizRoot, findOrCreateRezidentiatLibraryRoot, REZIDENTIAT_ROOT_NAME } from '../rezidentiatRoot';
+import { ensureResidencyFolder, ensureTopicFolder, isResidencySource } from '../rezidentiatPlacement';
 import type { Difficulty, Folder, Question, Quiz } from '../../types';
 
 function shortId() {
@@ -796,6 +797,18 @@ export async function planAgentCommand(
     }
   }
 
+  // The planner sometimes invents a destination ("Grile") the user never mentioned, and the
+  // content then silently lands in whatever folder happens to carry that name. A folder is
+  // only honoured when the request itself names it; otherwise the placement rules decide.
+  const spokenCommand = ` ${normalizeName(command)} `;
+  for (const step of steps) {
+    const generates = step.action === 'generate_quiz_pack' || step.action === 'generate_quiz_topic'
+      || step.action === 'generate_from_mistakes' || step.action === 'create_flashcards_topic';
+    if (generates && step.folder && !spokenCommand.includes(` ${normalizeName(step.folder)} `)) {
+      step.folder = undefined;
+    }
+  }
+
   // Also covers the *_topic variants (generate_quiz_topic, create_flashcards_topic) —
   // used whenever the subject isn't a matched library course, which is the common
   // case for a freeform "fă-mi N grile despre X". They used to be skipped here, so
@@ -1091,7 +1104,10 @@ export async function executeAgentPlan(
             step.source,
           );
           if (!source) throw new Error(`Nu am găsit cursul „${step.source ?? '?'}" în bibliotecă.`);
-          const folder = resolveOrCreateQuizFolder(step.folder);
+          // Rezidențiat material (from that thread, or from a book in that section) is filed into
+          // Rezidențiat → discipline → specialty unless the user named another folder.
+          const packForResidency = !step.folder && (ctx.residencyScope || isResidencySource(source, useAIStore.getState().libraryFolders));
+          const folder = packForResidency ? null : resolveOrCreateQuizFolder(step.folder);
           const packCount = clampStudioPackCount(step.packCount ?? ctx.defaultPackCount);
           const questionsPerPack = clampStudioQuestionCount(step.questionsPerPack ?? ctx.defaultQuestionsPerPack);
 
@@ -1109,7 +1125,12 @@ export async function executeAgentPlan(
             existingQuizzes: useQuizStore.getState().quizzes,
           });
 
-          result.quizzes.forEach((quiz) => {
+          // Created only now that there is something to file, so a failed run leaves no empty folders.
+          const packTarget = packForResidency ? ensureResidencyFolder(source.name, null) : folder;
+          result.quizzes.forEach((rawQuiz) => {
+            const quiz = packForResidency && packTarget
+              ? { ...rawQuiz, folderId: packTarget.id, category: packTarget.name, tags: [...new Set([...(rawQuiz.tags ?? []), 'rezidentiat'])] }
+              : rawQuiz;
             useQuizStore.getState().addQuiz(quiz);
             createdQuizIds.push(quiz.id);
             undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
@@ -1129,7 +1150,7 @@ export async function executeAgentPlan(
           // unexpected existing folder, or none matched and a new one got
           // created) and the user has no other way to find out where content
           // went without this line.
-          summaryParts.push(`${result.quizzes.length} seturi din „${source.name}"${folder ? ` în „${folder.name}"` : ''}`);
+          summaryParts.push(`${result.quizzes.length} seturi din „${source.name}"${packTarget ? ` în „${packTarget.name}"` : ''}`);
           callbacks.onStep(
             index,
             mostlyFallback ? 'error' : 'done',
@@ -1188,7 +1209,10 @@ export async function executeAgentPlan(
             errors.push(`„${step.topic}": ${result.malformedDroppedCount} întrebări generate incomplet de AI au fost eliminate — de aceea ai primit mai puține decât ai cerut.`);
           }
 
-          const folder = resolveOrCreateQuizFolder(step.folder);
+          // A topic asked for from the Rezidențiat thread goes to the specialty it belongs to
+          // (mielom multiplu → Hematologie), not to the section's root where nothing lists it.
+          const topicForResidency = ctx.residencyScope && !step.folder;
+          const folder = topicForResidency ? ensureTopicFolder(step.topic) : resolveOrCreateQuizFolder(step.folder);
           const quiz: Quiz = {
             id: shortId(),
             title: step.topic,
@@ -1200,7 +1224,7 @@ export async function executeAgentPlan(
             folderId: folder?.id ?? null,
             shuffleQuestions: true,
             shuffleAnswers: true,
-            tags: [...examStyleTags(step.examStyle ?? DEFAULT_EXAM_STYLE), 'topic'],
+            tags: [...examStyleTags(step.examStyle ?? DEFAULT_EXAM_STYLE), 'topic', ...(topicForResidency ? ['rezidentiat'] : [])],
             questions: result.questions,
             createdAt: Date.now(),
           };

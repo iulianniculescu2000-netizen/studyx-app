@@ -2,6 +2,8 @@ import { motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
 import { useParams, useNavigate, Link, Navigate } from 'react-router-dom';
 import { rezidentiatHrefForFolder } from '../lib/rezidentiatRoutes';
+import { startQuizMix } from '../lib/quizMixSession';
+import { isFolderSessionQuiz } from '../lib/rezidentiatOverview';
 import { ArrowLeft, Check, CalendarDays, FolderPlus, Layers, Pencil, Plus, Shuffle, Trash2, X } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useFolderStore } from '../store/folderStore';
@@ -25,7 +27,7 @@ export default function FolderView() {
   const navigate = useNavigate();
   const theme = useTheme();
   const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
-  const { getQuizzesByFolder, quizzes: allQuizzes, addQuiz, deleteQuiz, bulkDeleteQuizzes } = useQuizStore();
+  const { getQuizzesByFolder, quizzes: allQuizzes, bulkDeleteQuizzes } = useQuizStore();
   const [creatingSubfolder, setCreatingSubfolder] = useState(false);
   const [subfolderName, setSubfolderName] = useState('');
   const [subfolderEmoji, setSubfolderEmoji] = useState('📁');
@@ -66,7 +68,8 @@ export default function FolderView() {
   // Every real (non-flashcard) quiz under this folder, including subfolders —
   // what "Joacă tot folderul" combines into one session.
   const collectQuizzesRecursive = (folderId: string): Quiz[] => {
-    const own = getQuizzesByFolder(folderId).filter((q) => !isFlashcardDeck(q));
+    // A previous "play everything" session lives in the folder too; folding it back in multiplied the questions on every run.
+    const own = getQuizzesByFolder(folderId).filter((q) => !isFlashcardDeck(q) && !q.archived && !isFolderSessionQuiz(q));
     const children = folders.filter((f) => f.parentId === folderId);
     return children.reduce((acc, child) => acc.concat(collectQuizzesRecursive(child.id)), own);
   };
@@ -82,31 +85,9 @@ export default function FolderView() {
 
   const handlePlayFolder = () => {
     if (!folder || playableSets.length === 0) return;
-    const mergedQuestions = playableSets.flatMap((q) => q.questions);
-    const sessionTag = `folder-session:${folder.id}`;
-    // A repeat run shouldn't leave the previous combined session sitting in
-    // the folder forever — only the latest one is ever useful.
-    const stale = allQuizzes.find((q) => q.tags?.includes(sessionTag));
-    if (stale) deleteQuiz(stale.id, { keepImages: true });
-    const merged: Quiz = {
-      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
-      title: `${folder.name} — sesiune completă`,
-      description: `Combină ${playableSets.length} seturi, ${mergedQuestions.length} întrebări.`,
-      emoji: folder.emoji,
-      category: folder.name,
-      kind: 'quiz',
-      folderId: folder.id,
-      color: folder.color,
-      questions: mergedQuestions,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      shuffleQuestions: true,
-      shuffleAnswers: false,
-      tags: [sessionTag],
-    };
-    addQuiz(merged);
+    const mixId = startQuizMix(folder, playableSets);
     setConfirmPlayAll(false);
-    navigate(`/play/${merged.id}`);
+    if (mixId) navigate(`/play/${mixId}`);
   };
 
   const parentFolder = folder?.parentId ? folders.find((f) => f.id === folder.parentId) : null;

@@ -123,12 +123,10 @@ export async function generateQuizFromChapter({
     updatedAt: now,
     shuffleQuestions: true,
     shuffleAnswers: true,
-    // 'rezidentiat' keeps this out of "Toate grilele" (coursework only) and
-    // groups it with the rest of the Rezidențiat section's content instead.
-    tags: [
-      ...(titleContext ? ['ai-studio', 'chapter-pack', sourceName, titleContext] : ['ai-studio', 'document-pack', sourceName]),
-      ...(examStyle === 'residency' ? ['rezidentiat'] : []),
-    ],
+    // No 'rezidentiat' tag here: it is added when the set is filed into the Rezidențiat tree,
+    // not merely because the questions use the exam format (which would hide them from
+    // "Toate grilele" wherever they end up).
+    tags: titleContext ? ['ai-studio', 'chapter-pack', sourceName, titleContext] : ['ai-studio', 'document-pack', sourceName],
   };
 
   return {

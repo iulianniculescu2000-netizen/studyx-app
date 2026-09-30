@@ -96,6 +96,12 @@ export function buildExamStyleInstruction(style: ExamStyle, questionType: 'singl
 }
 
 /** Tags stamped on a generated set so the student can tell the tracks apart. */
+/**
+ * Tags for a generated set. The `rezidentiat` tag is deliberately NOT added here: the exam
+ * *format* (five options) is independent of *where the set lives*, and the tag hides a set
+ * from "Toate grilele". It is added only when a set is filed into the Rezidențiat tree
+ * (see rezidentiatPlacement), so a five-option set made for an ordinary course stays visible.
+ */
 export function examStyleTags(style: ExamStyle): string[] {
-  return ['ai', EXAM_STYLE_META[style].tag];
+  return style === 'simple' ? ['ai', EXAM_STYLE_META.simple.tag] : ['ai'];
 }

@@ -37,15 +37,35 @@ export interface RezidentiatOverview {
   resume: ResumeTarget | null;
 }
 
+const FOLDER_SESSION_PREFIX = 'folder-session:';
+
+/** Stable id of the combined "play everything" session for a folder, so its answers stay attributable. */
+export const quizMixId = (folderId: string) => `mix-${folderId}`;
+
+/** A combined session is a way of playing the tests, not a test of its own. */
+export const isFolderSessionQuiz = (quiz: Pick<Quiz, 'tags'>) =>
+  (quiz.tags ?? []).some((tag) => tag.startsWith(FOLDER_SESSION_PREFIX));
+
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
 /** Natural order so "Test 2" sorts before "Test 10". */
 const byTitle = (a: Quiz, b: Quiz) => a.title.localeCompare(b.title, 'ro', { numeric: true });
 
+interface Placement {
+  disciplineId: string;
+  /** null = the quiz sits directly in the discipline (or in the root). */
+  specialtyId: string | null;
+}
+
 /**
  * Derives the Rezidențiat → discipline → specialty tree straight from the
  * folders the bank importer already builds, plus how much of it the user has
  * touched (a question counts once it has any recorded attempt).
+ *
+ * Membership is by *where a quiz is filed*, not only by tag, so a test made
+ * with "Grilă nouă" inside a specialty, one an AI agent put in the root, or one
+ * whose folder was deleted still shows up (under "Alte grile") instead of
+ * vanishing.
  */
 export function buildRezidentiatOverview(
   folders: Folder[],
@@ -56,61 +76,101 @@ export function buildRezidentiatOverview(
   const root = findRezidentiatRootFolder(folders);
   if (!root) return { disciplines: [], totalQuestions: 0, totalSpecialties: 0, resume: null };
 
-  const bankQuizzes = quizzes.filter((q) => !q.archived && q.kind !== 'flashcard' && isRezidentiatQuiz(q));
-  const quizzesByFolder = new Map<string, Quiz[]>();
-  for (const quiz of bankQuizzes) {
-    if (!quiz.folderId) continue;
-    const list = quizzesByFolder.get(quiz.folderId) ?? [];
-    list.push(quiz);
-    quizzesByFolder.set(quiz.folderId, list);
+  const folderById = new Map(folders.map((f) => [f.id, f]));
+
+  /** Where a folder sits in the tree, or null when it isn't inside Rezidențiat at all. */
+  const placeFolder = (folderId: string | null | undefined): Placement | null => {
+    if (!folderId) return null;
+    if (folderId === root.id) return { disciplineId: root.id, specialtyId: null };
+    const chain: Folder[] = [];
+    const seen = new Set<string>();
+    let current = folderById.get(folderId);
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      chain.unshift(current);
+      if (current.parentId === root.id) {
+        // chain[0] is the discipline; chain[1], when present, the specialty (deeper folders roll up into it).
+        return { disciplineId: chain[0].id, specialtyId: chain[1]?.id ?? null };
+      }
+      current = current.parentId ? folderById.get(current.parentId) : undefined;
+    }
+    return null;
+  };
+
+  const specialtyQuizzes = new Map<string, Quiz[]>(); // specialty folder id → quizzes
+  const looseQuizzes = new Map<string, Quiz[]>(); // discipline (or root) folder id → quizzes filed directly in it
+  const push = (map: Map<string, Quiz[]>, key: string, quiz: Quiz) => map.set(key, [...(map.get(key) ?? []), quiz]);
+
+  const bankQuizzes: Quiz[] = [];
+  for (const quiz of quizzes) {
+    if (quiz.archived || quiz.kind === 'flashcard' || isFolderSessionQuiz(quiz)) continue;
+    const placement = placeFolder(quiz.folderId);
+    if (placement) {
+      bankQuizzes.push(quiz);
+      if (placement.specialtyId) push(specialtyQuizzes, placement.specialtyId, quiz);
+      else push(looseQuizzes, placement.disciplineId, quiz);
+    } else if (isRezidentiatQuiz(quiz) && (quiz.tags ?? []).some((t) => t.startsWith('rezidentiat-bank:'))) {
+      // A real-bank quiz whose folder was deleted: keep it reachable.
+      bankQuizzes.push(quiz);
+      push(looseQuizzes, root.id, quiz);
+    }
   }
 
-  const answeredIn = (quiz: Quiz) =>
+  const answeredCount = (quiz: Quiz, mixIds: string[]) =>
     quiz.questions.reduce((sum, question) => {
-      const stat = questionStats[`${quiz.id}:${question.id}`];
-      return sum + (stat && stat.timesCorrect + stat.timesWrong > 0 ? 1 : 0);
+      const keys = [`${quiz.id}:${question.id}`, ...mixIds.map((mixId) => `${mixId}:${question.id}`)];
+      return sum + (keys.some((key) => { const stat = questionStats[key]; return stat && stat.timesCorrect + stat.timesWrong > 0; }) ? 1 : 0);
     }, 0);
+
+  const summarize = (folder: Folder, name: string, loose: boolean, list: Quiz[]): SpecialtyOverview => {
+    const sorted = list.slice().sort(byTitle);
+    const mixIds = [quizMixId(folder.id)];
+    const questionCount = sorted.reduce((sum, q) => sum + q.questions.length, 0);
+    const answered = sorted.reduce((sum, q) => sum + answeredCount(q, mixIds), 0);
+    return { folder, name, loose, quizzes: sorted, questionCount, answered, progress: percent(answered, questionCount) };
+  };
+
+  const totals = (specialties: SpecialtyOverview[]) => {
+    const questionCount = specialties.reduce((sum, s) => sum + s.questionCount, 0);
+    const answered = specialties.reduce((sum, s) => sum + s.answered, 0);
+    return {
+      quizCount: specialties.reduce((sum, s) => sum + s.quizzes.length, 0),
+      questionCount,
+      answered,
+      progress: percent(answered, questionCount),
+    };
+  };
 
   const disciplines: DisciplineOverview[] = folders
     .filter((f) => f.parentId === root.id)
     .map((disciplineFolder) => {
       const specialties: SpecialtyOverview[] = folders
         .filter((f) => f.parentId === disciplineFolder.id)
-        .map((specialtyFolder) => {
-          const list = (quizzesByFolder.get(specialtyFolder.id) ?? []).slice().sort(byTitle);
-          const questionCount = list.reduce((sum, q) => sum + q.questions.length, 0);
-          const answered = list.reduce((sum, q) => sum + answeredIn(q), 0);
-          return { folder: specialtyFolder, name: specialtyFolder.name, loose: false, quizzes: list, questionCount, answered, progress: percent(answered, questionCount) };
-        })
+        .map((specialtyFolder) => summarize(specialtyFolder, specialtyFolder.name, false, specialtyQuizzes.get(specialtyFolder.id) ?? []))
         .filter((s) => s.quizzes.length > 0)
         .sort((a, b) => a.name.localeCompare(b.name, 'ro'));
       // Quizzes filed straight into a discipline (e.g. a hand-made "Grile" folder)
       // would otherwise vanish from this view — surface them as one entry.
-      const loose = (quizzesByFolder.get(disciplineFolder.id) ?? []).slice().sort(byTitle);
-      if (loose.length > 0) {
-        const looseQuestions = loose.reduce((sum, q) => sum + q.questions.length, 0);
-        const looseAnswered = loose.reduce((sum, q) => sum + answeredIn(q), 0);
-        specialties.push({ folder: disciplineFolder, name: 'Alte grile', loose: true, quizzes: loose, questionCount: looseQuestions, answered: looseAnswered, progress: percent(looseAnswered, looseQuestions) });
-      }
-      const questionCount = specialties.reduce((sum, s) => sum + s.questionCount, 0);
-      const answered = specialties.reduce((sum, s) => sum + s.answered, 0);
-      return {
-        folder: disciplineFolder,
-        specialties,
-        quizCount: specialties.reduce((sum, s) => sum + s.quizzes.length, 0),
-        questionCount,
-        answered,
-        progress: percent(answered, questionCount),
-      };
+      const loose = looseQuizzes.get(disciplineFolder.id) ?? [];
+      if (loose.length > 0) specialties.push(summarize(disciplineFolder, 'Alte grile', true, loose));
+      return { folder: disciplineFolder, specialties, ...totals(specialties) };
     })
     .filter((d) => d.specialties.length > 0)
     .sort((a, b) => a.folder.name.localeCompare(b.folder.name, 'ro'));
 
+  // Anything filed in the Rezidențiat root itself (or orphaned from a deleted folder) gets its own entry.
+  const rootLoose = looseQuizzes.get(root.id) ?? [];
+  if (rootLoose.length > 0) {
+    const rootEntry = summarize(root, 'Alte grile', true, rootLoose);
+    disciplines.push({ folder: { ...root, name: 'Alte grile' }, specialties: [rootEntry], ...totals([rootEntry]) });
+  }
+
   const quizById = new Map(bankQuizzes.map((q) => [q.id, q]));
-  const disciplineOfFolder = new Map<string, string>();
+  const disciplineOfQuiz = new Map<string, string>();
   for (const discipline of disciplines) {
-    for (const specialty of discipline.specialties) disciplineOfFolder.set(specialty.folder.id, discipline.folder.id);
-    disciplineOfFolder.set(discipline.folder.id, discipline.folder.id);
+    for (const specialty of discipline.specialties) {
+      for (const quiz of specialty.quizzes) disciplineOfQuiz.set(quiz.id, discipline.folder.id);
+    }
   }
   let resume: ResumeTarget | null = null;
   for (const session of sessions) {
@@ -118,7 +178,7 @@ export function buildRezidentiatOverview(
     if (!quiz) continue;
     const at = session.finishedAt ?? session.startedAt;
     if (!resume || at > resume.lastPlayedAt) {
-      resume = { quiz, disciplineId: quiz.folderId ? disciplineOfFolder.get(quiz.folderId) ?? null : null, lastPlayedAt: at };
+      resume = { quiz, disciplineId: disciplineOfQuiz.get(quiz.id) ?? null, lastPlayedAt: at };
     }
   }
 

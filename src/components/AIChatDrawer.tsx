@@ -36,7 +36,7 @@ import { useStatsStore } from '../store/statsStore';
 import { useQuizStore } from '../store/quizStore';
 import { useAIStore } from '../store/aiStore';
 import { useFolderStore } from '../store/folderStore';
-import { isResidencySource, resolveResidencyPlacement } from '../lib/rezidentiatPlacement';
+import { describePlacement, isResidencySource, resolveResidencyPlacement } from '../lib/rezidentiatPlacement';
 import { useToastStore } from '../store/toastStore';
 import { useAgentJobsStore } from '../store/agentJobsStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
@@ -219,6 +219,7 @@ export default function AIChatDrawer() {
   // Set when the user hits Stop — lets non-abortable generators (flashcards /
   // grile) discard their result instead of surprising the user after a stop.
   const generationAbortedRef = useRef(false);
+  const generationStopCountRef = useRef(0);
   // Running compressed summary of older turns + how many messages it covers.
   const conversationSummaryRef = useRef<string>('');
   const summaryCoveredCountRef = useRef<number>(0);
@@ -267,6 +268,7 @@ export default function AIChatDrawer() {
     setThinkingPhase,
     setView,
     generationAbortedRef,
+    generationStopCountRef,
     loadAIChatRuntime,
     isResidencyThread: chatThread === 'rezidentiat',
   });
@@ -462,6 +464,7 @@ export default function AIChatDrawer() {
     // …and signal the non-streaming generators (flashcards / grile) to drop their
     // result, then release the UI immediately so the button always does something.
     generationAbortedRef.current = true;
+    generationStopCountRef.current += 1;
     setLoading(false);
     setThinkingPhase(null);
     setStudioGenerating(false);
@@ -1801,7 +1804,7 @@ export default function AIChatDrawer() {
                               <div className="rounded-2xl border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
                                 <div className="flex items-center gap-2 text-sm font-semibold [overflow-wrap:anywhere]" style={{ color: theme.text }}>
                                   <FolderOpen size={14} className="flex-shrink-0" style={{ color: theme.accent }} />
-                                  Rezidențiat › {studioResidencyPlacement.disciplineName} › {studioResidencyPlacement.specialtyName}
+                                  {describePlacement(studioResidencyPlacement)}
                                 </div>
                                 <div className="mt-1 text-[11px]" style={{ color: theme.text3 }}>
                                   Se creează și se completează automat, ca să apară în pagina Rezidențiat.

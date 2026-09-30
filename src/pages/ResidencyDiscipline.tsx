@@ -14,7 +14,7 @@ import { bookDisciplineHint, disciplineKey, type SpecialtyOverview } from '../li
 import { startKumarDeck } from '../lib/startKumarDeck';
 import { startQuizMix } from '../lib/quizMixSession';
 import { REZIDENTIAT_BANKS } from '../lib/rezidentiatBank';
-import { REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME } from '../lib/rezidentiatRoot';
+import { REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME, findRezidentiatRootFolder } from '../lib/rezidentiatRoot';
 
 type Tab = 'specialitati' | 'carti' | 'carduri';
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -122,7 +122,7 @@ function SpecialtyDetail({ specialty }: { specialty: SpecialtyOverview }) {
             <button
               type="button"
               onClick={() => {
-                const id = startQuizMix(specialty.folder, specialty.quizzes, `${specialty.name} — sesiune completă`);
+                const id = startQuizMix(specialty.folder, specialty.quizzes, { title: `${specialty.name} — sesiune completă`, residency: true });
                 if (id) navigate(`/play/${id}`);
               }}
               className="fine-chip press-feedback flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium"
@@ -184,8 +184,10 @@ export default function ResidencyDiscipline() {
   const folders = useFolderStore((state) => state.folders);
   const quizzes = useQuizStore((state) => state.quizzes);
   const [tab, setTab] = useState<Tab>('specialitati');
-  const [searchParams] = useSearchParams();
-  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('s'));
+  // The selected specialty lives in the URL, so Back/Forward and shared links land on the same one.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedId = searchParams.get('s');
+  const setSelectedId = (id: string) => setSearchParams({ s: id }, { replace: true });
   const [startingDeck, setStartingDeck] = useState(false);
 
   const discipline = overview.disciplines.find((d) => d.folder.id === folderId) ?? null;
@@ -198,7 +200,8 @@ export default function ResidencyDiscipline() {
   }, [books, discipline]);
 
   const aiDecks = useMemo(() => {
-    const folder = folders.find((f) => f.name === REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME);
+    const root = findRezidentiatRootFolder(folders);
+    const folder = root ? folders.find((f) => f.parentId === root.id && f.name === REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME) : null;
     if (!folder) return [];
     return quizzes.filter((q) => q.folderId === folder.id && !q.archived && q.kind === 'flashcard');
   }, [folders, quizzes]);

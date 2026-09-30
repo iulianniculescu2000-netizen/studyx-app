@@ -141,7 +141,8 @@ describe('reading the requested track from the user', () => {
   it('labels each track for the student', () => {
     expect(EXAM_STYLE_META.residency.description).toContain('5 variante');
     expect(EXAM_STYLE_META.simple.description).toContain('4 variante');
-    expect(examStyleTags('residency')).toContain('rezidentiat');
+    // The exam format alone must not hide a set from "Toate grilele": 'rezidentiat' is added on placement.
+    expect(examStyleTags('residency')).not.toContain('rezidentiat');
     expect(examStyleTags('simple')).toContain('grila-simpla');
   });
 });

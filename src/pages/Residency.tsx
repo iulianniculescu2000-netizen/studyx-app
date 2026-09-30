@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronRight, HelpCircle, Layers, Loader2, MessageCircle, Play, Plus, Scissors, Stethoscope, Library, HeartPulse, BookOpen } from 'lucide-react';
@@ -14,6 +14,7 @@ import { useRezidentiatOverview, useResidencyBooks } from '../components/residen
 import { disciplineKey } from '../lib/rezidentiatOverview';
 import { startKumarDeck } from '../lib/startKumarDeck';
 import { REZIDENTIAT_ROOT_NAME } from '../lib/rezidentiatRoot';
+import { adoptStrayResidencyQuizzes } from '../lib/rezidentiatPlacement';
 
 const number = (value: number) => value.toLocaleString('ro-RO');
 
@@ -74,6 +75,9 @@ export default function Residency() {
   const overview = useRezidentiatOverview();
   const { books, addBookHref, hasLibraryRoot } = useResidencyBooks();
   const [showBooks, setShowBooks] = useState(false);
+
+  // Sets an AI agent filed straight into the section root are moved into "Grile" so none is stranded.
+  useEffect(() => { adoptStrayResidencyQuizzes(); }, []);
   const [startingDeck, setStartingDeck] = useState(false);
 
   const openKumarDeck = async () => {

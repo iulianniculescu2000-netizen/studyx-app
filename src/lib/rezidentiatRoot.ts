@@ -26,7 +26,8 @@ interface NamedFolder {
 }
 
 function normalize(name: string): string {
-  return name.trim().toLowerCase();
+  // Diacritic-insensitive, like every other Rezidențiat lookup ("Rezidentiat" and "Rezidenţiat" are the same folder).
+  return name.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 /** True only for a TOP-LEVEL folder named exactly "Rezidențiat" — never a nested one. */
