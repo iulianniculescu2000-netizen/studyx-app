@@ -26,6 +26,7 @@ import { useSourceChapters } from '../hooks/useSourceChapters';
 import { dispatchGenerateFromChapter } from '../lib/ai/chapterEvents';
 import ThemedSelect from '../components/ThemedSelect';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Portal from '../components/Portal';
 import ExamPlanCard from '../components/ExamPlanCard';
 import { isRezidentiatRootFolder } from '../lib/rezidentiatRoot';
 import { suggestFolderAppearance } from '../lib/folderAppearance';
@@ -72,6 +73,10 @@ export default function KnowledgeVault() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [menuSourceId, setMenuSourceId] = useState<string | null>(null);
+  // Where the open "⋯" menu sits, in viewport coordinates: it is drawn in a portal so the list's
+  // overflow-hidden can't clip it, and flips upward when there is no room below.
+  const [menuPos, setMenuPos] = useState<{ right: number; top?: number; bottom?: number } | null>(null);
+  const [sourceToDelete, setSourceToDelete] = useState<{ id: string; name: string } | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -192,6 +197,33 @@ export default function KnowledgeVault() {
   );
 
   const { chapters: sourceChapters } = useSourceChapters(readerOpen ? selectedSourceId : null);
+
+  useEffect(() => {
+    if (!menuSourceId) return;
+    const close = () => setMenuSourceId(null);
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', close);
+    // capture: any scrolling container (the page, not just the window) moves the anchor away
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [menuSourceId]);
+
+  const confirmDeleteSource = async () => {
+    if (!sourceToDelete) return;
+    const { id, name } = sourceToDelete;
+    setSourceToDelete(null);
+    try {
+      await removeKnowledgeSource(id);
+      addToast(`„${name.replace(/\.(pdf|docx|txt|md)$/i, '')}" a fost șters din bibliotecă.`, 'info');
+    } catch (error) {
+      addToast(error instanceof Error ? `Nu am putut șterge documentul: ${error.message}` : 'Nu am putut șterge documentul.', 'error');
+    }
+  };
 
   const submitNewFolder = () => {
     const name = newFolderName.trim();
@@ -503,7 +535,16 @@ export default function KnowledgeVault() {
           </button>
           <button
             type="button"
-            onClick={() => setMenuSourceId(menuOpen ? null : source.id)}
+            onClick={(event) => {
+              if (menuOpen) { setMenuSourceId(null); return; }
+              const rect = event.currentTarget.getBoundingClientRect();
+              const room = window.innerHeight - rect.bottom;
+              setMenuPos({
+                right: Math.max(8, window.innerWidth - rect.right),
+                ...(room < 220 ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+              });
+              setMenuSourceId(source.id);
+            }}
             aria-label="Mai multe acțiuni"
             aria-expanded={menuOpen}
             className="fine-row press-feedback flex h-8 w-8 items-center justify-center rounded-full"
@@ -541,12 +582,12 @@ export default function KnowledgeVault() {
           </div>
         )}
 
-        {menuOpen && (
-          <>
-            <button type="button" aria-label="Închide meniul" className="fixed inset-0 z-30 cursor-default" onClick={() => setMenuSourceId(null)} />
+        {menuOpen && menuPos && (
+          <Portal>
+            <div className="fixed inset-0 z-[9990]" onClick={() => setMenuSourceId(null)} aria-hidden="true" />
             <div
-              className="absolute right-3 top-11 z-40 w-52 overflow-hidden rounded-xl py-1"
-              style={{ background: theme.modalBg, border: '1px solid var(--hairline)', boxShadow: '0 12px 32px var(--shadow-color-soft)' }}
+              className="fixed z-[9991] w-52 overflow-hidden rounded-xl py-1"
+              style={{ ...menuPos, background: theme.modalBg, border: '1px solid var(--hairline)', boxShadow: '0 12px 32px var(--shadow-color-soft)' }}
               role="menu"
             >
               {[
@@ -571,14 +612,14 @@ export default function KnowledgeVault() {
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => { setMenuSourceId(null); removeKnowledgeSource(source.id); }}
+                onClick={() => { setMenuSourceId(null); setSourceToDelete({ id: source.id, name: source.name }); }}
                 className="fine-row block w-full px-3.5 py-2 text-left text-[13px]"
                 style={{ color: theme.danger, borderRadius: 0 }}
               >
                 Șterge documentul
               </button>
             </div>
-          </>
+          </Portal>
         )}
       </motion.div>
     );
@@ -632,7 +673,7 @@ export default function KnowledgeVault() {
             onClick={() => setFolderToDelete({ id: folder.id, name: folder.name })}
             aria-label={`Șterge folderul ${folder.name}`}
             title="Șterge folderul"
-            className="fine-row flex h-7 w-7 items-center justify-center rounded-full opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+            className="fine-row flex h-7 w-7 items-center justify-center rounded-full opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
             style={{ color: theme.danger }}
           >
             <Trash2 size={13} />
@@ -725,8 +766,8 @@ export default function KnowledgeVault() {
             </div>
           </div>
           {loading && processStep && (
-            <div className="mt-3 inline-flex rounded-full px-3.5 py-1.5 text-[12px] font-medium" style={{ background: `${theme.accent}12`, color: theme.accent }}>
-              {processStep}
+            <div role="status" className="mt-3 inline-flex max-w-full rounded-full px-3.5 py-1.5 text-[12px] font-medium" style={{ background: `${theme.accent}12`, color: theme.accent }}>
+              <span className="truncate">{processStep}</span>
             </div>
           )}
         </motion.header>
@@ -773,7 +814,7 @@ export default function KnowledgeVault() {
                   key={source.id}
                   type="button"
                   onClick={() => source.indexStatus !== 'indexing' && source.indexStatus !== 'error' && void openReader(source)}
-                  className="fine-card press-feedback rounded-2xl p-3 text-left"
+                  className="fine-card press-feedback min-w-0 rounded-2xl p-3 text-left"
                   style={{ background: theme.surface }}
                 >
                   <div className="flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accent }}>
@@ -1020,6 +1061,16 @@ export default function KnowledgeVault() {
         variant="danger"
         onConfirm={confirmDeleteFolder}
         onCancel={() => setFolderToDelete(null)}
+      />
+      <ConfirmDialog
+        open={sourceToDelete !== null}
+        title={`Ștergi „${sourceToDelete?.name.replace(/\.(pdf|docx|txt|md)$/i, '')}"?`}
+        description="Documentul și indexul lui dispar din bibliotecă, iar AI-ul nu îl mai poate folosi ca sursă. Acțiunea nu poate fi anulată."
+        confirmLabel="Șterge documentul"
+        cancelLabel="Anulează"
+        variant="danger"
+        onConfirm={() => void confirmDeleteSource()}
+        onCancel={() => setSourceToDelete(null)}
       />
     </div>
   );

@@ -63,6 +63,11 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
   const multipleCount = quiz.questions.filter(q => q.multipleCorrect).length;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  // Pin / edit / delete / play used to exist only while the mouse hovered the card, so they were
+  // unreachable by keyboard and on touch screens. Keyboard focus and touch devices show them too.
+  const [touchOnly] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches);
+  const showActions = hovered || focusWithin || touchOnly;
   const [dragging, setDragging] = useState(false);
   const isFlashcard = isFlashcardDeck(quiz);
   const quizPath = isFlashcard ? `/flashcards/session/${quiz.id}` : `/quiz/${quiz.id}`;
@@ -91,6 +96,8 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
       transition={{ duration: 0.65, delay: index * 0.06, ease: [0.16, 1, 0.3, 1] }}
       onHoverStart={() => setHovered(true)}
       onHoverEnd={() => setHovered(false)}
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false); }}
       className="relative group rounded-[32px] overflow-hidden glass-panel premium-card-hover fine-card"
       style={{
         background: hovered
@@ -190,7 +197,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
 
       {/* Floating Action Bar (Edit / Delete / Pin) - fade + catifea */}
       <AnimatePresence>
-        {hovered && !confirmDelete && (
+        {showActions && !confirmDelete && (
           <motion.div
             initial={{ opacity: 0, y: -4, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -237,7 +244,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
 
       {/* Quick Play button — lift luxos */}
       <AnimatePresence>
-        {hovered && !confirmDelete && (
+        {showActions && !confirmDelete && (
           <motion.button
             initial={{ opacity: 0, scale: 0.85, y: 4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}

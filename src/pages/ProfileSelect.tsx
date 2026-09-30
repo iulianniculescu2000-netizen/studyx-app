@@ -53,7 +53,8 @@ export default function ProfileSelect({ onAddNew }: Props) {
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      <div className="absolute right-5 top-5 z-20">
+      {/* In the frameless Electron window the minimize/maximize/close buttons float at the top-right: sit to their left. */}
+      <div className={`absolute top-5 z-20 ${window.electronAPI ? 'right-[156px]' : 'right-5'}`}>
         <ThemeModeSwitcher variant="compact" />
       </div>
       {/* Ambient orbs */}

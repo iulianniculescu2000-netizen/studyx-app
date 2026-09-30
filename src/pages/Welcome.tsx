@@ -48,7 +48,8 @@ export default function Welcome({ onBack }: Props) {
   return (
     <div className="min-h-screen flex flex-col items-center px-6 pt-12 pb-10 relative"
       style={{ background: theme.bg, overflowX: 'hidden' }}>
-      <div className="absolute right-5 top-5 z-20">
+      {/* In the frameless Electron window the minimize/maximize/close buttons float at the top-right: sit to their left. */}
+      <div className={`absolute top-5 z-20 ${window.electronAPI ? 'right-[156px]' : 'right-5'}`}>
         <ThemeModeSwitcher variant="compact" />
       </div>
 

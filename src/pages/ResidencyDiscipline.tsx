@@ -95,7 +95,7 @@ function SpecialtyDetail({ specialty }: { specialty: SpecialtyOverview }) {
   const untouched = specialty.answered === 0;
 
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       <div className="rounded-2xl p-4" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -247,9 +247,9 @@ export default function ResidencyDiscipline() {
         <SegmentedTabs value={tab} onChange={setTab} />
 
         {tab === 'specialitati' && selected && (
-          <div className="grid gap-4 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
             <div
-              className="max-h-[60vh] self-start overflow-y-auto rounded-2xl md:sticky md:top-2 md:max-h-[calc(100vh-9rem)]"
+              className="max-h-[40vh] self-start overflow-y-auto rounded-2xl lg:sticky lg:top-2 lg:max-h-[calc(100vh-9rem)]"
               style={{ background: theme.surface, border: '1px solid var(--hairline)' }}
               role="listbox"
               aria-label="Specialități"
@@ -264,11 +264,11 @@ export default function ResidencyDiscipline() {
                     aria-selected={active}
                     data-active={active}
                     onClick={() => setSelectedId(specialty.folder.id)}
-                    className="fine-row flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
-                    style={{ borderRadius: 0, borderTop: index === 0 ? undefined : '1px solid var(--hairline)', boxShadow: 'none' }}
+                    className="fine-row fine-row--flat flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
+                    style={{ borderRadius: 0, borderTop: index === 0 ? undefined : '1px solid var(--hairline)' }}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13.5px] font-semibold" style={{ color: active ? theme.accent : theme.text }}>{specialty.name}</div>
+                      <div className="truncate text-[13.5px] font-semibold" title={specialty.name} style={{ color: active ? theme.accent : theme.text }}>{specialty.name}</div>
                       <div className="text-[11.5px]" style={{ color: theme.text3 }}>{specialty.quizzes.length} teste · {number(specialty.questionCount)} grile</div>
                     </div>
                     <span className="text-[11.5px] font-semibold" style={{ color: active ? theme.accent : theme.text3 }}>{specialty.progress}%</span>

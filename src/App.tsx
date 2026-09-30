@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation as useRouterLocation } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { ThemeProvider, useTheme } from './theme/ThemeContext';
 import { useUserStore } from './store/userStore';
 import { useFocusModeStore } from './store/focusModeStore';
@@ -422,11 +422,14 @@ export default function App() {
   return (
     <HashRouter>
       <ThemeProvider>
-        <div className="flex h-screen w-screen flex-col overflow-hidden" style={{ background: 'transparent' }}>
-          <WindowControls />
-          <SplashScreen visible={splashVisible} durationMs={splashDurationMs} />
-          <AppContent splashVisible={splashVisible} />
-        </div>
+        {/* Honour the system "reduce motion" setting for every framer-motion animation (entrances, staggers, layout). */}
+        <MotionConfig reducedMotion="user">
+          <div className="flex h-screen w-screen flex-col overflow-hidden" style={{ background: 'transparent' }}>
+            <WindowControls />
+            <SplashScreen visible={splashVisible} durationMs={splashDurationMs} />
+            <AppContent splashVisible={splashVisible} />
+          </div>
+        </MotionConfig>
       </ThemeProvider>
     </HashRouter>
   );
