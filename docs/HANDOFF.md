@@ -22,7 +22,7 @@ Nu s-a făcut merge în `main`. Pentru lansare: PR de pe `chore/maintenance-2026
 ## Încă de făcut (fără ordine strictă)
 1. **Verificare manuală pe desktop** (`npm run electron:dev`): ambele teme, culoarea ferestrei la pornire, importul unui PDF (pdf.js 6), chatul pe ecran complet.
 2. **Android:** eliminat complet (cod, workflow, Capacitor); nu se mai livrează.
-3. **Interacțiuni fine incomplete** în `QuizPlay`, `ReviewMode`, `DailyReview`, `quiz-create`, `Notes` (au primit doar înlocuirile de culori). Contrast de verificat în `QuizPlay`/`FlashcardSession` pe tema luminoasă (stări corect/greșit).
+3. **Interacțiuni fine incomplete** în `QuizPlay`, `ReviewMode`, `DailyReview`, `quiz-create`, `Notes` (au primit doar înlocuirile de culori). Contrastul stărilor corect/greșit pe tema luminoasă a fost corectat (succes/pericol/avertisment întunecate în `themes.ts`, ≥4.5:1).
 4. **Pachete amânate:** componente Apple noi (tooltip global, dropdown cu tastatură), scrollbar macOS, tranziții suplimentare, listă de conversații în chat (aplicația are doar două fire: General și Rezidențiat).
 6. **Majore amânate:** `eslint` 10 (cere `eslint-plugin-react-hooks` ≥ 7.1 → 32 de erori de stil), `typescript` 7, `tesseract.js` 7.
 7. **Decizii de produs deschise:** `calcNextReview` (scăderea `eFactor` la lapse, schimbare SM-2 neconfirmată), `ReviewMode` (răspunsul se înregistrează la notare; ieșirea înainte de notare acum salvează rezultatul real), verificarea băncilor `lawrence-kumar.json`/`modele-grile.json` (~4200 de grile) față de PDF-urile din `Rezidentiat/Grile`.
