@@ -8,10 +8,10 @@ Android a fost **eliminat definitiv** (cod, workflow, Capacitor): nu se mai livr
 main
  └─ feat/rezidentiat-anki-fix-pierdere-date   (în GitHub)
      └─ feat/ui-apple
-         └─ chore/maintenance-2026-09          (local: 11 commit-uri înaintea originului, NEÎMPINSE)
-             └─ feat/rezidentiat-redesign      (ramura de lucru, 112 commit-uri față de main, doar locală)
+         └─ chore/maintenance-2026-09          (local: 11 commit-uri înaintea originului; commit-urile ei sunt deja în GitHub prin ramura de lucru, dar ramura în sine nu a fost actualizată pe origin)
+             └─ feat/rezidentiat-redesign      (ramura de lucru, împinsă în GitHub pe 2026-10-01)
 ```
-Ramura curentă: **`feat/rezidentiat-redesign`**, arbore de lucru curat la momentul scrierii. Nimic din ce e mai jos nu e împins în GitHub; push-ul cere autentificare prin Git Credential Manager. `preview/apple-birou` e un prototip local vechi (poate fi ștearsă).
+Ramura curentă: **`feat/rezidentiat-redesign`**, arbore de lucru curat la momentul scrierii. Ramura de lucru e în GitHub; `main` și v2.3.0 nu au fost atinse. Push-ul cere autentificare prin Git Credential Manager. `preview/apple-birou` e un prototip local vechi (poate fi ștearsă).
 Pentru lansare: PR de pe `feat/rezidentiat-redesign` spre `main`, apoi versiune + tag (doar cu acord).
 
 ## Ce s-a făcut în sesiunea asta (pe scurt)
