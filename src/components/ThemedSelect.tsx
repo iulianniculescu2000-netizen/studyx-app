@@ -152,7 +152,7 @@ export default function ThemedSelect({
                         >
                           {option.label}
                         </span>
-                        {active && <Check size={14} style={{ color: theme.accent }} />}
+                        {active && <Check size={14} style={{ color: theme.accentText }} />}
                       </button>
                     );
                   })}

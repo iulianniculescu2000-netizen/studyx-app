@@ -40,11 +40,11 @@ export default function FreeKeysNotice({
       <div className="mb-2 flex items-center gap-2">
         <span
           className="flex h-7 w-7 items-center justify-center rounded-xl"
-          style={{ background: `${theme.accent}18`, color: theme.accent }}
+          style={{ background: `${theme.accent}18`, color: theme.accentText }}
         >
           {hasNone ? <KeyRound size={14} /> : <Zap size={14} />}
         </span>
-        <span className="text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: theme.accent }}>
+        <span className="text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: theme.accentText }}>
           {hasNone ? 'Pornește AI-ul gratuit' : 'Adaugă și celelalte chei'}
         </span>
       </div>

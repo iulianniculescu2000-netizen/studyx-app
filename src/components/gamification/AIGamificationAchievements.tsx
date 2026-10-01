@@ -1,3 +1,4 @@
+import Portal from '../Portal';
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../theme/ThemeContext';
@@ -114,13 +115,14 @@ export default function AIGamificationAchievements({
         })}
       </div>
 
+      <Portal>
       <AnimatePresence>
         {selectedAchievement && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 flex items-center justify-center p-4 z-50"
+            className="fixed inset-0 flex items-center justify-center p-4 z-[200]"
             style={{ background: 'rgba(0,0,0,0.5)' }}
             onClick={() => setSelectedAchievement(null)}
           >
@@ -221,6 +223,7 @@ export default function AIGamificationAchievements({
           </motion.div>
         )}
       </AnimatePresence>
+      </Portal>
     </>
   );
 }

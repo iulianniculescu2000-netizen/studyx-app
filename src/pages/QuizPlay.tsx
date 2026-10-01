@@ -1130,7 +1130,7 @@ export default function QuizPlay() {
               }}
             >
               <div className="flex flex-wrap items-center gap-2 mb-3">
-                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accentText }}>
                   {modeLabel}
                 </span>
                 {isMultiple && (
@@ -1278,7 +1278,7 @@ export default function QuizPlay() {
                   style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}
                 >
                   <p className="text-sm" style={{ color: theme.text2 }}>
-                    <span className="font-semibold" style={{ color: theme.accent }}>Explicație: </span>
+                    <span className="font-semibold" style={{ color: theme.accentText }}>Explicație: </span>
                     {cleanQuestionExplanation(question.explanation)}
                   </p>
                 </motion.div>
@@ -1435,7 +1435,7 @@ export default function QuizPlay() {
                       style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
                     >
                       <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em]">
-                        <Sparkles size={14} style={{ color: theme.accent }} />
+                        <Sparkles size={14} style={{ color: theme.accentText }} />
                         Mini-test pe focus
                       </div>
                       <div className="mt-1 text-xs opacity-65" style={{ color: theme.text }}>

@@ -144,7 +144,7 @@ export default function ExamPlanSessionRow({ folderId, session }: { folderId: st
                   whileTap={calmMotion ? undefined : { scale: 0.95 }}
                   onClick={() => generate(chapter)}
                   className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[9.5px] font-black uppercase tracking-[0.06em] transition-all"
-                  style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent }}
+                  style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accentText }}
                 >
                   <Sparkles size={11} /> Grile
                 </motion.button>

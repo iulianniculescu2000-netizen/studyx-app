@@ -96,6 +96,10 @@ export default function KnowledgeVault() {
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Enter/Escape close the name field, and removing a focused input can still fire its blur: without
+  // this guard the folder was created twice (Enter) or even after Escape.
+  const folderFormClosedRef = useRef(true);
+  const subfolderFormClosedRef = useRef(true);
 
   const activeFolder = useMemo(
     () => libraryFolders.find((f) => f.id === activeFolderId) ?? null,
@@ -231,6 +235,8 @@ export default function KnowledgeVault() {
   };
 
   const submitNewFolder = () => {
+    if (folderFormClosedRef.current) return;
+    folderFormClosedRef.current = true;
     const name = newFolderName.trim();
     if (!name) { setCreatingFolder(false); return; }
     const id = addLibraryFolder(name, suggestFolderAppearance(name).emoji);
@@ -241,6 +247,8 @@ export default function KnowledgeVault() {
   };
 
   const submitNewSubfolder = () => {
+    if (subfolderFormClosedRef.current) return;
+    subfolderFormClosedRef.current = true;
     const name = newSubfolderName.trim();
     if (!name || !activeFolder) { setCreatingSubfolder(false); setNewSubfolderName(''); return; }
     const id = addLibraryFolder(name, suggestFolderAppearance(name).emoji, activeFolder.id);
@@ -476,7 +484,7 @@ export default function KnowledgeVault() {
   });
 
   const headerTitle = isTopLevel
-    ? <>Biblioteca <span style={{ color: theme.accent }}>AI</span></>
+    ? <>Biblioteca <span style={{ color: theme.accentText }}>AI</span></>
     : activeFolderId === '__unfiled__'
       ? 'Neclasificate'
       : (activeFolder ? activeFolder.name : 'Bibliotecă');
@@ -534,7 +542,7 @@ export default function KnowledgeVault() {
             onClick={() => isReady && askAIAboutSource(source)}
             disabled={!isReady}
             className="fine-chip press-feedback hidden rounded-full px-3 py-1.5 text-[12.5px] font-semibold disabled:opacity-40 sm:block"
-            style={{ color: theme.accent }}
+            style={{ color: theme.accentText }}
           >
             Întreabă
           </button>
@@ -668,7 +676,7 @@ export default function KnowledgeVault() {
             <Link
               to="/rezidentiat"
               className="press-feedback hidden whitespace-nowrap px-2 text-[12.5px] font-semibold sm:block"
-              style={{ color: theme.accent }}
+              style={{ color: theme.accentText }}
             >
               Deschide în Rezidențiat
             </Link>
@@ -707,7 +715,7 @@ export default function KnowledgeVault() {
                 type="button"
                 onClick={() => { setActiveFolderId(null); setSearch(''); setTypeFilter('all'); }}
                 className="press-feedback inline-flex items-center gap-0.5"
-                style={{ color: theme.accent }}
+                style={{ color: theme.accentText }}
               >
                 <ArrowLeft size={15} /> Biblioteca AI
               </button>
@@ -717,7 +725,7 @@ export default function KnowledgeVault() {
                   <button
                     type="button"
                     onClick={() => { setActiveFolderId(ancestor.id); setSearch(''); setTypeFilter('all'); }}
-                    style={{ color: theme.accent }}
+                    style={{ color: theme.accentText }}
                   >
                     {ancestor.name}
                   </button>
@@ -734,7 +742,7 @@ export default function KnowledgeVault() {
               {!isTopLevel && activeFolder && !creatingSubfolder && (
                 <button
                   type="button"
-                  onClick={() => setCreatingSubfolder(true)}
+                  onClick={() => { subfolderFormClosedRef.current = false; setCreatingSubfolder(true); }}
                   className="fine-chip press-feedback flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-medium"
                   style={{ color: theme.text2 }}
                 >
@@ -771,7 +779,7 @@ export default function KnowledgeVault() {
             </div>
           </div>
           {loading && processStep && (
-            <div role="status" className="mt-3 inline-flex max-w-full rounded-full px-3.5 py-1.5 text-[12px] font-medium" style={{ background: `${theme.accent}12`, color: theme.accent }}>
+            <div role="status" className="mt-3 inline-flex max-w-full rounded-full px-3.5 py-1.5 text-[12px] font-medium" style={{ background: `${theme.accent}12`, color: theme.accentText }}>
               <span className="truncate">{processStep}</span>
             </div>
           )}
@@ -822,7 +830,7 @@ export default function KnowledgeVault() {
                   className="fine-card press-feedback min-w-0 rounded-2xl p-3 text-left"
                   style={{ background: theme.surface }}
                 >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                     {source.type === 'image' ? <Image size={18} /> : <FileText size={18} />}
                   </div>
                   <div className="mt-2.5 truncate text-[13.5px] font-semibold" style={{ color: theme.text }}>{source.name.replace(/\.(pdf|docx|txt|md)$/i, '')}</div>
@@ -842,7 +850,7 @@ export default function KnowledgeVault() {
             {showEmptyHint ? (
               <div className="rounded-2xl px-5 py-10 text-center" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
                 <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18` }}>
-                  <Library size={22} style={{ color: theme.accent }} />
+                  <Library size={22} style={{ color: theme.accentText }} />
                 </div>
                 <p className="text-[15px] font-semibold" style={{ color: theme.text }}>Biblioteca e goală</p>
                 <p className="mx-auto mt-1 max-w-sm text-[13px]" style={{ color: theme.text3 }}>
@@ -878,7 +886,7 @@ export default function KnowledgeVault() {
                       onChange={(e) => setNewFolderName(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') submitNewFolder();
-                        if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName(''); }
+                        if (e.key === 'Escape') { folderFormClosedRef.current = true; setCreatingFolder(false); setNewFolderName(''); }
                       }}
                       onBlur={submitNewFolder}
                       placeholder="Nume folder"
@@ -893,9 +901,9 @@ export default function KnowledgeVault() {
             {!creatingFolder && (
               <button
                 type="button"
-                onClick={() => setCreatingFolder(true)}
+                onClick={() => { folderFormClosedRef.current = false; setCreatingFolder(true); }}
                 className="press-feedback mt-3 flex items-center gap-1.5 px-1 text-[13px] font-semibold"
-                style={{ color: theme.accent }}
+                style={{ color: theme.accentText }}
               >
                 <FolderPlus size={14} /> Folder nou
               </button>
@@ -920,7 +928,7 @@ export default function KnowledgeVault() {
                         onChange={(e) => setNewSubfolderName(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') submitNewSubfolder();
-                          if (e.key === 'Escape') { setCreatingSubfolder(false); setNewSubfolderName(''); }
+                          if (e.key === 'Escape') { subfolderFormClosedRef.current = true; setCreatingSubfolder(false); setNewSubfolderName(''); }
                         }}
                         onBlur={submitNewSubfolder}
                         placeholder="Nume subfolder"
@@ -939,7 +947,7 @@ export default function KnowledgeVault() {
             {typeFilteredSources.length === 0 ? (
               <div className="py-14 text-center">
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18` }}>
-                  <Library size={26} style={{ color: theme.accent }} />
+                  <Library size={26} style={{ color: theme.accentText }} />
                 </div>
                 <p className="text-[15px] font-semibold" style={{ color: theme.text }}>
                   {search || typeFilter !== 'all' ? 'Niciun document găsit.' : 'Folderul e gol.'}
@@ -987,7 +995,7 @@ export default function KnowledgeVault() {
                     onClick={() => isSourceReady(selectedSource) && askAIAboutSource(selectedSource)}
                     disabled={!isSourceReady(selectedSource)}
                     className="flex-1 rounded-2xl px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] sm:flex-none"
-                    style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent, opacity: isSourceReady(selectedSource) ? 1 : 0.45 }}
+                    style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accentText, opacity: isSourceReady(selectedSource) ? 1 : 0.45 }}
                   >
                     Întreabă AI <ArrowRight size={14} className="ml-1 inline-block" />
                   </button>
@@ -1035,7 +1043,7 @@ export default function KnowledgeVault() {
                               <button
                                 onClick={() => generateFromChapter(chapter.heading, chapter.label)}
                                 className="flex-shrink-0 rounded-xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.1em]"
-                                style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent }}
+                                style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accentText }}
                               >
                                 Generează grile
                               </button>

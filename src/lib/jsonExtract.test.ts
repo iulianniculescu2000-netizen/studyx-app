@@ -71,6 +71,20 @@ describe('extractJsonArrayLenient', () => {
     expect(JSON.parse(extractJsonArrayLenient(truncated)!)).toHaveLength(2);
   });
 
+  // Regression: a reply cut right after an inner "options" array made the lenient
+  // extractor return that options array instead of the questions before it.
+  it('keeps the questions when the cut lands just after an inner array', () => {
+    const truncated = `[${QUESTION(1)},${QUESTION(2)},{"text":"Intrebarea 3?","options":["a","b","c"],"corr`;
+    const parsed = JSON.parse(extractJsonArrayLenient(truncated)!) as Array<{ text: string }>;
+    expect(parsed.map((q) => q.text)).toEqual(['Intrebarea 1?', 'Intrebarea 2?']);
+  });
+
+  it('ignores a stray bracket in the preamble', () => {
+    const reply = `Iată [lista] cerută:
+[${QUESTION(1)},${QUESTION(2)}]`;
+    expect(JSON.parse(extractJsonArrayLenient(reply)!)).toHaveLength(2);
+  });
+
   it('handles a fenced array with a preamble', () => {
     const reply = `Iată grilele:\n\`\`\`json\n[${QUESTION(1)}]\n\`\`\``;
     expect(JSON.parse(extractJsonArrayLenient(reply)!)).toHaveLength(1);

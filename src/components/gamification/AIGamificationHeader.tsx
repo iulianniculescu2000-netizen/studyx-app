@@ -40,7 +40,7 @@ export default function AIGamificationHeader({ username }: AIGamificationHeaderP
             StudyX is single-user, and the comparison tab is you vs. your past self. */}
         Provocări, realizări și comparație cu propriul tău progres, ca să-ți susțină studiul
       </p>
-      <p className="mt-3 text-sm font-medium" style={{ color: theme.accent }}>
+      <p className="mt-3 text-sm font-medium" style={{ color: theme.accentText }}>
         Hub-ul premium de progres pentru {username}
       </p>
     </motion.div>

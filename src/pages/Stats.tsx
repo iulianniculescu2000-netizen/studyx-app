@@ -342,7 +342,7 @@ export default function Stats() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
               className={`grid grid-cols-2 ${compact ? 'xl:grid-cols-3' : 'md:grid-cols-3'} gap-4 mb-8`}>
               {[
-                { label: 'Sesiuni Totale', value: sessions.length, icon: <BookOpen size={18} />, color: theme.accent },
+                { label: 'Sesiuni Totale', value: sessions.length, icon: <BookOpen size={18} />, color: theme.accentText },
                 { label: 'Acuratețe Medie', value: `${accuracy}%`, icon: <Target size={18} />, color: theme.success },
                 { label: 'Scor Maxim', value: `${bestScore}%`, icon: <Trophy size={18} />, color: '#FFD60A' },
                 { label: 'Streak Curent', value: `${streak.currentStreak} ${streak.currentStreak === 1 ? 'zi' : 'zile'}`, icon: <Flame size={18} />, color: theme.warning },
@@ -533,7 +533,7 @@ export default function Stats() {
                 <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full opacity-10"
                   style={{ background: examPrediction.predicted >= 70 ? theme.success : examPrediction.predicted >= 50 ? theme.warning : theme.danger }} />
                 <h2 className="font-semibold mb-4 flex items-center gap-2" style={{ color: theme.text }}>
-                  <TrendingUp size={16} style={{ color: theme.accent }} />
+                  <TrendingUp size={16} style={{ color: theme.accentText }} />
                   Predictor examen
                 </h2>
                 <div className="flex items-center gap-6">

@@ -43,8 +43,8 @@ export default function AIPredictiveHeader({ currentLevel, subjects }: AIPredict
 
       <div className="flex justify-center gap-6 mt-6">
         <div className="flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: `${theme.accent}14`, border: `1px solid ${theme.accent}25` }}>
-          <Brain className="w-4 h-4" style={{ color: theme.accent }} />
-          <span className="text-sm font-medium" style={{ color: theme.accent }}>
+          <Brain className="w-4 h-4" style={{ color: theme.accentText }} />
+          <span className="text-sm font-medium" style={{ color: theme.accentText }}>
             Nivel {currentLevel}
           </span>
         </div>

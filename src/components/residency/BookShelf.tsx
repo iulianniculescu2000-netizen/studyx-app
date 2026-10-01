@@ -190,7 +190,7 @@ export default function BookShelf({ books, addBookHref, calmMotion, emptyMessage
     return (
       <div className="rounded-2xl px-5 py-8 text-center" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
         <p className="text-sm" style={{ color: theme.text3 }}>{emptyMessage ?? 'Nicio carte încă.'}</p>
-        <Link to={addBookHref} className="mt-3 inline-block text-[13px] font-semibold" style={{ color: theme.accent }}>
+        <Link to={addBookHref} className="mt-3 inline-block text-[13px] font-semibold" style={{ color: theme.accentText }}>
           Adaugă o carte
         </Link>
       </div>
@@ -215,7 +215,7 @@ export default function BookShelf({ books, addBookHref, calmMotion, emptyMessage
               style={{ borderRadius: 0 }}
               aria-expanded={expanded}
             >
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                 <BookOpen size={18} />
               </div>
               <div className="min-w-0 flex-1">

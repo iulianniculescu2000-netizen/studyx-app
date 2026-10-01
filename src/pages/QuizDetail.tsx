@@ -104,7 +104,7 @@ export default function QuizDetail() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost găsită.</p>
-          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi</Link>
+          <Link to="/quizzes" style={{ color: theme.accentText }}>Înapoi</Link>
         </div>
       </div>
     );
@@ -514,7 +514,7 @@ export default function QuizDetail() {
               </div>
               <div
                 className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all group-hover:translate-x-1"
-                style={{ background: `${theme.accent}20`, color: theme.accent }}
+                style={{ background: `${theme.accent}20`, color: theme.accentText }}
               >
                 Deschide chat
               </div>
@@ -530,7 +530,7 @@ export default function QuizDetail() {
               <button
                 onClick={() => window.dispatchEvent(new CustomEvent('studyx:open-ai-settings'))}
                 className="press-feedback text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg"
-                style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.accent }}
+                style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.accentText }}
               >
                 Configurare
               </button>
@@ -539,7 +539,7 @@ export default function QuizDetail() {
 
           <div className="grid grid-cols-3 gap-2 mb-8 sm:grid-cols-6">
             {[
-              { label: 'Editează', icon: Pencil, action: () => navigate(`/create?edit=${quiz.id}`), color: theme.accent },
+              { label: 'Editează', icon: Pencil, action: () => navigate(`/create?edit=${quiz.id}`), color: theme.accentText },
               { label: 'Copiază', icon: Copy, action: handleDuplicate, color: theme.text2 },
               { label: 'JSON', icon: Download, action: exportQuiz, color: theme.text2 },
               { label: 'PDF', icon: FileText, action: exportPDF, color: theme.text2 },

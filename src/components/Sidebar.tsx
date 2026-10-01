@@ -739,7 +739,7 @@ export default function Sidebar() {
             className="text-base font-black ml-3 tracking-tighter"
             style={{ color: theme.text, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
           >
-            Study<span style={{ color: theme.accent }}>X</span>
+            Study<span style={{ color: theme.accentText }}>X</span>
           </span>
         )}
       </div>
@@ -965,7 +965,7 @@ export default function Sidebar() {
 
                 badge={dueCount > 0 ? (
                   <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold"
-                    style={{ background: `${theme.accent}28`, color: theme.accent }}>
+                    style={{ background: `${theme.accent}28`, color: theme.accentText }}>
                     {dueCount}
                   </span>
                 ) : undefined}
@@ -1141,8 +1141,8 @@ export default function Sidebar() {
                               </span>
                             )}
                           </motion.div>
-                          {/* Edit/delete shown on hover */}
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5 rounded-lg px-1 py-0.5"
+                          {/* Edit/delete: on hover or keyboard focus, always on touch screens */}
+                          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-lg px-1 py-0.5 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto"
                             style={{ background: theme.isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.92)' }}>
                             <button
                               onClick={(e) => {
@@ -1150,7 +1150,7 @@ export default function Sidebar() {
                                 useNewFolderDialog.getState().show(folder.id);
                               }}
                               aria-label={`Creeaza subfolder in ${folder.name}`}
-                              className="p-1 rounded hover:opacity-80" style={{ color: theme.accent }}>
+                              className="p-1 rounded hover:opacity-80" style={{ color: theme.accentText }}>
                               <Plus size={11} />
                             </button>
                             <button

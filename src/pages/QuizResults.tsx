@@ -370,7 +370,7 @@ export default function QuizResults() {
             style={{ background: `${theme.accent}10` }}
           />
           <div className="relative">
-            <div className="text-[11px] uppercase tracking-[0.18em] font-black mb-2" style={{ color: theme.accent }}>
+            <div className="text-[11px] uppercase tracking-[0.18em] font-black mb-2" style={{ color: theme.accentText }}>
               Continuă inteligent
             </div>
             <h2 className="text-xl font-black tracking-tight mb-1" style={{ color: theme.text }}>{insightTitle}</h2>
@@ -498,7 +498,7 @@ export default function QuizResults() {
                                 animate={{ opacity: 1, height: 'auto' }}
                                 className="mt-1 p-2.5 rounded-xl text-xs leading-relaxed overflow-hidden"
                                 style={{ background: `${theme.accent}0d`, border: `1px solid ${theme.accent}20`, color: theme.text2 }}>
-                                <span className="font-semibold flex items-center gap-1 mb-1" style={{ color: theme.accent }}>
+                                <span className="font-semibold flex items-center gap-1 mb-1" style={{ color: theme.accentText }}>
                                   <Bot size={11} />{hasKey ? 'Explicație AI' : 'Explicație ghidată'}
                                 </span>
                                 <AIRichText text={aiExplanations[q.id]} />

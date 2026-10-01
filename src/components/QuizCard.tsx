@@ -140,7 +140,7 @@ const QuizCard = memo(function QuizCard({ quiz, index = 0, showDelete = false }:
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: index * 0.06 + 0.1 }}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest backdrop-blur-md"
-                style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}35` }}
+                style={{ background: `${theme.accent}18`, color: theme.accentText, border: `1px solid ${theme.accent}35` }}
               >
                 <Layers size={10} />Multi
               </motion.div>

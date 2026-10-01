@@ -18,10 +18,10 @@ interface AIGamificationStatsProps {
 export default function AIGamificationStats({ userStats }: AIGamificationStatsProps) {
   const theme = useTheme();
   const items = [
-    { icon: Trophy, label: 'Puncte', value: userStats.points.toLocaleString(), color: theme.accent },
+    { icon: Trophy, label: 'Puncte', value: userStats.points.toLocaleString(), color: theme.accentText },
     { icon: Star, label: 'Nivel', value: userStats.level, color: theme.accent2 },
     { icon: Flame, label: 'Streak', value: `${userStats.studyStreak} zile`, color: theme.warning },
-    { icon: Medal, label: 'Realizări', value: userStats.achievements, color: theme.accent },
+    { icon: Medal, label: 'Realizări', value: userStats.achievements, color: theme.accentText },
     { icon: BarChart3, label: 'Întrebări (7 zile)', value: userStats.weeklyQuestions, color: theme.success },
   ];
 

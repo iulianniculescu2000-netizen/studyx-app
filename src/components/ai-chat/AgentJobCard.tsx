@@ -149,8 +149,8 @@ export default function AgentJobCard({
       style={{ background: theme.surface2, borderColor: `${theme.accent}30` }}
     >
       <div className="mb-2.5 flex items-center gap-2">
-        <Sparkles size={14} style={{ color: theme.accent }} />
-        <span className="text-[11px] font-black uppercase tracking-[0.16em]" style={{ color: theme.accent }}>
+        <Sparkles size={14} style={{ color: theme.accentText }} />
+        <span className="text-[11px] font-black uppercase tracking-[0.16em]" style={{ color: theme.accentText }}>
           {awaiting ? 'Plan agent · confirmă' : running ? 'Agent lucrează' : done ? 'Agent · gata' : errored ? 'Agent · cu probleme' : 'Agent'}
         </span>
       </div>

@@ -61,7 +61,7 @@ export default function ExamPlanCard({ folder, sources }: { folder: AILibraryFol
             Plan examen — nesetat
             {loading && <Loader2 size={12} className="animate-spin" />}
           </span>
-          <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: theme.accent }}>
+          <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: theme.accentText }}>
             Configurează
           </span>
         </motion.button>
@@ -168,7 +168,7 @@ export default function ExamPlanCard({ folder, sources }: { folder: AILibraryFol
             style={{ background: theme.surface2, color: theme.text2 }}
           >
             <span>Ai adăugat {newDocsCount === 1 ? 'un document nou' : `${newDocsCount} documente noi`} — planul nu {newDocsCount === 1 ? 'îl' : 'le'} include încă.</span>
-            <span style={{ color: theme.accent }}>Actualizează</span>
+            <span style={{ color: theme.accentText }}>Actualizează</span>
           </motion.button>
         )}
 

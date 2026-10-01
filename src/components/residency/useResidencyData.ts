@@ -3,7 +3,7 @@ import { useAIStore, type AIKnowledgeSource } from '../../store/aiStore';
 import { useQuizStore } from '../../store/quizStore';
 import { useFolderStore } from '../../store/folderStore';
 import { useStatsStore } from '../../store/statsStore';
-import { findRezidentiatRootFolder } from '../../lib/rezidentiatRoot';
+import { findRezidentiatRootFolder, isUnderRezidentiatRoot } from '../../lib/rezidentiatRoot';
 import { buildRezidentiatOverview, type RezidentiatOverview } from '../../lib/rezidentiatOverview';
 
 /** The Rezidențiat discipline/specialty tree plus the user's progress through it. */
@@ -24,8 +24,8 @@ export function useResidencyBooks(): { books: AIKnowledgeSource[]; addBookHref: 
   const libraryFolders = useAIStore((state) => state.libraryFolders);
   const root = useMemo(() => findRezidentiatRootFolder(libraryFolders), [libraryFolders]);
   const books = useMemo(
-    () => (root ? knowledgeSources.filter((source) => source.folderId === root.id) : []),
-    [knowledgeSources, root],
+    () => (root ? knowledgeSources.filter((source) => !!source.folderId && isUnderRezidentiatRoot(source.folderId, libraryFolders)) : []),
+    [knowledgeSources, libraryFolders, root],
   );
   return { books, addBookHref: root ? `/vault?folder=${root.id}` : '/vault', hasLibraryRoot: !!root };
 }

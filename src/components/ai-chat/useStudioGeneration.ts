@@ -286,9 +286,14 @@ export function useStudioGeneration({
 
     const folderResolution = resolveStudioFolderFromCommand(text, folders, selectedStudioFolder);
     let targetFolder = selectedStudioFolder;
+    // Rezidențiat sets are filed by runStudioGeneration into Grile › specialty and the requested folder is
+    // ignored, so creating it here would only leave an empty folder behind.
+    const folderIsIgnored = isResidencyThread || isResidencySource(source, useAIStore.getState().libraryFolders);
 
     if (folderResolution.kind === 'existing') {
       targetFolder = folderResolution.folder;
+    } else if (folderResolution.kind === 'create' && folderIsIgnored) {
+      targetFolder = selectedStudioFolder;
     } else if (folderResolution.kind === 'create') {
       const appearance = suggestFolderAppearance(folderResolution.name);
       const id = addFolder(folderResolution.name, appearance.emoji, appearance.color);

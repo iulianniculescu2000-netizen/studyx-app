@@ -103,6 +103,12 @@ describe('resolveTopicPlacement', () => {
     expect(describePlacement(p)).toBe('Rezidențiat › Grile › Hematologie');
   });
 
+  it('does not mistake a subdural hematoma for hematology, or diabetes insipidus for diabetes mellitus', () => {
+    expect(resolveTopicPlacement('hematom subdural', tree).specialtyName).toBe('Neurochirurgie');
+    expect(resolveTopicPlacement('diabet insipid', tree).specialtyName).toBe('Endocrinologie');
+    expect(resolveTopicPlacement('diabet zaharat tip 2', tree).specialtyName).toBe('Diabet zaharat');
+  });
+
   it('files an unrecognised topic directly in "Grile"', () => {
     const p = resolveTopicPlacement('subiect fără cuvinte cheie', tree);
     expect(p.specialtyName).toBeNull();

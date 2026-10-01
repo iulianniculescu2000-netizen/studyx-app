@@ -518,7 +518,7 @@ export default function QuizCreate() {
 
       {showImportDoc && (
         <Portal>
-          <div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }} onClick={() => setShowImportDoc(false)} />
+          <div className="fixed inset-0 z-50" style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }} onClick={() => setShowImportDoc(false)} />
           <div className="fixed top-[6%] left-1/2 z-50 w-full max-w-lg -translate-x-1/2 px-4">
             <div className="rounded-3xl p-6 shadow-2xl max-h-[86vh] overflow-y-auto"
               style={{ background: theme.isDark ? 'rgba(22,22,26,0.98)' : 'rgba(255,255,255,0.98)', border: `1px solid ${theme.border}` }}>

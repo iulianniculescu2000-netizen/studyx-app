@@ -105,7 +105,7 @@ export default function QuizList() {
                   <BookOpen size={20} />
                 </div>
                 <h1 className="text-3xl font-black tracking-tight" style={{ color: theme.text }}>
-                  Grilele <span style={{ color: theme.accent }}>Tale</span>
+                  Grilele <span style={{ color: theme.accentText }}>Tale</span>
                 </h1>
               </div>
               <p className="text-sm font-medium opacity-50" style={{ color: theme.text }}>
@@ -194,7 +194,7 @@ export default function QuizList() {
               className="text-center py-24 rounded-[40px] glass-panel border border-dashed border-[var(--hairline)] premium-shadow">
               <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
                 style={{ background: `${theme.accent}12` }}>
-                <BookOpen size={36} style={{ color: theme.accent, opacity: 0.6 }} />
+                <BookOpen size={36} style={{ color: theme.accentText, opacity: 0.6 }} />
               </div>
               <h2 className="text-2xl font-black mb-2" style={{ color: theme.text }}>
                 {search || category !== 'Toate' ? 'Nicio grilă găsită' : 'Biblioteca ta este goală'}
@@ -208,7 +208,7 @@ export default function QuizList() {
                 {(search || category !== 'Toate' || activeTag) && (
                   <button onClick={() => { setSearch(''); setCategory('Toate'); setActiveTag(null); }}
                     className="fine-row press-feedback px-6 py-3 rounded-2xl font-bold"
-                    style={{ color: theme.accent }}>
+                    style={{ color: theme.accentText }}>
                     Resetează filtrele
                   </button>
                 )}

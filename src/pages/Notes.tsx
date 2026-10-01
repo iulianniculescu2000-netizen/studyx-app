@@ -261,7 +261,7 @@ export default function Notes() {
                   {quiz ? (
                     <Link to={`/quiz/${quiz.id}`}
                       className="flex items-center gap-2 hover:underline"
-                      style={{ color: theme.accent }}>
+                      style={{ color: theme.accentText }}>
                       <span className="text-lg">{quiz.emoji}</span>
                       <span className="font-semibold text-sm">{quiz.title}</span>
                     </Link>
@@ -299,7 +299,7 @@ export default function Notes() {
                               to={`/quiz/${n.quiz.id}`}
                               title="Deschide grila"
                               className="flex-shrink-0 p-1 rounded-lg opacity-60 hover:opacity-100 transition-opacity"
-                              style={{ color: theme.accent }}
+                              style={{ color: theme.accentText }}
                             >
                               <ExternalLink size={11} />
                             </Link>

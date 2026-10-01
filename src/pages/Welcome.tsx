@@ -109,7 +109,7 @@ export default function Welcome({ onBack }: Props) {
                   transition={{ delay: 0.2 }}
                   className="text-4xl font-bold tracking-tight mb-1.5"
                   style={{ color: theme.text }}>
-                  Bun venit la <span style={{ color: theme.accent }}>StudyX</span>
+                  Bun venit la <span style={{ color: theme.accentText }}>StudyX</span>
                 </motion.h1>
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
                   style={{ color: theme.text2 }}>
@@ -214,7 +214,7 @@ export default function Welcome({ onBack }: Props) {
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.25 }}
                       className="text-sm font-semibold mb-2"
-                      style={{ color: theme.accent }}>
+                      style={{ color: theme.accentText }}>
                       Salut, {name.trim()}! 👋 Arată bine.
                     </motion.p>
                   )}

@@ -86,7 +86,7 @@ export default function ToastContainer() {
                       removeToast(toast.id);
                     }}
                     className="mt-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-colors"
-                    style={{ background: `${theme.accent}1a`, color: theme.accent }}
+                    style={{ background: `${theme.accent}1a`, color: theme.accentText }}
                   >
                     {toast.action.label}
                   </button>

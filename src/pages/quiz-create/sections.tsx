@@ -1,3 +1,4 @@
+import Portal from '../../components/Portal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -325,7 +326,7 @@ export function QuizInfoStep({
             <span
               key={tag}
               className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
-              style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}30` }}
+              style={{ background: `${theme.accent}18`, color: theme.accentText, border: `1px solid ${theme.accent}30` }}
             >
               {tag}
               <button onClick={() => onRemoveTag(tag)}>
@@ -512,7 +513,7 @@ export function QuizAIGenerationPanel({
                 <button
                   onClick={onImportPdf}
                   className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg"
-                  style={{ background: theme.surface2, color: theme.accent, border: `1px solid ${theme.accent}30` }}
+                  style={{ background: theme.surface2, color: theme.accentText, border: `1px solid ${theme.accent}30` }}
                 >
                   <FileText size={11} />
                   Import PDF
@@ -656,7 +657,7 @@ export function QuizAIGenerationPanel({
                 <span className="text-xs font-medium" style={{ color: theme.text3 }}>
                   Generez...
                 </span>
-                <span className="text-xs font-semibold tabular-nums" style={{ color: theme.accent }}>
+                <span className="text-xs font-semibold tabular-nums" style={{ color: theme.accentText }}>
                   {aiProgress.generated}/{aiProgress.total}
                 </span>
               </div>
@@ -933,6 +934,7 @@ interface QuestionPreviewModalProps {
 
 export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPreviewModalProps) {
   return (
+    <Portal>
     <AnimatePresence>
       {previewQ && (
         <>
@@ -941,14 +943,14 @@ export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPrevi
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-50"
-            style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+            className="fixed inset-0 z-[200]"
+            style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }}
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: -20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed top-[8%] left-1/2 z-50 w-full max-w-xl -translate-x-1/2 px-4"
+            className="fixed top-[8%] left-1/2 z-[201] w-full max-w-xl -translate-x-1/2 px-4"
           >
             <div
               className="rounded-3xl p-6 shadow-2xl"
@@ -958,7 +960,7 @@ export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPrevi
               }}
             >
               <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accentText }}>
                   Previzualizare
                 </span>
                 <button onClick={onClose} style={{ color: theme.text3 }}>
@@ -1006,7 +1008,7 @@ export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPrevi
               {previewQ.explanation && (
                 <div className="mt-4 p-3 rounded-xl" style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}20` }}>
                   <p className="text-xs" style={{ color: theme.text2 }}>
-                    <span className="font-semibold" style={{ color: theme.accent }}>Explicație: </span>
+                    <span className="font-semibold" style={{ color: theme.accentText }}>Explicație: </span>
                     {previewQ.explanation}
                   </p>
                 </div>
@@ -1016,5 +1018,6 @@ export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPrevi
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }

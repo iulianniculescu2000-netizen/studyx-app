@@ -68,13 +68,23 @@ export function extractBalancedJson(raw: string): string | null {
 }
 
 /**
+ * Index of the first `[` that opens an array of objects (`[{` or `[ {`), or -1.
+ * A preamble can hold a stray `[note]`, and a cut-off reply can end inside an
+ * inner `"options": [...]`, so the outermost array of objects is the one to keep.
+ */
+function findArrayOfObjectsStart(text: string): number {
+  const match = /\[\s*\{/.exec(text);
+  return match ? match.index : -1;
+}
+
+/**
  * Rebuilds an array from the complete objects of a truncated one. A reply cut
  * mid-object still usually carries several finished questions before the cut;
  * this keeps those instead of discarding the batch.
  */
 export function salvageJsonArrayObjects(raw: string): string | null {
   const cleaned = stripFences(raw);
-  const start = cleaned.indexOf('[');
+  const start = findArrayOfObjectsStart(cleaned);
   if (start === -1) return null;
 
   const objects: string[] = [];
@@ -104,6 +114,21 @@ export function salvageJsonArrayObjects(raw: string): string | null {
  * otherwise as many complete elements as survived the truncation.
  */
 export function extractJsonArrayLenient(raw: string): string | null {
+  const cleaned = stripFences(raw);
+  const start = findArrayOfObjectsStart(cleaned);
+  if (start !== -1) {
+    const end = findBalancedEnd(cleaned, start);
+    if (end !== -1) {
+      const whole = cleaned.slice(start, end);
+      try {
+        JSON.parse(whole);
+        return whole;
+      } catch {
+        // Balanced but malformed — fall through to salvage.
+      }
+    }
+    return salvageJsonArrayObjects(raw) ?? extractBalancedJson(raw);
+  }
   const balanced = extractBalancedJson(raw);
   if (balanced && balanced.trimStart().startsWith('[')) return balanced;
   return salvageJsonArrayObjects(raw) ?? balanced;

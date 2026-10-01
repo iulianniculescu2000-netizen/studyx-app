@@ -87,6 +87,7 @@ import { useChatGlass } from './ai-chat/useChatGlass';
 import { useSidebarInset } from './ai-chat/useSidebarInset';
 import { useWindowSize } from '../hooks/useWindowSize';
 import ChatGlassControls from './ai-chat/ChatGlassControls';
+import ConfirmDialog from './ConfirmDialog';
 import { useStudioGeneration } from './ai-chat/useStudioGeneration';
 import {
   CHAT_MODES,
@@ -182,6 +183,7 @@ export default function AIChatDrawer() {
   const quizFolders = useFolderStore((state) => state.folders);
   const aiLibraryFolders = useAIStore((state) => state.libraryFolders);
   const [glassPanelOpen, setGlassPanelOpen] = useState(false);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
   const { scopedSource, setScopedSource, contextCacheRef } = useScopedSource();
   // Rezidențiat gets its own isolated conversation, live anywhere inside that
@@ -1186,7 +1188,7 @@ export default function AIChatDrawer() {
                   {message.role === 'assistant' && message.autoMode && message.mode && (
                     <div
                       className="mb-2 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em]"
-                      style={{ background: `${theme.accent}14`, color: theme.accent }}
+                      style={{ background: `${theme.accent}14`, color: theme.accentText }}
                       title="Mod ales automat din mesajul tău"
                     >
                       ✨ {CHAT_MODES.find((m) => m.id === message.mode)?.label ?? message.mode}
@@ -1196,7 +1198,7 @@ export default function AIChatDrawer() {
                   {isLastAssistant && loading ? (
                     <>
                       <span className="ai-rich-text font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
-                      <span className="streaming-cursor" style={{ color: theme.accent }}>▌</span>
+                      <span className="streaming-cursor" style={{ color: theme.accentText }}>▌</span>
                     </>
                   ) : (
                     <span className="ai-rich-text font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
@@ -1342,7 +1344,7 @@ export default function AIChatDrawer() {
                 className="flex items-center gap-2.5 rounded-[22px] border px-4 py-3"
                 style={{ background: theme.surface2, borderColor: theme.border }}
               >
-                <Loader2 size={16} className="animate-spin" style={{ color: theme.accent }} />
+                <Loader2 size={16} className="animate-spin" style={{ color: theme.accentText }} />
                 <span className="text-[13px] font-semibold" style={{ color: theme.text2 }}>
                   {thinkingPhase ?? 'Mă gândesc…'}
                 </span>
@@ -1629,7 +1631,7 @@ export default function AIChatDrawer() {
                               <>
                                 <div className="my-1 h-px" style={{ background: theme.border }} />
                                 <button
-                                  onClick={() => { clearConversation(); setOverflowMenuOpen(false); }}
+                                  onClick={() => { setConfirmClearOpen(true); setOverflowMenuOpen(false); }}
                                   className="fine-row flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-[var(--hover-fill)]"
                                   style={{ color: theme.danger }}
                                 >
@@ -1730,7 +1732,7 @@ export default function AIChatDrawer() {
                       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-5">
                       <GlassCard variant="strong" radius="28px" padding="16px">
                         <div className="mb-3 flex items-center gap-2">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                             <Wand2 size={18} />
                           </div>
                           <div className="min-w-0 flex-1">
@@ -1813,7 +1815,7 @@ export default function AIChatDrawer() {
                               </span>
                               <div className="rounded-2xl border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
                                 <div className="flex items-center gap-2 text-sm font-semibold [overflow-wrap:anywhere]" style={{ color: theme.text }}>
-                                  <FolderOpen size={14} className="flex-shrink-0" style={{ color: theme.accent }} />
+                                  <FolderOpen size={14} className="flex-shrink-0" style={{ color: theme.accentText }} />
                                   {describePlacement(studioResidencyPlacement)}
                                 </div>
                                 <div className="mt-1 text-[11px]" style={{ color: theme.text3 }}>
@@ -1945,7 +1947,7 @@ export default function AIChatDrawer() {
                                   Destinație
                                 </div>
                                 <div className="mt-2 flex items-center gap-2 text-sm font-semibold" style={{ color: theme.text }}>
-                                  <FolderOpen size={14} style={{ color: theme.accent }} />
+                                  <FolderOpen size={14} style={{ color: theme.accentText }} />
                                   {studioResidencyPlacement
                                     ? describePlacement(studioResidencyPlacement)
                                     : selectedStudioFolder ? `${selectedStudioFolder.emoji} ${selectedStudioFolder.name}` : 'Neclasificate'}
@@ -2021,7 +2023,7 @@ export default function AIChatDrawer() {
                             borderColor: `${theme.accent}25`,
                             color: theme.text,
                           }}>
-                          <div className="mt-0.5" style={{ color: theme.accent }}><Sparkles size={14} /></div>
+                          <div className="mt-0.5" style={{ color: theme.accentText }}><Sparkles size={14} /></div>
                           <div className="flex-1">
                             <span className="font-bold opacity-80 uppercase tracking-widest text-[9px] block mb-1">Tutor Contextual</span>
                             <span className="line-clamp-2 opacity-90">{activeQuizContext.questionText}</span>
@@ -2123,7 +2125,7 @@ export default function AIChatDrawer() {
                           <button
                             onClick={() => setModePickerOpen(true)}
                             className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all"
-                            style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}30` }}
+                            style={{ background: `${theme.accent}18`, color: theme.accentText, border: `1px solid ${theme.accent}30` }}
                             title="Modul răspunsului — apasă pentru a alege manual"
                           >
                             <Sparkles size={11} />
@@ -2222,7 +2224,7 @@ export default function AIChatDrawer() {
             exit={{ opacity: 0 }}
             onClick={() => setZoomedBlock(null)}
             className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-8"
-            style={{ background: 'rgba(0,0,0,0.62)', backdropFilter: performanceLite ? 'blur(6px)' : 'blur(14px)' }}
+            style={{ background: 'var(--overlay)', backdropFilter: performanceLite ? 'blur(6px)' : 'blur(14px)' }}
           >
             <motion.div
               initial={{ scale: 0.97, opacity: 0 }}
@@ -2245,6 +2247,15 @@ export default function AIChatDrawer() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={confirmClearOpen}
+        title="Golești conversația?"
+        description="Mesajele din acest fir se șterg de pe acest dispozitiv și nu mai pot fi recuperate."
+        confirmLabel="Golește"
+        onConfirm={() => { setConfirmClearOpen(false); clearConversation(); }}
+        onCancel={() => setConfirmClearOpen(false)}
+      />
     </>
   );
 }

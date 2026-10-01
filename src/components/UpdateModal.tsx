@@ -597,7 +597,7 @@ export default function UpdateModal() {
                                                   padding: '3px 8px',
                                                   borderRadius: 999,
                                                   background: `${theme.accent}16`,
-                                                  color: theme.accent,
+                                                  color: theme.accentText,
                                                 }}
                                               >
                                                 {deliveryLabel}
@@ -648,7 +648,7 @@ export default function UpdateModal() {
                                         }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, alignItems: 'center' }}>
                                             <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Se descarcă pachetul...</span>
-                                            <span style={{ fontSize: 13, fontWeight: 800, color: theme.accent, fontFamily: 'monospace' }}>{downloadPercent}%</span>
+                                            <span style={{ fontSize: 13, fontWeight: 800, color: theme.accentText, fontFamily: 'monospace' }}>{downloadPercent}%</span>
                                           </div>
                                           <div style={{ height: 6, borderRadius: 3, background: theme.surface2, overflow: 'hidden' }}>
                                             <motion.div

@@ -107,7 +107,7 @@ export default function PremiumSelect({ options, value, onChange, icon }: Props)
                         <span className="text-xs font-bold" style={{ color: isActive ? theme.accent : theme.text2 }}>
                           {opt.label}
                         </span>
-                        {isActive && <Check size={14} style={{ color: theme.accent }} />}
+                        {isActive && <Check size={14} style={{ color: theme.accentText }} />}
                       </button>
                     );
                   })}

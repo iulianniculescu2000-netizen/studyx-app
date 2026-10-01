@@ -298,14 +298,14 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                   <button
                     onClick={() => setShowGuide((v) => !v)}
                     className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] font-black hover:opacity-80 transition-opacity"
-                    style={{ color: theme.accent }}
+                    style={{ color: theme.accentText }}
                   >
                     <Gift size={12} /> Cum obțin o cheie gratuită?
                     <ChevronDown size={12} style={{ transform: showGuide ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                   </button>
                   {showGuide && (
                     <div className="mt-3 rounded-2xl p-4" style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}>
-                      <p className="mb-3 text-[11px] font-bold" style={{ color: theme.accent }}>
+                      <p className="mb-3 text-[11px] font-bold" style={{ color: theme.accentText }}>
                         {KEY_GUIDE[provider].intro}
                       </p>
                       <ol className="space-y-2">
@@ -349,7 +349,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                     </div>
                   )}
                   {verifying && (
-                    <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold" style={{ color: theme.accent }}>
+                    <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold" style={{ color: theme.accentText }}>
                       <Loader2 size={12} className="animate-spin" /> Verific cheia cu {activeProvider.name}…
                     </p>
                   )}
@@ -416,7 +416,7 @@ export default function AISettings({ open, onClose }: AISettingsProps) {
                       onClick={() => void handleRefreshModel()}
                       disabled={refreshingModel || !hasAnyProviderKey}
                       className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] disabled:opacity-40"
-                      style={{ background: theme.surface2, color: theme.accent, border: `1px solid ${theme.border}` }}
+                      style={{ background: theme.surface2, color: theme.accentText, border: `1px solid ${theme.border}` }}
                       title="Verifică toate providerele AI configurate și trece automat pe modelele care încă funcționează"
                     >
                       {refreshingModel

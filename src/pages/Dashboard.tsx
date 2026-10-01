@@ -168,7 +168,7 @@ function RecentQuizzesSection({
         <h2 className="section-title flex items-center gap-2" style={{ color: theme.text }}>
           <Sparkles size={18} /> Grile recente
         </h2>
-        <Link to="/quizzes" className="text-xs font-bold uppercase tracking-widest hover:underline" style={{ color: theme.accent }}>
+        <Link to="/quizzes" className="text-xs font-bold uppercase tracking-widest hover:underline" style={{ color: theme.accentText }}>
           Vezi tot
         </Link>
       </div>
@@ -249,7 +249,7 @@ export default function Dashboard() {
 
   const greeting = hour < 12 ? 'Bună dimineața' : hour < 18 ? 'Bună ziua' : 'Bună seara';
   const stats: DashboardStat[] = [
-    { label: 'Grile', numeric: quizOnlyCount, display: String(animatedQuizzes), suffix: '', color: theme.accent, delta: trends.quizzes },
+    { label: 'Grile', numeric: quizOnlyCount, display: String(animatedQuizzes), suffix: '', color: theme.accentText, delta: trends.quizzes },
     // A streak has no meaningful week-over-week percentage — the number itself
     // already says everything, so it carries no badge.
     { label: 'Streak', numeric: streak.currentStreak, display: `${animatedStreak} ${animatedStreak === 1 ? 'zi' : 'zile'}`, suffix: '', color: theme.warning },

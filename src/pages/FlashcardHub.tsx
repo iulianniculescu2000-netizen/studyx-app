@@ -12,6 +12,7 @@ import { useToastStore } from '../store/toastStore';
 import { friendlyAIError, rateLimitWaitSeconds } from '../lib/ai/friendlyError';
 import { suggestFlashcardFolder } from '../lib/flashcardPlacement';
 import { useFolderStore } from '../store/folderStore';
+import { useFlashcardHubSession, getFlashcardResume, type FlashcardResumeHandle } from '../store/flashcardHubSessionStore';
 import { FlashcardGenerationInterrupted, NoNewFlashcardsError, notesToFlashcards } from '../lib/groq';
 import { buildMistakeFlashcardQuiz } from '../lib/adaptiveStudy';
 import { extractCaptionedImagesFromPdf, renderPdfPagesAsImages, renderPdfPagesWithText, resizeImageFile, type CaptionedPdfImage, type PdfFlashcardPageSnapshot } from '../lib/imageProcessing';
@@ -150,17 +151,26 @@ function pickKeywords(value: string) {
     .slice(0, 12);
 }
 
+/**
+ * Images travel inside the deck as data URLs, i.e. inside the profile's localStorage entry (a few MB in
+ * all). A handful of modest images is worth it; dozens of full pages would crowd out the user's data.
+ */
+const MAX_DECK_IMAGES = 10;
+const MAX_IMAGE_DATA_URL_CHARS = 260_000;
+
 function attachRelevantPdfImages(questions: Question[], pages: PdfFlashcardPageSnapshot[]) {
   if (pages.length === 0 || questions.length === 0) return questions;
 
   const visualCandidates = pages
     .flatMap((page) => page.visuals.map((visual) => ({ page, visual })))
+    .filter(({ visual }) => visual.dataUrl.length <= MAX_IMAGE_DATA_URL_CHARS)
     .slice(0, 40);
   if (visualCandidates.length === 0) return questions;
 
   const usedPages = new Set<number>();
 
   return questions.map((question) => {
+    if (usedPages.size >= MAX_DECK_IMAGES) return question;
     const keywords = pickKeywords(`${question.text} ${question.options[0]?.text ?? ''}`);
     let bestCandidate: typeof visualCandidates[number] | null = null;
     let bestScore = 0;
@@ -214,17 +224,14 @@ export default function FlashcardHub() {
   const [aiProgress, setAiProgress] = useState('');
   const [libraryGenerating, setLibraryGenerating] = useState(false);
   const [ankiModalOpen, setAnkiModalOpen] = useState(false);
-  const [createdDeck, setCreatedDeck] = useState<GeneratedDeckInfo | null>(null);
+  // Kept outside the page so leaving and coming back doesn't lose the card or the way to resume.
+  const hubSession = useFlashcardHubSession();
+  const createdDeck = hubSession.profileId === activeProfileId ? hubSession.createdDeck : null;
+  const setCreatedDeck = (next: GeneratedDeckInfo | null | ((previous: GeneratedDeckInfo | null) => GeneratedDeckInfo | null)) => (
+    useFlashcardHubSession.getState().setCreatedDeck(activeProfileId, next)
+  );
+  const setResume = (next: FlashcardResumeHandle | null) => useFlashcardHubSession.getState().setResume(activeProfileId, next);
   const [resuming, setResuming] = useState(false);
-  // What "Continuă generarea" needs to pick the run up where it stopped.
-  const resumeRef = useRef<{
-    deckId: string;
-    text: string;
-    sourceName: string;
-    requested: number;
-    nextChunk: number;
-    pages: PdfFlashcardPageSnapshot[];
-  } | null>(null);
   const createdCardRef = useRef<HTMLDivElement>(null);
   const [targetFolderId, setTargetFolderId] = useState<string>(() => {
     if (typeof localStorage === 'undefined') return '__uncategorized__';
@@ -441,9 +448,9 @@ export default function FlashcardHub() {
         createdAt: Date.now(),
       });
 
-      resumeRef.current = outcome.interruption
+      setResume(outcome.interruption
         ? { deckId: id, text, sourceName, requested: aiCount, nextChunk: outcome.interruption.nextChunk, pages }
-        : null;
+        : null);
       announceGeneratedDeck({
         id,
         title,
@@ -523,9 +530,9 @@ export default function FlashcardHub() {
         createdAt: Date.now(),
       });
 
-      resumeRef.current = outcome.interruption
+      setResume(outcome.interruption
         ? { deckId: id, text, sourceName: source.name, requested: aiCount, nextChunk: outcome.interruption.nextChunk, pages: [] }
-        : null;
+        : null);
       announceGeneratedDeck({
         id,
         title,
@@ -548,7 +555,7 @@ export default function FlashcardHub() {
 
   // Picks an interrupted run up where it stopped and adds the new cards to the same deck.
   const resumeGeneration = async () => {
-    const resume = resumeRef.current;
+    const resume = getFlashcardResume(activeProfileId);
     const current = createdDeck;
     const deck = resume ? quizzes.find((quiz) => quiz.id === resume.deckId) : undefined;
     if (!resume || !current?.interrupted || !deck || resume.deckId !== current.id || resuming || aiLoading || libraryGenerating) return;
@@ -573,7 +580,7 @@ export default function FlashcardHub() {
       // Read the deck now: the user may have edited, or deleted, it while the AI worked.
       const liveDeck = useQuizStore.getState().quizzes.find((quiz) => quiz.id === deck.id);
       if (!liveDeck || useUserStore.getState().activeProfileId !== profileAtStart) {
-        resumeRef.current = null;
+        setResume(null);
         setCreatedDeck((previous) => (previous && previous.id === current.id ? null : previous));
         addToast('Pachetul nu mai este disponibil, deci cardurile noi nu au fost adăugate.', 'info', 6000);
         return;
@@ -586,7 +593,7 @@ export default function FlashcardHub() {
       const total = liveDeck.questions.length + fresh.length;
 
       if (outcome.interruption) {
-        resumeRef.current = { ...resume, nextChunk: outcome.interruption.nextChunk };
+        setResume({ ...resume, nextChunk: outcome.interruption.nextChunk });
         patchInfo({
           count: total,
           interrupted: {
@@ -598,13 +605,13 @@ export default function FlashcardHub() {
         });
         addToast(`${total} din ${resume.requested} flashcarduri. ${outcome.interruption.reason}`, 'warning', 9000);
       } else {
-        resumeRef.current = null;
+        setResume(null);
         patchInfo({ count: total, interrupted: undefined });
         addToast(`Gata: ${total} flashcarduri în pachet.`, 'success', 6000);
       }
     } catch (error: unknown) {
       if (error instanceof NoNewFlashcardsError) {
-        resumeRef.current = null;
+        setResume(null);
         patchInfo({ interrupted: undefined });
         addToast('Nu am mai găsit carduri noi în textul acestui curs.', 'info', 6000);
       } else {
@@ -1103,7 +1110,7 @@ export default function FlashcardHub() {
               onStart={() => navigate(`/flashcards/session/${visibleCreatedDeck.id}?mode=all`)}
               onResume={() => void resumeGeneration()}
               onDismiss={() => {
-                resumeRef.current = null;
+                setResume(null);
                 setCreatedDeck(null);
               }}
             />

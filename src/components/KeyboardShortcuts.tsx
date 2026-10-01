@@ -84,7 +84,7 @@ export default function KeyboardShortcuts() {
             exit={{ opacity: 0 }}
             transition={calmMotion ? { duration: 0.12 } : { duration: 0.18 }}
             className="fixed inset-0 z-[200]"
-            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(2px)' : 'blur(6px)' }}
+            style={{ background: 'var(--overlay)', backdropFilter: performanceLite ? 'blur(2px)' : 'blur(6px)' }}
             onClick={() => setOpen(false)}
           />
 
@@ -106,7 +106,7 @@ export default function KeyboardShortcuts() {
               style={{ borderBottom: `1px solid ${theme.border}` }}>
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-                  style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                  style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                   <Command size={15} />
                 </div>
                 <div>

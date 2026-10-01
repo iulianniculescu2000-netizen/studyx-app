@@ -72,7 +72,7 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
                   {path.difficulty.toUpperCase()}
                 </span>
                 {path.aiOptimized && (
-                  <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                  <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                     ✨ AI Optimizat
                   </span>
                 )}
@@ -108,7 +108,7 @@ export default function AIPredictiveStudyPaths({ studyPaths }: AIPredictiveStudy
             </div>
 
             <div className="flex items-center gap-2">
-              <Users className="w-4 h-4" style={{ color: theme.accent }} />
+              <Users className="w-4 h-4" style={{ color: theme.accentText }} />
               <div>
                 <p className="text-xs" style={{ color: theme.text3 }}>Timp/săptămână</p>
                 <p className="text-sm font-medium" style={{ color: theme.text }}>

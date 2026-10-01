@@ -82,7 +82,7 @@ export default function DashboardTipStrip({ context }: { context: AppTipContext 
             transition={{ duration: calmMotion ? 0.16 : 0.28 }}
             className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
           >
-            <span className="text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: theme.accent }}>
+            <span className="text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: theme.accentText }}>
               Știai că
             </span>
             <span className="min-w-[12rem] flex-1 text-[13px] font-semibold leading-snug" style={{ color: theme.text2 }}>
@@ -92,7 +92,7 @@ export default function DashboardTipStrip({ context }: { context: AppTipContext 
               <button
                 onClick={() => navigate(tip.action!.route)}
                 className="press-feedback inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black transition-[filter,box-shadow] duration-300 hover:brightness-110 hover:shadow-[0_2px_10px_var(--shadow-color-soft)] outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
-                style={{ background: `${theme.accent}14`, color: theme.accent }}
+                style={{ background: `${theme.accent}14`, color: theme.accentText }}
               >
                 {tip.action.label}
                 <ArrowRight size={11} />

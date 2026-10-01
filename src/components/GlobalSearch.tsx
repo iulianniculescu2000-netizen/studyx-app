@@ -1,3 +1,4 @@
+import Portal from './Portal';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -234,6 +235,7 @@ export default function GlobalSearch() {
   }, [safeActiveIdx]);
 
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <>
@@ -243,8 +245,8 @@ export default function GlobalSearch() {
             exit={{ opacity: 0 }}
             transition={calmMotion ? { duration: 0.12 } : { duration: 0.15 }}
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-50"
-            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(3px)' : 'blur(7px)' }}
+            className="fixed inset-0 z-[200]"
+            style={{ background: 'var(--overlay)', backdropFilter: performanceLite ? 'blur(3px)' : 'blur(7px)' }}
           />
 
           <motion.div
@@ -252,7 +254,7 @@ export default function GlobalSearch() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -12 }}
             transition={calmMotion ? { duration: 0.18, ease: 'easeOut' } : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed left-1/2 z-50 w-full max-w-[min(720px,calc(100vw-24px))] -translate-x-1/2"
+            className="fixed left-1/2 z-[200] w-full max-w-[min(720px,calc(100vw-24px))] -translate-x-1/2"
             style={{ top: 'clamp(72px, 12vh, 132px)', paddingInline: 12 }}
           >
             <div className="premium-modal overflow-hidden rounded-[30px] shadow-2xl">
@@ -407,6 +409,7 @@ export default function GlobalSearch() {
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }
 

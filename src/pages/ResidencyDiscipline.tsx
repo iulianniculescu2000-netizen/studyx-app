@@ -10,7 +10,7 @@ import { useFolderStore } from '../store/folderStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import BookShelf from '../components/residency/BookShelf';
 import { useRezidentiatOverview, useResidencyBooks } from '../components/residency/useResidencyData';
-import { bookDisciplineHint, disciplineKey, type SpecialtyOverview } from '../lib/rezidentiatOverview';
+import { bookDisciplineHint, disciplineKey, isFolderSessionQuiz, type SpecialtyOverview } from '../lib/rezidentiatOverview';
 import { startKumarDeck } from '../lib/startKumarDeck';
 import { startQuizMix } from '../lib/quizMixSession';
 import { REZIDENTIAT_BANKS } from '../lib/rezidentiatBank';
@@ -94,6 +94,21 @@ function SpecialtyDetail({ specialty }: { specialty: SpecialtyOverview }) {
   const next = specialty.quizzes.find((quiz) => !bestByQuiz.has(quiz.id)) ?? specialty.quizzes[0];
   const untouched = specialty.answered === 0;
 
+  // Archived sets drop out of the overview; keep them reachable (and restorable) right under the active ones.
+  const allQuizzes = useQuizStore((state) => state.quizzes);
+  const toggleArchive = useQuizStore((state) => state.toggleArchive);
+  const folders = useFolderStore((state) => state.folders);
+  const archived = useMemo(() => {
+    const inside = new Set([specialty.folder.id]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const folder of folders) {
+        if (folder.parentId && inside.has(folder.parentId) && !inside.has(folder.id)) { inside.add(folder.id); grew = true; }
+      }
+    }
+    return allQuizzes.filter((quiz) => quiz.archived && quiz.kind !== 'flashcard' && !!quiz.folderId && inside.has(quiz.folderId) && !isFolderSessionQuiz(quiz));
+  }, [allQuizzes, folders, specialty.folder.id]);
+
   return (
     <div className="min-w-0 space-y-3">
       <div className="rounded-2xl p-4" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
@@ -169,6 +184,36 @@ function SpecialtyDetail({ specialty }: { specialty: SpecialtyOverview }) {
           </div>
         </div>
       ))}
+
+      {archived.length > 0 && (
+        <details className="group">
+          <summary className="mb-1.5 mt-1 cursor-pointer select-none px-1 text-[12px] font-medium tracking-wide" style={{ color: theme.text3 }}>
+            ARHIVATE ({archived.length})
+          </summary>
+          <div className="overflow-hidden rounded-2xl" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
+            {archived.map((quiz, index) => (
+              <div
+                key={quiz.id}
+                className="flex items-center gap-3 px-4 py-3"
+                style={{ borderTop: index === 0 ? undefined : '1px solid var(--hairline)' }}
+              >
+                <Link to={`/quiz/${quiz.id}`} className="min-w-0 flex-1">
+                  <div className="truncate text-[14px] font-semibold" style={{ color: theme.text2 }}>{shortTitle(quiz.title, specialty.name)}</div>
+                  <div className="text-[12px]" style={{ color: theme.text3 }}>{quiz.questions.length} grile</div>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => toggleArchive(quiz.id)}
+                  className="fine-chip press-feedback flex-shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-medium"
+                  style={{ color: theme.accentText }}
+                >
+                  Restaurează
+                </button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -204,8 +249,12 @@ export default function ResidencyDiscipline() {
     const root = findRezidentiatRootFolder(folders);
     const folder = root ? folders.find((f) => f.parentId === root.id && f.name === REZIDENTIAT_AI_FLASHCARDS_FOLDER_NAME) : null;
     if (!folder) return [];
-    return quizzes.filter((q) => q.folderId === folder.id && !q.archived && q.kind === 'flashcard');
-  }, [folders, quizzes]);
+    // A deck belongs to the discipline of the book it was generated from (its tags carry the book's name);
+    // decks from books without a clear discipline show under disciplines that have none either.
+    const key = discipline ? disciplineKey(discipline.folder.name) : null;
+    const deckDiscipline = (deck: Quiz) => (deck.tags ?? []).map(bookDisciplineHint).find((hint) => hint !== null) ?? null;
+    return quizzes.filter((q) => q.folderId === folder.id && !q.archived && q.kind === 'flashcard' && deckDiscipline(q) === key);
+  }, [folders, quizzes, discipline]);
 
   if (!hydrated) return <div className="h-full" aria-busy="true" />;
 
@@ -220,7 +269,7 @@ export default function ResidencyDiscipline() {
       <div className="h-full overflow-y-auto px-4 py-10 sm:px-8">
         <div className="mx-auto max-w-3xl text-center">
           <p className="mb-3 text-sm" style={{ color: theme.text3 }}>Disciplina nu a fost găsită.</p>
-          <Link to="/rezidentiat" className="text-[13px] font-semibold" style={{ color: theme.accent }}>Înapoi la Rezidențiat</Link>
+          <Link to="/rezidentiat" className="text-[13px] font-semibold" style={{ color: theme.accentText }}>Înapoi la Rezidențiat</Link>
         </div>
       </div>
     );
@@ -243,7 +292,7 @@ export default function ResidencyDiscipline() {
   return (
     <div className="h-full overflow-y-auto px-4 py-6 sm:px-8 sm:py-10">
       <div className="mx-auto max-w-3xl space-y-5">
-        <Link to="/rezidentiat" className="press-feedback inline-flex items-center gap-0.5 text-[13.5px] font-medium" style={{ color: theme.accent }}>
+        <Link to="/rezidentiat" className="press-feedback inline-flex items-center gap-0.5 text-[13.5px] font-medium" style={{ color: theme.accentText }}>
           <ChevronLeft size={16} /> Rezidențiat
         </Link>
         <motion.header initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -307,7 +356,7 @@ export default function ResidencyDiscipline() {
                 className="fine-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
                 style={{ borderRadius: 0 }}
               >
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                   <Layers size={18} />
                 </div>
                 <div className="min-w-0 flex-1">

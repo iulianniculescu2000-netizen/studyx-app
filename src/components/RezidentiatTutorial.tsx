@@ -68,7 +68,7 @@ function ChaptersDemo({ theme }: { theme: Theme }) {
   const actions = useMemo(
     () => [
       { id: 'discuss', label: 'Discută', Icon: MessageCircle, color: theme.text2 },
-      { id: 'generate', label: 'Generează grile', Icon: Sparkles, color: theme.accent },
+      { id: 'generate', label: 'Generează grile', Icon: Sparkles, color: theme.accentText },
       { id: 'flashcards', label: 'Flashcarduri', Icon: CreditCard, color: theme.success },
     ] as const,
     [theme],
@@ -83,7 +83,7 @@ function ChaptersDemo({ theme }: { theme: Theme }) {
     <DemoFrame theme={theme}>
       <div className="w-full max-w-[340px] rounded-[16px] border px-4 py-3" style={{ background: theme.surface2, borderColor: theme.border }}>
         <div className="flex items-center gap-2.5 mb-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: theme.surface, color: theme.accent }}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: theme.surface, color: theme.accentText }}>
             <BookOpen size={14} />
           </div>
           <div className="min-w-0">
@@ -248,7 +248,7 @@ function DedicatedAiDemo({ theme }: { theme: Theme }) {
               className="flex justify-start"
             >
               <div className="max-w-[85%] rounded-[14px] rounded-tl-[4px] border px-3 py-2" style={{ background: theme.surface2, borderColor: theme.border }}>
-                <div className="flex items-center gap-1.5 mb-1 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.accent }}>
+                <div className="flex items-center gap-1.5 mb-1 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.accentText }}>
                   <Bot size={10} /> AI Rezidențiat
                 </div>
                 <div className="space-y-1">
@@ -421,7 +421,7 @@ export default function RezidentiatTutorial() {
                   <ShieldCheck size={17} />
                 </motion.div>
                 <div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: theme.accent }}>
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: theme.accentText }}>
                     Tur rapid
                   </div>
                   <div className="text-[13px] font-black tracking-tight" style={{ color: theme.text }}>
@@ -455,7 +455,7 @@ export default function RezidentiatTutorial() {
                   <div className="mt-5 text-center">
                     <span
                       className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em]"
-                      style={{ background: `${theme.accent}12`, borderColor: `${theme.accent}30`, color: theme.accent }}
+                      style={{ background: `${theme.accent}12`, borderColor: `${theme.accent}30`, color: theme.accentText }}
                     >
                       <Sparkles size={10} />
                       {slide.badge}

@@ -100,7 +100,7 @@ function HeroDemo({ theme }: { theme: Theme }) {
                   y: Math.sin(angle) * radiusY,
                   background: theme.surface2,
                   borderColor: theme.border,
-                  color: theme.accent,
+                  color: theme.accentText,
                   willChange: 'transform',
                 }}
                 animate={{ rotate: -360 }}
@@ -183,7 +183,7 @@ function AgentOutcomeDemo({ theme }: { theme: Theme }) {
             className="rounded-[14px] rounded-tl-[4px] border px-3 py-2.5"
             style={{ background: theme.surface2, borderColor: theme.border }}
           >
-            <div className="mb-1 flex items-center gap-1.5 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.accent }}>
+            <div className="mb-1 flex items-center gap-1.5 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.accentText }}>
               <Bot size={10} /> Agent
             </div>
             <div className="text-[11px] font-semibold" style={{ color: theme.text2 }}>
@@ -464,7 +464,7 @@ export default function WhatsNewTour() {
                   <Rocket size={17} />
                 </motion.div>
                 <div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: theme.accent }}>
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: theme.accentText }}>
                     Ce e nou
                   </div>
                   <div className="text-[13px] font-black tracking-tight" style={{ color: theme.text }}>
@@ -499,7 +499,7 @@ export default function WhatsNewTour() {
                   <div className="mt-5 text-center">
                     <span
                       className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em]"
-                      style={{ background: `${theme.accent}12`, borderColor: `${theme.accent}30`, color: theme.accent }}
+                      style={{ background: `${theme.accent}12`, borderColor: `${theme.accent}30`, color: theme.accentText }}
                     >
                       <Sparkles size={10} />
                       {slide.badge}

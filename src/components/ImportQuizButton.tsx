@@ -125,7 +125,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
               exit={{ opacity: 0 }}
               onClick={closeModal}
               className="fixed inset-0 z-50"
-              style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+              style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: -20 }}

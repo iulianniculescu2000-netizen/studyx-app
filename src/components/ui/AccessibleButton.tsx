@@ -57,7 +57,7 @@ const AccessibleButton = forwardRef<HTMLButtonElement, AccessibleButtonProps>(
         case 'outline':
           return {
             background: 'transparent',
-            color: theme.accent,
+            color: theme.accentText,
             borderColor: theme.accent
           };
         case 'ghost':

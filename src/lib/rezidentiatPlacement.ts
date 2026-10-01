@@ -86,7 +86,10 @@ const bookLabel = (sourceName: string) => sourceName.replace(/\.(pdf|docx|txt|md
 
 /** Keywords of a free-form topic → the specialty it belongs to (names as in the imported banks). */
 const TOPIC_RULES: Array<{ test: RegExp; specialty: string }> = [
-  { test: /mielom|limfom|leucemi|anemi|hemofili|trombocitopeni|coagulopat|talasemi|policitemi|mielodisplaz|hemato/, specialty: 'Hematologie' },
+  // Before the broader rules: "hematom subdural" is not hematology, "diabet insipid" is not diabetes mellitus.
+  { test: /hematom (subdural|epidural|intracranian)|subdural|epidural/, specialty: 'Neurochirurgie' },
+  { test: /diabet insipid/, specialty: 'Endocrinologie' },
+  { test: /mielom|limfom|leucemi|anemi|hemofili|trombocitopeni|coagulopat|talasemi|policitemi|mielodisplaz|hematolog/, specialty: 'Hematologie' },
   { test: /infarct|angin[aă] pectoral|aritmi|fibrila[tț]i|insuficien[tț][aă] cardiac|valvulopat|endocardit|pericardit|cardiomiopat|sincop|cardio/, specialty: 'Cardiologie' },
   { test: /hipertensiune arterial|\bhta\b/, specialty: 'Hipertensiune arterială' },
   { test: /pneumoni|astm|bpoc|tuberculoz|pneumotorax|embolie pulmonar|pleuraz|pleuriz|bronsit|pneumolog/, specialty: 'Pneumologie' },
@@ -224,7 +227,7 @@ export function adoptStrayResidencyQuizzes(): number {
   ));
   for (const quiz of stray) {
     const target = ensureTopicFolder(quiz.title);
-    useQuizStore.getState().updateQuiz(quiz.id, { folderId: target.id, category: target.name });
+    useQuizStore.getState().updateQuiz(quiz.id, { folderId: target.id, ...(quiz.category ? {} : { category: target.name }) });
   }
   return stray.length;
 }

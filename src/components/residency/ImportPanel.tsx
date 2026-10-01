@@ -74,7 +74,7 @@ export default function ImportPanel() {
             onClick={() => void runItems(pending, 'all')}
             disabled={!!busyKey}
             className="flex items-center gap-1.5 text-[12.5px] font-semibold disabled:opacity-60"
-            style={{ color: theme.accent }}
+            style={{ color: theme.accentText }}
           >
             {busyKey === 'all' && <Loader2 size={12} className="animate-spin" />}
             Adaugă tot
@@ -97,7 +97,7 @@ export default function ImportPanel() {
               onClick={() => void runItems([item], item.key)}
               disabled={!!busyKey}
               className="fine-chip press-feedback flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold disabled:opacity-60"
-              style={{ color: theme.accent }}
+              style={{ color: theme.accentText }}
             >
               {busyKey === item.key || busyKey === 'all' ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
               Adaugă

@@ -13,6 +13,8 @@ export interface Theme {
   text3: string;
   accent: string;
   accent2: string;
+  /** The accent as small text: darker in the light theme, where #007AFF on white is under 4.5:1. */
+  accentText: string;
   success: string;
   danger: string;
   warning: string;
@@ -69,6 +71,7 @@ export const THEMES = {
     text3: '#6E6E73',
     accent: '#007AFF',
     accent2: '#5E5CE6',
+    accentText: '#0062CC',
     success: '#238636',
     danger: '#D70015',
     warning: '#B25000',
@@ -104,6 +107,7 @@ export const THEMES = {
     text3: '#8E8E93',
     accent: '#0A84FF',
     accent2: '#5E5CE6',
+    accentText: '#0A84FF',
     success: '#30D158',
     danger: '#FF453A',
     warning: '#FF9F0A',

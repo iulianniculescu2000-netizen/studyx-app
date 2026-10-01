@@ -1,3 +1,4 @@
+import Portal from '../components/Portal';
 import ThemeModeSwitcher from '../components/ThemeModeSwitcher';
 import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -48,6 +49,7 @@ function ConfirmResetModal({
   const theme = useTheme();
 
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <>
@@ -93,6 +95,7 @@ function ConfirmResetModal({
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }
 
@@ -436,7 +439,7 @@ export default function Settings() {
               whileTap={calmMotion ? undefined : { scale: 0.97 }}
               onClick={() => void rerunHealthCheck()}
               className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
-              style={{ background: `${theme.accent}10`, borderColor: `${theme.accent}30`, color: theme.accent }}
+              style={{ background: `${theme.accent}10`, borderColor: `${theme.accent}30`, color: theme.accentText }}
             >
               Rulează health check
             </motion.button>

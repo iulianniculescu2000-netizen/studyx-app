@@ -245,6 +245,16 @@ function estimateMessagesTokens(messages: GroqMessage[]): number {
  * on 429. When a fallback provider is available we retry less (fail fast → switch);
  * on the last provider we ride out per-minute rate limits with more attempts.
  */
+/** A timer Stop can cut short: rejects with an AbortError the moment the signal fires. */
+function sleepMs(ms: number, abortSignal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+    const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+    const timer = setTimeout(() => { abortSignal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 async function attemptOnProvider(
   cfg: { name: string; endpoint: string },
   link: { key: string; model: string; provider?: ProviderId },
@@ -282,7 +292,7 @@ async function attemptOnProvider(
           if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds * 1000 > MAX_RATE_LIMIT_WAIT_MS) throw new NonRetryableError(msg);
           const delayMs = Math.min(getRetryDelayMs(attempt, retryAfter), MAX_RATE_LIMIT_WAIT_MS);
           logAIDebug('groq:ratelimit', { task, provider: cfg.name, retryAfter, delayMs });
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          await sleepMs(delayMs, abortSignal);
           continue;
         }
         if (NON_RETRYABLE_STATUSES.has(response.status)) throw new NonRetryableError(msg);
@@ -313,7 +323,7 @@ async function attemptOnProvider(
       lastError = error instanceof Error ? error.message : String(error);
       logAIDebug('groq:error', { task, provider: cfg.name, attempt, error: lastError });
       if (attempt < maxAttempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(attempt, null)));
+        await sleepMs(getRetryDelayMs(attempt, null), abortSignal);
       }
     }
   }
@@ -625,7 +635,7 @@ export async function groqRequest({
 export async function groqChat(
   messages: GroqMessage[],
   temperature = 0.7,
-  options: { skipLibraryContext?: boolean; task?: AIRequestTask; maxTokens?: number } = {},
+  options: { skipLibraryContext?: boolean; task?: AIRequestTask; maxTokens?: number; abortSignal?: AbortSignal } = {},
 ): Promise<string> {
   return groqRequest({
     task: options.task ?? 'chat',
@@ -633,6 +643,7 @@ export async function groqChat(
     temperature,
     maxTokens: options.maxTokens ?? 4096,
     skipLibraryContext: options.skipLibraryContext,
+    abortSignal: options.abortSignal,
   });
 }
 
@@ -1036,7 +1047,9 @@ function normalizeFlashcardKey(text: string) {
     .slice(0, 140);
 }
 
-function isDuplicateFlashcard(front: string, existingFronts: string[]) {
+const numbersIn = (text: string) => (text.match(/\d+/g) ?? []).join(',');
+
+export function isDuplicateFlashcard(front: string, existingFronts: string[]) {
   const normalized = normalizeFlashcardKey(front);
   if (!normalized) return true;
 
@@ -1044,9 +1057,11 @@ function isDuplicateFlashcard(front: string, existingFronts: string[]) {
     const candidate = normalizeFlashcardKey(existing);
     if (!candidate) return false;
     if (candidate === normalized) return true;
+    // "MEN1" and "MEN2", "stadiul 2" and "stadiul 3" differ by one character yet are different questions.
+    if (numbersIn(candidate) !== numbersIn(normalized)) return false;
     const maxLen = Math.max(candidate.length, normalized.length);
-    if (maxLen < 24) return candidate.includes(normalized) || normalized.includes(candidate);
-    return 1 - levenshtein(candidate, normalized) / maxLen > 0.82;
+    // Short fronts: a substring match ("HTA" inside "Tratamentul HTA") is not a repeat, only a near-identical wording is.
+    return 1 - levenshtein(candidate, normalized) / maxLen > (maxLen < 24 ? 0.85 : 0.82);
   });
 }
 
@@ -1091,10 +1106,10 @@ export class NoNewFlashcardsError extends Error {
 const AUTO_WAIT_MAX_SECONDS = 75;
 const AUTO_WAIT_MAX_TIMES = 3;
 
-async function sleepWithCountdown(seconds: number, onTick?: (secondsLeft: number) => void) {
+async function sleepWithCountdown(seconds: number, onTick?: (secondsLeft: number) => void, abortSignal?: AbortSignal) {
   for (let left = Math.ceil(seconds); left > 0; left -= 1) {
     onTick?.(left);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await sleepMs(1000, abortSignal);
   }
 }
 
@@ -1118,6 +1133,8 @@ export async function notesToFlashcards(
     startChunk?: number;
     /** Resume: the card count of the original request, so the chunk list matches the first run. */
     chunkBudget?: number;
+    /** Stop: cancels the request in flight and any rate-limit wait. */
+    abortSignal?: AbortSignal;
   } = {},
 ): Promise<{ front: string; back: string }[]> {
   if (!notesText || notesText.trim().length < 20)
@@ -1140,13 +1157,13 @@ export async function notesToFlashcards(
   const askModel = async (messages: GroqMessage[], temperature: number): Promise<string> => {
     for (;;) {
       try {
-        return await groqChat(messages, temperature, { skipLibraryContext: true, task: 'questions' });
+        return await groqChat(messages, temperature, { skipLibraryContext: true, task: 'questions', abortSignal: options.abortSignal });
       } catch (error: unknown) {
         const wait = rateLimitWaitSeconds(error);
         const canWait = options.onWait && wait !== null && wait <= AUTO_WAIT_MAX_SECONDS && autoWaits < AUTO_WAIT_MAX_TIMES;
         if (!canWait) throw error;
         autoWaits += 1;
-        await sleepWithCountdown(wait + 1, options.onWait);
+        await sleepWithCountdown(wait + 1, options.onWait, options.abortSignal);
       }
     }
   };

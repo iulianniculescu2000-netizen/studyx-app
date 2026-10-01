@@ -190,7 +190,7 @@ export default function AIPredictiveExamPredictions({
                   setExpandedPrediction(expandedPrediction === prediction.id ? null : prediction.id);
                 }}
                 className="press-feedback flex-1 px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center"
-                style={{ background: `${theme.accent}18`, color: theme.accent }}
+                style={{ background: `${theme.accent}18`, color: theme.accentText }}
               >
                 <Eye className="w-4 h-4 mr-2" />
                 Plan studiu
@@ -243,7 +243,7 @@ export default function AIPredictiveExamPredictions({
                         </div>
                         <div className="flex items-center gap-2">
                           {item.aiRecommended && (
-                            <span className="text-xs" style={{ color: theme.accent }}>✨ AI</span>
+                            <span className="text-xs" style={{ color: theme.accentText }}>✨ AI</span>
                           )}
                           {item.completed && (
                             <CheckCircle className="w-4 h-4" style={{ color: theme.success }} />

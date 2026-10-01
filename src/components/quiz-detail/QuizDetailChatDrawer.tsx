@@ -1,3 +1,4 @@
+import Portal from '../Portal';
 import AIRichText from '../ai-chat/AIRichText';
 import { friendlyAIError } from '../../lib/ai/friendlyError';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -94,6 +95,7 @@ Comportament:
   };
 
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <>
@@ -221,5 +223,6 @@ Comportament:
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }

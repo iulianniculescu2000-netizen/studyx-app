@@ -345,7 +345,7 @@ export default function ReviewMode() {
               <p className="text-sm font-medium opacity-70" style={{ color: theme.text }}>
                 Nu ai întrebări restante. Memoria ta este în formă maximă!
               </p>
-              <Link to="/quizzes" className="text-sm font-bold hover:underline mt-3 inline-block" style={{ color: theme.accent }}>
+              <Link to="/quizzes" className="text-sm font-bold hover:underline mt-3 inline-block" style={{ color: theme.accentText }}>
                 Explorează grile noi →
               </Link>
             </motion.div>
@@ -451,7 +451,7 @@ export default function ReviewMode() {
             <div className="luxe-card rounded-[28px] p-6 mb-5"
               style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accentText }}>
                   Recapitulare
                 </span>
                 {current.question.multipleCorrect && (
@@ -518,7 +518,7 @@ export default function ReviewMode() {
                   className="mb-4 p-5 rounded-2xl overflow-hidden"
                   style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}>
                   <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>
-                    <span className="font-semibold text-lg drop-shadow-sm mr-2" style={{ color: theme.accent }}>💡</span>
+                    <span className="font-semibold text-lg drop-shadow-sm mr-2" style={{ color: theme.accentText }}>💡</span>
                     {cleanQuestionExplanation(current.question.explanation)}
                   </p>
                 </motion.div>

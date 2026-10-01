@@ -75,7 +75,7 @@ export default function AIPredictiveKnowledgeGaps({ knowledgeGaps }: AIPredictiv
                 {gap.priority.toUpperCase()}
               </span>
               {gap.aiGenerated && (
-                <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                   ✨ AI
                 </span>
               )}
@@ -140,7 +140,7 @@ export default function AIPredictiveKnowledgeGaps({ knowledgeGaps }: AIPredictiv
             </div>
 
             <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4" style={{ color: theme.accent }} />
+              <Activity className="w-4 h-4" style={{ color: theme.accentText }} />
               <div>
                 <p className="text-xs" style={{ color: theme.text3 }}>Trend</p>
                 <div className="flex items-center gap-1">

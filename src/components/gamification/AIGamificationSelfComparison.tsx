@@ -52,7 +52,7 @@ export default function AIGamificationSelfComparison({
       {/* Header */}
       <div className="p-6 text-center" style={{ background: `${theme.accent}14`, borderBottom: `1px solid ${theme.border}` }}>
         <div className="flex items-center justify-center gap-3">
-          <Crown className="w-6 h-6" style={{ color: theme.accent }} />
+          <Crown className="w-6 h-6" style={{ color: theme.accentText }} />
           <h2 className="text-2xl font-bold" style={{ color: theme.text }}>Tu vs. Tine</h2>
         </div>
         <p className="mt-2" style={{ color: theme.text3 }}>
@@ -88,7 +88,7 @@ export default function AIGamificationSelfComparison({
                   {entry.isBest && <Trophy className="w-4 h-4" style={{ color: theme.warning }} />}
                   <h3 className="font-bold" style={{ color: theme.text }}>{entry.label}</h3>
                   {entry.highlight && (
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: `${theme.accent}25`, color: theme.accent }}>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: `${theme.accent}25`, color: theme.accentText }}>
                       ACUM
                     </span>
                   )}

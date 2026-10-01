@@ -291,7 +291,7 @@ export function FolderTargetSelect({
                           : 'Deschide'}
                       </div>
                     </div>
-                    {active && <Check size={14} style={{ color: theme.accent }} />}
+                    {active && <Check size={14} style={{ color: theme.accentText }} />}
                     <ChevronDown size={14} className="-rotate-90" style={{ color: theme.text3 }} />
                   </button>
                 );
@@ -340,7 +340,7 @@ export function FolderTargetSelect({
                   type="button"
                   onClick={() => setCreating(true)}
                   className="flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-left transition-all hover:bg-[var(--hover-fill)]"
-                  style={{ color: theme.accent }}
+                  style={{ color: theme.accentText }}
                 >
                   <FolderPlus size={15} />
                   <span className="text-xs font-black">
@@ -881,7 +881,7 @@ export function FlashcardHubActions({
           <div className="flex items-center gap-3">
             <div
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]"
-              style={{ background: `${theme.accent}14`, color: theme.accent }}
+              style={{ background: `${theme.accent}14`, color: theme.accentText }}
             >
               {busy ? <Loader2 size={18} className="animate-spin" /> : <Bot size={18} />}
             </div>
@@ -958,7 +958,7 @@ export function FlashcardHubActions({
                   {libraryGenerating ? (
                     <Loader2 size={14} className="animate-spin" />
                   ) : (
-                    <Sparkles size={14} style={{ color: theme.accent }} />
+                    <Sparkles size={14} style={{ color: theme.accentText }} />
                   )}
                   {libraryGenerating ? 'Generez...' : 'Generează din bibliotecă'}
                 </button>
@@ -1124,7 +1124,7 @@ function EditDeckModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', padding: '2rem 1rem' }}
+      style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)', padding: '2rem 1rem' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -1229,7 +1229,7 @@ function EditDeckModal({
           className="mb-5 flex w-full items-center justify-center gap-2 rounded-[16px] border py-2.5 text-[11px] font-black uppercase tracking-wider transition-all hover:scale-[1.01]"
           style={{
             borderColor: `${theme.accent}44`,
-            color: theme.accent,
+            color: theme.accentText,
             borderStyle: 'dashed',
             background: `${theme.accent}08`,
           }}
@@ -1311,7 +1311,7 @@ function DeckRow({
               </span>
             )}
             {deck.seen === 0 && (
-              <span className="text-[12px] font-medium" style={{ color: theme.accent }}>
+              <span className="text-[12px] font-medium" style={{ color: theme.accentText }}>
                 · nou
               </span>
             )}

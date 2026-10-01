@@ -1,3 +1,4 @@
+import Portal from './Portal';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
@@ -17,20 +18,21 @@ export default function BookChapterReaderModal({ title, pageLabel, loading, cont
   const { performanceLite } = useAdaptiveMotion();
 
   return (
+    <Portal>
     <>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 z-50 bg-[var(--overlay)]"
+        className="fixed inset-0 z-[200] bg-[var(--overlay)]"
         style={{ backdropFilter: performanceLite ? 'blur(4px)' : 'blur(8px)' }}
       />
       <motion.div
         initial={{ opacity: 0, y: 28, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.98 }}
-        className="premium-modal fixed inset-x-3 top-16 bottom-3 z-[60] mx-auto flex max-w-5xl flex-col overflow-hidden rounded-[30px] sm:inset-x-4 sm:top-20 sm:bottom-4 sm:rounded-[34px]"
+        className="premium-modal fixed inset-x-3 top-16 bottom-3 z-[201] mx-auto flex max-w-5xl flex-col overflow-hidden rounded-[30px] sm:inset-x-4 sm:top-20 sm:bottom-4 sm:rounded-[34px]"
       >
         <div className="flex flex-wrap items-start justify-between gap-4 border-b px-5 py-4 sm:px-6 sm:py-5" style={{ borderColor: theme.border }}>
           <div className="min-w-0">
@@ -69,5 +71,6 @@ export default function BookChapterReaderModal({ title, pageLabel, loading, cont
         </div>
       </motion.div>
     </>
+    </Portal>
   );
 }

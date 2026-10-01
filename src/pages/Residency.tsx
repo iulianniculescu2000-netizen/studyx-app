@@ -54,7 +54,7 @@ function ResourceRow({
       className="fine-row flex w-full items-center gap-3 px-4 py-3 text-left"
       style={{ borderRadius: 0, borderTop: first ? undefined : '1px solid var(--hairline)' }}
     >
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
         {icon}
       </div>
       <div className="min-w-0 flex-1">
@@ -147,7 +147,7 @@ export default function Residency() {
             className="flex items-center gap-3.5 rounded-2xl px-4 py-3.5"
             style={{ background: theme.surface, border: '1px solid var(--hairline)' }}
           >
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px]" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px]" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
               <Play size={18} />
             </div>
             <div className="min-w-0 flex-1">
@@ -181,7 +181,7 @@ export default function Residency() {
                     style={{ background: theme.surface }}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-[12px]" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                      <div className="flex h-10 w-10 items-center justify-center rounded-[12px]" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                         <DisciplineIcon name={discipline.folder.name} />
                       </div>
                       <ChevronRight size={16} style={{ color: theme.text3 }} />
@@ -235,7 +235,7 @@ export default function Residency() {
             </motion.section>
           ) : (
             <div className="rounded-2xl px-5 py-8 text-center" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
-              <BookOpen size={26} style={{ color: theme.accent, margin: '0 auto 10px' }} />
+              <BookOpen size={26} style={{ color: theme.accentText, margin: '0 auto 10px' }} />
               <p className="mx-auto mb-4 max-w-sm text-sm" style={{ color: theme.text3 }}>
                 Creează secțiunea Rezidențiat în bibliotecă, apoi încarcă acolo cărțile de referință.
               </p>

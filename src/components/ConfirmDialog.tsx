@@ -46,8 +46,8 @@ export default function ConfirmDialog({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 z-[100]"
-            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(2px)' : 'blur(14px)' }}
+            className="fixed inset-0 z-[10005]"
+            style={{ background: 'var(--overlay)', backdropFilter: performanceLite ? 'blur(2px)' : 'blur(14px)' }}
             onClick={onCancel}
           />
 
@@ -62,7 +62,7 @@ export default function ConfirmDialog({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: -12 }}
             transition={calmMotion ? { duration: 0.18 } : { type: 'spring', damping: 22, stiffness: 380 }}
-            className="fixed z-[101] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm"
+            className="fixed z-[10006] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm"
             style={{ padding: '0 16px' }}
           >
             <div

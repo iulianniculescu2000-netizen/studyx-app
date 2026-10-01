@@ -314,7 +314,7 @@ export default function FlashcardSession() {
               <div className="text-[10px] font-black uppercase opacity-50" style={{ color: theme.text }}>Dificile</div>
             </div>
             <div className="p-4 rounded-2xl" style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20` }}>
-              <div className="text-xl font-black mb-1" style={{ color: theme.accent }}>{goodCount}</div>
+              <div className="text-xl font-black mb-1" style={{ color: theme.accentText }}>{goodCount}</div>
               <div className="text-[10px] font-black uppercase opacity-50" style={{ color: theme.text }}>Bune</div>
             </div>
             <div className="p-4 rounded-2xl" style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}20` }}>
@@ -460,7 +460,7 @@ export default function FlashcardSession() {
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <Brain size={14} style={{ color: theme.accent }} />
+                  <Brain size={14} style={{ color: theme.accentText }} />
                   <h1 className="truncate font-black tracking-tight" style={{ color: theme.text, ...titleStyle }}>
                     {current.quiz.title}
                   </h1>
@@ -485,7 +485,7 @@ export default function FlashcardSession() {
                     <Undo2 size={13} /> Anulează
                   </button>
                 )}
-                <span className="rounded-full px-3 py-1.5 text-[11px] font-black tabular-nums" style={{ background: `${theme.accent}14`, color: theme.accent, border: `1px solid ${theme.accent}24` }}>
+                <span className="rounded-full px-3 py-1.5 text-[11px] font-black tabular-nums" style={{ background: `${theme.accent}14`, color: theme.accentText, border: `1px solid ${theme.accent}24` }}>
                   {currentIdx + 1} / {cards.length}
                 </span>
                 <span className="rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em]" style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}>
@@ -633,8 +633,8 @@ export default function FlashcardSession() {
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="flex items-center gap-2">
-                              <Bot size={15} style={{ color: theme.accent }} />
-                              <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: theme.accent }}>
+                              <Bot size={15} style={{ color: theme.accentText }} />
+                              <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: theme.accentText }}>
                                 {hasKey ? 'Clarificare AI' : 'Clarificare ghidată'}
                               </p>
                             </div>
@@ -642,7 +642,7 @@ export default function FlashcardSession() {
                               className="rounded-full px-2.5 py-1 text-[10px] font-bold"
                               style={{
                                 background: `${theme.accent}16`,
-                                color: theme.accent,
+                                color: theme.accentText,
                                 border: `1px solid ${theme.accent}22`,
                               }}
                             >
@@ -669,7 +669,7 @@ export default function FlashcardSession() {
                             }}
                             className="press-feedback inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] transition-all"
                             style={{
-                              color: theme.accent,
+                              color: theme.accentText,
                               border: `1px solid ${theme.accent}22`,
                               background: `${theme.accent}10`,
                               boxShadow: `0 10px 24px ${theme.accent}10`,
@@ -680,7 +680,7 @@ export default function FlashcardSession() {
                         )}
 
                         {aiLoading && (
-                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-70" style={{ color: theme.accent }}>
+                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-70" style={{ color: theme.accentText }}>
                             <Loader2 size={14} className="animate-spin" /> Se analizează...
                           </div>
                         )}
@@ -736,7 +736,7 @@ export default function FlashcardSession() {
                   style={{
                     background: `${theme.accent}10`,
                     border: `1.5px solid ${theme.accent}35`,
-                    color: theme.accent,
+                    color: theme.accentText,
                     boxShadow: `0 12px 24px ${theme.accent}10`,
                   }}
                 >

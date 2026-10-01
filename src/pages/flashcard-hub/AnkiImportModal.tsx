@@ -1,3 +1,4 @@
+import Portal from '../../components/Portal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useRef, useState } from 'react';
 import { AlertCircle, Check, ChevronDown, FolderTree, Loader2, Upload, Volume2, X as XIcon } from 'lucide-react';
@@ -125,12 +126,13 @@ export function AnkiImportModal({
   };
 
   return (
+    <Portal>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', padding: '2rem 1rem' }}
+      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto"
+      style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)', padding: '2rem 1rem' }}
       onClick={(event) => { if (event.target === event.currentTarget && phase !== 'importing') onClose(); }}
     >
       <motion.div
@@ -186,7 +188,7 @@ export function AnkiImportModal({
 
         {phase === 'parsing' && (
           <div className="flex flex-col items-center gap-3 py-8">
-            <Loader2 size={28} className="animate-spin" style={{ color: theme.accent }} />
+            <Loader2 size={28} className="animate-spin" style={{ color: theme.accentText }} />
             <p className="text-xs font-bold" style={{ color: theme.text3 }}>Se citește pachetul Anki...</p>
           </div>
         )}
@@ -338,5 +340,6 @@ export function AnkiImportModal({
         )}
       </motion.div>
     </motion.div>
+    </Portal>
   );
 }

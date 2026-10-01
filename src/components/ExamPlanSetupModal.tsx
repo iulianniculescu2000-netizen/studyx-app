@@ -73,7 +73,7 @@ export default function ExamPlanSetupModal({ folder, chapters, onClose }: Props)
         transition={{ duration: 0.2 }}
         onClick={onClose}
         className="fixed inset-0 z-50"
-        style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+        style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }}
       />
 
       {/* Panel */}
@@ -99,7 +99,7 @@ export default function ExamPlanSetupModal({ folder, chapters, onClose }: Props)
           {/* Header */}
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CalendarDays size={16} style={{ color: theme.accent }} />
+              <CalendarDays size={16} style={{ color: theme.accentText }} />
               <span id={titleId} className="text-sm font-bold" style={{ color: theme.text }}>Plan de examen — {folder.name}</span>
             </div>
             <motion.button
@@ -154,7 +154,7 @@ export default function ExamPlanSetupModal({ folder, chapters, onClose }: Props)
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.2 }}
                   className="mt-1.5 text-[11px] font-semibold"
-                  style={{ color: theme.accent }}
+                  style={{ color: theme.accentText }}
                 >
                   → {new Intl.DateTimeFormat('ro-RO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(examDate)}
                 </motion.p>

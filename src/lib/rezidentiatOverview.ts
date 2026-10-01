@@ -127,7 +127,9 @@ export function buildRezidentiatOverview(
 
   const summarize = (folder: Folder, name: string, loose: boolean, list: Quiz[]): SpecialtyOverview => {
     const sorted = list.slice().sort(byTitle);
-    const mixIds = [quizMixId(folder.id)];
+    // Answers given in a combined session are filed under that folder's mix id; sets moved out of the
+    // Rezidențiat root (adoptStrayResidencyQuizzes) keep the progress made in the root's session.
+    const mixIds = [quizMixId(folder.id), quizMixId(root.id)];
     const questionCount = sorted.reduce((sum, q) => sum + q.questions.length, 0);
     const answered = sorted.reduce((sum, q) => sum + answeredCount(q, mixIds), 0);
     return { folder, name, loose, quizzes: sorted, questionCount, answered, progress: percent(answered, questionCount) };

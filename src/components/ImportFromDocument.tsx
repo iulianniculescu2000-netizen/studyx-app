@@ -241,7 +241,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
             background: theme.surface2,
           }}
         >
-          <Upload size={20} style={{ color: theme.accent }} />
+          <Upload size={20} style={{ color: theme.accentText }} />
           …sau alege fișiere (PDF / Word / text / poză)
           <span className="text-[11px] font-normal" style={{ color: theme.text3 }}>
             Poți selecta mai multe deodată
@@ -259,7 +259,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
   if (phase === 'extracting') {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-12">
-        <Loader2 size={26} className="animate-spin" style={{ color: theme.accent }} />
+        <Loader2 size={26} className="animate-spin" style={{ color: theme.accentText }} />
         <p className="text-sm" style={{ color: theme.text2 }}>
           Extrag grilele și elimin duplicatele…
         </p>
@@ -300,7 +300,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
           disabled={aiRunning}
           whileTap={{ scale: aiRunning ? 1 : 0.98 }}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold"
-          style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}40` }}
+          style={{ background: `${theme.accent}18`, color: theme.accentText, border: `1px solid ${theme.accent}40` }}
         >
           {aiRunning ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
           {aiRunning ? 'AI completează…' : `Completează cu AI ${unanswered} răspunsuri lipsă`}
@@ -389,7 +389,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
                   <p className="text-xs font-semibold" style={{ color: theme.text }}>
                     {qi + 1}. {q.text}
                     {q.answerSource === 'ai' && (
-                      <span className="ml-1 text-[9px] font-bold" style={{ color: theme.accent }}>AI</span>
+                      <span className="ml-1 text-[9px] font-bold" style={{ color: theme.accentText }}>AI</span>
                     )}
                   </p>
                   {q.imageUrl && (

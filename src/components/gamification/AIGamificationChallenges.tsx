@@ -69,7 +69,7 @@ export default function AIGamificationChallenges({ challenges }: AIGamificationC
               <Target className="w-5 h-5" style={{ color: theme.accent2 }} />
             </div>
             <div className="flex flex-col items-end gap-1">
-              <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+              <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                 {challenge.type === 'daily' ? 'Zilnic' :
                  challenge.type === 'weekly' ? 'Săptămânal' : 'Adaptiv'}
               </span>

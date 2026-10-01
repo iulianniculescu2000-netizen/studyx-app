@@ -74,6 +74,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         '--text3': theme.text3,
         '--accent': theme.accent,
         '--accent2': theme.accent2,
+        '--accent-text': theme.accentText,
         '--success': theme.success,
         '--danger': theme.danger,
         '--warning': theme.warning,

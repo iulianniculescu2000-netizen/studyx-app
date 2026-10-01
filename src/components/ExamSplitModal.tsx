@@ -74,7 +74,7 @@ export default function ExamSplitModal({ folderName, folderId, color, category, 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose}
         className="fixed inset-0 z-50"
-        style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+        style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }}
       />
       <motion.div
         ref={dialogRef}
@@ -90,7 +90,7 @@ export default function ExamSplitModal({ folderName, folderId, color, category, 
         >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <CalendarDays size={16} style={{ color: theme.accent }} />
+              <CalendarDays size={16} style={{ color: theme.accentText }} />
               <span id={titleId} className="text-sm font-bold" style={{ color: theme.text }}>Distribuie pe zile până la examen</span>
             </div>
             <button
@@ -130,7 +130,7 @@ export default function ExamSplitModal({ folderName, folderId, color, category, 
                     the app's — a user on an en-US-locale system typing "11/07"
                     meaning 11 July actually gets 7 November stored. Spelling the
                     parsed date out in words removes all ambiguity. */}
-                <p className="mt-1.5 text-[11px] font-semibold" style={{ color: theme.accent }}>
+                <p className="mt-1.5 text-[11px] font-semibold" style={{ color: theme.accentText }}>
                   → {new Intl.DateTimeFormat('ro-RO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(examDate)}
                 </p>
                 <p className="mt-0.5 text-[11px]" style={{ color: theme.text3 }}>{days} zile rămase</p>
