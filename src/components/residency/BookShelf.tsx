@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookOpen, ChevronDown, CreditCard, Loader2, MessageCircle, Sparkles } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeContext';
-import type { AIKnowledgeSource } from '../../store/aiStore';
+import { isSourceReady, type AIKnowledgeSource } from '../../store/aiStore';
 import { useUIStore } from '../../store/uiStore';
 import { useQuizStore } from '../../store/quizStore';
 import { useFolderStore } from '../../store/folderStore';
@@ -201,7 +201,7 @@ export default function BookShelf({ books, addBookHref, calmMotion, emptyMessage
     <div className="overflow-hidden rounded-2xl" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
       {books.map((source, index) => {
         const expanded = expandedId === source.id;
-        const status = source.indexStatus === 'ready'
+        const status = isSourceReady(source)
           ? `${source.chunkCount} fragmente`
           : source.indexStatus === 'indexing'
             ? `Indexare… ${Math.round(source.indexProgress ?? 0)}%`
@@ -236,7 +236,7 @@ export default function BookShelf({ books, addBookHref, calmMotion, emptyMessage
                   className="overflow-hidden px-4"
                   style={{ background: 'var(--fill-subtle)' }}
                 >
-                  {source.indexStatus === 'ready' ? (
+                  {isSourceReady(source) ? (
                     <>
                       <BookTableOfContents source={source} theme={theme} />
                       <BookChapters source={source} theme={theme} />

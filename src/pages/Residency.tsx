@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronRight, HelpCircle, Layers, Loader2, MessageCircle, Play, Plus, Scissors, Stethoscope, Library, HeartPulse, BookOpen } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore } from '../store/aiStore';
+import { useQuizStore } from '../store/quizStore';
 import { useUIStore } from '../store/uiStore';
 import { useToastStore } from '../store/toastStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
@@ -77,7 +78,9 @@ export default function Residency() {
   const [showBooks, setShowBooks] = useState(false);
 
   // Sets an AI agent filed straight into the section root are moved into "Grile" so none is stranded.
-  useEffect(() => { adoptStrayResidencyQuizzes(); }, []);
+  // Runs once the profile's data is in the stores: with empty stores it would find nothing and never run again.
+  const hydrated = useQuizStore((state) => state._hasHydrated);
+  useEffect(() => { if (hydrated) adoptStrayResidencyQuizzes(); }, [hydrated]);
   const [startingDeck, setStartingDeck] = useState(false);
 
   const openKumarDeck = async () => {
@@ -93,6 +96,9 @@ export default function Residency() {
       setStartingDeck(false);
     }
   };
+
+  // Before the profile loads every list is empty: showing "nothing yet" (or offering to add every bank) would be wrong.
+  if (!hydrated) return <div className="h-full" aria-busy="true" />;
 
   const { disciplines, resume, totalQuestions, totalSpecialties } = overview;
   const hasBank = disciplines.length > 0;
@@ -118,7 +124,7 @@ export default function Residency() {
             </div>
             <p className="mt-1 text-[13px]" style={{ color: theme.text3 }}>
               {hasBank
-                ? `${disciplines.length} discipline · ${totalSpecialties} specialități · ${number(totalQuestions)} grile`
+                ? `${disciplines.filter((d) => d.specialties.some((s) => !s.loose)).length} discipline · ${totalSpecialties} specialități · ${number(totalQuestions)} grile`
                 : 'Grile reale, cărți și carduri, într-un singur loc.'}
             </p>
           </div>

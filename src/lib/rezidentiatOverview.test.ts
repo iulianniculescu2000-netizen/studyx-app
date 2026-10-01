@@ -84,6 +84,16 @@ describe('buildRezidentiatOverview', () => {
     expect(loose?.specialties[0].quizzes.map((q) => q.id).sort()).toEqual(['o', 'r']);
   });
 
+  it('keeps an AI-generated Rezidențiat quiz reachable after its folder is deleted', () => {
+    // Chat "delete folder" detaches the quizzes (folderId → null); the AI ones carry only the plain tag.
+    const detached = quiz('g', 'Mielom — AI', null as unknown as string, 5, { tags: ['rezidentiat'] });
+    const danglingFolder = quiz('h', 'Alt AI', 'deleted-folder', 3, { tags: ['rezidentiat'] });
+    const movedOnPurpose = quiz('m', 'Mutată de utilizator', 'some-other-folder', 4, { tags: ['rezidentiat'] });
+    const o = buildRezidentiatOverview([...folders, folder('some-other-folder', 'Altceva')], [detached, danglingFolder, movedOnPurpose], {}, []);
+    const loose = o.disciplines.find((d) => d.folder.name === 'Alte grile');
+    expect(loose?.specialties[0].quizzes.map((q) => q.id).sort()).toEqual(['g', 'h']);
+  });
+
   it('counts answers given in the combined session toward the specialty progress', () => {
     const quizzes = [quiz('a', 'Esofagul — Test 1', 's1', 4)];
     const stats = { 'mix-s1:a-q0': stat(1, 0), 'mix-s1:a-q1': stat(0, 1), 'a:a-q1': stat(1, 0) };

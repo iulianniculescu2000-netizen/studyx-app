@@ -52,6 +52,20 @@ describe('parseStudioChatCommand — destination', () => {
 });
 
 describe('resolveStudioFolderFromCommand', () => {
+  it('finds an existing folder whose name contains "și" / "la" instead of cutting it short', () => {
+    const named = [
+      { id: 'a', name: 'Boli infecțioase și parazitare', emoji: '🦠', color: 'blue' as const },
+      { id: 'b', name: 'Tulburări renale și ale tractului urinar', emoji: '💧', color: 'blue' as const },
+    ];
+    expect(resolveStudioFolderFromCommand('Fă-mi 5 grile din mielom în folderul Boli infecțioase și parazitare', named))
+      .toEqual({ kind: 'existing', folder: named[0] });
+    expect(resolveStudioFolderFromCommand('Generează 3 pachete în folderul Tulburări renale și ale tractului urinar pentru examen', named))
+      .toEqual({ kind: 'existing', folder: named[1] });
+    // A name that is not an existing folder is still shortened as before.
+    expect(resolveStudioFolderFromCommand('Fă-mi 5 grile în folderul Cardio pentru examen', named))
+      .toEqual({ kind: 'create', name: 'Cardio' });
+  });
+
   const folders = [folder('1', 'Grile'), folder('2', 'Cardiologie'), folder('3', 'Test')];
 
   it('never picks a folder just because its name appears in the sentence', () => {

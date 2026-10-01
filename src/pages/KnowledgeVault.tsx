@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
-import { useAIStore, type AILibraryFolder, type AIKnowledgeSource, type AIKnowledgeSourceType } from '../store/aiStore';
+import { useAIStore, isSourceReady, type AILibraryFolder, type AIKnowledgeSource, type AIKnowledgeSourceType } from '../store/aiStore';
 import { useToastStore } from '../store/toastStore';
 import { useUIStore } from '../store/uiStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
@@ -52,6 +52,11 @@ function SourceStatusBadge({
 }
 
 type TypeFilter = 'all' | 'pdf' | 'image' | 'indexing';
+
+/** Lower case, no diacritics, trimmed: "rezidentiat" finds "Rezidențiat". */
+function plainSearchText(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
 
 export default function KnowledgeVault() {
   const theme = useTheme();
@@ -166,11 +171,11 @@ export default function KnowledgeVault() {
     } else if (activeFolderId) {
       list = list.filter((s) => s.folderId === activeFolderId);
     }
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter((s) => s.name.toLowerCase().includes(q) || s.preview.toLowerCase().includes(q));
+    const q = plainSearchText(search);
+    if (q) {
+      list = list.filter((s) => plainSearchText(s.name).includes(q) || plainSearchText(s.preview).includes(q));
     }
-    return list.sort((a, b) => b.addedAt - a.addedAt);
+    return [...list].sort((a, b) => b.addedAt - a.addedAt);
   }, [knowledgeSources, activeFolderId, search]);
 
   // Unfiltered by the search box — the exam plan card needs every source
@@ -979,15 +984,15 @@ export default function KnowledgeVault() {
                 </div>
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
                   <button
-                    onClick={() => selectedSource.indexStatus === 'ready' && askAIAboutSource(selectedSource)}
-                    disabled={selectedSource.indexStatus !== 'ready'}
+                    onClick={() => isSourceReady(selectedSource) && askAIAboutSource(selectedSource)}
+                    disabled={!isSourceReady(selectedSource)}
                     className="flex-1 rounded-2xl px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] sm:flex-none"
-                    style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent, opacity: selectedSource.indexStatus === 'ready' ? 1 : 0.45 }}
+                    style={{ background: `${theme.accent}15`, border: `1px solid ${theme.accent}25`, color: theme.accent, opacity: isSourceReady(selectedSource) ? 1 : 0.45 }}
                   >
                     Întreabă AI <ArrowRight size={14} className="ml-1 inline-block" />
                   </button>
                   <button
-                    onClick={() => selectedSource.indexStatus === 'ready' && openAIStudioForSource(selectedSource)}
+                    onClick={() => isSourceReady(selectedSource) && openAIStudioForSource(selectedSource)}
                     disabled={selectedSource.indexStatus !== 'ready'}
                     className="flex-1 rounded-2xl px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] sm:flex-none"
                     style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2, opacity: selectedSource.indexStatus === 'ready' ? 1 : 0.45 }}
@@ -1012,7 +1017,7 @@ export default function KnowledgeVault() {
                   </div>
                 ) : (
                   <>
-                    {selectedSource.indexStatus === 'ready' && sourceChapters.length > 0 && (
+                    {isSourceReady(selectedSource) && sourceChapters.length > 0 && (
                       <div className="glass-panel mb-5 rounded-[28px] p-5">
                         <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
                           <Layers3 size={13} /> Capitole detectate

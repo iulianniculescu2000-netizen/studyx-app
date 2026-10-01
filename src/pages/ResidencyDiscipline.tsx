@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Layers, Loader2, Play, Plus, Shuffle } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import type { Quiz } from '../types';
@@ -183,6 +183,7 @@ export default function ResidencyDiscipline() {
   const { books, addBookHref } = useResidencyBooks();
   const folders = useFolderStore((state) => state.folders);
   const quizzes = useQuizStore((state) => state.quizzes);
+  const hydrated = useQuizStore((state) => state._hasHydrated);
   const [tab, setTab] = useState<Tab>('specialitati');
   // The selected specialty lives in the URL, so Back/Forward and shared links land on the same one.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -205,6 +206,14 @@ export default function ResidencyDiscipline() {
     if (!folder) return [];
     return quizzes.filter((q) => q.folderId === folder.id && !q.archived && q.kind === 'flashcard');
   }, [folders, quizzes]);
+
+  if (!hydrated) return <div className="h-full" aria-busy="true" />;
+
+  // The folder exists but holds no active grile (new, or everything archived): show it like any folder,
+  // where grile and subfolders can be added, instead of "not found".
+  if (!discipline && folderId && folders.some((entry) => entry.id === folderId)) {
+    return <Navigate to={`/folder/${folderId}?plain=1`} replace />;
+  }
 
   if (!discipline) {
     return (
@@ -240,7 +249,7 @@ export default function ResidencyDiscipline() {
         <motion.header initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="page-title-compact" style={{ color: theme.text }}>{discipline.folder.name}</h1>
           <p className="mt-1 text-[13px]" style={{ color: theme.text3 }}>
-            {discipline.specialties.length} specialități · {number(discipline.questionCount)} grile · {discipline.progress}% parcurs
+            {discipline.specialties.filter((entry) => !entry.loose).length} specialități · {number(discipline.questionCount)} grile · {discipline.progress}% parcurs
           </p>
         </motion.header>
 

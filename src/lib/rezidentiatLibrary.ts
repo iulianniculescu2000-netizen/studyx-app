@@ -1,4 +1,4 @@
-import { useAIStore } from '../store/aiStore';
+import { isSourceReady, useAIStore } from '../store/aiStore';
 import { findOrCreateRezidentiatLibraryRoot } from './rezidentiatRoot';
 
 /**
@@ -41,10 +41,15 @@ export const REZIDENTIAT_LIBRARY_BOOKS: RezidentiatLibraryBook[] = [
 ];
 
 export function isLibraryBookImported(book: RezidentiatLibraryBook): boolean {
-  return useAIStore.getState().knowledgeSources.some((source) => source.name === book.name);
+  // A failed or interrupted import must not count: it would hide the book from "De adăugat" and never be retried.
+  return useAIStore.getState().knowledgeSources.some((source) => source.name === book.name && isSourceReady(source) && source.indexStatus !== 'indexing');
 }
 
 export async function importRezidentiatLibraryBook(book: RezidentiatLibraryBook): Promise<void> {
+  // Drop an earlier attempt that failed, so retrying does not leave an "error" copy behind.
+  for (const stale of useAIStore.getState().knowledgeSources.filter((source) => source.name === book.name && source.indexStatus === 'error')) {
+    await useAIStore.getState().removeKnowledgeSource(stale.id);
+  }
   const text = await book.load();
   const folderId = findOrCreateRezidentiatLibraryRoot();
   const source = await useAIStore.getState().addKnowledgeSource(book.name, text, 'pdf');

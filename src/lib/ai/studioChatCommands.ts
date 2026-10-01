@@ -102,6 +102,14 @@ function asksForGeneration(normalized: string) {
   return /\bvreau\b.*\b\d+\s+(?:de\s+)?(?:grile|pachete|seturi|intrebari)\b/.test(normalized);
 }
 
+/** Everything after "în folderul" / "pune-le în", up to the end of the sentence — before any name-shortening heuristic. */
+function capturedFolderTail(text: string): string | null {
+  const match = text.match(/(?<![\p{L}])(?:în|in)\s+folder(?:ul)?\s+(.+)/iu)
+    ?? text.match(/(?<![\p{L}])(?:salveaz[ăa]|pune|adaug[ăa]|mut[ăa])(?:[-\s]+le|[-\s]+l)?\s+(?:în|in)\s+(?!folder)(.+)/iu);
+  if (!match) return null;
+  return match[1].split(/[.,;!?\n]/)[0].replace(/[„”“"'«»]/g, '').trim() || null;
+}
+
 export function parseStudioChatCommand(text: string): ParsedStudioCommand {
   const normalized = normalize(text);
   const mentionsQuiz = /\b(grile|grila|pachete|pachet|seturi|batch|quiz)\b/.test(normalized)
@@ -201,6 +209,22 @@ export function resolveStudioFolderFromCommand<T extends StudioChatFolder>(
   // and matching by "contains" sent "Cardiologie clinică" (new) into an existing "Cardiologie".
   const namedFolder = parseStudioChatCommand(text).folderName;
   if (namedFolder) {
+    // An existing folder wins even when its name contains "și", "la", "cu"… which the shortening below
+    // would cut at ("Boli infecțioase și parazitare" → "Boli Infecțioase", a duplicate folder).
+    const tail = normalize(capturedFolderTail(text) ?? '');
+    const longestPrefix = tail
+      ? folders
+        .filter((folder) => {
+          const name = normalize(folder.name);
+          if (name.length === 0) return false;
+          if (tail === name) return true;
+          // Only when what follows the name is the rest of the sentence ("... pentru examen"), not more of a longer name ("Cardiologie clinică").
+          return tail.startsWith(name + ' ') && /^(?:din|pentru|cu|dificultate|de tip|care|unde)(?: |$)/.test(tail.slice(name.length + 1));
+        })
+        .sort((a, b) => normalize(b.name).length - normalize(a.name).length)[0]
+      : undefined;
+    if (longestPrefix) return { kind: 'existing' as const, folder: longestPrefix };
+
     const wanted = normalize(namedFolder);
     const exact = folders.find((folder) => normalize(folder.name) === wanted);
     if (exact) return { kind: 'existing' as const, folder: exact };

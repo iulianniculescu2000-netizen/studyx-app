@@ -69,8 +69,9 @@ export function isBankImported(bank: RezidentiatBankInfo): boolean {
 /** Finds a same-name child folder under `parentId`, or creates one — the reuse that lets two banks share one "Cardiologie" folder instead of duplicating it. */
 function findOrCreateFolder(name: string, parentId: string | null, emoji: string): string {
   const { folders, addFolder } = useFolderStore.getState();
+  const plainName = (value: string) => value.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const existing = folders.find(
-    (f) => f.parentId === parentId && f.name.trim().toLowerCase() === name.trim().toLowerCase(),
+    (f) => (f.parentId ?? null) === parentId && plainName(f.name) === plainName(name),
   );
   if (existing) return existing.id;
   return addFolder(name, emoji, 'blue', parentId);

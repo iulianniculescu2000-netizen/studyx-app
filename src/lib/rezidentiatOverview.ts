@@ -109,8 +109,11 @@ export function buildRezidentiatOverview(
       bankQuizzes.push(quiz);
       if (placement.specialtyId) push(specialtyQuizzes, placement.specialtyId, quiz);
       else push(looseQuizzes, placement.disciplineId, quiz);
-    } else if (isRezidentiatQuiz(quiz) && (quiz.tags ?? []).some((t) => t.startsWith('rezidentiat-bank:'))) {
-      // A real-bank quiz whose folder was deleted: keep it reachable.
+    } else if (
+      isRezidentiatQuiz(quiz)
+      && ((quiz.tags ?? []).some((t) => t.startsWith('rezidentiat-bank:')) || !quiz.folderId || !folderById.has(quiz.folderId))
+    ) {
+      // A Rezidențiat quiz whose folder was deleted (a bank quiz, or one the AI generated): keep it reachable.
       bankQuizzes.push(quiz);
       push(looseQuizzes, root.id, quiz);
     }
@@ -185,7 +188,8 @@ export function buildRezidentiatOverview(
   return {
     disciplines,
     totalQuestions: disciplines.reduce((sum, d) => sum + d.questionCount, 0),
-    totalSpecialties: disciplines.reduce((sum, d) => sum + d.specialties.length, 0),
+    // "Alte grile" is a catch-all entry, not a specialty.
+    totalSpecialties: disciplines.reduce((sum, d) => sum + d.specialties.filter((s) => !s.loose).length, 0),
     resume,
   };
 }

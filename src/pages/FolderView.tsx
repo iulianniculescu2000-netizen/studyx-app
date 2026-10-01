@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
-import { useParams, useNavigate, Link, Navigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
 import { rezidentiatHrefForFolder } from '../lib/rezidentiatRoutes';
 import { startQuizMix } from '../lib/quizMixSession';
 import { isFolderSessionQuiz } from '../lib/rezidentiatOverview';
@@ -24,6 +24,8 @@ const FOLDER_COLORS = Object.keys(COLOR_HEX) as QuizColor[];
 
 export default function FolderView() {
   const { id } = useParams<{ id: string }>();
+  // ?plain=1: the Rezidențiat page sent us here because this folder has nothing to show there.
+  const [folderSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const theme = useTheme();
   const { folders, addFolder, updateFolder, deleteFolder } = useFolderStore();
@@ -41,7 +43,7 @@ export default function FolderView() {
   const [deleteChildTarget, setDeleteChildTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Folders in the Rezidențiat tree are browsed on the Rezidențiat pages, not here.
-  const rezidentiatHref = id ? rezidentiatHrefForFolder(id, folders) : null;
+  const rezidentiatHref = id && !folderSearchParams.get('plain') ? rezidentiatHrefForFolder(id, folders) : null;
 
   const isNull = id === 'null';
   const folder = isNull ? null : folders.find(f => f.id === id);
