@@ -27,16 +27,27 @@ function formatWait(seconds: number): string {
   return `${Math.ceil(seconds / 3600)} ore`;
 }
 
+// Limits: provider wording differs (Groq "Rate limit", Gemini "quota"/"RESOURCE_EXHAUSTED", Cerebras "high traffic").
+const RATE_LIMIT_PATTERN = /rate limit|too many requests|quota|resource[ _]has been exhausted|resource_exhausted|tokens per minute|requests per minute|high traffic|overloaded/i;
+const RATE_LIMIT_STATUS_PATTERN = /\b(?:status|http|code|error)\W{0,4}429\b/i;
+
+/**
+ * Seconds a rate-limit error says to wait before retrying, or null when the
+ * error is not a rate limit or does not state a wait.
+ */
+export function rateLimitWaitSeconds(raw: unknown): number | null {
+  const text = (raw instanceof Error ? raw.message : typeof raw === 'string' ? raw : '').trim();
+  if (!text) return null;
+  if (!RATE_LIMIT_PATTERN.test(text) && !RATE_LIMIT_STATUS_PATTERN.test(text)) return null;
+  return parseWaitSeconds(text);
+}
+
 export function friendlyAIError(raw: unknown): string {
   const message = raw instanceof Error ? raw.message : typeof raw === 'string' ? raw : '';
   const text = message.trim();
   if (!text) return 'Nu am putut genera un răspuns. Încearcă din nou.';
 
-  // Limits: provider wording differs (Groq "Rate limit", Gemini "quota"/"RESOURCE_EXHAUSTED", Cerebras "high traffic").
-  if (
-    /rate limit|too many requests|quota|resource[ _]has been exhausted|resource_exhausted|tokens per minute|requests per minute|high traffic|overloaded/i.test(text)
-    || /\b(?:status|http|code|error)\W{0,4}429\b/i.test(text)
-  ) {
+  if (RATE_LIMIT_PATTERN.test(text) || RATE_LIMIT_STATUS_PATTERN.test(text)) {
     const tooBig = /requested\s+(\d+)/i.exec(text);
     const limit = /\blimit\s+(\d+)/i.exec(text);
     if (tooBig && limit && Number(tooBig[1]) > Number(limit[1])) {

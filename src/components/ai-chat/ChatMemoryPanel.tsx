@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Brain, Pin, PinOff, Plus, Trash2, Check, X, Pencil } from 'lucide-react';
+import ThemedSelect from '../ThemedSelect';
 import { useTheme } from '../../theme/ThemeContext';
 import {
   MEMORY_KINDS,
@@ -143,15 +144,14 @@ export default function ChatMemoryPanel({ profileId }: { profileId: string | nul
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={newKind}
-          onChange={(e) => setNewKind(e.target.value as MemoryKind)}
-          aria-label="Tip"
-          className="rounded-xl px-2 py-2 text-[12px] outline-none"
-          style={{ background: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
-        >
-          {MEMORY_KINDS.map((kind) => <option key={kind} value={kind}>{MEMORY_KIND_LABEL[kind]}</option>)}
-        </select>
+        <div className="w-[150px] flex-shrink-0">
+          <ThemedSelect
+            size="sm"
+            value={newKind}
+            onChange={(value) => setNewKind(value as MemoryKind)}
+            options={MEMORY_KINDS.map((kind) => ({ value: kind, label: MEMORY_KIND_LABEL[kind] }))}
+          />
+        </div>
         <input
           value={newText}
           onChange={(e) => setNewText(e.target.value)}

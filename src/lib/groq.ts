@@ -6,6 +6,10 @@ import { createRequestGovernor } from './aiRequestGovernor';
 import { extractJsonArrayLenient } from './jsonExtract';
 import { logDiagnosticEvent } from '../store/diagnosticsStore';
 import { useToastStore } from '../store/toastStore';
+import { cleanFlashcardText, normalizeRomanianDiacritics } from './flashcardText';
+import { rateLimitWaitSeconds } from './ai/friendlyError';
+import { parseRateHeaders } from './ai/rateHeaders';
+import { estimateTokens, useAIUsageStore } from '../store/aiUsageStore';
 import { buildQuestionTypeInstruction, type QuestionType } from './ai/questionTypes';
 import { healPrimaryModelChoice, isModelUnavailableError, nextCandidateModel } from './ai/modelHealing';
 
@@ -208,20 +212,32 @@ function buildProviderChain(
  * automat pe Google Gemini." Clears the sticky state once the primary answers
  * again (it recovered on its own).
  */
-function trackProviderOutcome(provider: ProviderId, primaryProvider: ProviderId, providerName: string) {
+function trackProviderOutcome(provider: ProviderId, primaryProvider: ProviderId, providerName: string, armSticky = true) {
   if (provider === primaryProvider) {
     stickyFallback = null;
     return;
   }
+  // A request the primary rejected for its own content (too large, malformed) says nothing about the primary's health.
+  if (!armSticky) return;
   const isNewSwitch = !stickyFallback || stickyFallback.provider !== provider;
-  stickyFallback = { provider, primary: primaryProvider, until: Date.now() + FALLBACK_STICKY_MS };
+  // Armed once per switch: extending it on every success would keep the app on the fallback forever.
   if (isNewSwitch) {
+    stickyFallback = { provider, primary: primaryProvider, until: Date.now() + FALLBACK_STICKY_MS };
     useToastStore.getState().addToast(
-      `Limita cheii curente a fost atinsă — am trecut automat pe ${providerName}.`,
+      `Furnizorul curent nu a răspuns (limită sau eroare) — am trecut automat pe ${providerName}.`,
       'info',
       6000,
     );
   }
+}
+
+/** The request itself was refused (too big, malformed) — retrying elsewhere is fine, but it does not mean the provider is down. */
+function isRequestSpecificError(message: string): boolean {
+  return /\b(?:400|413|422)\b|request too large|too large|bad request|invalid request|context length/i.test(message);
+}
+
+function estimateMessagesTokens(messages: GroqMessage[]): number {
+  return estimateTokens(messages.reduce((text, message) => text + (typeof message.content === 'string' ? message.content : ''), ''));
 }
 
 /**
@@ -231,7 +247,7 @@ function trackProviderOutcome(provider: ProviderId, primaryProvider: ProviderId,
  */
 async function attemptOnProvider(
   cfg: { name: string; endpoint: string },
-  link: { key: string; model: string },
+  link: { key: string; model: string; provider?: ProviderId },
   finalMessages: GroqMessage[],
   temperature: number,
   maxTokens: number,
@@ -243,21 +259,28 @@ async function attemptOnProvider(
   let lastError = 'Eroare necunoscuta';
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
+      const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
       const response = await fetch(cfg.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${link.key}` },
         body: JSON.stringify({ model: link.model, messages: finalMessages, temperature, max_tokens: maxTokens }),
-        signal: abortSignal,
+        signal: abortSignal ? AbortSignal.any([abortSignal, timeoutSignal]) : timeoutSignal,
       });
 
       if (!response.ok) {
         const msg = await extractApiErrorMessage(response);
+        if (link.provider) {
+          const window = parseRateHeaders(response.headers);
+          if (window) useAIUsageStore.getState().noteWindow(link.provider, window);
+        }
         if (response.status === 429 && attempt < maxAttempts - 1) {
           const retryAfter = response.headers.get('retry-after');
-          const delayMs = getRetryDelayMs(attempt, retryAfter);
+          const retryAfterSeconds = retryAfter ? Number(retryAfter) : 0;
           // A daily/minute quota that resets in minutes would otherwise hold the request queue
           // (and the Stop button) hostage; fail fast so the fallback provider or the user can act.
-          if (delayMs > MAX_RATE_LIMIT_WAIT_MS + 500) throw new NonRetryableError(msg);
+          // Only the provider's own wait counts here: the backoff we add on top must not trigger it.
+          if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds * 1000 > MAX_RATE_LIMIT_WAIT_MS) throw new NonRetryableError(msg);
+          const delayMs = Math.min(getRetryDelayMs(attempt, retryAfter), MAX_RATE_LIMIT_WAIT_MS);
           logAIDebug('groq:ratelimit', { task, provider: cfg.name, retryAfter, delayMs });
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
@@ -269,10 +292,24 @@ async function attemptOnProvider(
       const data = await response.json();
       const output = (data.choices?.[0]?.message?.content ?? '').trim();
       logAIDebug('groq:response', { task, provider: cfg.name, output });
+      if (link.provider) {
+        const reported = Number(data.usage?.total_tokens ?? (Number(data.usage?.prompt_tokens ?? 0) + Number(data.usage?.completion_tokens ?? 0)));
+        const exact = Number.isFinite(reported) && reported > 0;
+        useAIUsageStore.getState().record(
+          link.provider,
+          exact ? reported : estimateMessagesTokens(finalMessages) + estimateTokens(output),
+          { estimated: !exact, window: parseRateHeaders(response.headers) },
+        );
+      }
       return output;
     } catch (error: unknown) {
       // Stop pressed, or a failure retrying cannot fix: surface it now instead of after the backoff.
       if (error instanceof NonRetryableError || (error instanceof Error && error.name === 'AbortError')) throw error;
+      // No answer within the limit: retrying the same stalled provider would only repeat the wait,
+      // so fail this one now and let the provider chain (or the user) move on.
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        throw new NonRetryableError(`${cfg.name} nu a răspuns în ${REQUEST_TIMEOUT_MS / 1000} de secunde. Încearcă din nou.`);
+      }
       lastError = error instanceof Error ? error.message : String(error);
       logAIDebug('groq:error', { task, provider: cfg.name, attempt, error: lastError });
       if (attempt < maxAttempts - 1) {
@@ -465,7 +502,9 @@ class NonRetryableError extends Error {}
 
 /** A 429 whose reset is further away than this is not worth waiting out inside one request. */
 const MAX_RATE_LIMIT_WAIT_MS = 8000;
-const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 413, 422]);
+/** A request with no answer after this long is dropped, so a stalled connection cannot spin the UI forever. */
+const REQUEST_TIMEOUT_MS = 90_000;
+const NON_RETRYABLE_STATUSES = new Set([400, 401, 402, 403, 404, 405, 410, 413, 422]);
 
 function getRetryDelayMs(attempt: number, retryAfterHeader: string | null) {
   const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : 0;
@@ -537,9 +576,11 @@ export async function groqRequest({
       });
       try {
         const result = await attemptOnProvider(cfg, link, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal);
-        trackProviderOutcome(link.provider, primaryProvider, cfg.name);
+        trackProviderOutcome(link.provider, primaryProvider, cfg.name, !isRequestSpecificError(lastError));
         return result;
       } catch (error: unknown) {
+        // Stop pressed: not a provider failure, so do not try the next provider with a dead signal.
+        if (abortSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
         lastError = error instanceof Error ? error.message : String(error);
         logAIDebug('groq:providerFailed', { provider: link.provider, error: lastError });
 
@@ -555,7 +596,7 @@ export async function groqRequest({
               const healedResult = await attemptOnProvider(
                 cfg, { ...link, model: altModel }, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal,
               );
-              trackProviderOutcome(link.provider, primaryProvider, cfg.name);
+              trackProviderOutcome(link.provider, primaryProvider, cfg.name, !isRequestSpecificError(lastError));
               healPrimaryModelChoice(link.provider, primaryProvider, link.model, altModel, cfg.name);
               return healedResult;
             } catch (healError: unknown) {
@@ -666,11 +707,6 @@ export async function groqStream(
         ]
       : messages;
 
-    const timeoutSignal = AbortSignal.timeout(60_000);
-    const combinedSignal = abortSignal
-      ? AbortSignal.any([abortSignal, timeoutSignal])
-      : timeoutSignal;
-
     // Try each provider in the chain for the INITIAL connection only — once bytes
     // start streaming to the UI we commit to that provider (switching mid-stream
     // would mean discarding partial output the user already sees).
@@ -678,23 +714,35 @@ export async function groqStream(
     const effectiveKeys: Partial<Record<ProviderId, string>> = { ...state.providerKeys, [primaryProvider]: primaryKey };
     const chain = buildProviderChain(primaryProvider, state.model, effectiveKeys);
     let res: Response | null = null;
+    let usedProvider: ProviderId | null = null;
     let providerName = getProviderConfig(primaryProvider).name;
     let lastError = 'Eroare necunoscuta';
+    // One controller for the whole stream: Stop reaches the body too, while the
+    // 60 s limit below only covers waiting for the provider to start answering.
+    let controller = new AbortController();
+    const onUserAbort = () => controller.abort(abortSignal?.reason);
+    abortSignal?.addEventListener('abort', onUserAbort, { once: true });
+    const cleanupAbort = () => abortSignal?.removeEventListener('abort', onUserAbort);
 
     for (let ci = 0; ci < chain.length; ci++) {
       const link = chain[ci];
       const cfg = getProviderConfig(link.provider);
+      // A fresh wait per provider: a stalled first one must not leave the next with an already-expired signal.
+      let timedOut = false;
+      const startTimer = setTimeout(() => { timedOut = true; controller.abort(new DOMException('timeout', 'TimeoutError')); }, 60_000);
       try {
         const attempt = await fetch(cfg.endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${link.key}` },
           body: JSON.stringify({ model: link.model, messages: finalMessages, temperature, max_tokens: 4096, stream: true }),
-          signal: combinedSignal,
+          signal: controller.signal,
         });
+        clearTimeout(startTimer);
         if (attempt.ok) {
           res = attempt;
+          usedProvider = link.provider;
           providerName = cfg.name;
-          trackProviderOutcome(link.provider, primaryProvider, cfg.name);
+          trackProviderOutcome(link.provider, primaryProvider, cfg.name, !isRequestSpecificError(lastError));
           break;
         }
         lastError = await extractApiErrorMessage(attempt);
@@ -707,18 +755,36 @@ export async function groqStream(
             : lastError,
         });
       } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
+        clearTimeout(startTimer);
+        if (abortSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          cleanupAbort();
+          throw error;
+        }
+        if (timedOut) {
+          // The controller is spent; the next provider gets a clean one.
+          lastError = `${cfg.name} nu a răspuns în 60 de secunde.`;
+          controller = new AbortController();
+        } else {
+          lastError = error instanceof Error ? error.message : String(error);
+        }
       }
     }
 
-    if (!res) throw new Error(`Eroare ${providerName} API: ${lastError}`);
-    if (!res.body) throw new Error('Răspuns fără corp — încearcă din nou.');
+    if (!res) {
+      cleanupAbort();
+      throw new Error(`Eroare ${providerName} API: ${lastError}`);
+    }
+    if (!res.body) {
+      cleanupAbort();
+      throw new Error('Răspuns fără corp — încearcă din nou.');
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let full = '';
     let carry = '';
 
+    try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
@@ -751,6 +817,17 @@ export async function groqStream(
           console.error(err);
         }
       }
+    }
+    } finally {
+      cleanupAbort();
+    }
+    // Streamed replies carry no token count, so this is an estimate (shown with "≈").
+    if (usedProvider) {
+      useAIUsageStore.getState().record(
+        usedProvider,
+        estimateMessagesTokens(finalMessages) + estimateTokens(full),
+        { estimated: true, window: parseRateHeaders(res.headers) },
+      );
     }
     return full;
   });
@@ -973,30 +1050,108 @@ function isDuplicateFlashcard(front: string, existingFronts: string[]) {
   });
 }
 
+/**
+ * Thrown by `notesToFlashcards` (with `keepPartialOnError`) when the AI failed
+ * after some cards were already made, so the caller can keep them and resume.
+ */
+export class FlashcardGenerationInterrupted extends Error {
+  /** Cards generated before the failure. */
+  readonly partial: { front: string; back: string }[];
+  /** The error that stopped the run. */
+  readonly original: unknown;
+  /** Seconds the provider asked to wait, when it said so. */
+  readonly waitSeconds: number | null;
+  /** Chunk to resume from — the one that failed. */
+  readonly nextChunk: number;
+
+  constructor(
+    partial: { front: string; back: string }[],
+    original: unknown,
+    waitSeconds: number | null,
+    nextChunk: number,
+  ) {
+    super(original instanceof Error ? original.message : 'Generarea a fost întreruptă.');
+    this.name = 'FlashcardGenerationInterrupted';
+    this.partial = partial;
+    this.original = original;
+    this.waitSeconds = waitSeconds;
+    this.nextChunk = nextChunk;
+  }
+}
+
+/** Nothing new could be made from the text (everything it offered was already a card). */
+export class NoNewFlashcardsError extends Error {
+  constructor() {
+    super('Nu s-au putut genera flashcardurile. Textul ar putea fi prea complex sau ilizibil.');
+    this.name = 'NoNewFlashcardsError';
+  }
+}
+
+/** A per-minute limit resets within this; longer waits are left to the caller to surface. */
+const AUTO_WAIT_MAX_SECONDS = 75;
+const AUTO_WAIT_MAX_TIMES = 3;
+
+async function sleepWithCountdown(seconds: number, onTick?: (secondsLeft: number) => void) {
+  for (let left = Math.ceil(seconds); left > 0; left -= 1) {
+    onTick?.(left);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
 export async function notesToFlashcards(
   notesText: string,
   options: {
     count?: number;
     avoidFronts?: string[];
     sourceName?: string;
+    /** Called before the first batch and after every finished one, so the UI can show real progress. */
+    onProgress?: (done: number, target: number) => void;
+    /**
+     * Opt in to riding out a short rate limit: when the provider asks for up to
+     * ~75 s, wait and retry the same batch, calling this each second with the
+     * seconds left. Without it a rate limit fails the call immediately.
+     */
+    onWait?: (secondsLeft: number) => void;
+    /** If the AI fails after some cards exist, throw `FlashcardGenerationInterrupted` carrying them instead of losing them. */
+    keepPartialOnError?: boolean;
+    /** Resume: first chunk to use (from a previous interruption). */
+    startChunk?: number;
+    /** Resume: the card count of the original request, so the chunk list matches the first run. */
+    chunkBudget?: number;
   } = {},
 ): Promise<{ front: string; back: string }[]> {
   if (!notesText || notesText.trim().length < 20)
     throw new Error('Notitele sunt prea scurte pentru conversie in flashcarduri.');
 
   const targetCount = Math.max(1, Math.min(100, Math.round(options.count ?? 15)));
-  const cleanText = notesText
+  const cleanText = normalizeRomanianDiacritics(notesText)
     .replace(/\f/g, '\n')
     .replace(/[ \t]{3,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  const maxChunks = Math.max(4, Math.min(14, Math.ceil(targetCount / 8)));
+  const maxChunks = Math.max(4, Math.min(14, Math.ceil((options.chunkBudget ?? targetCount) / 8)));
   const chunks = chunkText(cleanText, 5200, 420, maxChunks);
   const batchSize = 10;
   const generated: { front: string; back: string }[] = [];
   const seenFronts = [...(options.avoidFronts ?? [])];
+  options.onProgress?.(0, targetCount);
 
-  for (let index = 0; index < chunks.length && generated.length < targetCount; index += 1) {
+  let autoWaits = 0;
+  const askModel = async (messages: GroqMessage[], temperature: number): Promise<string> => {
+    for (;;) {
+      try {
+        return await groqChat(messages, temperature, { skipLibraryContext: true, task: 'questions' });
+      } catch (error: unknown) {
+        const wait = rateLimitWaitSeconds(error);
+        const canWait = options.onWait && wait !== null && wait <= AUTO_WAIT_MAX_SECONDS && autoWaits < AUTO_WAIT_MAX_TIMES;
+        if (!canWait) throw error;
+        autoWaits += 1;
+        await sleepWithCountdown(wait + 1, options.onWait);
+      }
+    }
+  };
+
+  for (let index = options.startChunk ?? 0; index < chunks.length && generated.length < targetCount; index += 1) {
     const requested = Math.min(batchSize, targetCount - generated.length);
     const avoidList = seenFronts.slice(-35).map((front) => `- ${front.slice(0, 120)}`).join('\n');
     const userPrompt = `Transforma textul medical de mai jos in exact ${requested} flashcarduri ultra-eficiente pentru examen.
@@ -1006,6 +1161,8 @@ REGULI:
 - Acopera definitii, mecanisme, semne clinice, diagnostic, tratament, capcane si diferente intre concepte apropiate.
 - Nu repeta carduri deja existente.
 - Nu formula carduri despre document/PDF/pagina; intreaba despre continutul medical.
+- In "front" si "back" scrie text simplu: fara markdown (fara **, #, liste cu -), cu diacritice romanesti corecte (ș, ț, ă, â, î), nu cu sedila (ş, ţ).
+- Fiecare "back" se termina cu o propozitie completa, nu cu "...".
 - Raspunde strict cu array JSON valid, fara markdown.
 ${avoidList ? `CARDURI DE EVITAT (deja exista sau au fost generate):\n${avoidList}\n` : ''}
 
@@ -1018,16 +1175,22 @@ Format: [{"front":"?","back":"..."}]`;
 
     let raw = '';
     let lastJsonError = '';
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const retryNote = lastJsonError
-        ? `\n\nATENTIE: Ultima incercare a returnat JSON invalid (${lastJsonError}). Returneaza STRICT un array JSON valid, fara text sau markdown in afara lui.`
-        : '';
-      raw = await groqChat([
-        { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEsti expert in transformarea cursurilor medicale dense in flashcarduri de tip Active Recall, fara repetitii si fara umplutura.' },
-        { role: 'user', content: userPrompt + retryNote },
-      ], attempt === 0 ? 0.32 : 0.45, { skipLibraryContext: true, task: 'questions' });
-      if (raw.includes('[') && raw.includes(']')) break;
-      lastJsonError = 'lipsesc parantezele [ ]';
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const retryNote = lastJsonError
+          ? `\n\nATENTIE: Ultima incercare a returnat JSON invalid (${lastJsonError}). Returneaza STRICT un array JSON valid, fara text sau markdown in afara lui.`
+          : '';
+        raw = await askModel([
+          { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEsti expert in transformarea cursurilor medicale dense in flashcarduri de tip Active Recall, fara repetitii si fara umplutura.' },
+          { role: 'user', content: userPrompt + retryNote },
+        ], attempt === 0 ? 0.32 : 0.45);
+        if (raw.includes('[') && raw.includes(']')) break;
+        lastJsonError = 'lipsesc parantezele [ ]';
+      }
+    } catch (error: unknown) {
+      // Cards already made are worth more than a clean failure: hand them back so the caller can keep and resume.
+      if (!options.keepPartialOnError || generated.length === 0) throw error;
+      throw new FlashcardGenerationInterrupted(generated.slice(0, targetCount), error, rateLimitWaitSeconds(error), index);
     }
 
     const jsonStr = extractJsonArray(raw);
@@ -1035,25 +1198,23 @@ Format: [{"front":"?","back":"..."}]`;
 
     try {
       const parsed = JSON.parse(jsonStr) as { front: string; back: string }[];
-      parsed
-        .filter(f => f.front?.trim() && f.back?.trim())
-        .filter(f => !isDuplicateFlashcard(f.front, seenFronts))
-        .forEach((flashcard) => {
-          if (generated.length >= targetCount) return;
-          generated.push({
-            front: flashcard.front.trim(),
-            back: flashcard.back.trim(),
-          });
-          seenFronts.push(flashcard.front);
-        });
+      // One pass, so a front repeated inside this same reply is compared with the ones just accepted.
+      for (const flashcard of parsed) {
+        if (generated.length >= targetCount) break;
+        if (typeof flashcard?.front !== 'string' || typeof flashcard?.back !== 'string') continue;
+        const front = cleanFlashcardText(flashcard.front).trim();
+        const back = cleanFlashcardText(flashcard.back).trim();
+        if (!front || !back || isDuplicateFlashcard(front, seenFronts)) continue;
+        generated.push({ front, back });
+        seenFronts.push(front);
+      }
     } catch {
       // Continue with the next chunk; partial high-quality output is better than losing the deck.
     }
+    options.onProgress?.(Math.min(generated.length, targetCount), targetCount);
   }
 
-  if (generated.length === 0) {
-    throw new Error('Nu s-au putut genera flashcardurile. Textul ar putea fi prea complex sau ilizibil.');
-  }
+  if (generated.length === 0) throw new NoNewFlashcardsError();
 
   return generated.slice(0, targetCount);
 }
