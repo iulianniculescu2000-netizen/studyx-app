@@ -12,6 +12,7 @@ import { setVectorStoreProfile } from '../ai/vectorStore';
 import type { Quiz, QuizSession, Folder, QuestionStat, StudyStreak } from '../types';
 import { useSaveStatusStore } from './saveStatusStore';
 import { useToastStore } from './toastStore';
+import { bumpProfileEpoch } from './profileEpoch';
 
 const LS_KEY = (profileId: string, ns: string) => `studyx-p-${profileId}-${ns}`;
 type ProfileNamespace = 'quizzes' | 'folders' | 'stats' | 'notes' | 'ai';
@@ -93,6 +94,15 @@ function quarantine(profileId: string, ns: string, raw: string) {
 // Mutex lock to prevent overlapping disk writes
 let writeLock: Promise<void> = Promise.resolve();
 const lastSerializedSnapshot = new Map<string, string>();
+/**
+ * The profile whose data is currently loaded into the stores. Nothing may be
+ * persisted for any other profile id: while a profile is still loading (or the
+ * previous one is being torn down) the stores hold empty or foreign data, and
+ * writing them would replace the real copy with it.
+ */
+let hydratedProfileId: string | null = null;
+/** Namespaces loaded from a localStorage copy that is newer than disk — the next save must push them to disk. */
+const localOnly = new Set<string>();
 
 function snapshotFor(namespace: ProfileNamespace) {
   switch (namespace) {
@@ -162,7 +172,27 @@ function validateSnapshot<T>(namespace: ProfileNamespace, data: unknown): T | nu
 
 async function read<T>(profileId: string, ns: string, legacyKey?: string): Promise<T | null> {
   try {
-    // 1. Try Disk Storage (Electron only)
+    // 1. A localStorage copy exists only when it is newer than disk: write() deletes it after
+    //    every successful disk write, and flushProfileDataSync() creates it on the way out.
+    //    (Reading disk first used to resurrect the older snapshot after a minimize/close.)
+    const localRaw = localStorage.getItem(LS_KEY(profileId, ns));
+    if (localRaw) {
+      let parsedLocal: unknown;
+      try {
+        parsedLocal = JSON.parse(localRaw);
+      } catch {
+        parsedLocal = undefined; // unreadable: handled by the fallback below, which quarantines it
+      }
+      if (parsedLocal !== undefined) {
+        const validatedLocal = validateSnapshot<T>(ns as ProfileNamespace, parsedLocal);
+        if (validatedLocal) {
+          if (window.electronAPI?.storageSave) localOnly.add(`${profileId}:${ns}`);
+          return validatedLocal;
+        }
+      }
+    }
+
+    // 2. Disk Storage (Electron only)
     if (window.electronAPI?.storageLoad) {
       const diskData = await window.electronAPI.storageLoad(profileId, ns) as LoadMarker<unknown> | null;
       if (diskData?.__corrupt) {
@@ -177,7 +207,7 @@ async function read<T>(profileId: string, ns: string, legacyKey?: string): Promi
       }
     }
 
-    // 2. Fallback to LocalStorage
+    // 3. Fallback to LocalStorage (an unreadable or off-shape copy ends up quarantined here)
     const raw = localStorage.getItem(LS_KEY(profileId, ns));
     if (raw) {
       let parsed: unknown;
@@ -197,7 +227,7 @@ async function read<T>(profileId: string, ns: string, legacyKey?: string): Promi
       }
     }
 
-    // 3. Legacy Migration
+    // 4. Legacy Migration
     if (legacyKey) {
       const legacyRaw = localStorage.getItem(legacyKey);
       if (legacyRaw) {
@@ -205,7 +235,7 @@ async function read<T>(profileId: string, ns: string, legacyKey?: string): Promi
         const data = parsed?.state ?? parsed;
         const validated = validateSnapshot<T>(ns as ProfileNamespace, data);
         if (validated) {
-          await write(profileId, ns, validated);
+          await write(profileId, ns, validated, { force: true }); // still loading, so not "hydrated" yet
           localStorage.removeItem(legacyKey);
           return validated;
         }
@@ -217,7 +247,8 @@ async function read<T>(profileId: string, ns: string, legacyKey?: string): Promi
   }
 }
 
-async function write(profileId: string, ns: string, data: unknown) {
+async function write(profileId: string, ns: string, data: unknown, options: { force?: boolean } = {}) {
+  if (!options.force && hydratedProfileId !== profileId) return;
   const serialized = JSON.stringify(data);
   const cacheKey = `${profileId}:${ns}`;
   if (lastSerializedSnapshot.get(cacheKey) === serialized) return;
@@ -292,14 +323,17 @@ export async function saveProfileNamespace(profileId: string, namespace: Profile
  * the same data.
  */
 export function flushProfileDataSync(profileId: string) {
+  // While this profile is still loading (or after it was swapped out) the stores do not hold its data.
+  if (hydratedProfileId !== profileId) return;
   const namespaces: ProfileNamespace[] = ['quizzes', 'folders', 'stats', 'notes', 'ai'];
   for (const ns of namespaces) {
     try {
       const serialized = JSON.stringify(snapshotFor(ns));
       const cacheKey = `${profileId}:${ns}`;
       if (lastSerializedSnapshot.get(cacheKey) === serialized) continue;
+      // The cache means "already written by write()". Not updating it here keeps the async save that
+      // follows from skipping the disk write because the localStorage copy happens to match.
       localStorage.setItem(LS_KEY(profileId, ns), serialized);
-      lastSerializedSnapshot.set(cacheKey, serialized);
     } catch (err) {
       // Best-effort on the way out — nothing more we can do synchronously;
       // the async path still surfaces quota/write errors during normal use.
@@ -321,6 +355,9 @@ export async function saveProfileData(profileId: string) {
 
 /** Load store state for a profile */
 export async function loadProfileData(profileId: string) {
+  bumpProfileEpoch();
+  hydratedProfileId = null;
+  localOnly.clear();
   useSaveStatusStore.getState().setRecovering('Incarcam profilul');
   // Deliberately NOT awaited: IndexedDB being slow/unavailable (a broken
   // environment, private-browsing restrictions) must not block
@@ -355,5 +392,9 @@ export async function loadProfileData(profileId: string) {
   }));
   lastSerializedSnapshot.set(`${profileId}:notes`, JSON.stringify(notesData ?? { notes: {} }));
   lastSerializedSnapshot.set(`${profileId}:ai`, JSON.stringify(aiData ?? { knowledgeSources: [], libraryFolders: [] }));
+  // Data that came from a newer localStorage copy is not on disk yet: forget the cache entry so the next save writes it.
+  for (const key of localOnly) lastSerializedSnapshot.delete(key);
+  hydratedProfileId = profileId;
+  void useAIStore.getState().reconcileInterruptedIndexing().catch(() => undefined);
   useSaveStatusStore.getState().setSaved('Profil sincronizat');
 }

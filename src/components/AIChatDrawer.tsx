@@ -34,6 +34,7 @@ import { useUIStore } from '../store/uiStore';
 import { useUserStore } from '../store/userStore';
 import { useStatsStore } from '../store/statsStore';
 import { useQuizStore } from '../store/quizStore';
+import { profileGuard } from '../store/profileEpoch';
 import { useAIStore } from '../store/aiStore';
 import { useFolderStore } from '../store/folderStore';
 import { describePlacement, isResidencySource, resolveResidencyPlacement } from '../lib/rezidentiatPlacement';
@@ -901,6 +902,7 @@ export default function AIChatDrawer() {
 
   const makeQuizFromAnswer = async (index: number) => {
     if (loading) return;
+    const assertSameProfile = profileGuard();
     const prev = messages[index - 1];
     const topic = (prev?.role === 'user' ? prev.content : '').trim() || messages[index].content.slice(0, 140);
     if (!hasKey) {
@@ -923,6 +925,7 @@ export default function AIChatDrawer() {
         addToast('Nu am putut genera un set din acest subiect.', 'error');
         return;
       }
+      assertSameProfile();
       const quizId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
       addQuiz({
         id: quizId,

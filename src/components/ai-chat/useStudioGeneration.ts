@@ -23,6 +23,7 @@ import { ensureFolderForPlacement, isResidencySource, resolveResidencyPlacement 
 import type { Question } from '../../types';
 import type { ChatMessage, ChatMode } from './shared';
 import { formatFolderPath } from './chatHelpers';
+import { profileGuard } from '../../store/profileEpoch';
 
 export type DrawerView = 'chat' | 'studio';
 export type StudioDifficulty = 'auto' | 'easy' | 'medium' | 'hard';
@@ -153,6 +154,7 @@ export function useStudioGeneration({
     announceMode?: ChatMode;
   }) => {
     generationAbortedRef.current = false;
+    const assertSameProfile = profileGuard();
     const stopsAtStart = generationStopCountRef?.current ?? 0;
     const wasStopped = () => generationAbortedRef.current || (generationStopCountRef?.current ?? 0) !== stopsAtStart;
     const isChapterScoped = heading !== WHOLE_DOCUMENT_HEADING;
@@ -213,6 +215,7 @@ export function useStudioGeneration({
           });
 
       if (wasStopped()) return false; // user pressed Stop — discard
+      assertSameProfile();
 
       const targetFolder = residencyPlacement ? ensureFolderForPlacement(residencyPlacement) : folder;
       result.quizzes.forEach((quiz) => addQuiz(
@@ -323,6 +326,7 @@ export function useStudioGeneration({
   // command but builds a flashcard deck. Runs WITHOUT the LLM planner, so
   // "fă-mi 3 flashcarduri din X" works even when the planner is rate-limited.
   const tryHandleFlashcardCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
+    const assertSameProfile = profileGuard();
     // Lookarounds instead of \b: a word boundary does not exist next to ă/ș/ț, so
     // "Generează 20 flashcarduri" and "Fă 20 flashcarduri" never matched.
     const plainText = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -391,6 +395,7 @@ export function useStudioGeneration({
       const flashStopsAtStart = generationStopCountRef?.current ?? 0;
       const pairs = await notesToFlashcards(sourceText, { count, sourceName: source.name, avoidFronts: existingFronts });
       if (generationAbortedRef.current || (generationStopCountRef?.current ?? 0) !== flashStopsAtStart) return true; // user pressed Stop — drop the result
+      assertSameProfile();
       if (pairs.length === 0) throw new Error('Nu am putut genera flashcarduri din acest curs.');
 
       const deckId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);

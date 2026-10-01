@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { chunkDocument } from '../ai/chunker';
-import { addChunksToVault, clearVault, removeChunksBySource, searchVault } from '../ai/vectorStore';
+import { addChunksToVault, clearVault, getVaultChunksBySource, removeChunksBySource, searchVault } from '../ai/vectorStore';
+import { currentProfileEpoch } from './profileEpoch';
 import { matchBookByName } from '../data/residencyCurriculum';
 
 export type AIModel =
@@ -225,6 +226,8 @@ export interface AIActions {
   reset: () => void;
   /** Per-profile: knowledge sources + library folders load/save through profileStorage.ts, not the global zustand persist blob. */
   _hydrate: (data: { knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] }) => void;
+  /** Sources left "indexing" by an interrupted run (closed app, profile switch): ready if their chunks exist, else error. */
+  reconcileInterruptedIndexing: () => Promise<void>;
   _snapshot: () => { knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] };
 }
 
@@ -412,6 +415,14 @@ function updateSourceEntry(
   return sources.map((source) => (source.id === sourceId ? updater(source) : source));
 }
 
+/** Legacy sources saved before indexing was tracked have no status; they are usable, so they count as ready. */
+export function isSourceReady(source: { indexStatus?: AIKnowledgeSource['indexStatus'] }): boolean {
+  return source.indexStatus === 'ready' || source.indexStatus === undefined;
+}
+
+/** Documents being indexed right now, so a hydrate does not mistake them for interrupted ones. */
+const indexingInFlight = new Set<string>();
+
 export const useAIStore = create<AIState & AIActions>()(
   devtools(
     persist(
@@ -463,6 +474,10 @@ export const useAIStore = create<AIState & AIActions>()(
 
         addKnowledgeSource: async (name, text, type = 'txt', options = {}) => {
           const sourceId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+          // The stores are global: if the profile changes while this runs, its results belong to the old one.
+          const startedInEpoch = currentProfileEpoch();
+          const sameProfile = () => currentProfileEpoch() === startedInEpoch;
+          indexingInFlight.add(sourceId);
           const now = Date.now();
           const normalizedText = text.trim();
           const preview = buildSourcePreview(normalizedText);
@@ -499,6 +514,7 @@ export const useAIStore = create<AIState & AIActions>()(
             await addChunksToVault(chunks, name, sourceId, {
               onProgress: (progress) => {
                 options.onIndexProgress?.(progress);
+                if (!sameProfile()) return;
                 set((state) => ({
                   knowledgeSources: updateSourceEntry(state.knowledgeSources, sourceId, (source) => ({
                     ...source,
@@ -516,6 +532,10 @@ export const useAIStore = create<AIState & AIActions>()(
               indexProgress: 100,
             };
 
+            // The chunks were saved under the profile this started in; the other profile's list is not ours to touch.
+            // (The first profile fixes its own entry the next time it loads: see reconcileInterruptedIndexing.)
+            if (!sameProfile()) return readySource;
+
             set((state) => ({
               knowledgeSources: updateSourceEntry(state.knowledgeSources, sourceId, () => readySource),
               cache: {
@@ -527,6 +547,7 @@ export const useAIStore = create<AIState & AIActions>()(
             return readySource;
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Indexarea documentului a eșuat.';
+            if (!sameProfile()) throw error;
             set((state) => ({
               knowledgeSources: updateSourceEntry(state.knowledgeSources, sourceId, (source) => ({
                 ...source,
@@ -536,7 +557,29 @@ export const useAIStore = create<AIState & AIActions>()(
               })),
             }), false, 'ai/addKnowledgeSource:error');
             throw error;
+          } finally {
+            indexingInFlight.delete(sourceId);
           }
+        },
+
+        reconcileInterruptedIndexing: async () => {
+          const stale = get().knowledgeSources.filter((source) => source.indexStatus === 'indexing' && !indexingInFlight.has(source.id));
+          if (stale.length === 0) return;
+          const startedInEpoch = currentProfileEpoch();
+          const found = await Promise.all(stale.map(async (source) => ({
+            id: source.id,
+            chunks: (await getVaultChunksBySource(source.id)).length,
+          })));
+          if (currentProfileEpoch() !== startedInEpoch) return;
+          set((state) => ({
+            knowledgeSources: state.knowledgeSources.map((source) => {
+              const result = found.find((entry) => entry.id === source.id);
+              if (!result || source.indexStatus !== 'indexing' || indexingInFlight.has(source.id)) return source;
+              return result.chunks > 0
+                ? { ...source, indexStatus: 'ready' as const, indexProgress: 100, chunkCount: result.chunks }
+                : { ...source, indexStatus: 'error' as const, indexProgress: 0, indexError: 'Indexarea a fost întreruptă. Șterge documentul și adaugă-l din nou.' };
+            }),
+          }), false, 'ai/reconcileInterruptedIndexing');
         },
 
         removeKnowledgeSource: async (sourceId) => {

@@ -24,6 +24,7 @@ import { extractJsonFromText } from '../quizImport';
 import { findOrCreateRezidentiatQuizRoot, findOrCreateRezidentiatLibraryRoot, REZIDENTIAT_ROOT_NAME } from '../rezidentiatRoot';
 import { ensureResidencyFolder, ensureTopicFolder, isResidencySource } from '../rezidentiatPlacement';
 import { friendlyAIError } from './friendlyError';
+import { profileGuard } from '../../store/profileEpoch';
 import type { Difficulty, Folder, Question, Quiz } from '../../types';
 
 function shortId() {
@@ -985,6 +986,8 @@ export async function executeAgentPlan(
   const folderStore = useFolderStore.getState();
   const aiStore = useAIStore.getState();
   const activeProfileId = useUserStore.getState().activeProfileId;
+  // Steps can take a while (AI calls); if the profile changes meanwhile, nothing more may be written.
+  const assertSameProfile = profileGuard();
 
   const createdFolderByName = new Map<string, Folder>();
   const createdQuizIds: string[] = [];
@@ -1053,6 +1056,7 @@ export async function executeAgentPlan(
     callbacks.onStep(index, 'running');
 
     try {
+      assertSameProfile();
       switch (step.action) {
         case 'create_folder': {
           if (!step.name) throw new Error('Lipsește numele folderului.');
@@ -1133,6 +1137,7 @@ export async function executeAgentPlan(
             const quiz = packForResidency && packTarget
               ? { ...rawQuiz, folderId: packTarget.id, category: packTarget.name, tags: [...new Set([...(rawQuiz.tags ?? []), 'rezidentiat'])] }
               : rawQuiz;
+            assertSameProfile();
             useQuizStore.getState().addQuiz(quiz);
             createdQuizIds.push(quiz.id);
             undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
@@ -1230,7 +1235,8 @@ export async function executeAgentPlan(
             questions: result.questions,
             createdAt: Date.now(),
           };
-          useQuizStore.getState().addQuiz(quiz);
+          assertSameProfile();
+            useQuizStore.getState().addQuiz(quiz);
           createdQuizIds.push(quiz.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
           summaryParts.push(`${result.questions.length} grile despre „${step.topic}"${folder ? ` în „${folder.name}"` : ''}`);
@@ -1284,7 +1290,8 @@ export async function executeAgentPlan(
             questions: result.questions,
             createdAt: Date.now(),
           };
-          useQuizStore.getState().addQuiz(quiz);
+          assertSameProfile();
+            useQuizStore.getState().addQuiz(quiz);
           createdQuizIds.push(quiz.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(quiz.id));
           summaryParts.push(`${result.questions.length} grile de recapitulare din greșeli${folder ? ` în „${folder.name}"` : ''}`);
@@ -1321,6 +1328,7 @@ export async function executeAgentPlan(
             questions: cards.map((card) => buildAgentFlashcard(card.front, card.back)),
             createdAt: Date.now(),
           };
+          assertSameProfile();
           useQuizStore.getState().addQuiz(deck);
           createdQuizIds.push(deck.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(deck.id));
@@ -1359,6 +1367,7 @@ export async function executeAgentPlan(
             questions: cards.map((card) => buildAgentFlashcard(card.front, card.back)),
             createdAt: Date.now(),
           };
+          assertSameProfile();
           useQuizStore.getState().addQuiz(deck);
           createdQuizIds.push(deck.id);
           undoOps.push(() => useQuizStore.getState().deleteQuiz(deck.id));
@@ -1487,6 +1496,7 @@ export async function executeAgentPlan(
             }
             if (starter) {
               const created = starter;
+              assertSameProfile();
               useQuizStore.getState().addQuiz(created);
               createdQuizIds.push(created.id);
               undoOps.push(() => useQuizStore.getState().deleteQuiz(created.id));

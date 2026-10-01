@@ -7,9 +7,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  flushProfileDataSync,
   isProfileStorageError,
   listQuarantinedKeys,
   loadProfileData,
+  saveProfileData,
   saveProfileNamespace,
 } from './profileStorage';
 import { useQuizStore } from './quizStore';
@@ -67,6 +69,11 @@ beforeEach(() => {
 });
 
 describe('save failures must not look like success', () => {
+  // Saving is only allowed for a profile whose data is loaded into the stores.
+  beforeEach(async () => {
+    await loadProfileData(PROFILE);
+  });
+
   it('rejects when localStorage is out of quota, instead of resolving', async () => {
     useQuizStore.getState()._hydrate(realWork());
     await withFullStorage(async () => {
@@ -136,5 +143,53 @@ describe('a corrupt disk file must not hide an intact local copy', () => {
     await loadProfileData(PROFILE);
 
     expect(useQuizStore.getState().quizzes.map((q) => q.id)).toEqual(['munca-de-6-luni']);
+  });
+});
+
+describe('what is flushed on the way out must reach disk, and must not be an empty shell', () => {
+  const disk = new Map<string, string>();
+
+  beforeEach(() => {
+    disk.clear();
+    electronAPI.storageLoad = async (profile: string, ns: string) => {
+      const raw = disk.get(`${profile}:${ns}`);
+      return raw ? JSON.parse(raw) : null;
+    };
+    electronAPI.storageSave = async (profile: string, ns: string, serialized: string) => {
+      disk.set(`${profile}:${ns}`, serialized);
+      return true;
+    };
+  });
+
+  const quizIds = (key: string) => (JSON.parse(disk.get(key) ?? '{"quizzes":[]}').quizzes as Array<{ id: string }>).map((q) => q.id);
+
+  it('writes to disk after a synchronous flush (the cache must not claim it is already saved)', async () => {
+    await loadProfileData(PROFILE);
+    useQuizStore.getState()._hydrate(realWork());
+    flushProfileDataSync(PROFILE);
+    await saveProfileData(PROFILE);
+    expect(quizIds(`${PROFILE}:quizzes`).length).toBeGreaterThan(0);
+  });
+
+  it('prefers a newer localStorage copy over an older disk snapshot at startup', async () => {
+    disk.set(`${PROFILE}:quizzes`, JSON.stringify({ quizzes: [], sessions: [] }));
+    localStorage.setItem(`studyx-p-${PROFILE}-quizzes`, JSON.stringify(realWork()));
+    await loadProfileData(PROFILE);
+    expect(useQuizStore.getState().quizzes.length).toBeGreaterThan(0);
+    // ...and the next save carries it to disk instead of skipping it as unchanged.
+    await saveProfileData(PROFILE);
+    expect(quizIds(`${PROFILE}:quizzes`).length).toBeGreaterThan(0);
+  });
+
+  it('never persists the stores for a profile that is not the loaded one', async () => {
+    // A profile that is still loading (or was just swapped out): the stores do not hold its data.
+    const OTHER = 'p-still-loading';
+    const key = `studyx-p-${OTHER}-quizzes`;
+    localStorage.setItem(key, JSON.stringify(realWork()));
+    await loadProfileData(PROFILE);
+    flushProfileDataSync(OTHER);
+    await saveProfileData(OTHER);
+    expect(JSON.parse(localStorage.getItem(key) ?? '{}').quizzes.length).toBeGreaterThan(0);
+    expect(disk.has(`${OTHER}:quizzes`)).toBe(false);
   });
 });
