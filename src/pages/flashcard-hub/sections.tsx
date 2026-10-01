@@ -1,34 +1,40 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import {
   AlertCircle,
   BookOpen,
   Bot,
   Brain,
   Check,
-  CheckCircle,
   ChevronDown,
-  Circle,
+  ChevronRight,
   Clock,
   CreditCard,
+  Flame,
   FolderPlus,
   Image as ImageIcon,
-  Inbox,
+  Layers,
   Loader2,
   Pencil,
-  Play,
   Plus,
   PlusCircle,
   Sparkles,
   Trash2,
   Upload,
-  Layers,
   X as XIcon,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Folder, Quiz, Question } from '../../types';
 import type { Theme } from '../../theme/themes';
 import { useQuizStore } from '../../store/quizStore';
+import { useToastStore } from '../../store/toastStore';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import Portal from '../../components/Portal';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Types
+   ═══════════════════════════════════════════════════════════════════════ */
 
 export interface FlashcardDeckSummary {
   accentColor: string;
@@ -40,33 +46,18 @@ export interface FlashcardDeckSummary {
   total: number;
 }
 
-function MasteryRing({ pct, color }: { pct: number; color: string }) {
-  const radius = 18;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - pct / 100);
+/* ═══════════════════════════════════════════════════════════════════════
+   Shared utilities (patterns from Residency.tsx)
+   ═══════════════════════════════════════════════════════════════════════ */
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative w-11 h-11 flex-shrink-0">
-      <svg className="w-full h-full -rotate-90" viewBox="0 0 44 44">
-        <circle cx="22" cy="22" r={radius} fill="none" stroke={`${color}28`} strokeWidth="3.5" />
-        <motion.circle
-          cx="22"
-          cy="22"
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth="3.5"
-          strokeDasharray={circumference}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: offset }}
-          transition={{ duration: 1, ease: 'easeOut', delay: 0.2 }}
-          strokeLinecap="round"
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-[10px] font-bold" style={{ color }}>{pct}%</span>
-      </div>
-    </div>
+    <h2
+      className="mb-2 px-1 text-[12px] font-medium uppercase tracking-wide"
+      style={{ color: 'var(--text3, #86868b)' }}
+    >
+      {children}
+    </h2>
   );
 }
 
@@ -83,16 +74,70 @@ function folderPath(folders: Folder[], folder: Folder) {
   return names.join(' / ');
 }
 
-function FolderTargetSelect({
+function ResourceRow({
+  icon,
+  title,
+  detail,
+  onClick,
+  busy,
+  first,
+  iconBg,
+  iconColor,
+  theme,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  detail: string;
+  onClick: () => void;
+  busy?: boolean;
+  first?: boolean;
+  iconBg: string;
+  iconColor: string;
+  theme: Theme;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      className="fine-row flex w-full items-center gap-3 px-4 py-3 text-left disabled:opacity-60"
+      style={{ borderRadius: 0, borderTop: first ? undefined : '1px solid var(--hairline)' }}
+    >
+      <div
+        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]"
+        style={{ background: iconBg, color: iconColor }}
+      >
+        {busy ? <Loader2 size={18} className="animate-spin" /> : icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-semibold" style={{ color: theme.text }}>
+          {title}
+        </div>
+        <div className="truncate text-[12px]" style={{ color: theme.text3 }}>
+          {detail}
+        </div>
+      </div>
+      <ChevronRight size={16} style={{ color: theme.text3 }} />
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FolderTargetSelect (preserved)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+export function FolderTargetSelect({
   folders,
   value,
   theme,
+  label = 'Salvează în',
   onChange,
   onCreateFolder,
 }: {
   folders: Folder[];
   value: string;
   theme: Theme;
+  label?: string;
   onChange: (folderId: string) => void;
   onCreateFolder: (name: string, parentId: string | null) => string;
 }) {
@@ -126,10 +171,7 @@ function FolderTargetSelect({
       setOpen(false);
       return;
     }
-    // Reset the browse position/creation form on the transition into "open"
-    // (not via an effect on [open] — that fired a setState on every render
-    // while open, not just on the open transition).
-    setBrowseParentId(selectedFolder?.parentId ?? null);
+    setBrowseParentId(null);
     setCreating(false);
     setOpen(true);
   };
@@ -158,7 +200,7 @@ function FolderTargetSelect({
       >
         <div className="min-w-0 flex-1">
           <div className="text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: theme.text3 }}>
-            Salvează în
+            {label}
           </div>
           <div className="mt-0.5 truncate text-xs font-black">{selectedLabel}</div>
         </div>
@@ -213,7 +255,10 @@ function FolderTargetSelect({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs font-black">{hereLabel}</div>
-                      <div className="mt-0.5 truncate text-[10px]" style={{ color: hereActive ? 'rgba(255,255,255,0.72)' : theme.text3 }}>
+                      <div
+                        className="mt-0.5 truncate text-[10px]"
+                        style={{ color: hereActive ? 'rgba(255,255,255,0.72)' : theme.text3 }}
+                      >
                         Salvează aici
                       </div>
                     </div>
@@ -237,9 +282,13 @@ function FolderTargetSelect({
                     }}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-black">{folder.emoji} {folder.name}</div>
+                      <div className="truncate text-xs font-black">
+                        {folder.emoji} {folder.name}
+                      </div>
                       <div className="mt-0.5 truncate text-[10px]" style={{ color: theme.text3 }}>
-                        {subCount > 0 ? `${subCount} ${subCount === 1 ? 'subfolder' : 'subfoldere'}` : 'Deschide'}
+                        {subCount > 0
+                          ? `${subCount} ${subCount === 1 ? 'subfolder' : 'subfoldere'}`
+                          : 'Deschide'}
                       </div>
                     </div>
                     {active && <Check size={14} style={{ color: theme.accent }} />}
@@ -275,7 +324,10 @@ function FolderTargetSelect({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setCreating(false); setNewName(''); }}
+                      onClick={() => {
+                        setCreating(false);
+                        setNewName('');
+                      }}
                       className="rounded-[12px] px-3 py-2 text-[11px] font-black"
                       style={{ background: theme.surface2, color: theme.text3 }}
                     >
@@ -304,6 +356,10 @@ function FolderTargetSelect({
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   LibrarySourceSelect (preserved)
+   ═══════════════════════════════════════════════════════════════════════ */
+
 function LibrarySourceSelect({
   sources,
   value,
@@ -326,7 +382,9 @@ function LibrarySourceSelect({
     const close = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onEsc = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    const onEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
     window.addEventListener('mousedown', close);
     window.addEventListener('keydown', onEsc);
     return () => {
@@ -377,7 +435,10 @@ function LibrarySourceSelect({
                   <button
                     key={source.id}
                     type="button"
-                    onClick={() => { onChange(source.id); setOpen(false); }}
+                    onClick={() => {
+                      onChange(source.id);
+                      setOpen(false);
+                    }}
                     className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2 text-left transition-all"
                     style={{
                       background: active ? theme.accent : 'transparent',
@@ -397,16 +458,321 @@ function LibrarySourceSelect({
   );
 }
 
-interface SecondaryAction {
-  key: string;
-  label: string;
-  icon: React.ReactNode;
-  color: string;
-  busy?: boolean;
-  onClick: () => void;
+/* ═══════════════════════════════════════════════════════════════════════
+   GeneratedDeckCard — confirmation after an AI deck is created
+   Says where the cards went and lets the user move them right there.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+export interface GeneratedDeckInfo {
+  id: string;
+  title: string;
+  count: number;
+  folderId: string | null;
+  /** True when the folder was picked from the course name rather than by the user. */
+  suggested: boolean;
+  /** Set when the AI stopped before reaching the requested count; the deck keeps what was made. */
+  interrupted?: {
+    requested: number;
+    reason: string;
+    /** Seconds the provider asked to wait, when it said so. */
+    waitSeconds: number | null;
+    /** Distinguishes one interruption from the next, so the countdown restarts. */
+    at: number;
+  };
 }
 
-interface FlashcardHubActionsProps {
+/** "40 s" under a minute and a half, else whole minutes. */
+function formatWaitShort(seconds: number) {
+  return seconds < 90 ? `${seconds} s` : `${Math.ceil(seconds / 60)} min`;
+}
+
+/**
+ * "Continuă generarea" with a countdown while the provider's limit resets.
+ * The parent keys it by the interruption, so every new wait starts a new count.
+ */
+function ResumeButton({
+  waitSeconds,
+  busy,
+  progress,
+  theme,
+  onResume,
+}: {
+  waitSeconds: number | null;
+  busy: boolean;
+  progress: string;
+  theme: Theme;
+  onResume: () => void;
+}) {
+  // Waits longer than five minutes (a daily limit) are not worth counting down: let the user decide.
+  const [left, setLeft] = useState(() => (waitSeconds !== null && waitSeconds <= 300 ? Math.ceil(waitSeconds) + 1 : 0));
+  const counting = left > 0;
+
+  useEffect(() => {
+    if (!counting) return undefined;
+    const timer = setInterval(() => setLeft((value) => Math.max(0, value - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [counting]);
+
+  return (
+    <button
+      type="button"
+      onClick={onResume}
+      disabled={busy || counting}
+      className="press-feedback mt-3 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-[13.5px] font-semibold text-white transition-[filter] duration-300 hover:brightness-110 disabled:opacity-60"
+      style={{ background: theme.accent }}
+    >
+      {busy && <Loader2 size={15} className="animate-spin" />}
+      {busy ? progress || 'Generez...' : counting ? `Continuă în ${formatWaitShort(left)}` : 'Continuă generarea'}
+    </button>
+  );
+}
+
+export function GeneratedDeckCard({
+  info,
+  folders,
+  theme,
+  resuming,
+  progress,
+  onMove,
+  onCreateFolder,
+  onStart,
+  onResume,
+  onDismiss,
+}: {
+  info: GeneratedDeckInfo;
+  folders: Folder[];
+  theme: Theme;
+  resuming: boolean;
+  progress: string;
+  onMove: (folderId: string) => void;
+  onCreateFolder: (name: string, parentId: string | null) => string;
+  onStart: () => void;
+  onResume: () => void;
+  onDismiss: () => void;
+}) {
+  const folder = info.folderId ? folders.find((item) => item.id === info.folderId) ?? null : null;
+  const where = folder ? `${folder.emoji} ${folderPath(folders, folder)}` : 'Neclasificate';
+  const { interrupted } = info;
+  const tone = interrupted ? theme.warning : theme.success;
+
+  return (
+    <motion.section
+      role="status"
+      aria-label={interrupted ? 'Pachet creat parțial' : 'Pachet creat'}
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      className="rounded-2xl p-4"
+      style={{ background: theme.surface, border: `1px solid ${tone}45` }}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]"
+          style={{ background: `${tone}18`, color: tone }}
+        >
+          {interrupted ? <Clock size={18} /> : <Check size={18} />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14.5px] font-semibold" style={{ color: theme.text }}>
+            {interrupted
+              ? `Pachet creat parțial · ${info.count} din ${interrupted.requested} carduri`
+              : `Pachet creat · ${cardsLabel(info.count)}`}
+          </div>
+          <div className="truncate text-[12.5px]" style={{ color: theme.text3 }}>
+            {info.title}
+          </div>
+          <div className="mt-1 text-[12.5px]" style={{ color: theme.text2 }}>
+            Salvat în <span className="font-semibold">{where}</span>
+            {info.suggested && (
+              <span style={{ color: theme.text3 }}> · ales după numele cursului</span>
+            )}
+          </div>
+          {interrupted && (
+            <div className="mt-1.5 text-[12.5px] leading-relaxed" style={{ color: theme.text3 }}>
+              {interrupted.reason} Cardurile de până acum sunt salvate; poți continua de unde a rămas.
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          aria-label="Închide"
+          onClick={onDismiss}
+          className="press-feedback flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-colors"
+          style={{ background: theme.surface2, color: theme.text2 }}
+        >
+          <XIcon size={15} />
+        </button>
+      </div>
+
+      <div className="mt-3">
+        <FolderTargetSelect
+          label="Mută în"
+          folders={folders}
+          value={info.folderId ?? '__uncategorized__'}
+          theme={theme}
+          onChange={onMove}
+          onCreateFolder={onCreateFolder}
+        />
+      </div>
+
+      {interrupted && (
+        <ResumeButton
+          key={interrupted.at}
+          waitSeconds={interrupted.waitSeconds}
+          busy={resuming}
+          progress={progress}
+          theme={theme}
+          onResume={onResume}
+        />
+      )}
+
+      <button
+        type="button"
+        onClick={onStart}
+        className="press-feedback mt-3 flex w-full items-center justify-center rounded-full py-2.5 text-[13.5px] font-semibold transition-[filter] duration-300 hover:brightness-110"
+        style={interrupted ? { background: theme.surface2, color: theme.text } : { background: theme.accent, color: '#fff' }}
+      >
+        Începe repetarea
+      </button>
+    </motion.section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ReviewHeroCard — "De repetat azi"
+   Counts exactly what "Începe repetarea" serves: due cards + never-seen cards.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/** "1 card", "9 carduri", "20 de carduri" — Romanian number agreement. */
+function cardsLabel(count: number) {
+  if (count === 1) return '1 card';
+  const rest = count % 100;
+  return rest === 0 || rest >= 20 ? `${count} de carduri` : `${count} carduri`;
+}
+
+export function ReviewHeroCard({
+  totalDue,
+  totalFresh,
+  totalCards,
+  totalMastered,
+  streak,
+  theme,
+}: {
+  totalDue: number;
+  totalFresh: number;
+  totalCards: number;
+  totalMastered: number;
+  streak: number;
+  theme: Theme;
+}) {
+  if (totalCards === 0) return null;
+  const toStudy = totalDue + totalFresh;
+  const masteryPct = Math.round((totalMastered / totalCards) * 100);
+  const estimatedMinutes = Math.max(1, Math.ceil(toStudy * 0.5));
+  const breakdown = [
+    totalDue > 0 ? `${totalDue} ${totalDue === 1 ? 'restantă' : 'restante'}` : '',
+    totalFresh > 0 ? `${totalFresh} ${totalFresh === 1 ? 'nou' : 'noi'}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.04 }}
+      aria-label="De repetat azi"
+      className="rounded-2xl px-5 py-5"
+      style={{ background: theme.surface, border: '1px solid var(--hairline)' }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[12px] font-medium uppercase tracking-wide" style={{ color: theme.text3 }}>
+          De repetat azi
+        </h2>
+        {streak > 0 && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-medium"
+            style={{ background: `${theme.warning}14`, color: theme.text2 }}
+          >
+            <Flame size={13} style={{ color: theme.warning }} />
+            {streak} {streak === 1 ? 'zi' : 'zile'} la rând
+          </span>
+        )}
+      </div>
+
+      {toStudy === 0 ? (
+        <div className="mt-3 flex items-center gap-3">
+          <div
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px]"
+            style={{ background: `${theme.success}18`, color: theme.success }}
+          >
+            <Check size={20} />
+          </div>
+          <div>
+            <div className="text-[17px] font-semibold" style={{ color: theme.text }}>
+              La zi!
+            </div>
+            <div className="text-[13px]" style={{ color: theme.text3 }}>
+              Nu ai nimic de repetat acum.
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+          <div className="min-w-0">
+            <div
+              className="text-[28px] font-semibold leading-tight tracking-tight"
+              style={{ color: theme.text }}
+            >
+              {cardsLabel(toStudy)}
+            </div>
+            <div className="mt-0.5 text-[13px]" style={{ color: theme.text3 }}>
+              ~{estimatedMinutes} min{breakdown ? ` · ${breakdown}` : ''}
+            </div>
+          </div>
+          <Link
+            to="/flashcards/session/all"
+            className="press-feedback w-full rounded-full px-6 py-2.5 text-center text-[14px] font-semibold text-white transition-[filter] duration-300 hover:brightness-110 sm:w-auto"
+            style={{ background: theme.accent }}
+          >
+            Începe repetarea
+          </Link>
+        </div>
+      )}
+
+      <div className="mt-4">
+        <div
+          role="progressbar"
+          aria-label="Cărți stăpânite"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={masteryPct}
+          className="h-1 overflow-hidden rounded-full"
+          style={{ background: 'var(--fill-subtle, rgba(0,0,0,0.05))' }}
+        >
+          <motion.div
+            className="h-full rounded-full"
+            initial={{ width: 0 }}
+            animate={{ width: `${masteryPct}%` }}
+            transition={{ duration: 0.8, ease: 'easeOut', delay: 0.15 }}
+            style={{ background: theme.success }}
+          />
+        </div>
+        <div className="mt-1.5 text-[11.5px]" style={{ color: theme.text3 }}>
+          {totalMastered} din {totalCards} stăpânite · {masteryPct}%
+        </div>
+      </div>
+    </motion.section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FlashcardHubActions — "Creează pachet nou"
+   Two cards for the main paths (AI from a course, from mistakes), then a
+   compact list for imports and the quick demo deck.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+export interface FlashcardHubActionsProps {
   aiCount: number;
   aiError: string;
   aiLoading: boolean;
@@ -418,9 +784,6 @@ interface FlashcardHubActionsProps {
   photoError: string;
   photoImporting: boolean;
   theme: Theme;
-  totalCards: number;
-  totalDue: number;
-  totalMastered: number;
   targetFolderId: string;
   librarySources: Array<{ id: string; name: string }>;
   libraryGenerating: boolean;
@@ -436,6 +799,8 @@ interface FlashcardHubActionsProps {
   onTargetFolderChange: (folderId: string) => void;
 }
 
+const AI_COUNTS = [10, 25, 50, 100];
+
 export function FlashcardHubActions({
   aiCount,
   aiError,
@@ -448,9 +813,6 @@ export function FlashcardHubActions({
   photoError,
   photoImporting,
   theme,
-  totalCards,
-  totalDue,
-  totalMastered,
   targetFolderId,
   librarySources,
   libraryGenerating,
@@ -469,259 +831,230 @@ export function FlashcardHubActions({
   const activeLibrarySourceId = librarySources.some((source) => source.id === librarySourceId)
     ? librarySourceId
     : librarySources[0]?.id ?? '';
-  const stats = [
-    { label: 'Carduri', value: totalCards, icon: <CreditCard size={15} />, color: theme.accent },
-    { label: 'Restante', value: totalDue, icon: <Clock size={15} />, color: totalDue > 0 ? theme.warning : theme.success },
-    { label: 'Stăpânite', value: totalMastered, icon: <CheckCircle size={15} />, color: theme.success },
-  ];
-
-  const secondaryActions: SecondaryAction[] = [
-    { key: 'quick', label: 'Deck rapid', icon: <Plus size={17} />, color: theme.accent, onClick: onQuickDeckCreate },
-    { key: 'photo', label: 'Import poze', icon: <ImageIcon size={17} />, color: theme.success, busy: photoImporting, onClick: onPhotoImport },
-    { key: 'csv', label: 'Import CSV', icon: <Upload size={17} />, color: theme.accent2, busy: csvImporting, onClick: onCsvImport },
-    { key: 'anki', label: 'Import Anki (.apkg)', icon: <Layers size={17} />, color: theme.accent, onClick: onAnkiImport },
-    { key: 'mistakes', label: 'Din greșeli', icon: <Brain size={17} />, color: theme.warning, onClick: onMistakeDeckCreate },
-  ];
+  const cardStyle = { background: theme.surface, border: '1px solid var(--hairline)' };
+  const busy = aiLoading || libraryGenerating;
 
   return (
-    <>
-      <motion.div
-        data-tutorial="flashcard-hub"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-panel mb-5 flex flex-wrap items-center gap-x-7 gap-y-3 rounded-2xl px-4 py-3"
-      >
-        {stats.map((stat) => (
-          <div key={stat.label} className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: `${stat.color}15`, color: stat.color }}>
-              {stat.icon}
-            </div>
-            <div>
-              <div className="text-lg font-black leading-none tracking-tight" style={{ color: theme.text }}>{stat.value}</div>
-              <div className="text-[10px] font-bold uppercase tracking-wider opacity-50" style={{ color: theme.text }}>{stat.label}</div>
-            </div>
-          </div>
-        ))}
-      </motion.div>
+    <motion.section
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.14 }}
+    >
+      <SectionLabel>CREEAZĂ PACHET NOU</SectionLabel>
 
-      <motion.div
-        initial={{ opacity: 0, scale: 0.99 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.06 }}
-        className="glass-panel mb-4 rounded-[24px] p-5"
-        style={{
-          borderColor: `${theme.accent2}40`,
-        }}
-      >
-        <div className="flex items-center gap-2.5 mb-4">
-          <div
-            className="flex h-10 w-10 items-center justify-center rounded-2xl flex-shrink-0"
-            style={{ background: theme.accent }}
+      {/* Error banner — right under the title so a failed run is never off-screen */}
+      <AnimatePresence>
+        {(aiError || csvError || photoError) && (
+          <motion.div
+            role="alert"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mb-3 flex items-start gap-2.5 rounded-2xl border p-3"
+            style={{
+              background: `${theme.danger}08`,
+              borderColor: `${theme.danger}20`,
+              color: theme.danger,
+            }}
           >
-            <Bot size={20} className="text-white" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <p className="text-sm font-black tracking-tight" style={{ color: theme.text }}>Generează din curs cu AI</p>
-              <Sparkles size={12} style={{ color: theme.accent2 }} />
+            <AlertCircle size={15} className="mt-0.5 shrink-0" />
+            <div className="text-[12px] font-medium leading-relaxed">
+              {aiError || csvError || photoError}
             </div>
-            <p className="text-[11px] font-medium opacity-55" style={{ color: theme.text }}>
-              Curs cu poze → carduri foto. Curs cu text → carduri AI. Detectare automată.
-            </p>
-          </div>
-        </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <div>
-            <div className="text-[9px] font-black uppercase tracking-[0.18em] mb-1" style={{ color: theme.text3 }}>
-              Carduri (cursuri cu poze: tot)
+      <div className="mb-3">
+        <FolderTargetSelect
+          folders={folders}
+          value={targetFolderId}
+          theme={theme}
+          onChange={onTargetFolderChange}
+          onCreateFolder={onCreateFolder}
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {/* ── AI din curs ── */}
+        <div className="flex flex-col rounded-2xl p-4" style={cardStyle}>
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]"
+              style={{ background: `${theme.accent}14`, color: theme.accent }}
+            >
+              {busy ? <Loader2 size={18} className="animate-spin" /> : <Bot size={18} />}
             </div>
-            <div className="flex p-1 rounded-[14px]" style={{ background: theme.surface2 }}>
-              {[10, 25, 50, 100].map((count) => (
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[14px] font-semibold" style={{ color: theme.text }}>
+                  AI din curs
+                </span>
+                <Sparkles size={12} style={{ color: theme.accent2 }} />
+              </div>
+              <div className="truncate text-[12px]" style={{ color: theme.text3 }}>
+                {busy ? aiProgress || 'Se procesează...' : 'Din PDF-ul cursului tău'}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="mb-1.5 text-[11.5px]" style={{ color: theme.text3 }}>
+              Câte carduri
+            </div>
+            <div className="flex rounded-full p-0.5" style={{ background: theme.surface2 }}>
+              {AI_COUNTS.map((count) => (
                 <button
                   key={count}
+                  type="button"
+                  aria-pressed={aiCount === count}
                   onClick={() => onAiCountChange(count)}
-                  className="flex-1 py-2 rounded-lg text-[11px] font-black transition-all"
+                  className="flex-1 rounded-full py-1.5 text-[12.5px] font-semibold transition-colors"
                   style={{
                     background: aiCount === count ? theme.accent : 'transparent',
-                    color: aiCount === count ? '#fff' : theme.text3,
+                    color: aiCount === count ? '#fff' : theme.text2,
                   }}
                 >
                   {count}
                 </button>
               ))}
             </div>
-          </div>
-          <FolderTargetSelect
-            folders={folders}
-            value={targetFolderId}
-            theme={theme}
-            onChange={onTargetFolderChange}
-            onCreateFolder={onCreateFolder}
-          />
-        </div>
-
-        <motion.button
-          whileHover={{ scale: aiLoading ? 1 : 1.01 }}
-          whileTap={{ scale: aiLoading ? 1 : 0.99 }}
-          onClick={onPdfImport}
-          disabled={aiLoading}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-[16px] py-3.5 text-xs font-black uppercase tracking-widest text-white transition-all"
-          style={{
-            background: aiLoading ? theme.surface2 : theme.accent,
-            color: aiLoading ? theme.text3 : '#fff',
-          }}
-        >
-          {aiLoading ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              {aiProgress || 'Se procesează...'}
-            </>
-          ) : (
-            <>
-              <BookOpen size={16} />
-              Selectează PDF curs
-            </>
-          )}
-        </motion.button>
-
-        {hasAI && librarySources.length > 0 && (
-          <div className="mt-3 rounded-[16px] border p-3" style={{ borderColor: theme.border, background: theme.surface2 }}>
-            <div className="mb-2 flex items-center gap-1.5">
-              <Sparkles size={12} style={{ color: theme.accent }} />
-              <span className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                Sau din cursurile din Biblioteca AI
-              </span>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <LibrarySourceSelect
-                sources={librarySources}
-                value={activeLibrarySourceId}
-                disabled={libraryGenerating}
-                theme={theme}
-                onChange={setLibrarySourceId}
-              />
-              <button
-                onClick={() => activeLibrarySourceId && onLibraryGenerate(activeLibrarySourceId)}
-                disabled={libraryGenerating || !activeLibrarySourceId}
-                className="flex items-center justify-center gap-2 rounded-[12px] px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-white transition-all disabled:opacity-60"
-                style={{ background: theme.accent }}
-              >
-                {libraryGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                {libraryGenerating ? 'Generez...' : 'Generează carduri'}
-              </button>
-            </div>
-            <p className="mt-2 text-[10px] font-medium opacity-55" style={{ color: theme.text }}>
-              Folosește numărul de carduri și folderul alese mai sus. Cardurile acoperă definiții, mecanisme, semne și capcane.
+            <p className="mt-1.5 text-[11px]" style={{ color: theme.text3 }}>
+              Cursurile cu poze se importă întregi.
             </p>
           </div>
-        )}
 
-        {!hasAI && (
-          <p className="mt-2.5 text-center text-[11px] font-medium opacity-55" style={{ color: theme.text }}>
-            Cursurile cu poze merg fără cheie AI. Pentru cursuri doar-text, adaugă o cheie în Setări AI.
-          </p>
-        )}
-
-        <AnimatePresence>
-          {aiError && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="mt-3 flex items-start gap-2.5 rounded-2xl border p-3"
-              style={{ background: `${theme.danger}08`, borderColor: `${theme.danger}20`, color: theme.danger }}
-            >
-              <AlertCircle size={15} className="shrink-0 mt-0.5" />
-              <div className="text-[11px] font-bold leading-relaxed">{aiError}</div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.12 }}
-        className="mb-8 grid grid-cols-2 gap-2.5 sm:grid-cols-4"
-      >
-        {secondaryActions.map((action) => (
           <button
-            key={action.key}
-            onClick={action.onClick}
-            disabled={action.busy}
-            className="flex flex-col items-center gap-2 rounded-2xl px-3 py-4 text-center transition-all hover:-translate-y-0.5"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+            type="button"
+            onClick={onPdfImport}
+            disabled={busy}
+            className="press-feedback mt-4 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-semibold text-white transition-[filter] duration-300 hover:brightness-110 disabled:opacity-60"
+            style={{ background: theme.accent }}
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: `${action.color}15`, color: action.color }}>
-              {action.busy ? <Loader2 size={17} className="animate-spin" /> : action.icon}
-            </div>
-            <span className="text-[11px] font-black tracking-tight" style={{ color: theme.text }}>{action.label}</span>
+            <BookOpen size={15} />
+            Alege PDF-ul cursului
           </button>
-        ))}
-      </motion.div>
 
-      <AnimatePresence>
-        {(csvError || photoError) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-6 flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-bold"
-            style={{ background: `${theme.danger}15`, border: `1px solid ${theme.danger}30`, color: theme.danger }}
-          >
-            <AlertCircle size={14} />
-            {csvError || photoError}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {totalDue > 0 && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.16 }}
-          className="mb-8 flex flex-col gap-4 rounded-[24px] p-5 sm:flex-row sm:items-center sm:justify-between"
-          style={{
-            background: `linear-gradient(135deg, ${theme.warning}1E, ${theme.accent}10)`,
-            border: `1px solid ${theme.warning}38`,
-          }}
-        >
-          <div className="flex items-center gap-3.5">
-            <div
-              className="flex h-12 w-12 items-center justify-center rounded-[18px] text-xl flex-shrink-0"
-              style={{ background: `${theme.warning}22`, border: `1px solid ${theme.warning}38` }}
-            >
-              ⚡
+          {hasAI && librarySources.length > 0 && (
+            <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--hairline)' }}>
+              <div className="mb-2 text-[11.5px]" style={{ color: theme.text3 }}>
+                Sau din Biblioteca AI
+              </div>
+              <div className="flex flex-col gap-2">
+                <LibrarySourceSelect
+                  sources={librarySources}
+                  value={activeLibrarySourceId}
+                  disabled={libraryGenerating}
+                  theme={theme}
+                  onChange={setLibrarySourceId}
+                />
+                <button
+                  type="button"
+                  onClick={() => activeLibrarySourceId && onLibraryGenerate(activeLibrarySourceId)}
+                  disabled={libraryGenerating || !activeLibrarySourceId}
+                  className="press-feedback flex items-center justify-center gap-2 rounded-full py-2 text-[12.5px] font-semibold transition-colors disabled:opacity-60"
+                  style={{ background: theme.surface2, color: theme.text }}
+                >
+                  {libraryGenerating ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={14} style={{ color: theme.accent }} />
+                  )}
+                  {libraryGenerating ? 'Generez...' : 'Generează din bibliotecă'}
+                </button>
+              </div>
             </div>
-            <div>
-              <p className="font-black text-base leading-tight" style={{ color: theme.text }}>
-                {totalDue} {totalDue === 1 ? 'card restant' : 'carduri restante'}
-              </p>
-              <p className="text-[11px] font-bold uppercase tracking-wider opacity-55 mt-0.5" style={{ color: theme.text }}>
-                ~{Math.ceil(totalDue * 0.5)} minute
-              </p>
+          )}
+
+          {!hasAI && (
+            <p className="mt-3 text-[11px]" style={{ color: theme.text3 }}>
+              Cursurile cu poze merg fără cheie AI. Pentru text, adaugă o cheie în Setări AI.
+            </p>
+          )}
+        </div>
+
+        {/* ── Din greșeli ── */}
+        <div className="flex flex-col rounded-2xl p-4" style={cardStyle}>
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]"
+              style={{ background: `${theme.warning}14`, color: theme.warning }}
+            >
+              <Brain size={18} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[14px] font-semibold" style={{ color: theme.text }}>
+                Din greșeli
+              </div>
+              <div className="truncate text-[12px]" style={{ color: theme.text3 }}>
+                Din ce ai greșit repetat
+              </div>
             </div>
           </div>
-          <Link
-            to="/flashcards/session/all"
-            className="flex w-full items-center justify-center gap-2 rounded-2xl px-7 py-3 text-sm font-black text-white transition-all hover:scale-[1.02] sm:w-auto"
-            style={{ background: `linear-gradient(135deg, ${theme.warning}, ${theme.accent})` }}
+          <p className="mt-4 text-[12.5px] leading-relaxed" style={{ color: theme.text3 }}>
+            Pentru fiecare întrebare pe care ai greșit-o de mai multe ori primești 2 carduri, ca să le
+            fixezi în memorie.
+          </p>
+          <button
+            type="button"
+            onClick={onMistakeDeckCreate}
+            className="press-feedback mt-auto flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-semibold transition-colors"
+            style={{ background: theme.surface2, color: theme.text, marginTop: '1rem' }}
           >
-            <Play size={15} fill="white" />
-            Recapitulează tot
-          </Link>
-        </motion.div>
-      )}
-    </>
+            Creează pachetul
+          </button>
+        </div>
+      </div>
+
+      {/* ── Importuri și pachet rapid ── */}
+      <div className="mt-3 overflow-hidden rounded-2xl" style={cardStyle}>
+        <ResourceRow
+          first
+          icon={<ImageIcon size={18} />}
+          title="Import poze"
+          detail="JPG, PNG, WEBP sau PDF scanat"
+          iconBg={`${theme.success}14`}
+          iconColor={theme.success}
+          theme={theme}
+          busy={photoImporting}
+          onClick={onPhotoImport}
+        />
+        <ResourceRow
+          icon={<Upload size={18} />}
+          title="Import CSV"
+          detail="CSV, TSV — o linie per card"
+          iconBg={`${theme.accent2}14`}
+          iconColor={theme.accent2}
+          theme={theme}
+          busy={csvImporting}
+          onClick={onCsvImport}
+        />
+        <ResourceRow
+          icon={<Layers size={18} />}
+          title="Import Anki (.apkg)"
+          detail="Deck-uri Anki exportate"
+          iconBg={`${theme.accent}14`}
+          iconColor={theme.accent}
+          theme={theme}
+          onClick={onAnkiImport}
+        />
+        <ResourceRow
+          icon={<Plus size={18} />}
+          title="Pachet rapid"
+          detail="6 carduri demo pentru test"
+          iconBg={`${theme.accent}14`}
+          iconColor={theme.accent}
+          theme={theme}
+          onClick={onQuickDeckCreate}
+        />
+      </div>
+    </motion.section>
   );
 }
 
-interface FlashcardDeckGridProps {
-  decks: FlashcardDeckSummary[];
-  folders: Folder[];
-  theme: Theme;
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   EditDeckModal (preserved)
+   ═══════════════════════════════════════════════════════════════════════ */
 
 function EditDeckModal({
   quiz,
@@ -733,6 +1066,8 @@ function EditDeckModal({
   onClose: () => void;
 }) {
   const updateQuiz = useQuizStore((state) => state.updateQuiz);
+  const dialogRef = useFocusTrap(true, onClose);
+  const titleId = useId();
   const [title, setTitle] = useState(quiz.title);
   const [cards, setCards] = useState<Array<{ id: string; front: string; back: string }>>(() =>
     quiz.questions.map((q) => ({
@@ -788,20 +1123,29 @@ function EditDeckModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto"
+      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto"
       style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', padding: '2rem 1rem' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <motion.div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         initial={{ scale: 0.95, y: 24 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.95, y: 20 }}
         className="glass-panel premium-shadow w-full max-w-xl rounded-[28px] p-6"
       >
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-[15px] font-black" style={{ color: theme.text }}>Editează deck</h2>
+          <h2 id={titleId} className="text-[15px] font-black" style={{ color: theme.text }}>
+            Editează deck
+          </h2>
           <button
             onClick={onClose}
+            aria-label="Închide"
             className="flex h-8 w-8 items-center justify-center rounded-xl transition-colors"
             style={{ color: theme.text3, background: theme.surface2 }}
           >
@@ -810,7 +1154,10 @@ function EditDeckModal({
         </div>
 
         <div className="mb-5">
-          <div className="mb-1.5 text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: theme.text3 }}>
+          <div
+            className="mb-1.5 text-[9px] font-black uppercase tracking-[0.18em]"
+            style={{ color: theme.text3 }}
+          >
             Titlu deck
           </div>
           <input
@@ -826,7 +1173,10 @@ function EditDeckModal({
         </div>
 
         <div className="mb-1.5 flex items-center justify-between">
-          <div className="text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: theme.text3 }}>
+          <div
+            className="text-[9px] font-black uppercase tracking-[0.18em]"
+            style={{ color: theme.text3 }}
+          >
             Carduri · {cards.length}
           </div>
         </div>
@@ -839,11 +1189,15 @@ function EditDeckModal({
               style={{ background: theme.surface2, borderColor: theme.border }}
             >
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
+                <span
+                  className="text-[9px] font-black uppercase tracking-wider"
+                  style={{ color: theme.text3 }}
+                >
                   {idx + 1}
                 </span>
                 <button
                   onClick={() => deleteCard(card.id)}
+                  aria-label="Șterge cardul"
                   className="flex h-6 w-6 items-center justify-center rounded-lg transition-colors hover:bg-red-500/15"
                   style={{ color: theme.danger }}
                 >
@@ -873,7 +1227,12 @@ function EditDeckModal({
         <button
           onClick={addCard}
           className="mb-5 flex w-full items-center justify-center gap-2 rounded-[16px] border py-2.5 text-[11px] font-black uppercase tracking-wider transition-all hover:scale-[1.01]"
-          style={{ borderColor: `${theme.accent}44`, color: theme.accent, borderStyle: 'dashed', background: `${theme.accent}08` }}
+          style={{
+            borderColor: `${theme.accent}44`,
+            color: theme.accent,
+            borderStyle: 'dashed',
+            background: `${theme.accent}08`,
+          }}
         >
           <PlusCircle size={14} />
           Card nou
@@ -889,7 +1248,9 @@ function EditDeckModal({
           </button>
           <button
             onClick={save}
-            className="flex-1 rounded-[16px] py-3 text-[11px] font-black uppercase tracking-wider text-white transition-all hover:scale-[1.02]"
+            disabled={cards.every((card) => !card.front.trim() && !card.back.trim())}
+            title="Un pachet are nevoie de cel puțin un card"
+            className="flex-1 rounded-[16px] py-3 text-[11px] font-black uppercase tracking-wider text-white transition-all hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
             style={{ background: theme.accent }}
           >
             Salvează
@@ -900,88 +1261,120 @@ function EditDeckModal({
   );
 }
 
-function DeckRow({ deck, theme, index }: { deck: FlashcardDeckSummary; theme: Theme; index: number }) {
-  const [editing, setEditing] = useState(false);
+/* ═══════════════════════════════════════════════════════════════════════
+   DeckRow + FlashcardDeckGrid — "Pachetele tale"
+   Row-based list; edit and delete sit beside the link, never inside it.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function DeckRow({
+  deck,
+  theme,
+  index,
+  first,
+  onEdit,
+  onDelete,
+}: {
+  deck: FlashcardDeckSummary;
+  theme: Theme;
+  index: number;
+  first?: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const ringColor =
+    deck.due > 0 ? theme.warning : deck.masteryPct >= 80 ? theme.success : theme.accent;
 
   return (
-    <>
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.04 * index, ease: [0.16, 1, 0.3, 1] }}
-        whileHover={{ y: -2 }}
-        className="glass-panel premium-shadow relative overflow-hidden rounded-2xl p-4"
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.04 * index, ease: [0.16, 1, 0.3, 1] }}
+      className="fine-row flex items-center"
+      style={{ borderTop: first ? undefined : '1px solid var(--hairline)' }}
+    >
+      <Link
+        to={`/flashcards/session/${deck.quiz.id}`}
+        className="flex min-w-0 flex-1 items-center gap-3 py-3.5 pl-4 pr-2 text-left"
       >
-        <div className="absolute inset-y-0 left-0 w-1" style={{ background: deck.accentColor }} />
-        <div className="flex flex-col gap-4 sm:ml-1.5 sm:flex-row sm:items-center">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3">
-              <div className="text-2xl">{deck.quiz.emoji}</div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="truncate text-sm font-black leading-tight" style={{ color: theme.text }}>{deck.quiz.title}</h3>
-                </div>
-                <p className="mt-0.5 text-[10px] font-black uppercase tracking-wider opacity-45" style={{ color: theme.text }}>
-                  {deck.total} carduri
-                  {deck.due > 0 && <span style={{ color: theme.warning }}> · {deck.due} restante</span>}
-                  {deck.seen === 0 && ' · nou'}
-                </p>
-              </div>
-            </div>
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full" style={{ background: theme.surface2 }}>
-              <motion.div
-                className="h-full rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${deck.masteryPct}%` }}
-                transition={{ duration: 0.9, ease: 'easeOut' }}
-                style={{ background: deck.accentColor }}
-              />
-            </div>
+        <div className="flex-shrink-0 text-xl">{deck.quiz.emoji}</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-semibold" style={{ color: theme.text }}>
+            {deck.quiz.title}
           </div>
-
-          <MasteryRing pct={deck.masteryPct} color={deck.due > 0 ? theme.warning : deck.masteryPct >= 80 ? theme.success : theme.accent} />
-
-          <div className="flex w-full gap-2 sm:w-auto sm:flex-col">
-            <Link
-              to={`/flashcards/session/${deck.quiz.id}`}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-white transition-all hover:scale-[1.03] sm:flex-none"
-              style={{ background: deck.accentColor, minWidth: 130 }}
-            >
-              <Play size={11} fill="white" />
-              {deck.due > 0 ? 'Recapitulează' : 'Studiază'}
-            </Link>
-            <div className="flex gap-2">
-              <Link
-                to={`/flashcards/session/${deck.quiz.id}?mode=all`}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-[11px] font-black uppercase tracking-wider transition-all"
-                style={{ background: theme.surface2, color: theme.text2, border: `1px solid ${theme.border2}` }}
-              >
-                <Circle size={9} />
-                Vezi
-              </Link>
-              <button
-                onClick={() => setEditing(true)}
-                className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[11px] font-black uppercase tracking-wider transition-all hover:scale-[1.03]"
-                style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}
-                title="Editează cardurile"
-              >
-                <Pencil size={12} />
-              </button>
-            </div>
+          <div className="mt-0.5 flex items-center gap-2">
+            <span className="text-[12px]" style={{ color: theme.text3 }}>
+              {deck.total} carduri
+            </span>
+            {deck.due > 0 && (
+              <span className="text-[12px] font-medium" style={{ color: theme.warning }}>
+                · {deck.due} {deck.due === 1 ? 'restantă' : 'restante'}
+              </span>
+            )}
+            {deck.seen === 0 && (
+              <span className="text-[12px] font-medium" style={{ color: theme.accent }}>
+                · nou
+              </span>
+            )}
+          </div>
+          <div
+            className="mt-2 h-1 overflow-hidden rounded-full"
+            style={{ background: 'var(--fill-subtle, rgba(0,0,0,0.05))' }}
+          >
+            <motion.div
+              className="h-full rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${deck.masteryPct}%` }}
+              transition={{ duration: 0.8, ease: 'easeOut', delay: 0.1 + index * 0.04 }}
+              style={{ background: ringColor }}
+            />
+          </div>
+          <div className="mt-1 text-[11px]" style={{ color: theme.text3 }}>
+            {deck.masteryPct}% stăpânit
           </div>
         </div>
-      </motion.div>
+      </Link>
 
-      <AnimatePresence>
-        {editing && (
-          <EditDeckModal quiz={deck.quiz} theme={theme} onClose={() => setEditing(false)} />
-        )}
-      </AnimatePresence>
-    </>
+      <div className="flex flex-shrink-0 items-center gap-0.5 pr-3">
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Editează pachetul ${deck.quiz.title}`}
+          title="Editează"
+          className="press-feedback flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ color: theme.text3 }}
+        >
+          <Pencil size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={`Șterge pachetul ${deck.quiz.title}`}
+          title="Șterge"
+          className="press-feedback flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ color: theme.text3 }}
+        >
+          <Trash2 size={14} />
+        </button>
+        <ChevronRight size={16} aria-hidden style={{ color: theme.text3 }} />
+      </div>
+    </motion.div>
   );
 }
 
+interface FlashcardDeckGridProps {
+  decks: FlashcardDeckSummary[];
+  folders: Folder[];
+  theme: Theme;
+}
+
 export function FlashcardDeckGrid({ decks, folders, theme }: FlashcardDeckGridProps) {
+  const deleteQuiz = useQuizStore((state) => state.deleteQuiz);
+  const addToast = useToastStore((state) => state.addToast);
+  const [editingDeck, setEditingDeck] = useState<Quiz | null>(null);
+  // Kept after closing so the dialog text does not blank out while it fades.
+  const [deleteTarget, setDeleteTarget] = useState<Quiz | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
   const groups = useMemo(() => {
     const byId = new Map(folders.map((folder) => [folder.id, folder]));
     const map = new Map<string, { name: string; emoji: string; decks: FlashcardDeckSummary[] }>();
@@ -999,71 +1392,125 @@ export function FlashcardDeckGrid({ decks, folders, theme }: FlashcardDeckGridPr
       map.get(key)!.decks.push(deck);
     }
 
-    return Array.from(map.entries())
+    const sorted = Array.from(map.entries())
       .map(([id, group]) => ({ id, ...group }))
       .sort((a, b) => {
         if (a.id === '__uncategorized__') return 1;
         if (b.id === '__uncategorized__') return -1;
         return a.name.localeCompare(b.name);
       });
+
+    // Offset per group so the entrance stagger continues across groups.
+    return sorted.map((group, index) => ({
+      ...group,
+      startIndex: sorted.slice(0, index).reduce((sum, previous) => sum + previous.decks.length, 0),
+    }));
   }, [decks, folders]);
+
+  const askDelete = (quiz: Quiz) => {
+    setDeleteTarget(quiz);
+    setDeleteOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (deleteTarget) {
+      deleteQuiz(deleteTarget.id);
+      addToast(`Pachetul „${deleteTarget.title}" a fost șters.`, 'success');
+    }
+    setDeleteOpen(false);
+  };
+
+  const overlays = (
+    <>
+      <Portal>
+        <AnimatePresence>
+          {editingDeck && (
+            <EditDeckModal quiz={editingDeck} theme={theme} onClose={() => setEditingDeck(null)} />
+          )}
+        </AnimatePresence>
+      </Portal>
+      <ConfirmDialog
+        open={deleteOpen}
+        title={`Ștergi pachetul „${deleteTarget?.title ?? ''}"?`}
+        description={`Cele ${deleteTarget?.questions.length ?? 0} carduri din pachet dispar. Acțiunea nu poate fi anulată.`}
+        confirmLabel="Șterge pachetul"
+        cancelLabel="Anulează"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteOpen(false)}
+      />
+    </>
+  );
 
   if (decks.length === 0) {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.2 }}
-        className="glass-panel premium-shadow rounded-3xl py-16 text-center"
-      >
-        <div className="mb-3 text-5xl">🃏</div>
-        <h3 className="mb-2 text-lg font-semibold" style={{ color: theme.text }}>Niciun deck încă</h3>
-        <p className="mb-6 text-sm" style={{ color: theme.text3 }}>
-          Încarcă un curs PDF sau creează un deck rapid pentru a începe.
-        </p>
-        <Link
-          to="/create"
-          className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold text-white"
-          style={{ background: theme.accent }}
+      <>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.12 }}
+          className="rounded-2xl px-5 py-14 text-center"
+          style={{ background: theme.surface, border: '1px solid var(--hairline)' }}
         >
-          <BookOpen size={15} />
-          Creează o grilă
-        </Link>
-      </motion.div>
+          <div className="mb-3 text-4xl">🃏</div>
+          <h3 className="mb-1.5 text-[16px] font-semibold" style={{ color: theme.text }}>
+            Niciun pachet încă
+          </h3>
+          <p className="text-[13px]" style={{ color: theme.text3 }}>
+            Încarcă un curs PDF sau creează un pachet rapid mai jos.
+          </p>
+        </motion.div>
+        {overlays}
+      </>
     );
   }
 
-  const orderIndex = new Map<string, number>();
-  let counter = 0;
-  for (const group of groups) {
-    for (const deck of group.decks) {
-      orderIndex.set(deck.quiz.id, counter);
-      counter += 1;
-    }
-  }
-
   return (
-    <div className="flex flex-col gap-7">
-      {groups.map((group) => (
-        <div key={group.id}>
-          <div className="mb-2.5 flex items-center gap-2 px-1">
-            {group.id === '__uncategorized__'
-              ? <Inbox size={14} style={{ color: theme.text3 }} />
-              : <span className="text-sm">{group.emoji}</span>}
-            <h2 className="text-[13px] font-black tracking-tight" style={{ color: group.id === '__uncategorized__' ? theme.text3 : theme.text }}>
-              {group.name}
-            </h2>
-            <span className="text-[11px] font-bold opacity-45" style={{ color: theme.text }}>
-              {group.decks.length} {group.decks.length === 1 ? 'deck' : 'deck-uri'}
-            </span>
+    <section>
+      <SectionLabel>PACHETELE TALE</SectionLabel>
+      <div className="flex flex-col gap-5">
+        {groups.map((group) => (
+          <div key={group.id}>
+            {groups.length > 1 && (
+              <div className="mb-1.5 flex items-center gap-2 px-1">
+                {group.id === '__uncategorized__' ? (
+                  <CreditCard size={13} style={{ color: theme.text3 }} />
+                ) : (
+                  <span className="text-sm">{group.emoji}</span>
+                )}
+                <span
+                  className="text-[12px] font-semibold"
+                  style={{
+                    color: group.id === '__uncategorized__' ? theme.text3 : theme.text,
+                  }}
+                >
+                  {group.name}
+                </span>
+                <span className="text-[11px]" style={{ color: theme.text3 }}>
+                  · {group.decks.length}
+                </span>
+              </div>
+            )}
+            <div
+              className="overflow-hidden rounded-2xl"
+              style={{ background: theme.surface, border: '1px solid var(--hairline)' }}
+            >
+              {group.decks.map((deck, idx) => (
+                <DeckRow
+                  key={deck.quiz.id}
+                  deck={deck}
+                  theme={theme}
+                  index={group.startIndex + idx}
+                  first={idx === 0}
+                  onEdit={() => setEditingDeck(deck.quiz)}
+                  onDelete={() => askDelete(deck.quiz)}
+                />
+              ))}
+            </div>
           </div>
-          <div className="flex flex-col gap-2.5">
-            {group.decks.map((deck) => (
-              <DeckRow key={deck.quiz.id} deck={deck} theme={theme} index={orderIndex.get(deck.quiz.id) ?? 0} />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      {overlays}
+    </section>
   );
 }

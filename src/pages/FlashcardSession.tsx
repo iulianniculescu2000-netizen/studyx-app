@@ -13,6 +13,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildClarificationFallback, cleanQuestionExplanation, getCorrectAnswerText } from '../helpers/quizAi';
+import { cleanFlashcardText } from '../lib/flashcardText';
 import { explainWrongAnswer } from '../lib/groq';
 import QuizImage from '../components/QuizImage';
 import AIRichText from '../components/ai-chat/AIRichText';
@@ -241,6 +242,10 @@ export default function FlashcardSession() {
   useEffect(() => {
     const handleKeys = (event: KeyboardEvent) => {
       if (sessionDone) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // A focused button/field keeps its own Enter/Space.
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest('button, a, input, textarea, select, [role="button"]'))) return;
 
       if (event.code === 'Space' || event.key === 'Enter') {
         event.preventDefault();
@@ -522,7 +527,7 @@ export default function FlashcardSession() {
                     <div className="grid h-full w-full grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] items-center gap-7">
                       <div className="custom-scrollbar min-h-0 overflow-y-auto pr-1 text-left">
                         <h2 className={`${frontCopyTone} whitespace-pre-wrap break-words`} style={{ color: theme.text }}>
-                          {current.question.text}
+                          {cleanFlashcardText(current.question.text)}
                         </h2>
                       </div>
                       <div className={`${imageFrameClass} flex items-center justify-center`}>
@@ -536,7 +541,7 @@ export default function FlashcardSession() {
                   ) : (
                     <div className={`custom-scrollbar mx-auto flex max-h-full ${hasMedia ? 'w-full' : ''} ${frontContentWidthClass} flex-col items-center justify-center overflow-y-auto px-1`}>
                       <h2 className={`${frontCopyTone} whitespace-pre-wrap break-words`} style={{ color: theme.text }}>
-                        {current.question.text}
+                        {cleanFlashcardText(current.question.text)}
                       </h2>
 
                       {current.question.imageUrl && (
@@ -596,7 +601,7 @@ export default function FlashcardSession() {
                               className={`${getAnswerTone(option.text, denseLayout)} whitespace-pre-wrap break-words`}
                               style={{ color: theme.text }}
                             >
-                              {option.text}
+                              {cleanFlashcardText(option.text)}
                             </p>
                           </div>
                         ))}
@@ -613,7 +618,7 @@ export default function FlashcardSession() {
                           <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: theme.text3 }}>
                             Explicația din grilă
                           </p>
-                          <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{cleanQuestionExplanation(current.question.explanation)}</p>
+                          <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{cleanFlashcardText(cleanQuestionExplanation(current.question.explanation))}</p>
                         </div>
                       )}
 
