@@ -13,10 +13,13 @@ import {
   History,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Trash2,
 } from 'lucide-react';
 import BackupExport from '../components/BackupExport';
 import AISettings from '../components/AISettings';
+import AIKeyGuide from '../tutorial/AIKeyGuide';
+import { WHATS_NEW_OPEN_EVENT } from '../components/WhatsNewTour';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { detectDeviceCapabilities } from '../lib/deviceTier';
 import { getHealthBadgeLabel } from '../lib/healthReporter';
@@ -255,6 +258,7 @@ export default function Settings() {
 
   const [showBackup, setShowBackup] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
+  const [showKeyGuide, setShowKeyGuide] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const deviceInfo = detectDeviceCapabilities();
 
@@ -557,18 +561,39 @@ export default function Settings() {
               </span>
             )}
           />
+          <Divider />
+          <ActionRow
+            icon={<Sparkles size={16} />}
+            label="Ghid chei gratuite"
+            description="Obții o cheie gratuită, o testezi și o salvezi, pas cu pas. Mai multe chei înseamnă rezerve automate."
+            buttonLabel={showKeyGuide ? 'Ascunde' : 'Deschide'}
+            onClick={() => setShowKeyGuide((open) => !open)}
+          />
+          {showKeyGuide && (
+            <div className="pb-3 pl-0 sm:pl-14">
+              <AIKeyGuide />
+            </div>
+          )}
         </Section>
 
         <Section title="Ajutor & Sistem" delay={0.4}>
           <ActionRow
             icon={<Brain size={16} />}
-            label="Tutorial"
+            label="Tur de bun venit"
             description="Reia ghidul de utilizare a platformei."
             buttonLabel="Pornește"
             onClick={() => {
               useTutorialStore.getState().startTutorial();
-              addToast('Tutorial repornit!', 'info');
+              addToast('Turul a pornit.', 'info');
             }}
+          />
+          <Divider />
+          <ActionRow
+            icon={<Sparkles size={16} />}
+            label="Ce e nou"
+            description="Noutățile din versiunea curentă, cu trimitere la fiecare pagină."
+            buttonLabel="Vezi"
+            onClick={() => window.dispatchEvent(new CustomEvent(WHATS_NEW_OPEN_EVENT))}
           />
           <Divider />
           <ActionRow

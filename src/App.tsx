@@ -42,7 +42,7 @@ import { checkModelAvailability } from './lib/ai/modelHealing';
 const AIChatDrawer = lazy(() => import('./components/AIChatDrawer'));
 const WhatsNewTour = lazy(() => import('./components/WhatsNewTour'));
 const GlobalSearch = lazy(() => import('./components/GlobalSearch'));
-const Tutorial = lazy(() => import('./components/Tutorial'));
+const TourEngine = lazy(() => import('./tutorial/TourEngine'));
 const PomodoroTimer = lazy(() => import('./components/PomodoroTimer'));
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -368,7 +368,7 @@ function AppContent({ splashVisible }: { splashVisible: boolean }) {
       <KeyboardShortcuts />
       {activeProfileId && !splashVisible && (
         <Suspense fallback={null}>
-          <Tutorial profileId={activeProfileId} />
+          <TourEngine profileId={activeProfileId} />
           <PomodoroTimer />
           <WhatsNewTour />
         </Suspense>

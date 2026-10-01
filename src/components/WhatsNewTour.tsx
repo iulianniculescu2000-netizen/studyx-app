@@ -6,6 +6,7 @@ import {
   Bot,
   BookOpen,
   ImageIcon,
+  Layers,
   MessageCircle,
   Pencil,
   Quote,
@@ -16,15 +17,12 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
+import { CURRENT_TOUR_VERSION, type TourId } from '../tutorial/tourMeta';
 import { useUserStore } from '../store/userStore';
 import { useOverlayFlag } from '../hooks/useOverlayFlag';
-
-const WHATS_NEW_VERSION = '2.2.0';
-// Bump the suffix when the tour content changes within the same app version, so
-// users who already dismissed the previous tour see the new highlights once more.
-const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-v22b:seen`;
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
 export const WHATS_NEW_OPEN_EVENT = 'studyx:whats-new:open';
@@ -116,19 +114,19 @@ function HeroDemo({ theme }: { theme: Theme }) {
   );
 }
 
-/** Rezidențiat's real bank + library + isolated AI chat — three highlights cycling in place. */
+/** Rezidențiat's new layout: the three things that changed, cycling in place. */
 function ResidencySectionDemo({ theme }: { theme: Theme }) {
   const rows = useMemo(
     () => [
-      { Icon: Stethoscope, label: '~4200 grile reale, pe disciplină și specialitate' },
-      { Icon: BookOpen, label: 'Kumar, Lawrence, Sinopsis — indexate pe capitol' },
-      { Icon: MessageCircle, label: 'Chat AI complet izolat pe secțiune' },
+      { Icon: Stethoscope, label: 'Disciplină → specialitate, cu progres pe fiecare' },
+      { Icon: Sparkles, label: 'Grilele generate de AI intră singure în Grile › specialitate' },
+      { Icon: BookOpen, label: '„Joacă tot”: o sesiune din toate testele unei specialități' },
     ],
     [],
   );
   const [phase, setPhase] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setPhase((p) => (p + 1) % rows.length), 1500);
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % rows.length), 1600);
     return () => window.clearInterval(id);
   }, [rows.length]);
 
@@ -157,49 +155,123 @@ function ResidencySectionDemo({ theme }: { theme: Theme }) {
   );
 }
 
-/** The chat message used to freeze at pre-execution text; it now rewrites itself with the real outcome. */
-function AgentOutcomeDemo({ theme }: { theme: Theme }) {
-  const [after, setAfter] = useState(false);
+/** A generated deck is announced, not opened; if the AI stops halfway the cards already made are kept. */
+function FlashcardsDemo({ theme }: { theme: Theme }) {
+  const phases = useMemo(
+    () => [
+      { badge: 'se generează', tone: theme.warning, title: 'Generez 25 de carduri…', note: 'poți continua să lucrezi în aplicație' },
+      { badge: 'gata', tone: theme.success, title: 'Pachet creat în „Cardiologie”', note: 'ai „Mută în” dacă vrei alt folder' },
+      { badge: 'limită atinsă', tone: theme.danger, title: '14 din 25 de carduri păstrate', note: '„Continuă generarea” reia din lotul care a picat' },
+    ],
+    [theme.danger, theme.success, theme.warning],
+  );
+  const [phase, setPhase] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setAfter((v) => !v), 2000);
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % phases.length), 2100);
     return () => window.clearInterval(id);
-  }, []);
+  }, [phases.length]);
+  const current = phases[phase];
 
   return (
     <DemoFrame theme={theme}>
       <div className="w-full max-w-[300px]">
         <span
           className="mb-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-wider"
-          style={{ background: after ? `${theme.success}18` : `${theme.warning}18`, color: after ? theme.success : theme.warning }}
+          style={{ background: `${current.tone}18`, color: current.tone }}
         >
-          {after ? 'acum' : 'înainte'}
+          {current.badge}
         </span>
         <AnimatePresence mode="wait">
           <motion.div
-            key={after ? 'after' : 'before'}
+            key={phase}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            className="rounded-[14px] rounded-tl-[4px] border px-3 py-2.5"
+            className="rounded-[14px] border px-3 py-2.5"
             style={{ background: theme.surface2, borderColor: theme.border }}
           >
             <div className="mb-1 flex items-center gap-1.5 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.accentText }}>
-              <Bot size={10} /> Agent
+              <Layers size={10} /> Flashcarduri
             </div>
-            <div className="text-[11px] font-semibold" style={{ color: theme.text2 }}>
-              {after ? '✅ Gata: folder „Cardio" + 10 grile' : 'Generez grile din „Cardio"...'}
-            </div>
+            <div className="text-[11px] font-semibold" style={{ color: theme.text }}>{current.title}</div>
+            <div className="mt-0.5 text-[10px] font-medium" style={{ color: theme.text3 }}>{current.note}</div>
           </motion.div>
         </AnimatePresence>
-        <div className="mt-2 text-[9px] font-semibold" style={{ color: theme.text3 }}>
-          {after ? 'mesajul se actualizează cu rezultatul real' : 'înainte rămânea așa, chiar și după ce jobul se termina'}
-        </div>
       </div>
     </DemoFrame>
   );
 }
 
-/** Active nav item glow, spring-driven — the "Glass fluid" refresh. */
+/** A command in Romanian is typed, then the place it landed appears. */
+function ChatCommandDemo({ theme }: { theme: Theme }) {
+  const command = 'fă-mi 5 grile din mielom multiplu';
+  const [typed, setTyped] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTyped((count) => (count >= command.length + 14 ? 0 : count + 1)), 110);
+    return () => window.clearInterval(id);
+  }, [command.length]);
+  const done = typed >= command.length + 3;
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-full max-w-[320px] space-y-2">
+        <div className="flex items-center gap-2 rounded-[12px] border px-3 py-2.5" style={{ background: theme.surface2, borderColor: theme.border }}>
+          <MessageCircle size={13} style={{ color: theme.accent }} />
+          <span className="min-h-[14px] text-[11px] font-semibold" style={{ color: theme.text }}>{command.slice(0, typed)}</span>
+        </div>
+        <motion.div
+          animate={{ opacity: done ? 1 : 0, y: done ? 0 : 6 }}
+          transition={{ duration: 0.3 }}
+          className="flex items-center gap-2 rounded-[12px] border px-3 py-2"
+          style={{ background: `${theme.success}12`, borderColor: `${theme.success}30` }}
+        >
+          <Stethoscope size={13} style={{ color: theme.success }} />
+          <span className="text-[10.5px] font-bold" style={{ color: theme.text }}>Rezidențiat › Grile › Hematologie</span>
+        </motion.div>
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** One key's limit is reached and the next one takes over by itself. */
+function AIKeysDemo({ theme }: { theme: Theme }) {
+  const providers = ['Groq', 'Gemini', 'Cerebras'];
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setActive((current) => (current + 1) % providers.length), 1700);
+    return () => window.clearInterval(id);
+  }, [providers.length]);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-[260px] space-y-1.5">
+        {providers.map((name, i) => {
+          const isActive = i === active;
+          const isFull = i < active;
+          return (
+            <motion.div
+              key={name}
+              animate={{ opacity: isFull ? 0.45 : 1, x: isActive ? 4 : 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+              className="flex items-center justify-between rounded-[12px] border px-3 py-2.5"
+              style={{
+                background: isActive ? `${theme.accent}14` : theme.surface2,
+                borderColor: isActive ? `${theme.accent}38` : theme.border,
+              }}
+            >
+              <span className="text-[11px] font-bold" style={{ color: isActive ? theme.text : theme.text2 }}>{name}</span>
+              <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: isFull ? theme.warning : isActive ? theme.success : theme.text3 }}>
+                {isFull ? 'limită atinsă' : isActive ? 'răspunde' : 'rezervă'}
+              </span>
+            </motion.div>
+          );
+        })}
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** Active nav item glow, spring-driven. */
 function GlassFluidDemo({ theme }: { theme: Theme }) {
   const items = ['Dashboard', 'Grile', 'Rezidențiat'];
   const [active, setActive] = useState(0);
@@ -224,83 +296,13 @@ function GlassFluidDemo({ theme }: { theme: Theme }) {
               className="rounded-[12px] px-3 py-2.5 text-[11px] font-bold"
               style={{
                 background: isActive ? `${theme.accent}16` : 'transparent',
-                color: isActive ? theme.accent : theme.text3,
+                color: isActive ? theme.accentText : theme.text3,
               }}
             >
               {label}
             </motion.div>
           );
         })}
-      </div>
-    </DemoFrame>
-  );
-}
-
-/** Full-window glass chat: the panel's transparency sweeps back and forth over the page behind it. */
-function GlassChatDemo({ theme }: { theme: Theme }) {
-  const [clear, setClear] = useState(false);
-  useEffect(() => {
-    const id = window.setInterval(() => setClear((value) => !value), 1800);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <DemoFrame theme={theme}>
-      <div className="flex flex-col items-center">
-      <div className="relative h-[120px] w-[250px] overflow-hidden rounded-[14px]" style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}>
-        <div className="absolute inset-0 grid grid-cols-3 gap-1.5 p-2">
-          {[theme.accent, theme.accent2, theme.success, theme.warning, theme.accent2, theme.accent].map((color, index) => (
-            <div key={index} className="rounded-lg" style={{ background: `${color}55` }} />
-          ))}
-        </div>
-        <motion.div
-          animate={{ opacity: clear ? 0.55 : 0.92 }}
-          transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-          className="absolute inset-y-2 left-9 right-2 rounded-xl p-2.5"
-          style={{ background: theme.surface, border: `1px solid ${theme.border}`, backdropFilter: 'blur(6px)' }}
-        >
-          <div className="mb-1.5 h-1.5 w-2/5 rounded-full" style={{ background: theme.accent }} />
-          <div className="mb-1 h-1.5 w-4/5 rounded-full" style={{ background: theme.text3, opacity: 0.5 }} />
-          <div className="h-1.5 w-3/5 rounded-full" style={{ background: theme.text3, opacity: 0.5 }} />
-        </motion.div>
-        <div className="absolute inset-y-2 left-2 w-5 rounded-lg" style={{ background: theme.surface, border: `1px solid ${theme.border}` }} />
-      </div>
-      <div className="mt-2 text-[9px] font-semibold" style={{ color: theme.text3 }}>
-        {clear ? 'transparență mare — vezi aplicația prin sticlă' : 'transparență mică — text ușor de citit'}
-      </div>
-      </div>
-    </DemoFrame>
-  );
-}
-
-/** Conversation memory: remembered facts appear one after another. */
-function ConversationMemoryDemo({ theme }: { theme: Theme }) {
-  const facts = ['Examen de rezidențiat în iulie', 'Preferă scheme și tabele', 'Reluăm nefrologia mâine'];
-  const [shown, setShown] = useState(1);
-  useEffect(() => {
-    const id = window.setInterval(() => setShown((value) => (value >= facts.length ? 1 : value + 1)), 1400);
-    return () => window.clearInterval(id);
-  }, [facts.length]);
-
-  return (
-    <DemoFrame theme={theme}>
-      <div className="w-[240px] space-y-1.5">
-        <div className="mb-1 text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>Ce știe asistentul despre tine</div>
-        <AnimatePresence initial={false}>
-          {facts.slice(0, shown).map((fact) => (
-            <motion.div
-              key={fact}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-              className="rounded-[10px] px-3 py-2 text-[11px] font-bold"
-              style={{ background: `${theme.accent}14`, border: `1px solid ${theme.accent}30`, color: theme.text }}
-            >
-              {fact}
-            </motion.div>
-          ))}
-        </AnimatePresence>
       </div>
     </DemoFrame>
   );
@@ -313,52 +315,57 @@ type Slide = {
   description: string;
   Demo: (props: { theme: Theme }) => ReactElement;
   tip?: string;
+  /** "Arată-mi": closes the slides, opens the page and, when there is one, starts its short tour. */
+  cta?: { label: string; to: string; tour?: TourId };
 };
 
 const SLIDES: Slide[] = [
   {
     id: 'hero',
-    badge: `Versiunea ${WHATS_NEW_VERSION}`,
-    title: 'StudyX 2.2 — Rezidențiatul are casă proprie',
-    description: 'O bancă reală de ~4200 de grile, o bibliotecă cu 3 cărți de referință și un AI complet izolat, doar pentru secțiunea de rezidențiat. Plus un agent de chat mai de încredere și o interfață mai fluidă peste tot în aplicație.',
+    badge: `Versiunea ${CURRENT_TOUR_VERSION}`,
+    title: 'StudyX 2.3 — mai multă ordine, mai puține surprize',
+    description: 'Rezidențiat și Flashcarduri au fost refăcute, Biblioteca AI e mai clară, iar AI-ul poate folosi mai multe chei gratuite ca rezerve. În plus, zeci de reparații la datele tale și la interfață.',
     Demo: HeroDemo,
   },
   {
     id: 'residency',
-    badge: 'Secțiune nouă',
-    title: 'Rezidențiat: bancă reală + bibliotecă AI + AI izolat',
-    description: '~4200 de grile verificate din bibliografia oficială, organizate automat pe disciplină și specialitate. Kumar, Lawrence și Sinopsis sunt deja indexate pe capitole. Iar chat-ul din secțiune e o conversație complet separată — răspunde mereu în stil de rezidențiat.',
+    badge: 'Rezidențiat',
+    title: 'Rezidențiat, organizat pe discipline și specialități',
+    description: 'Intri într-o disciplină, alegi specialitatea și vezi testele cu progresul lor. Grilele generate de AI intră singure în Grile › specialitate, iar cele arhivate se găsesc oricând la „Arhivate”.',
     Demo: ResidencySectionDemo,
-    tip: 'Deschide Rezidențiat din sidebar — are propriul tur, din butonul „?" de lângă titlu.',
+    tip: 'Butonul „?” de lângă titlu deschide un tur scurt.',
+    cta: { label: 'Arată-mi Rezidențiat', to: '/rezidentiat', tour: 'residency' },
   },
   {
-    id: 'agent-memory',
-    badge: 'Agent mai de încredere',
-    title: 'Agentul ține minte ce a făcut — și unde',
-    description: 'Mesajul din chat îți arăta mereu intenția inițială, chiar și după ce un job eșua sau reușea — acum se rescrie cu rezultatul real. Iar tot ce creezi fără să specifici un folder (dintr-o secțiune ca Rezidențiat) rămâne acolo, nu se rătăcește pe ecranul general.',
-    Demo: AgentOutcomeDemo,
+    id: 'flashcards',
+    badge: 'Flashcarduri',
+    title: 'Pagina Flashcarduri, refăcută',
+    description: '„De repetat azi” numără exact ce primești în sesiune. Un pachet generat de AI nu mai deschide sesiunea singur: te anunță unde a ajuns și îl muți cu „Mută în”. Dacă AI-ul se oprește la mijloc, cardurile făcute rămân și poți continua generarea.',
+    Demo: FlashcardsDemo,
+    cta: { label: 'Arată-mi Flashcardurile', to: '/flashcards', tour: 'flashcards' },
   },
   {
-    id: 'glass-chat',
-    badge: 'Chat AI',
-    title: 'Chatul AI pe tot ecranul, ca un panou de sticlă',
-    description: 'Deschide chatul pe toată fereastra, lângă bara laterală, cu aplicația estompată în spate. Alegi cât de transparent să fie (Clar, Sticlă sau Mat) și cât de tare se estompează fundalul. Esc te aduce înapoi la fereastra mică.',
-    Demo: GlassChatDemo,
-    tip: 'Ctrl+Shift+F sau butonul cu săgeți din colțul chatului. Transparența se reglează din butonul cu glisoare.',
+    id: 'vault-chat',
+    badge: 'Biblioteca AI și chat',
+    title: 'Biblioteca AI redesenată, chat care te înțelege mai bine',
+    description: 'Căutarea din bibliotecă ignoră diacriticele. În chat, comenzile în română sunt înțelese corect, erorile îți spun ce poți face, iar Studio se deschide ca panou lângă conversație, pe ferestrele late.',
+    Demo: ChatCommandDemo,
+    cta: { label: 'Arată-mi Biblioteca', to: '/vault', tour: 'vault' },
   },
   {
-    id: 'chat-memory',
-    badge: 'Chat AI',
-    title: 'Asistentul te ține minte',
-    description: 'Reține din conversații ce e util pentru studiu: obiective, cum îți place să înveți, la ce te împiedici. Conversația lungă nu se mai pierde la repornire, iar când revii după o pauză îți propune să continui de unde ai rămas. Răspunsurile cu doze sau praguri sunt verificate încă o dată.',
-    Demo: ConversationMemoryDemo,
-    tip: 'Vezi, editezi sau oprești memoria din Setări → AI → Memoria conversațiilor.',
+    id: 'ai-keys',
+    badge: 'AI',
+    title: 'Mai multe chei gratuite = rezerve automate',
+    description: 'Cu două sau mai multe chei, când limita unui furnizor se atinge aplicația trece singură pe următorul. În Setări → Asistent AI vezi și cât ai consumat, pe furnizor.',
+    Demo: AIKeysDemo,
+    tip: 'Ghidul de chei din Setări te duce pas cu pas, cu testarea cheii.',
+    cta: { label: 'Deschide Setările', to: '/settings' },
   },
   {
-    id: 'glass-fluid',
-    badge: 'Interfață',
-    title: 'Tranziții mai fluide, ecran de start reînnoit',
-    description: 'Navigarea între pagini folosește acum fizică de resort, fundalurile modalelor au blur mai puternic, iar elementele active din meniu au un glow discret. Ecranul unde îți scrii numele e și el mai natural — exemple care se schimbă, previzualizare live.',
+    id: 'polish',
+    badge: 'Interfață și siguranță',
+    title: 'Mai curat, mai accesibil, mai sigur',
+    description: 'Contrast mai bun în tema Luminos, bară laterală cu animație la „Restrânge”, ferestre care se închid cu Esc și respectă tastatura, „Golește conversația” cu confirmare. Salvarea modificărilor la închidere a fost întărită.',
     Demo: GlassFluidDemo,
   },
 ];
@@ -369,8 +376,11 @@ const SLIDES: Slide[] = [
 
 export default function WhatsNewTour() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const activeProfileId = useUserStore((state) => state.activeProfileId);
   const tutorialActive = useTutorialStore((state) => state.active);
+  const hydrated = useTutorialStore((state) => state._hasHydrated);
+  const seenTours = useTutorialStore((state) => state.seen);
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
   useOverlayFlag(open);
@@ -380,15 +390,15 @@ export default function WhatsNewTour() {
   const isLast = index === SLIDES.length - 1;
   const isFirst = index === 0;
 
-  // Auto-open once per version, only when a profile is active and the new-user tutorial isn't running.
+  // Opens once per version, for people who already finished the onboarding (a new user is not told what
+  // is new in an app they have just met) and only while no tour is running.
   useEffect(() => {
-    if (!activeProfileId || tutorialActive) return;
-    let seen = false;
-    try { seen = localStorage.getItem(SEEN_KEY) === '1'; } catch { /* ignore */ }
-    if (seen) return;
+    if (!hydrated || !activeProfileId || tutorialActive) return;
+    const store = useTutorialStore.getState();
+    if (!store.hasSeen(activeProfileId, 'onboarding') || store.hasSeen(activeProfileId, 'whatsNew')) return;
     const timer = window.setTimeout(() => setOpen(true), 1400);
     return () => window.clearTimeout(timer);
-  }, [activeProfileId, tutorialActive]);
+  }, [activeProfileId, hydrated, seenTours, tutorialActive]);
 
   // Manual re-open (Settings / dev).
   useEffect(() => {
@@ -399,8 +409,15 @@ export default function WhatsNewTour() {
 
   const close = useCallback(() => {
     setOpen(false);
-    try { localStorage.setItem(SEEN_KEY, '1'); } catch { /* ignore */ }
-  }, []);
+    if (activeProfileId) useTutorialStore.getState().markSeen(activeProfileId, 'whatsNew');
+  }, [activeProfileId]);
+
+  // "Arată-mi": leave the slides, open the page and start its short tour.
+  const showMe = useCallback((cta: NonNullable<Slide['cta']>) => {
+    close();
+    navigate(cta.to);
+    if (cta.tour) window.setTimeout(() => useTutorialStore.getState().startTour(cta.tour as TourId), 400);
+  }, [close, navigate]);
 
   const go = useCallback((delta: number) => {
     setDirection(delta);
@@ -468,7 +485,7 @@ export default function WhatsNewTour() {
                     Ce e nou
                   </div>
                   <div className="text-[13px] font-black tracking-tight" style={{ color: theme.text }}>
-                    StudyX {WHATS_NEW_VERSION}
+                    StudyX {CURRENT_TOUR_VERSION}
                   </div>
                 </div>
               </div>
@@ -510,6 +527,16 @@ export default function WhatsNewTour() {
                     <p className="mx-auto mt-2.5 max-w-[470px] text-[13px] font-medium leading-relaxed" style={{ color: theme.text2 }}>
                       {slide.description}
                     </p>
+                    {slide.cta && (
+                      <button
+                        type="button"
+                        onClick={() => showMe(slide.cta as NonNullable<Slide['cta']>)}
+                        className="press-feedback mt-3 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12.5px] font-semibold"
+                        style={{ background: `${theme.accent}16`, color: theme.accentText }}
+                      >
+                        {slide.cta.label} <ArrowRight size={13} />
+                      </button>
+                    )}
                     <div className="mt-2 h-[30px]">
                       {slide.tip && (
                         <motion.p

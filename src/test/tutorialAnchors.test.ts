@@ -10,17 +10,20 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+const TOUR_DIR = join('src', 'tutorial', 'tours');
+
 describe('tutorial spotlight targets', () => {
-  const tutorial = readFileSync('src/components/Tutorial.tsx', 'utf8');
-  const targets = [...tutorial.matchAll(/target: '\[data-tutorial="([^"]+)"\]'/g)].map((match) => match[1]);
+  const targets = sourceFiles(TOUR_DIR).flatMap((file) => (
+    [...readFileSync(file, 'utf8').matchAll(/target: '\[data-tutorial="([^"]+)"\]'/g)].map((match) => match[1])
+  ));
 
   const anchored = new Set<string>();
-  for (const file of sourceFiles('src').filter((path) => !path.endsWith('Tutorial.tsx'))) {
+  for (const file of sourceFiles('src').filter((path) => !path.startsWith(TOUR_DIR))) {
     for (const match of readFileSync(file, 'utf8').matchAll(/data-tutorial="([^"]+)"/g)) anchored.add(match[1]);
   }
 
   it('finds the targets it checks', () => {
-    expect(targets.length).toBeGreaterThan(5);
+    expect(targets.length).toBeGreaterThan(10);
   });
 
   it('has an element carrying every data-tutorial a step points at', () => {

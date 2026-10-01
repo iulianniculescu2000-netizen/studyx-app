@@ -13,6 +13,7 @@ import { friendlyAIError, rateLimitWaitSeconds } from '../lib/ai/friendlyError';
 import { suggestFlashcardFolder } from '../lib/flashcardPlacement';
 import { useFolderStore } from '../store/folderStore';
 import { useFlashcardHubSession, getFlashcardResume, type FlashcardResumeHandle } from '../store/flashcardHubSessionStore';
+import TourHelpButton from '../tutorial/TourHelpButton';
 import { FlashcardGenerationInterrupted, NoNewFlashcardsError, notesToFlashcards } from '../lib/groq';
 import { buildMistakeFlashcardQuiz } from '../lib/adaptiveStudy';
 import { extractCaptionedImagesFromPdf, renderPdfPagesAsImages, renderPdfPagesWithText, resizeImageFile, type CaptionedPdfImage, type PdfFlashcardPageSnapshot } from '../lib/imageProcessing';
@@ -1075,9 +1076,12 @@ export default function FlashcardHub() {
           className="flex items-start justify-between gap-4"
         >
           <div>
-            <h1 className="page-title-compact" style={{ color: theme.text }}>
-              Flashcarduri
-            </h1>
+            <div className="flex items-center gap-2.5">
+              <h1 className="page-title-compact" style={{ color: theme.text }}>
+                Flashcarduri
+              </h1>
+              <TourHelpButton tour="flashcards" label="Vezi turul paginii Flashcarduri" />
+            </div>
             <p className="mt-1 text-[13px]" style={{ color: theme.text3 }}>
               {decks.length > 0
                 ? `${decks.length} ${decks.length === 1 ? 'pachet' : 'pachete'} · ${totalCards} carduri · SM-2`
@@ -1118,6 +1122,7 @@ export default function FlashcardHub() {
         )}
 
         {/* ── De repetat azi ── */}
+        <div data-tutorial="flashcards-due" className="empty:hidden">
         <ReviewHeroCard
           totalDue={totalDue}
           totalFresh={totalFresh}
@@ -1126,12 +1131,15 @@ export default function FlashcardHub() {
           streak={activeStreak}
           theme={theme}
         />
+        </div>
 
         {/* ── Pachetele tale ── */}
-        <FlashcardDeckGrid decks={decks} folders={folders} theme={theme} />
+        <div data-tutorial="flashcards-decks" className="empty:hidden">
+          <FlashcardDeckGrid decks={decks} folders={folders} theme={theme} />
+        </div>
 
         {/* ── Creează pachet nou ── */}
-        <div ref={createSectionRef} className="scroll-mt-6">
+        <div ref={createSectionRef} data-tutorial="flashcards-create" className="scroll-mt-6">
           <FlashcardHubActions
             aiCount={aiCount}
             aiError={aiError}

@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronRight, HelpCircle, Layers, Loader2, MessageCircle, Play, Plus, Scissors, Stethoscope, Library, HeartPulse, BookOpen } from 'lucide-react';
+import { ChevronRight, Layers, Loader2, MessageCircle, Play, Plus, Scissors, Stethoscope, Library, HeartPulse, BookOpen } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useAIStore } from '../store/aiStore';
 import { useQuizStore } from '../store/quizStore';
 import { useUIStore } from '../store/uiStore';
 import { useToastStore } from '../store/toastStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
-import RezidentiatTutorial, { REZIDENTIAT_TUTORIAL_OPEN_EVENT } from '../components/RezidentiatTutorial';
+import TourHelpButton from '../tutorial/TourHelpButton';
 import BookShelf from '../components/residency/BookShelf';
 import ImportPanel from '../components/residency/ImportPanel';
 import { useRezidentiatOverview, useResidencyBooks } from '../components/residency/useResidencyData';
@@ -105,22 +105,12 @@ export default function Residency() {
 
   return (
     <div className="h-full overflow-y-auto px-4 py-6 sm:px-8 sm:py-10">
-      <RezidentiatTutorial />
       <div className="mx-auto max-w-3xl space-y-7">
         <motion.header initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="page-title-compact" style={{ color: theme.text }}>Rezidențiat</h1>
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent(REZIDENTIAT_TUTORIAL_OPEN_EVENT))}
-                aria-label="Vezi tutorialul secțiunii Rezidențiat"
-                title="Tur rapid"
-                className="fine-row press-feedback flex h-7 w-7 items-center justify-center rounded-full"
-                style={{ color: theme.text3 }}
-              >
-                <HelpCircle size={16} />
-              </button>
+              <TourHelpButton tour="residency" label="Vezi turul secțiunii Rezidențiat" />
             </div>
             <p className="mt-1 text-[13px]" style={{ color: theme.text3 }}>
               {hasBank
@@ -165,7 +155,7 @@ export default function Residency() {
         )}
 
         {hasBank && (
-          <section>
+          <section data-tutorial="residency-disciplines">
             <SectionLabel>DISCIPLINE</SectionLabel>
             <div className="grid gap-3 sm:grid-cols-2">
               {disciplines.map((discipline, index) => (
@@ -201,7 +191,7 @@ export default function Residency() {
           </section>
         )}
 
-        <section>
+        <section data-tutorial="residency-resources">
           <SectionLabel>RESURSE</SectionLabel>
           <div className="overflow-hidden rounded-2xl" style={{ background: theme.surface, border: '1px solid var(--hairline)' }}>
             <ResourceRow
@@ -251,7 +241,9 @@ export default function Residency() {
           )
         )}
 
-        <ImportPanel />
+        <div data-tutorial="residency-import" className="empty:hidden">
+          <ImportPanel />
+        </div>
       </div>
     </div>
   );

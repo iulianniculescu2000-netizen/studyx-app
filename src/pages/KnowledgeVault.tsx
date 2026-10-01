@@ -1,3 +1,4 @@
+import TourHelpButton from '../tutorial/TourHelpButton';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -735,7 +736,10 @@ export default function KnowledgeVault() {
           )}
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <h1 className="page-title-compact" style={{ color: theme.text }}>{headerTitle}</h1>
+              <div className="flex items-center gap-2.5">
+                <h1 className="page-title-compact" style={{ color: theme.text }}>{headerTitle}</h1>
+                {isTopLevel && <TourHelpButton tour="vault" label="Vezi turul Bibliotecii AI" />}
+              </div>
               <p className="mt-1 text-[13px]" style={{ color: theme.text3 }}>{headerSubtitle}</p>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
@@ -752,6 +756,7 @@ export default function KnowledgeVault() {
               {isTopLevel && (
                 <button
                   type="button"
+                  data-tutorial="vault-studio"
                   onClick={() => openAIStudioForSource()}
                   className="fine-chip press-feedback flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-medium"
                   style={{ color: theme.text2 }}
@@ -769,6 +774,7 @@ export default function KnowledgeVault() {
               />
               <button
                 type="button"
+                data-tutorial="vault-add"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={loading}
                 className="press-feedback flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-[filter] duration-300 hover:brightness-110 disabled:opacity-70"
@@ -787,7 +793,7 @@ export default function KnowledgeVault() {
 
         {/* Search (+ type filters inside a folder) */}
         <div className="flex flex-wrap items-center gap-2">
-          <label className="search-field flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] px-3 py-2" style={{ background: 'var(--fill-subtle)' }}>
+          <label data-tutorial="vault-search" className="search-field flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] px-3 py-2" style={{ background: 'var(--fill-subtle)' }}>
             <Search size={15} style={{ color: theme.text3 }} />
             <input
               type="text"

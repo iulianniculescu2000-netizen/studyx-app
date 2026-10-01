@@ -13,37 +13,16 @@ import { refreshAllProviderModels, type ProviderModelCheck } from '../lib/ai/mod
 import Portal from './Portal';
 import ChatMemoryPanel from './ai-chat/ChatMemoryPanel';
 import AIUsagePanel from './AIUsagePanel';
+import { PROVIDER_CATALOG } from '../lib/ai/providerCatalog';
 
-const PROVIDERS: { id: AIProvider; name: string; desc: string; keyHint: string; docs: string }[] = [
-  {
-    id: 'groq',
-    name: 'Groq',
-    desc: 'Rapid pentru chat si generare de grile',
-    keyHint: 'gsk_...',
-    docs: 'https://console.groq.com/keys',
-  },
-  {
-    id: 'google',
-    name: 'Google Gemini',
-    desc: 'Context mare si rationament puternic pentru explicatii',
-    keyHint: 'AIza...',
-    docs: 'https://aistudio.google.com/apikey',
-  },
-  {
-    id: 'cerebras',
-    name: 'Cerebras',
-    desc: '1M tokeni/zi gratis · cel mai mare volum, foarte rapid',
-    keyHint: 'csk-...',
-    docs: 'https://cloud.cerebras.ai/',
-  },
-  {
-    id: 'mistral',
-    name: 'Mistral AI',
-    desc: 'Gratuit, fără card · ~1 miliard de tokeni/lună',
-    keyHint: 'cheie opacă, fără prefix fix',
-    docs: 'https://admin.mistral.ai/organization/api-keys',
-  },
-];
+// Names, key hints and signup links come from the shared catalog (the tour's key guide uses it too).
+const PROVIDER_DESC: Record<AIProvider, string> = {
+  groq: 'Rapid pentru chat si generare de grile',
+  google: 'Context mare si rationament puternic pentru explicatii',
+  cerebras: '1M tokeni/zi gratis · cel mai mare volum, foarte rapid',
+  mistral: 'Gratuit, fără card · ~1 miliard de tokeni/lună',
+};
+const PROVIDERS = PROVIDER_CATALOG.map((entry) => ({ ...entry, desc: PROVIDER_DESC[entry.id] }));
 
 const MODELS: Record<AIProvider, { id: AIModel; name: string; desc: string; speed: string }[]> = {
   groq: [

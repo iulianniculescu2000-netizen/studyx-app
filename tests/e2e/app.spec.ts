@@ -12,6 +12,16 @@ async function ensureOnboarded(page: Page) {
   }
 
   await expect(page.locator('main')).toBeVisible({ timeout: 10000 });
+  await dismissTours(page);
+}
+
+/** A new profile is welcomed with the onboarding tour (and a returning one with "what's new"); both cover the page. */
+async function dismissTours(page: Page) {
+  const close = page.getByRole('button', { name: /Închide turul|Închide turul de noutăți/ });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (!(await close.first().isVisible({ timeout: 2500 }).catch(() => false))) return;
+    await close.first().click();
+  }
 }
 
 async function openRoute(page: Page, route: string) {
@@ -145,6 +155,9 @@ test.describe('StudyX Application', () => {
         },
         version: 4,
       }));
+      // Tours already seen, so none opens over the drag.
+      const seen = Object.fromEntries(['onboarding', 'whatsNew', 'residency', 'flashcards', 'vault'].map((tour) => [tour, '2.3.0']));
+      localStorage.setItem('studyx-tutorial-v2', JSON.stringify({ state: { seen: { [profileId]: seen } }, version: 3 }));
       localStorage.setItem(`studyx-p-${profileId}-folders`, JSON.stringify({
         folders: [
           { id: 'f-parent-qa', name: 'Folder QA', emoji: '📁', color: 'blue', parentId: null, createdAt: now },
