@@ -1,6 +1,6 @@
 # Plan: tutorialele și turul interactiv pentru StudyX 2.3.0
 
-Stare: **plan de discutat, nimic implementat.** Versiunea din `package.json` rămâne 2.2.0 până la acordul explicit al utilizatorului; tot conținutul 2.3.0 stă în spatele constantei de versiune a turului „Ce e nou” și nu se publică singur.
+Stare (2026-10-01): **implementat** (fazele F0–F4, comise local în `feat/rezidentiat-redesign`); F5 parțial: verificat în previzualizarea din browser, nu și în Electron sau cu Playwright. Detaliile sunt în `docs/HANDOFF.md`, secțiunea 4. Decizii luate pe propunerile din secțiunea 10. Textul de mai jos e planul inițial.
 
 ## 1. Ce vrem
 - Un student nou ajunge în 2–3 minute la primul lucru util (o grilă jucată, un pachet de carduri, AI activat), nu la o prezentare de 22 de ecrane.
