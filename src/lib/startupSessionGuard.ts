@@ -29,9 +29,17 @@ export function inspectPreviousStartup() {
   const previous = readState();
   if (!previous?.active) return { hadUncleanExit: false };
 
+  // `previous.active` still being true here already IS the "didn't finish
+  // booting last time" signal — completeStartupSession() flips it to false
+  // ~600ms after the splash hides, on every normal launch. (This used to be
+  // written as `age > 0`, which is always true by construction — a no-op
+  // that happened to read as a real condition. The caller used to also
+  // persist the resulting lowPowerMode flag, so a single stuck flag here
+  // permanently degraded every animation in the app on every future launch;
+  // that part is fixed in App.tsx/runtimeStore.ts, not here.)
   const age = Date.now() - previous.startedAt;
   return {
-    hadUncleanExit: age > 0,
+    hadUncleanExit: true,
     stale: age > STALE_STARTUP_MS,
     previous,
   };

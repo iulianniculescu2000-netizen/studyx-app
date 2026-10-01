@@ -1,8 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUIStore } from '../store/uiStore';
-import { useUserStore } from '../store/userStore';
-import { useTheme } from '../theme/ThemeContext';
 
 interface KeyboardShortcut {
   key: string;
@@ -16,8 +14,6 @@ interface KeyboardShortcut {
 export function useKeyboardShortcuts() {
   const navigate = useNavigate();
   const setChatOpen = useUIStore((state) => state.setChatOpen);
-  const setTheme = useUserStore((state) => state.setTheme);
-  const theme = useTheme();
   const shortcutsRef = useRef<Map<string, KeyboardShortcut>>(new Map());
 
   const registerShortcut = useCallback((
@@ -66,11 +62,6 @@ export function useKeyboardShortcuts() {
       window.dispatchEvent(new CustomEvent('studyx:close-modals'));
     }, true, 'ui');
     
-    // Theme shortcuts
-    registerShortcut('t', [], 'Toggle theme', () => {
-      setTheme(theme.id === 'obsidian' ? 'pearl' : 'obsidian');
-    }, true, 'ui');
-    
     // Study shortcuts
     registerShortcut('n', ['ctrl'], 'Create new quiz', () => navigate('/quizzes/new'), true, 'study');
     registerShortcut('d', ['ctrl'], 'Daily review', () => navigate('/review/daily'), true, 'study');
@@ -79,7 +70,7 @@ export function useKeyboardShortcuts() {
       // Cleanup shortcuts on unmount
       shortcutsRef.current.clear();
     };
-  }, [navigate, setChatOpen, theme, registerShortcut]);
+  }, [navigate, setChatOpen, registerShortcut]);
 
   // Handle keyboard events
   useEffect(() => {

@@ -8,6 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, ListChecks, Layers, BarChart3, Settings } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useViewportProfile } from '../hooks/useViewportProfile';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 
 const TABS = [
   { to: '/', label: 'Acasă', icon: Home },
@@ -27,6 +28,7 @@ export default function MobileNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { mobile } = useViewportProfile();
+  const { calmMotion } = useAdaptiveMotion();
 
   if (!mobile) return null;
 
@@ -35,21 +37,22 @@ export default function MobileNav() {
       className="studyx-mobile-nav"
       style={{
         position: 'fixed',
-        left: 0,
-        right: 0,
-        bottom: 0,
+        left: 14,
+        right: 14,
+        bottom: 'calc(14px + env(safe-area-inset-bottom, 0px))',
         zIndex: 900,
+        height: 64,
         display: 'flex',
         alignItems: 'stretch',
         justifyContent: 'space-around',
-        background: theme.navBg,
-        borderTop: `1px solid ${theme.border}`,
-        backdropFilter: 'blur(18px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(18px) saturate(150%)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        background: theme.isDark ? 'rgba(28,28,32,0.72)' : theme.navBg,
+        border: `1px solid ${theme.border}`,
+        borderRadius: 28,
+        backdropFilter: 'blur(22px) saturate(150%)',
+        WebkitBackdropFilter: 'blur(22px) saturate(150%)',
         boxShadow: theme.isDark
-          ? '0 -8px 24px rgba(0,0,0,0.28)'
-          : '0 -8px 24px rgba(15,23,42,0.08)',
+          ? '0 18px 40px rgba(0,0,0,0.45)'
+          : '0 18px 36px rgba(15,23,42,0.14)',
       }}
     >
       {TABS.map(({ to, label, icon: Icon }) => {
@@ -61,6 +64,7 @@ export default function MobileNav() {
             onClick={() => navigate(to)}
             aria-label={label}
             aria-current={active ? 'page' : undefined}
+            className="press-feedback hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
             style={{
               flex: 1,
               display: 'flex',
@@ -68,20 +72,20 @@ export default function MobileNav() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: 3,
-              padding: '9px 0 8px',
-              minHeight: 56,
-              border: 'none',
-              outline: 'none',
-              background: 'transparent',
+              margin: '8px 4px',
+              borderRadius: 18,
+              background: active ? 'var(--accent-soft)' : undefined,
+              border: `1px solid ${active ? `${theme.accent}30` : 'transparent'}`,
+              boxShadow: active ? `0 4px 14px ${theme.accent}26` : undefined,
               cursor: 'pointer',
               color: active ? theme.accent : theme.text3,
-              transition: 'color 0.15s ease',
+              transition: calmMotion ? 'none' : 'color 0.3s ease, background-color 0.5s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            <Icon size={22} strokeWidth={active ? 2.6 : 2} />
+            <Icon size={21} strokeWidth={active ? 2.6 : 2} />
             <span
               style={{
-                fontSize: 10.5,
+                fontSize: 10,
                 fontWeight: active ? 800 : 600,
                 letterSpacing: '-0.01em',
               }}

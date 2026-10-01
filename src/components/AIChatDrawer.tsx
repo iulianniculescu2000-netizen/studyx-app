@@ -1,26 +1,31 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
   Bot,
   BookOpen,
-  Check,
   ChevronDown,
   Copy,
   CreditCard,
   FolderOpen,
   ImageIcon,
+  Info,
   Layers3,
   ListChecks,
   Loader2,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
   RotateCcw,
   SendHorizonal,
+  SlidersHorizontal,
   Sparkles,
   Square,
   Target,
+  Trash2,
   Wand2,
   X,
 } from 'lucide-react';
@@ -29,49 +34,61 @@ import { useUIStore } from '../store/uiStore';
 import { useUserStore } from '../store/userStore';
 import { useStatsStore } from '../store/statsStore';
 import { useQuizStore } from '../store/quizStore';
+import { profileGuard } from '../store/profileEpoch';
 import { useAIStore } from '../store/aiStore';
 import { useFolderStore } from '../store/folderStore';
+import { describePlacement, isResidencySource, resolveResidencyPlacement } from '../lib/rezidentiatPlacement';
 import { useToastStore } from '../store/toastStore';
+import { useAgentJobsStore } from '../store/agentJobsStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildPerformanceSummary, buildUserContextString } from '../lib/aiContext';
-import { isDocumentHidden } from '../lib/asyncGuard';
-import { generateQuizPackagesFromSource } from '../lib/ai/batchQuizGeneration';
+import { WHOLE_DOCUMENT_HEADING } from '../lib/ai/chapterQuizGeneration';
+import { friendlyAIError } from '../lib/ai/friendlyError';
 import {
   STUDIO_MAX_PACK_COUNT,
   STUDIO_MAX_QUESTIONS_PER_PACK,
   clampStudioPackCount,
   clampStudioQuestionCount,
 } from '../lib/ai/studioGeneration';
-import {
-  buildStudioCommandHelp,
-  parseStudioChatCommand,
-  resolveStudioFolderFromCommand,
-  resolveStudioSourceFromCommand,
-} from '../lib/ai/studioChatCommands';
-import {
-  describeStep,
-  executeAgentPlan,
-  isRetryPhrase,
-  looksLikeAgentCommand,
-  looksLikeAnswerDispute,
-  grantsGeneralKnowledgePermission,
-  planAgentCommand,
-  proposeAnswerCorrection,
-  type AgentPlan,
-  type AgentStep,
-} from '../lib/ai/agent';
 import { detectChatIntent, shouldApplyIntent } from '../lib/ai/intentRouter';
-import { isFlashcardDeck } from '../lib/deckKind';
-import { suggestFolderAppearance } from '../lib/folderAppearance';
-import { useAgentJobsStore } from '../store/agentJobsStore';
-import { useQuizChatContextStore } from '../store/quizChatContextStore';
-import { desktopNotify } from '../lib/desktopNotify';
-import { getWeakTopicsForProfile } from '../ai/UserProfile';
-import { getUserMemorySummary } from '../lib/ai/userMemory';
-import type { Folder, Question, Quiz } from '../types';
+import { EXAM_STYLE_META, type ExamStyle } from '../lib/ai/examStyle';
+import { getProfileSummaryText, getWeakTopicsForProfile } from '../ai/UserProfile';
+import {
+  buildContinuityRecap,
+  clearThreadSummary,
+  deriveConversationTone,
+  formatMemoryBlock,
+  getThreadLastActive,
+  isMemoryEnabled,
+  loadMemories,
+  loadThreadSummary,
+  markMemoriesUsed,
+  mergeMemories,
+  needsClinicalVerification,
+  rebaseCoveredCount,
+  saveMemories,
+  saveThreadSummary,
+  selectRelevantMemories,
+  touchThreadActivity,
+} from '../ai/chatMemory';
+import type { Question, Quiz } from '../types';
+import GlassCard from './ui/GlassCard';
 import AgentJobCard from './ai-chat/AgentJobCard';
 import AIOrb from './ai-chat/AIOrb';
+import FreeKeysNotice from './ai-chat/FreeKeysNotice';
+import StudioSelect from './ai-chat/StudioSelect';
+import { diversifyChunks, extractRelevantExcerpt } from './ai-chat/chatHelpers';
+import { CHAT_STORAGE_KEY, useChatMessages } from './ai-chat/useChatMessages';
+import { useChatThread } from './ai-chat/useChatThread';
+import { useScopedSource } from './ai-chat/useScopedSource';
+import { useAgentCommands } from './ai-chat/useAgentCommands';
+import { useChatGlass } from './ai-chat/useChatGlass';
+import { useSidebarInset } from './ai-chat/useSidebarInset';
+import { useWindowSize } from '../hooks/useWindowSize';
+import ChatGlassControls from './ai-chat/ChatGlassControls';
+import ConfirmDialog from './ConfirmDialog';
+import { useStudioGeneration } from './ai-chat/useStudioGeneration';
 import {
   CHAT_MODES,
   buildFollowUpSuggestions,
@@ -88,6 +105,8 @@ let aiChatRuntimePromise: Promise<{
   generateChatResponse: typeof import('../ai/AIEngine').generateChatResponse;
   generateChatResponseStream: typeof import('../ai/AIEngine').generateChatResponseStream;
   summarizeConversation: typeof import('../ai/AIEngine').summarizeConversation;
+  extractMemoryCandidates: typeof import('../ai/chatMemoryAI').extractMemoryCandidates;
+  verifyClinicalAnswer: typeof import('../ai/chatMemoryAI').verifyClinicalAnswer;
   retrieveRelevantChunks: typeof import('../ai/retriever').retrieveRelevantChunks;
   getVaultChunksBySource: typeof import('../ai/vectorStore').getVaultChunksBySource;
 }> | null = null;
@@ -98,10 +117,13 @@ function loadAIChatRuntime() {
       import('../ai/AIEngine'),
       import('../ai/retriever'),
       import('../ai/vectorStore'),
-    ]).then(([engine, retriever, vectorStore]) => ({
+      import('../ai/chatMemoryAI'),
+    ]).then(([engine, retriever, vectorStore, memoryAI]) => ({
       generateChatResponse: engine.generateChatResponse,
       generateChatResponseStream: engine.generateChatResponseStream,
       summarizeConversation: engine.summarizeConversation,
+      extractMemoryCandidates: memoryAI.extractMemoryCandidates,
+      verifyClinicalAnswer: memoryAI.verifyClinicalAnswer,
       retrieveRelevantChunks: retriever.retrieveRelevantChunks,
       getVaultChunksBySource: vectorStore.getVaultChunksBySource,
     }));
@@ -114,214 +136,29 @@ function loadAIChatRuntime() {
 // running summary so we keep continuity without resending the whole transcript.
 const CONVERSATION_SUMMARY_THRESHOLD = 12;
 const CONVERSATION_RECENT_KEEP = 6;
+// A few long answers should trigger compression as well, not only message count.
+const CONVERSATION_SUMMARY_CHARS = 5000;
+// Durable-fact extraction runs every N student messages (and when the drawer closes),
+// not on every turn — free-tier keys have tight rate limits.
+const MEMORY_EXTRACT_EVERY = 3;
 
 type DrawerView = 'chat' | 'studio';
-type StudioDifficulty = 'auto' | 'easy' | 'medium' | 'hard';
-type StudioOption = {
-  value: string;
-  label: string;
-  hint?: string;
-};
-
-function diversifyChunks<T extends { source: string; score: number }>(
-  chunks: T[],
-  limit: number,
-): T[] {
-  const bySource = new Map<string, T[]>();
-  for (const chunk of chunks) {
-    const group = bySource.get(chunk.source) ?? [];
-    group.push(chunk);
-    bySource.set(chunk.source, group);
-  }
-  const result: T[] = [];
-  for (const group of bySource.values()) {
-    if (result.length >= Math.min(3, limit)) break;
-    result.push(group[0]);
-  }
-  for (const chunk of chunks) {
-    if (result.length >= limit) break;
-    if (!result.includes(chunk)) result.push(chunk);
-  }
-  return result;
-}
-
-function extractRelevantExcerpt(chunkText: string, query: string, maxLen = 220): string {
-  const clean = chunkText.replace(/\s+/g, ' ').trim();
-  const sentences = clean.match(/[^.!?]+[.!?]*/g) ?? [clean];
-  const queryWords = new Set(
-    query.toLowerCase().split(/\s+/).filter((w) => w.length > 3),
-  );
-  let bestSentence = sentences[0];
-  let bestScore = -1;
-  for (const sentence of sentences) {
-    const lower = sentence.toLowerCase();
-    const matches = [...queryWords].filter((w) => lower.includes(w)).length;
-    if (matches > bestScore) {
-      bestScore = matches;
-      bestSentence = sentence;
-    }
-  }
-  const idx = clean.indexOf(bestSentence);
-  if (idx >= 0) {
-    return clean.slice(Math.max(0, idx - 10), idx + bestSentence.length + 60).slice(0, maxLen);
-  }
-  return clean.slice(0, maxLen);
-}
-
-function formatFolderPath(folders: Folder[], folder: Folder) {
-  const byId = new Map(folders.map((item) => [item.id, item]));
-  const names = [folder.name];
-  let parent = folder.parentId ? byId.get(folder.parentId) : undefined;
-  const guard = new Set([folder.id]);
-  while (parent && !guard.has(parent.id)) {
-    guard.add(parent.id);
-    names.unshift(parent.name);
-    parent = parent.parentId ? byId.get(parent.parentId) : undefined;
-  }
-  return names.join(' / ');
-}
-
-function StudioSelect({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-  theme,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: StudioOption[];
-  placeholder: string;
-  theme: ReturnType<typeof useTheme>;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const selected = options.find((option) => option.value === value) ?? null;
-  const isDisabled = options.length === 0;
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-      }
-    };
-
-    window.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('keydown', handleEscape);
-    return () => {
-      window.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="relative">
-      <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-        {label}
-      </span>
-      <button
-        type="button"
-        onClick={() => {
-          if (!isDisabled) {
-            setOpen((current) => !current);
-          }
-        }}
-        disabled={isDisabled}
-        className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all"
-        style={{
-          background: theme.surface,
-          borderColor: open ? `${theme.accent}55` : theme.border,
-          color: theme.text,
-          boxShadow: open ? `0 0 0 1px ${theme.accent}20` : 'none',
-          opacity: isDisabled ? 0.55 : 1,
-        }}
-      >
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">
-            {selected?.label ?? placeholder}
-          </div>
-          <div className="mt-0.5 truncate text-[11px]" style={{ color: theme.text3 }}>
-            {selected?.hint ?? (isDisabled ? 'Nu există opțiuni disponibile.' : 'Apasă pentru a alege.')}
-          </div>
-        </div>
-        <motion.div animate={{ rotate: open ? 180 : 0 }} style={{ color: theme.text3 }}>
-          <ChevronDown size={16} />
-        </motion.div>
-      </button>
-
-      <AnimatePresence>
-        {open && !isDisabled && (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.98 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
-            className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 rounded-[22px] border p-2 shadow-2xl"
-            style={{
-              background: theme.isDark ? 'rgba(22,22,30,0.96)' : 'rgba(255,255,255,0.96)',
-              borderColor: theme.border,
-              backdropFilter: 'blur(18px) saturate(155%)',
-            }}
-          >
-            <div className="custom-scrollbar max-h-56 space-y-1 overflow-y-auto">
-              {options.map((option) => {
-                const active = option.value === value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => {
-                      onChange(option.value);
-                      setOpen(false);
-                    }}
-                    className="flex w-full items-center gap-3 rounded-[18px] px-3 py-2.5 text-left transition-all"
-                    style={{
-                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
-                      color: active ? '#fff' : theme.text,
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold">
-                        {option.label}
-                      </div>
-                      {option.hint && (
-                        <div className="mt-0.5 truncate text-[11px]" style={{ color: active ? 'rgba(255,255,255,0.76)' : theme.text3 }}>
-                          {option.hint}
-                        </div>
-                      )}
-                    </div>
-                    {active && <Check size={15} />}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 export default function AIChatDrawer() {
   const theme = useTheme();
   const open = useUIStore((state) => state.chatOpen);
   const setChatOpen = useUIStore((state) => state.setChatOpen);
   const floatingUiSuppressed = useUIStore((state) => state.floatingUILocks.length > 0);
+  // job.result lives in the global store (not local component state) so the
+  // "jump straight in" CTA survives this drawer unmounting mid-job — see the
+  // comment on AgentJob.result in agentJobsStore.ts.
+  const agentJobs = useAgentJobsStore((state) => state.jobs);
   const activeProfileId = useUserStore((state) => state.activeProfileId);
   const quizzes = useQuizStore((state) => state.quizzes);
   const addQuiz = useQuizStore((state) => state.addQuiz);
   const knowledgeSources = useAIStore((state) => state.knowledgeSources);
   const hasKey = useAIStore((state) => state.hasKey);
+  const providerKeys = useAIStore((state) => state.providerKeys);
   const recordAIInteraction = useAIStore((state) => state.recordAIInteraction);
   const memoryContext = useAIStore((state) => (
     activeProfileId ? state.getAIMemoryContext(activeProfileId) : ''
@@ -329,19 +166,6 @@ export default function AIChatDrawer() {
   const memoryInteractions = useAIStore((state) =>
     activeProfileId ? (state.studyMemory[activeProfileId]?.interactions ?? 0) : 0
   );
-  // Long-term, IndexedDB-backed memory summary (Task 4). Refreshed when the
-  // drawer opens so it reflects sessions completed since it was last open.
-  const [longTermMemory, setLongTermMemory] = useState('');
-  useEffect(() => {
-    if (!open || !activeProfileId) return;
-    let cancelled = false;
-    void getUserMemorySummary(activeProfileId).then((summary) => {
-      if (!cancelled) setLongTermMemory(summary);
-    });
-    return () => { cancelled = true; };
-  }, [open, activeProfileId]);
-  const folders = useFolderStore((state) => state.folders);
-  const addFolder = useFolderStore((state) => state.addFolder);
   const addToast = useToastStore((state) => state.addToast);
   const questionStats = useStatsStore((state) => state.questionStats);
   const streak = useStatsStore((state) => state.streak);
@@ -350,58 +174,136 @@ export default function AIChatDrawer() {
   const getStatsByTag = useStatsStore((state) => state.getStatsByTag);
   const { calmMotion, performanceLite } = useAdaptiveMotion();
   const { mobile } = useViewportProfile();
+  // Full-window glass mode: the chat fills the window next to the app sidebar, with
+  // adjustable transparency + blur. Desktop only — phones already get a full-width sheet.
+  const glass = useChatGlass();
+  const immersive = glass.settings.immersive && !mobile;
+  const sidebarInset = useSidebarInset(open && immersive);
+  const windowSize = useWindowSize();
+  const quizFolders = useFolderStore((state) => state.folders);
+  const aiLibraryFolders = useAIStore((state) => state.libraryFolders);
+  const [glassPanelOpen, setGlassPanelOpen] = useState(false);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
-  // Cache context chunks per (text+sourceId) within a session to avoid redundant vault lookups.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const contextCacheRef = useRef<Map<string, any[]>>(new Map());
+  const { scopedSource, setScopedSource, contextCacheRef } = useScopedSource();
+  // Rezidențiat gets its own isolated conversation, live anywhere inside that
+  // section (the Residency page, its folders, its quizzes) — not just on
+  // the /rezidentiat route itself.
+  const chatThread = useChatThread();
+  const { messages, setMessages, messagesRef, chatEndRef } = useChatMessages({ open, calmMotion, thread: chatThread });
+  
+  const [activeQuizContext, setActiveQuizContext] = useState<{
+    questionText: string;
+    correctAnswerText: string;
+    userAnswerText: string;
+    studyFocus?: string;
+  } | null>(null);
 
-  // v2: bumped to clear old messages with malformed citation.topic === citation.source
-  const CHAT_STORAGE_KEY = 'studyx:chat:messages:v2';
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    try {
-      const stored = localStorage.getItem('studyx:chat:messages:v2');
-      if (!stored) return [];
-      return JSON.parse(stored) as ChatMessage[];
-    } catch {
-      return [];
-    }
-  });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [thinkingPhase, setThinkingPhase] = useState<string | null>(null);
   const [mode, setMode] = useState<ChatMode>('grounded');
   const [manualMode, setManualMode] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
-  // Per-job "open the result" CTA so the agent closes the create→study loop.
-  const [agentResults, setAgentResults] = useState<Record<string, { route: string; label: string }>>({});
   const navigate = useNavigate();
-  const [scopedSource, setScopedSource] = useState<{ id: string; name: string } | null>(null);
   const [activeCitationKey, setActiveCitationKey] = useState<string | null>(null);
   const [view, setView] = useState<DrawerView>('chat');
-  const [studioSourceId, setStudioSourceId] = useState<string>('');
-  const [studioFolderId, setStudioFolderId] = useState<string>('__uncategorized__');
-  const [studioPackCount, setStudioPackCount] = useState(4);
-  const [studioQuestionsPerPack, setStudioQuestionsPerPack] = useState(12);
-  const [studioDifficulty, setStudioDifficulty] = useState<StudioDifficulty>('auto');
-  const [studioGenerating, setStudioGenerating] = useState(false);
-  const [generatedSummary, setGeneratedSummary] = useState<string | null>(null);
+  /** Studio's "how it works" intro + the two static info cards, collapsed by default so the drawer opens straight to the controls you actually use. */
+  const [studioInfoOpen, setStudioInfoOpen] = useState(false);
+  /** Chat sheet widened to studio size — schemas and tables need the room. */
+  const [wideChat, setWideChat] = useState(false);
+  /** Secondary header controls (widen, regenerate, clear) live behind one "⋯" instead of competing icons. */
+  const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
+  /** Markup of a schema/table opened full-screen from a message. */
+  const [zoomedBlock, setZoomedBlock] = useState<string | null>(null);
   const [pastedImage, setPastedImage] = useState<string | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   // Set when the user hits Stop — lets non-abortable generators (flashcards /
   // grile) discard their result instead of surprising the user after a stop.
   const generationAbortedRef = useRef(false);
-  const pendingAgentPlansRef = useRef<Map<string, AgentPlan>>(new Map());
-  // Last genuine agent command, so a follow-up "mai încearcă" re-runs it instead
-  // of letting the planner invent a new (wrong) request from "mai încearcă".
-  const lastAgentCommandRef = useRef<string>('');
-  const agentUndoRef = useRef<Map<string, (() => void) | null>>(new Map());
+  const generationStopCountRef = useRef(0);
   // Running compressed summary of older turns + how many messages it covers.
   const conversationSummaryRef = useRef<string>('');
   const summaryCoveredCountRef = useRef<number>(0);
   const summarizingRef = useRef<boolean>(false);
-  const messagesRef = useRef<ChatMessage[]>([]);
+  // Which thread the summary refs currently belong to — an in-flight summarization
+  // that finishes after a thread switch must not overwrite the other thread's summary.
+  const summaryThreadRef = useRef<string>(chatThread);
+  const extractingRef = useRef(false);
+  const extractedUpToRef = useRef(0);
+  const wasOpenRef = useRef(false);
+  const flushRef = useRef<() => void>(() => {});
+  const [recapDismissed, setRecapDismissed] = useState(false);
+
+  const readySources = useMemo(
+    () => knowledgeSources.filter((source) => source.indexStatus === 'ready'),
+    [knowledgeSources],
+  );
+
+  const {
+    setStudioSourceId,
+    studioHeading, setStudioHeading,
+    studioFolderId, setStudioFolderId,
+    studioPackCount, setStudioPackCount,
+    studioQuestionsPerPack, setStudioQuestionsPerPack,
+    studioDifficulty, setStudioDifficulty,
+    studioExamStyle, setStudioExamStyle,
+    studioGenerating, setStudioGenerating,
+    generatedSummary,
+    selectedStudioSourceId,
+    selectedStudioSource,
+    selectedStudioFolder,
+    studioChapterOptions,
+    studioSourceOptions,
+    studioFolderOptions,
+    tryHandleStudioCommand,
+    tryHandleFlashcardCommand,
+    handleGeneratePackages,
+  } = useStudioGeneration({
+    readySources,
+    hasKey,
+    activeProfileId,
+    scopedSource,
+    setScopedSource,
+    contextCacheRef,
+    setMessages,
+    setThinkingPhase,
+    setView,
+    generationAbortedRef,
+    generationStopCountRef,
+    loadAIChatRuntime,
+    isResidencyThread: chatThread === 'rezidentiat',
+  });
+
+  // Where Studio will file the generated packs for Rezidențiat material (shown instead of a folder picker).
+  const studioResidencyPlacement = useMemo(() => {
+    if (!selectedStudioSource) return null;
+    if (chatThread !== 'rezidentiat' && !isResidencySource(selectedStudioSource, aiLibraryFolders)) return null;
+    return resolveResidencyPlacement(
+      selectedStudioSource.name,
+      studioHeading === WHOLE_DOCUMENT_HEADING ? null : studioHeading,
+      quizFolders,
+    );
+  }, [selectedStudioSource, chatThread, aiLibraryFolders, studioHeading, quizFolders]);
+
+  const {
+    runAgentJob,
+    tryHandleAgentCommand,
+    tryHandleAnswerDispute,
+    cancelAgentJob,
+    editAgentStepParams,
+    undoAgentJob,
+    retryAgentJob,
+  } = useAgentCommands({
+    hasKey,
+    messagesRef,
+    setMessages,
+    setThinkingPhase,
+    studioPackCount,
+    studioQuestionsPerPack,
+    chatThread,
+  });
 
   const activeModeConfig = useMemo(
     () => CHAT_MODES.find((entry) => entry.id === mode) ?? CHAT_MODES[0],
@@ -428,9 +330,10 @@ export default function AIChatDrawer() {
     const focusText = weakTopics.length > 0
       ? `Focus recomandat acum: ${weakTopics.map((topic) => `${topic.topic} ${topic.accuracy}%`).join(', ')}.`
       : '';
+    const longTermMemory = activeProfileId ? getProfileSummaryText(activeProfileId) : '';
     const longTermText = longTermMemory ? `Memorie pe termen lung: ${longTermMemory}` : '';
     return [baseContext, focusText, memoryContext, longTermText].filter(Boolean).join(' ');
-  }, [memoryContext, performanceSummary, weakTopics, longTermMemory]);
+  }, [activeProfileId, memoryContext, performanceSummary, weakTopics]);
 
   const recommendedActions = useMemo(
     () => buildRecommendedActions(weakTopics, performanceSummary.dueCount, scopedSource?.name),
@@ -443,45 +346,6 @@ export default function AIChatDrawer() {
     return 'grounded';
   }, [performanceSummary.dueCount, scopedSource]);
 
-  const readySources = useMemo(
-    () => knowledgeSources.filter((source) => source.indexStatus === 'ready'),
-    [knowledgeSources],
-  );
-
-  const selectedStudioSourceId = studioSourceId || scopedSource?.id || readySources[0]?.id || '';
-  const selectedStudioSource = readySources.find((source) => source.id === selectedStudioSourceId) ?? null;
-  const selectedStudioFolder = studioFolderId === '__uncategorized__'
-    ? null
-    : folders.find((folder) => folder.id === studioFolderId) ?? null;
-  const studioSourceOptions = useMemo<StudioOption[]>(
-    () => readySources.map((source) => ({
-      value: source.id,
-      label: source.name,
-      hint: `${source.chunkCount ?? 0} fragmente indexate`,
-    })),
-    [readySources],
-  );
-  const studioFolderOptions = useMemo<StudioOption[]>(
-    () => [
-      {
-        value: '__uncategorized__',
-        label: 'Neclasificate',
-        hint: 'Grilele rămân fără folder dedicat.',
-      },
-      ...folders.map((folder) => ({
-        value: folder.id,
-        label: `${folder.emoji} ${formatFolderPath(folders, folder)}`,
-        hint: 'Salvează pachetele direct în acest folder.',
-      })),
-    ],
-    [folders],
-  );
-
-  useEffect(() => {
-    if (!selectedStudioSourceId && readySources[0]) {
-      setStudioSourceId(readySources[0].id);
-    }
-  }, [readySources, selectedStudioSourceId]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -491,21 +355,46 @@ export default function AIChatDrawer() {
         open?: boolean;
         sourceId?: string;
         sourceName?: string;
+        heading?: string;
         resetConversation?: boolean;
         view?: DrawerView;
+        examStyle?: 'residency';
+        quizContext?: {
+          questionText: string;
+          correctAnswerText: string;
+          userAnswerText: string;
+          studyFocus?: string;
+        };
       }>).detail;
 
-      if (!detail?.prompt) return;
+      if (!detail?.prompt && !detail?.quizContext) return;
       if (detail.open) setChatOpen(true);
       if (detail.view) setView(detail.view);
+      // Explicit request (Residency page) — the Studio's exam-style track is
+      // its own toggle, not derived from the prompt text, so a chapter
+      // generation dispatched as exam-scoped has to set it directly.
+      if (detail.examStyle) setStudioExamStyle(detail.examStyle);
+      // Only a chapter-scoped event may move the Studio's chapter selection.
+      // Resetting unconditionally meant any plain chat prompt ("Discută
+      // răspunsul", "Debrief cu AI Coach") silently threw away a chapter the
+      // user had picked in Studio.
+      if (detail.heading) setStudioHeading(detail.heading);
+      else if (detail.sourceId) setStudioHeading(WHOLE_DOCUMENT_HEADING);
 
       if (detail.resetConversation) {
         setMessages([]);
         setActiveCitationKey(null);
         setManualMode(false);
+        setActiveQuizContext(null);
         contextCacheRef.current.clear();
         conversationSummaryRef.current = '';
         summaryCoveredCountRef.current = 0;
+        extractedUpToRef.current = 0;
+        if (activeProfileId) clearThreadSummary(activeProfileId, chatThread);
+      }
+
+      if (detail.quizContext) {
+        setActiveQuizContext(detail.quizContext);
       }
 
       if (detail.sourceId && detail.sourceName) {
@@ -521,29 +410,13 @@ export default function AIChatDrawer() {
         setManualMode(true);
       }
 
-      setInput(detail.prompt);
+      if (detail.prompt) setInput(detail.prompt);
       requestAnimationFrame(() => textareaRef.current?.focus());
     };
 
     window.addEventListener('studyx:ai-prompt', handler as EventListener);
     return () => window.removeEventListener('studyx:ai-prompt', handler as EventListener);
-  }, [setChatOpen]);
-
-  useEffect(() => {
-    if (open) {
-      chatEndRef.current?.scrollIntoView({ behavior: calmMotion ? 'auto' : 'smooth' });
-    }
-  }, [messages, open, calmMotion]);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-    try {
-      const toSave = messages.slice(-60);
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toSave));
-    } catch {
-      // quota exceeded — ignore
-    }
-  }, [CHAT_STORAGE_KEY, messages]);
+  }, [activeProfileId, chatThread, contextCacheRef, setChatOpen, setMessages, setScopedSource, setStudioHeading, setStudioSourceId, setStudioExamStyle]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -587,459 +460,6 @@ export default function AIChatDrawer() {
     }));
   };
 
-  const runStudioGeneration = async ({
-    source,
-    folder,
-    packCount,
-    questionsPerPack,
-    difficulty,
-    announceInChat = true,
-    forceChatView = true,
-    announceMode = 'summarize',
-  }: {
-    source: NonNullable<typeof selectedStudioSource>;
-    folder: typeof selectedStudioFolder;
-    packCount: number;
-    questionsPerPack: number;
-    difficulty: StudioDifficulty;
-    announceInChat?: boolean;
-    forceChatView?: boolean;
-    announceMode?: ChatMode;
-  }) => {
-    generationAbortedRef.current = false;
-    setStudioGenerating(true);
-    setGeneratedSummary(null);
-    setStudioSourceId(source.id);
-    setScopedSource({ id: source.id, name: source.name });
-    setStudioFolderId(folder?.id ?? '__uncategorized__');
-    setStudioPackCount(packCount);
-    setStudioQuestionsPerPack(questionsPerPack);
-    setStudioDifficulty(difficulty);
-
-    try {
-      const result = await generateQuizPackagesFromSource({
-        sourceId: source.id,
-        sourceName: source.name,
-        folder,
-        folderId: folder?.id ?? null,
-        packCount,
-        questionsPerPack,
-        difficulty,
-        activeProfileId,
-        existingQuizzes: quizzes,
-      });
-
-      if (generationAbortedRef.current) return false; // user pressed Stop — discard
-
-      result.quizzes.forEach((quiz) => addQuiz(quiz));
-
-      const folderLabel = folder?.name ?? 'Neclasificate';
-      const summary = result.fallbackQuestionCount > 0
-        ? `Am generat ${result.quizzes.length} pachete din "${source.name}" și le-am trimis în folderul "${folderLabel}". ${result.aiQuestionCount} întrebări au venit din AI, iar ${result.fallbackQuestionCount} au fost completate inteligent din document pentru stabilitate. Dificultate folosită: ${result.difficulty}.`
-        : `Am generat ${result.quizzes.length} pachete din "${source.name}" și le-am trimis în folderul "${folderLabel}". Dificultate folosită: ${result.difficulty}.`;
-      const fullSummary = result.warnings.length > 0
-        ? `${summary}\n\nNotă: ${result.warnings[0]}`
-        : summary;
-
-      setGeneratedSummary(fullSummary);
-      if (announceInChat) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: fullSummary, mode: announceMode }]);
-      }
-      addToast(
-        result.fallbackQuestionCount > 0
-          ? `${result.quizzes.length} pachete generate. Am completat inteligent și local ce nu a livrat AI-ul.`
-          : `${result.quizzes.length} pachete generate cu succes.`,
-        'success',
-      );
-      if (forceChatView) {
-        setView('chat');
-      }
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Generarea pachetelor a eșuat.';
-      addToast(message, 'error');
-      if (announceInChat) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${message}`, mode: announceMode }]);
-      }
-      return false;
-    } finally {
-      setStudioGenerating(false);
-    }
-  };
-
-  const runAgentJob = async (jobId: string) => {
-    const plan = pendingAgentPlansRef.current.get(jobId);
-    if (!plan) return;
-    const jobs = useAgentJobsStore.getState();
-    jobs.setJobStatus(jobId, 'running');
-
-    const result = await executeAgentPlan(
-      plan,
-      { defaultPackCount: studioPackCount, defaultQuestionsPerPack: studioQuestionsPerPack },
-      {
-        onStep: (index, status, detail) => {
-          useAgentJobsStore.getState().setStepStatus(jobId, `s${index}`, status, detail);
-        },
-      },
-    );
-
-    agentUndoRef.current.set(jobId, result.undo);
-    const failedAll = result.errors.length > 0 && result.createdQuizIds.length === 0;
-    jobs.setJobStatus(jobId, failedAll ? 'error' : 'done', result.summary);
-
-    // Close the loop: if the agent created sets, offer to jump straight in.
-    if (!failedAll && result.createdQuizIds.length > 0) {
-      const firstId = result.createdQuizIds[0];
-      const created = useQuizStore.getState().quizzes.find((q) => q.id === firstId);
-      const isFlashcard = created ? isFlashcardDeck(created) : false;
-      const many = result.createdQuizIds.length > 1;
-      setAgentResults((prev) => ({
-        ...prev,
-        [jobId]: {
-          route: isFlashcard ? `/flashcards/session/${firstId}?mode=all` : `/play/${firstId}`,
-          label: isFlashcard ? 'Începe sesiunea' : many ? 'Începe primul set' : 'Începe acum',
-        },
-      }));
-    }
-
-    // If the plan generated a study plan text, surface it in chat now (after execution)
-    const studyPlanText = plan.reply && plan.steps.some(s => s.action === 'create_study_plan') ? plan.reply : null;
-    pendingAgentPlansRef.current.delete(jobId);
-
-    addToast(result.summary, failedAll ? 'error' : result.errors.length ? 'warning' : 'success');
-    if (isDocumentHidden() || !open) {
-      void desktopNotify('StudyX — agent', result.summary);
-    }
-
-    if (studyPlanText && !failedAll) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: studyPlanText }]);
-    }
-  };
-
-  /**
-   * Turns an AgentPlan into a chat message: a confirm-card job when it proposes
-   * steps, or just the plain reply when it doesn't (e.g. "no course found, want
-   * me to guess?"). Shared by the folder/generation planner and the in-quiz
-   * answer-dispute flow so both render through the same AgentJobCard UI.
-   * Returns the created job id, or null when no job was created.
-   */
-  const presentAgentPlan = (plan: AgentPlan, originalText: string, activeMode: ChatMode): string | null => {
-    if (plan.steps.length === 0) {
-      if (plan.reply) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: plan.reply, mode: activeMode }]);
-      }
-      return null;
-    }
-
-    const steps = plan.steps.map((step, index) => ({
-      id: `s${index}`,
-      label: describeStep(step),
-      status: 'pending' as const,
-      action: step.action,
-      params: {
-        packCount: step.packCount,
-        questionsPerPack: step.questionsPerPack,
-        count: step.count,
-        difficulty: step.difficulty,
-        questionType: step.questionType,
-      },
-    }));
-    const jobId = useAgentJobsStore.getState().createJob(
-      originalText,
-      steps,
-      plan.needsConfirm ? 'awaiting-confirm' : 'running',
-    );
-    if (plan.needsConfirm) {
-      useAgentJobsStore.getState().setJobStatus(jobId, 'awaiting-confirm', plan.confirmReason);
-    }
-    pendingAgentPlansRef.current.set(jobId, plan);
-
-    setMessages((prev) => [...prev, {
-      role: 'assistant',
-      content: plan.reply || (plan.needsConfirm ? 'Am pregătit un plan. Confirmă ca să îl execut.' : 'Execut planul...'),
-      mode: activeMode,
-      agentJobId: jobId,
-    }]);
-
-    return jobId;
-  };
-
-  const tryHandleAgentCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
-    if (!hasKey) return false;
-
-    // "mai încearcă" → re-run the last real command (same course/count). If there
-    // is nothing to retry, let it fall through to normal chat.
-    const retry = isRetryPhrase(text);
-    let commandText = text;
-    if (retry) {
-      if (!lastAgentCommandRef.current) return false;
-      commandText = lastAgentCommandRef.current;
-    } else if (!looksLikeAgentCommand(text)) {
-      return false;
-    } else {
-      // Remember this genuine command so a later "mai încearcă" can repeat it.
-      lastAgentCommandRef.current = text;
-    }
-
-    // Give the planner the recent thread so partial follow-ups resolve in context.
-    const history = messagesRef.current
-      .filter((message) => !message.agentJobId && message.content.trim())
-      .slice(-6)
-      .map(({ role, content }) => ({ role, content }));
-
-    setThinkingPhase(retry ? 'Reiau comanda anterioară…' : 'Analizez comanda…');
-    let plan: AgentPlan;
-    try {
-      plan = await planAgentCommand(commandText, history);
-    } catch {
-      return false;
-    }
-    if (!plan.isCommand || plan.steps.length === 0) return false;
-
-    const jobId = presentAgentPlan(plan, text, activeMode);
-    if (jobId && !plan.needsConfirm) {
-      await runAgentJob(jobId);
-    }
-    return true;
-  };
-
-  /**
-   * "Cred că e corect și varianta C" while looking at a quiz question — checks
-   * the library first, proposes a correction (confirm-card) if warranted, and
-   * NEVER falls back to general medical knowledge unless the student explicitly
-   * allowed it in this same message (grantsGeneralKnowledgePermission).
-   */
-  const tryHandleAnswerDispute = async (text: string, activeMode: ChatMode): Promise<boolean> => {
-    if (!hasKey) return false;
-    if (!useQuizChatContextStore.getState().context) return false;
-    if (!looksLikeAnswerDispute(text)) return false;
-
-    setThinkingPhase('Verific afirmația ta…');
-    let plan: AgentPlan;
-    try {
-      plan = await proposeAnswerCorrection(text, grantsGeneralKnowledgePermission(text));
-    } catch {
-      return false;
-    }
-    if (!plan.isCommand) return false;
-
-    const jobId = presentAgentPlan(plan, text, activeMode);
-    if (jobId && !plan.needsConfirm) {
-      await runAgentJob(jobId);
-    }
-    return true;
-  };
-
-  const cancelAgentJob = (jobId: string) => {
-    pendingAgentPlansRef.current.delete(jobId);
-    useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Anulat de utilizator.');
-  };
-
-  // Lets the confirm card tweak count/difficulty/type before execution instead of
-  // forcing a cancel + retype when the planner guessed a parameter wrong.
-  const editAgentStepParams = (jobId: string, stepId: string, patch: Partial<AgentStep>) => {
-    const plan = pendingAgentPlansRef.current.get(jobId);
-    if (!plan) return;
-    const index = Number(stepId.slice(1));
-    const step = plan.steps[index];
-    if (!step) return;
-    const updated = { ...step, ...patch };
-    plan.steps[index] = updated;
-    useAgentJobsStore.getState().updateStep(jobId, stepId, {
-      label: describeStep(updated),
-      params: {
-        packCount: updated.packCount,
-        questionsPerPack: updated.questionsPerPack,
-        count: updated.count,
-        difficulty: updated.difficulty,
-        questionType: updated.questionType,
-      },
-    });
-  };
-
-  const undoAgentJob = (jobId: string) => {
-    const undo = agentUndoRef.current.get(jobId);
-    if (!undo) return;
-    undo();
-    agentUndoRef.current.delete(jobId);
-    useAgentJobsStore.getState().setJobStatus(jobId, 'cancelled', 'Acțiunile au fost anulate (undo).');
-    addToast('Am anulat acțiunile agentului.', 'info');
-  };
-
-  const tryHandleStudioCommand = async (text: string, activeMode: ChatMode) => {
-    const parsed = parseStudioChatCommand(text);
-    if (!parsed.shouldGenerate) return false;
-
-    setView('studio');
-
-    if (readySources.length === 0) {
-      const message = `Nu ai încă documente indexate în Biblioteca AI, deci nu am din ce să generez grile.\n\nÎncarcă un curs în Bibliotecă și apoi poți scrie direct aici comanda.\n\n${buildStudioCommandHelp([], folders)}`;
-      setMessages((prev) => [...prev, { role: 'assistant', content: message, mode: activeMode }]);
-      addToast('Încarcă mai întâi un curs în Biblioteca AI.', 'warning');
-      return true;
-    }
-
-    const scopedReadySource = scopedSource
-      ? readySources.find((entry) => entry.id === scopedSource.id) ?? null
-      : null;
-    const source = resolveStudioSourceFromCommand(text, readySources, scopedReadySource);
-    if (!source) {
-      const sourceList = readySources.slice(0, 6).map((entry) => `- ${entry.name}`).join('\n');
-      const message = `Am înțeles că vrei să generez pachete de grile, dar nu e clar din ce document.\n\nSpune-mi explicit cursul sau documentul dorit. Exemple disponibile acum:\n${sourceList}\n\n${buildStudioCommandHelp(readySources, folders)}`;
-      setMessages((prev) => [...prev, { role: 'assistant', content: message, mode: activeMode }]);
-      addToast('Spune-mi și documentul din care vrei să generez.', 'warning');
-      return true;
-    }
-
-    const folderResolution = resolveStudioFolderFromCommand(text, folders, selectedStudioFolder);
-    let targetFolder = selectedStudioFolder;
-
-    if (folderResolution.kind === 'existing') {
-      targetFolder = folderResolution.folder;
-    } else if (folderResolution.kind === 'create') {
-      const appearance = suggestFolderAppearance(folderResolution.name);
-      const id = addFolder(folderResolution.name, appearance.emoji, appearance.color);
-      targetFolder = {
-        id,
-        name: folderResolution.name,
-        emoji: appearance.emoji,
-        color: appearance.color,
-        createdAt: Date.now(),
-      };
-      addToast(`Am creat folderul ${appearance.emoji} "${folderResolution.name}".`, 'success');
-    } else {
-      targetFolder = null;
-    }
-
-    const nextPackCount = clampStudioPackCount(parsed.packCount ?? studioPackCount);
-    const nextQuestionCount = clampStudioQuestionCount(parsed.questionsPerPack ?? studioQuestionsPerPack);
-    const nextDifficulty = parsed.difficulty ?? studioDifficulty;
-
-    await runStudioGeneration({
-      source,
-      folder: targetFolder,
-      packCount: nextPackCount,
-      questionsPerPack: nextQuestionCount,
-      difficulty: nextDifficulty,
-      announceInChat: true,
-      forceChatView: true,
-      announceMode: activeMode,
-    });
-
-    return true;
-  };
-
-  // Deterministic flashcard generator for the chat — mirrors the grile studio
-  // command but builds a flashcard deck. Runs WITHOUT the LLM planner, so
-  // "fă-mi 3 flashcarduri din X" works even when the planner is rate-limited.
-  const tryHandleFlashcardCommand = async (text: string, activeMode: ChatMode): Promise<boolean> => {
-    const wantsFlashcards = /\b(flash\s?carduri|flash\s?card|fi[șs]e|carduri)\b/i.test(text);
-    const wantsGeneration = /\b(f[ăa]|f[ăa][- ]?mi|genereaz[ăa]|cre(?:e|ea)z[ăa]?|creaz[ăa]?|vreau|preg[ăa]te|construie)\b/i.test(text);
-    if (!wantsFlashcards || !wantsGeneration) return false;
-
-    if (!hasKey) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Pentru flashcarduri AI ai nevoie de o cheie în Setări AI.', mode: activeMode }]);
-      addToast('Adaugă o cheie AI în Setări.', 'warning');
-      return true;
-    }
-    if (readySources.length === 0) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Nu ai încă cursuri indexate în Biblioteca AI. Încarcă un curs și apoi cere-mi flashcarduri din el.', mode: activeMode }]);
-      addToast('Încarcă mai întâi un curs în Biblioteca AI.', 'warning');
-      return true;
-    }
-
-    const scopedReadySource = scopedSource
-      ? readySources.find((entry) => entry.id === scopedSource.id) ?? null
-      : null;
-    const source = resolveStudioSourceFromCommand(text, readySources, scopedReadySource);
-    if (!source) {
-      const sourceList = readySources.slice(0, 6).map((entry) => `- ${entry.name}`).join('\n');
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Din ce curs vrei flashcardurile? Exemple disponibile:\n${sourceList}`, mode: activeMode }]);
-      addToast('Spune-mi din ce curs să fac flashcardurile.', 'warning');
-      return true;
-    }
-
-    const folderResolution = resolveStudioFolderFromCommand(text, folders, selectedStudioFolder);
-    let targetFolder = selectedStudioFolder;
-    if (folderResolution.kind === 'existing') {
-      targetFolder = folderResolution.folder;
-    } else if (folderResolution.kind === 'create') {
-      const appearance = suggestFolderAppearance(folderResolution.name);
-      const id = addFolder(folderResolution.name, appearance.emoji, appearance.color);
-      targetFolder = { id, name: folderResolution.name, emoji: appearance.emoji, color: appearance.color, createdAt: Date.now() };
-      addToast(`Am creat folderul ${appearance.emoji} "${folderResolution.name}".`, 'success');
-    } else {
-      targetFolder = null;
-    }
-
-    const countMatch = text
-      .normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .match(/(\d+)\s*(?:de\s+)?(?:flash\s?carduri|flash\s?card|carduri|fise|card)/i);
-    const count = Math.max(1, Math.min(60, countMatch ? Number(countMatch[1]) : 15));
-
-    setThinkingPhase(`Generez ${count} flashcarduri din „${source.name}"…`);
-    try {
-      const { notesToFlashcards } = await import('../lib/groq');
-      const { getVaultChunksBySource } = await loadAIChatRuntime();
-      const chunks = await getVaultChunksBySource(source.id);
-      let sourceText = '';
-      for (const chunk of chunks) {
-        sourceText += (sourceText ? '\n\n' : '') + chunk.text;
-        if (sourceText.length > 24000) break;
-      }
-      if (sourceText.trim().length < 80) {
-        throw new Error('Cursul nu are destul text indexat pentru flashcarduri.');
-      }
-
-      const existingFronts = quizzes
-        .filter((quiz) => (quiz.tags ?? []).some((tag) => /flashcard|deck|anki/i.test(tag)))
-        .flatMap((quiz) => quiz.questions.map((question) => question.text));
-      const pairs = await notesToFlashcards(sourceText, { count, sourceName: source.name, avoidFronts: existingFronts });
-      if (generationAbortedRef.current) return true; // user pressed Stop — drop the result
-      if (pairs.length === 0) throw new Error('Nu am putut genera flashcarduri din acest curs.');
-
-      const deckId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-      const questions: Question[] = pairs.map((pair) => ({
-        id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
-        text: pair.front.trim(),
-        multipleCorrect: false,
-        difficulty: 'medium',
-        explanation: '',
-        options: [{ id: 'a', text: pair.back.trim(), isCorrect: true }],
-      }));
-
-      addQuiz({
-        id: deckId,
-        title: `Flashcarduri · ${source.name.replace(/\.[^.]+$/, '')}`,
-        description: `${questions.length} flashcarduri AI generate din „${source.name}".`,
-        emoji: '🃏',
-        color: targetFolder?.color ?? 'purple',
-        category: targetFolder?.name ?? 'AI Flashcards',
-        kind: 'flashcard',
-        folderId: targetFolder?.id ?? null,
-        shuffleQuestions: true,
-        shuffleAnswers: false,
-        tags: ['flashcard', 'ai', 'chat'],
-        questions,
-        createdAt: Date.now(),
-      });
-
-      const folderNote = targetFolder ? ` în folderul „${targetFolder.name}"` : '';
-      setMessages((prev) => [...prev, {
-        role: 'assistant',
-        content: `✅ Am creat **${questions.length} flashcarduri** din „${source.name}"${folderNote}. Apasă pentru a începe sesiunea.`,
-        mode: activeMode,
-        openRoute: { route: `/flashcards/session/${deckId}?mode=all`, label: 'Începe flashcardurile' },
-      }]);
-      addToast(`${questions.length} flashcarduri generate.`, 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Generarea flashcardurilor a eșuat.';
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${message}`, mode: activeMode }]);
-      addToast(message, 'error');
-    }
-    return true;
-  };
-
   const stopGeneration = () => {
     // Abort the streaming chat if one is live…
     streamAbortRef.current?.abort();
@@ -1047,6 +467,7 @@ export default function AIChatDrawer() {
     // …and signal the non-streaming generators (flashcards / grile) to drop their
     // result, then release the UI immediately so the button always does something.
     generationAbortedRef.current = true;
+    generationStopCountRef.current += 1;
     setLoading(false);
     setThinkingPhase(null);
     setStudioGenerating(false);
@@ -1057,7 +478,8 @@ export default function AIChatDrawer() {
   const maybeCompressConversation = async () => {
     if (summarizingRef.current) return;
     const current = messagesRef.current;
-    if (current.length < CONVERSATION_SUMMARY_THRESHOLD) return;
+    const uncoveredChars = current.slice(summaryCoveredCountRef.current).reduce((sum, m) => sum + m.content.length, 0);
+    if (current.length < CONVERSATION_SUMMARY_THRESHOLD && uncoveredChars < CONVERSATION_SUMMARY_CHARS) return;
     if (current.length - summaryCoveredCountRef.current < CONVERSATION_RECENT_KEEP) return;
 
     const cutoff = current.length - CONVERSATION_RECENT_KEEP;
@@ -1067,13 +489,21 @@ export default function AIChatDrawer() {
       .map(({ role, content }) => ({ role, content }));
     if (olderSlice.length === 0) return;
 
+    const startedThread = summaryThreadRef.current;
+    const startedProfile = activeProfileId;
     summarizingRef.current = true;
     try {
       const { summarizeConversation } = await loadAIChatRuntime();
       const summary = await summarizeConversation(olderSlice, conversationSummaryRef.current);
       if (summary) {
-        conversationSummaryRef.current = summary;
-        summaryCoveredCountRef.current = cutoff;
+        if (startedProfile) {
+          saveThreadSummary(startedProfile, startedThread, { summary, covered: cutoff, total: current.length });
+        }
+        // The thread may have changed while we waited — only the live one owns the refs.
+        if (summaryThreadRef.current === startedThread) {
+          conversationSummaryRef.current = summary;
+          summaryCoveredCountRef.current = cutoff;
+        }
       }
     } catch {
       // best-effort — keep the previous summary
@@ -1081,6 +511,95 @@ export default function AIChatDrawer() {
       summarizingRef.current = false;
     }
   };
+
+  // Long-term memory: distill durable facts about the student (goals, preferences,
+  // recurring difficulties) from the newest exchanges. Background, best-effort.
+  const maybeExtractMemory = async (force = false) => {
+    if (!activeProfileId || !isMemoryEnabled() || extractingRef.current) return;
+    const current = messagesRef.current;
+    const from = extractedUpToRef.current > current.length ? 0 : extractedUpToRef.current;
+    const fresh = current.slice(from).filter((m) => !m.agentJobId && m.content.trim());
+    const studentTurns = fresh.filter((m) => m.role === 'user').length;
+    if (studentTurns === 0 || (!force && studentTurns < MEMORY_EXTRACT_EVERY)) return;
+
+    const profileId = activeProfileId;
+    const scannedUpTo = current.length;
+    extractingRef.current = true;
+    try {
+      const { extractMemoryCandidates } = await loadAIChatRuntime();
+      const candidates = await extractMemoryCandidates(
+        fresh.map(({ role, content }) => ({ role, content })),
+        loadMemories(profileId),
+      );
+      extractedUpToRef.current = scannedUpTo;
+      if (candidates.length > 0) saveMemories(profileId, mergeMemories(loadMemories(profileId), candidates));
+    } catch {
+      // best-effort — the same turns are retried next time
+    } finally {
+      extractingRef.current = false;
+    }
+  };
+
+  // Second look at answers carrying doses/thresholds/scores. Runs after the reply is
+  // already on screen and only appends a note when a claim is confidently wrong.
+  const verifyAnswerInBackground = async (answer: string, grounding: string) => {
+    if (!needsClinicalVerification(answer)) return;
+    try {
+      const { verifyClinicalAnswer } = await loadAIChatRuntime();
+      const issues = await verifyClinicalAnswer(answer, grounding);
+      if (issues.length === 0) return;
+      const note = '\n\n⚠️ **Verificare automată** (poate greși și ea — confirmă în curs sau ghid):\n'
+        + issues.map((issue) => `- «${issue.claim}» — ${issue.reason}`).join('\n');
+      setMessages((prev) => {
+        const index = prev.map((m) => m.content).lastIndexOf(answer);
+        if (index < 0) return prev;
+        const next = [...prev];
+        next[index] = { ...next[index], content: answer + note };
+        return next;
+      });
+    } catch {
+      // fail open — no note
+    }
+  };
+
+  // Restore the persisted summary of whichever thread is live; the summary used to
+  // live only in refs, so it vanished on reload and leaked across thread switches.
+  useEffect(() => {
+    summaryThreadRef.current = chatThread;
+    const saved = activeProfileId ? loadThreadSummary(activeProfileId, chatThread) : null;
+    conversationSummaryRef.current = saved?.summary ?? '';
+    summaryCoveredCountRef.current = saved ? rebaseCoveredCount(saved, messagesRef.current.length) : 0;
+    // History that was already on disk was scanned in an earlier session.
+    extractedUpToRef.current = messagesRef.current.length;
+  }, [activeProfileId, chatThread, messagesRef]);
+
+  // Closing the drawer flushes pending compression + memory extraction.
+  useEffect(() => {
+    flushRef.current = () => {
+      void maybeCompressConversation();
+      void maybeExtractMemory(true);
+    };
+  });
+  useEffect(() => {
+    if (wasOpenRef.current && !open) flushRef.current();
+    wasOpenRef.current = open;
+  }, [open]);
+
+  // Deterministic "where we left off" card after a break (no LLM call).
+  const continuityRecap = useMemo(() => {
+    if (!open || !activeProfileId || !isMemoryEnabled()) return null;
+    return buildContinuityRecap({
+      memories: loadMemories(activeProfileId),
+      summary: loadThreadSummary(activeProfileId, chatThread)?.summary ?? '',
+      dueCount: performanceSummary.dueCount,
+      weakTopic: weakTopics[0]?.topic,
+      lastActiveAt: getThreadLastActive(activeProfileId, chatThread),
+    });
+  }, [open, activeProfileId, chatThread, performanceSummary.dueCount, weakTopics]);
+
+  useEffect(() => {
+    if (open) setRecapDismissed(false);
+  }, [open, chatThread]);
 
   const sendMessage = async (overrideText?: string, modeOverride?: ChatMode) => {
     const text = (overrideText || input).trim();
@@ -1102,7 +621,7 @@ export default function AIChatDrawer() {
       }
     }
     const imageSnapshot = pastedImage;
-    const userMsg: ChatMessage = { role: 'user', content: text || '📷 Imagine atașată', mode: activeMode };
+    const userMsg: ChatMessage = { role: 'user', content: text || '📷 Imagine atașată', mode: activeMode, ...(imageSnapshot ? { hadImage: true } : {}) };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setPastedImage(null);
@@ -1131,6 +650,10 @@ export default function AIChatDrawer() {
 
       const commandHandled = !imageSnapshot && await tryHandleStudioCommand(text, activeMode);
       if (commandHandled) return;
+
+      // A normal question sent while the Studio drawer is open would stream its answer
+      // behind the drawer's backdrop, so bring the conversation back into view.
+      if (view === 'studio') setView('chat');
 
       // ── Vision path: user pasted an image ────────────────────────────────
       if (imageSnapshot) {
@@ -1191,10 +714,24 @@ export default function AIChatDrawer() {
         .map((chunk, i) => `${i === 0 ? '⭐ ' : ''}[Sursă: ${chunk.source} | Relevanță: ${(chunk.score * 100).toFixed(0)}%]\n${chunk.text}`)
         .join('\n\n---\n\n');
 
-      const historyForAI = [...messages.slice(-14), userMsg]
-        .slice(-8)
+      // The engine trims this to a character budget; hand it a generous tail.
+      const historyForAI = [...messages.slice(-24), userMsg]
         .map(({ role, content }) => ({ role, content }));
+      const previousUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+      const relevantMemories = activeProfileId && isMemoryEnabled()
+        ? selectRelevantMemories(loadMemories(activeProfileId), `${text} ${previousUserText}`)
+        : [];
+      if (activeProfileId && relevantMemories.length > 0) {
+        markMemoriesUsed(activeProfileId, relevantMemories.map((m) => m.id));
+      }
+      const tone = deriveConversationTone(text, new Date().getHours());
+      let streamedAnswer = '';
+      setRecapDismissed(true);
+      if (activeProfileId) touchThreadActivity(activeProfileId, chatThread);
       const scopePrefix = scopedSource ? `Document țintă: ${scopedSource.name}\n` : '';
+      const quizContextPrefix = activeQuizContext 
+        ? `[CONTEXT TUTOR]\nUtilizatorul rezolvă o grilă și discută despre ea.\nÎntrebare: ${activeQuizContext.questionText}\nRăspuns corect: ${activeQuizContext.correctAnswerText}\nRăspunsul utilizatorului: ${activeQuizContext.userAnswerText}\nFocus recomandat: ${activeQuizContext.studyFocus ?? 'Niciunul'}\n\n` 
+        : '';
 
       const suggestions = buildFollowUpSuggestions(
         text,
@@ -1218,10 +755,11 @@ export default function AIChatDrawer() {
 
       await generateChatResponseStream(
         text,
-        `${scopePrefix}${contextSummary}`,
+        `${quizContextPrefix}${scopePrefix}${contextSummary}`,
         historyForAI,
         (chunk) => {
           if (abortCtrl.signal.aborted) return;
+          streamedAnswer += chunk;
           setMessages((prev) => {
             const next = [...prev];
             const last = next[next.length - 1];
@@ -1238,6 +776,8 @@ export default function AIChatDrawer() {
           studyContext,
           focusTopics: weakTopics.map((topic) => topic.topic),
           conversationSummary: conversationSummaryRef.current,
+          personalMemory: formatMemoryBlock(relevantMemories),
+          tone,
         },
         abortCtrl.signal,
       );
@@ -1254,33 +794,34 @@ export default function AIChatDrawer() {
         });
         // Refresh the compressed conversation memory in the background.
         void maybeCompressConversation();
+        void maybeExtractMemory();
+        void verifyAnswerInBackground(streamedAnswer, contextSummary);
       }
     } catch (err: unknown) {
-      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) return;
-      const errorMessage = err instanceof Error ? err.message : 'Nu am putut genera un răspuns.';
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Eroare: ${errorMessage}` }]);
+      if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+        // Stopped before the first chunk: don't leave an empty bubble behind (it was also being saved).
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          return last?.role === 'assistant' && !last.content ? prev.slice(0, -1) : prev;
+        });
+        return;
+      }
+      const errorMessage = friendlyAIError(err);
+      setMessages((prev) => {
+        // The streaming path already pushed an empty assistant placeholder before the request
+        // could fail. Replace it with a plain error message, dropping the placeholder's
+        // citations/suggestions, which would otherwise render context chips and quiz/flashcard
+        // actions under an error text.
+        const last = prev[prev.length - 1];
+        const errorBubble = { role: 'assistant' as const, content: `Eroare: ${errorMessage}` };
+        if (last?.role === 'assistant' && !last.content) return [...prev.slice(0, -1), errorBubble];
+        return [...prev, errorBubble];
+      });
     } finally {
       streamAbortRef.current = null;
       setLoading(false);
       setThinkingPhase(null);
     }
-  };
-
-  const handleGeneratePackages = async () => {
-    if (!selectedStudioSource) {
-      addToast('Alege mai întâi un document din bibliotecă.', 'warning');
-      return;
-    }
-
-    await runStudioGeneration({
-      source: selectedStudioSource,
-      folder: selectedStudioFolder,
-      packCount: studioPackCount,
-      questionsPerPack: studioQuestionsPerPack,
-      difficulty: studioDifficulty,
-      announceInChat: true,
-      forceChatView: true,
-    });
   };
 
   const closeChat = () => {
@@ -1290,6 +831,17 @@ export default function AIChatDrawer() {
     setManualMode(false);
     setView('chat');
     contextCacheRef.current.clear();
+  };
+
+  const clearConversation = () => {
+    setMessages([]);
+    setActiveCitationKey(null);
+    conversationSummaryRef.current = '';
+    summaryCoveredCountRef.current = 0;
+    extractedUpToRef.current = 0;
+    if (activeProfileId) clearThreadSummary(activeProfileId, chatThread);
+    const activeStorageKey = chatThread === 'rezidentiat' ? `${CHAT_STORAGE_KEY}:rezidentiat` : CHAT_STORAGE_KEY;
+    try { localStorage.removeItem(activeStorageKey); } catch { /* ignore */ }
   };
 
   // ── Per-response actions (hover) ───────────────────────────────────────────
@@ -1341,11 +893,18 @@ export default function AIChatDrawer() {
       addToast('Nu găsesc întrebarea de regenerat.', 'warning');
       return;
     }
+    // The image itself is never kept in history — resending prev.content alone
+    // would silently drop it and produce a reply about nothing in particular.
+    if (prev.hadImage) {
+      addToast('Nu pot regenera un răspuns pentru o imagine — atașeaz-o din nou și retrimite mesajul.', 'warning');
+      return;
+    }
     void sendMessage(prev.content, messages[index]?.mode);
   };
 
   const makeQuizFromAnswer = async (index: number) => {
     if (loading) return;
+    const assertSameProfile = profileGuard();
     const prev = messages[index - 1];
     const topic = (prev?.role === 'user' ? prev.content : '').trim() || messages[index].content.slice(0, 140);
     if (!hasKey) {
@@ -1368,6 +927,7 @@ export default function AIChatDrawer() {
         addToast('Nu am putut genera un set din acest subiect.', 'error');
         return;
       }
+      assertSameProfile();
       const quizId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
       addQuiz({
         id: quizId,
@@ -1397,6 +957,72 @@ export default function AIChatDrawer() {
     }
   };
 
+  // Escape closes the zoom overlay before anything else reacts to the key.
+  useEffect(() => {
+    if (!zoomedBlock) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setZoomedBlock(null);
+    };
+    window.addEventListener('keydown', handleEscape, true);
+    return () => window.removeEventListener('keydown', handleEscape, true);
+  }, [zoomedBlock]);
+
+  // Ctrl/Cmd+Shift+F toggles the full-window glass chat; Esc steps back to the small sheet
+  // (it never closes the chat, and it leaves an open zoom overlay/menu to their own Esc).
+  const toggleImmersive = glass.toggleImmersive;
+  const setImmersive = glass.setImmersive;
+  useEffect(() => {
+    if (!open || mobile) return;
+    const handler = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        toggleImmersive();
+        return;
+      }
+      if (event.key !== 'Escape' || !immersive || zoomedBlock) return;
+      // Peel one layer per press: open popovers first, then the full-window mode itself.
+      if (glassPanelOpen) setGlassPanelOpen(false);
+      else if (overflowMenuOpen) setOverflowMenuOpen(false);
+      else setImmersive(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, mobile, immersive, zoomedBlock, overflowMenuOpen, glassPanelOpen, toggleImmersive, setImmersive]);
+
+  useEffect(() => {
+    if (!open || view !== 'studio') return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || zoomedBlock || glassPanelOpen || overflowMenuOpen) return;
+      // A dropdown inside the form handles its own Escape first.
+      if (event.defaultPrevented) return;
+      event.stopPropagation();
+      setView('chat');
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, view, zoomedBlock, glassPanelOpen, overflowMenuOpen, setView]);
+
+  useEffect(() => {
+    if (!open || !immersive) setGlassPanelOpen(false);
+  }, [open, immersive]);
+
+  /**
+   * Message bodies are injected as HTML, so schemas and wide tables can't carry
+   * React handlers. One delegated click lifts the block the user tapped into a
+   * full-screen overlay instead.
+   */
+  const handleZoomableClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    const block = target?.closest?.('[data-sx-zoom]') as HTMLElement | null;
+    if (!block) return;
+    if (target?.closest('a')) return; // links inside a table keep working
+    const clone = block.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('[data-sx-hint]').forEach((hint) => hint.remove());
+    setZoomedBlock(clone.innerHTML);
+  };
+
   const renderMessageList = (compact = false) => {
     const threadMessages = messages;
     const recentSourceName = scopedSource?.name
@@ -1405,9 +1031,47 @@ export default function AIChatDrawer() {
     const greeting = buildProactiveGreeting(weakTopics, performanceSummary.dueCount, recentSourceName);
 
     return (
-    <div className={compact ? 'space-y-4' : 'space-y-5'}>
+    <div className={`${compact ? 'space-y-4' : 'space-y-5'}${immersive ? ' mx-auto w-full max-w-[800px]' : ''}`} onClick={handleZoomableClick}>
+      {continuityRecap && !recapDismissed && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="luxe-card rounded-[22px] p-4 text-left"
+          style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}
+        >
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+            <Sparkles size={12} /> Unde am rămas
+          </div>
+          <ul className="mb-3 space-y-1 text-[13px] leading-relaxed" style={{ color: theme.text2 }}>
+            {continuityRecap.lines.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="press-feedback rounded-full px-4 py-2 text-[12px] font-bold"
+              style={{ background: theme.accent, color: '#fff' }}
+              onClick={() => { setRecapDismissed(true); void sendMessage(continuityRecap.prompt); }}
+            >
+              Continuăm
+            </button>
+            <button
+              type="button"
+              className="press-feedback rounded-full px-4 py-2 text-[12px] font-bold"
+              style={{ color: theme.text2, border: `1px solid ${theme.border}` }}
+              onClick={() => setRecapDismissed(true)}
+            >
+              Nu acum
+            </button>
+          </div>
+        </motion.div>
+      )}
       {threadMessages.length === 0 ? (
         <div className={`text-center ${compact ? 'py-6' : 'py-8'}`}>
+          <FreeKeysNotice
+            theme={theme}
+            configuredCount={Object.values(providerKeys).filter((key) => (key ?? '').trim().length > 0).length}
+            onNavigate={closeChat}
+          />
           <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mb-5 text-5xl">
             🧠
           </motion.div>
@@ -1514,7 +1178,7 @@ export default function AIChatDrawer() {
                 <div
                   className={`max-w-[84%] rounded-[24px] p-4 text-sm leading-relaxed shadow-sm ${message.role === 'user' ? 'text-white' : ''}`}
                   style={{
-                    background: message.role === 'user' ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                    background: message.role === 'user' ? theme.accent : theme.surface2,
                     color: message.role === 'user' ? '#fff' : theme.text,
                     borderRadius: message.role === 'user' ? '24px 24px 8px 24px' : '24px 24px 24px 8px',
                     border: message.role === 'assistant' ? `1px solid ${theme.border}` : 'none',
@@ -1524,7 +1188,7 @@ export default function AIChatDrawer() {
                   {message.role === 'assistant' && message.autoMode && message.mode && (
                     <div
                       className="mb-2 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em]"
-                      style={{ background: `${theme.accent}14`, color: theme.accent }}
+                      style={{ background: `${theme.accent}14`, color: theme.accentText }}
                       title="Mod ales automat din mesajul tău"
                     >
                       ✨ {CHAT_MODES.find((m) => m.id === message.mode)?.label ?? message.mode}
@@ -1533,11 +1197,11 @@ export default function AIChatDrawer() {
 
                   {isLastAssistant && loading ? (
                     <>
-                      <span className="font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
-                      <span className="streaming-cursor" style={{ color: theme.accent }}>▌</span>
+                      <span className="ai-rich-text font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
+                      <span className="streaming-cursor" style={{ color: theme.accentText }}>▌</span>
                     </>
                   ) : (
-                    <span className="font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
+                    <span className="ai-rich-text font-medium" dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }} />
                   )}
 
                   {message.role === 'assistant' && message.agentJobId && (
@@ -1548,21 +1212,25 @@ export default function AIChatDrawer() {
                         onConfirm={() => void runAgentJob(message.agentJobId!)}
                         onCancel={() => cancelAgentJob(message.agentJobId!)}
                         onUndo={() => undoAgentJob(message.agentJobId!)}
+                        onRetry={() => void retryAgentJob(message.agentJobId!)}
                         onEditParams={(stepId, patch) => editAgentStepParams(message.agentJobId!, stepId, patch)}
                       />
-                      {agentResults[message.agentJobId] && (
-                        <button
-                          onClick={() => {
-                            const target = agentResults[message.agentJobId!];
-                            setChatOpen(false);
-                            navigate(target.route);
-                          }}
-                          className="press-feedback mt-2.5 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
-                          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 20px ${theme.accent}33` }}
-                        >
-                          <ArrowRight size={14} /> {agentResults[message.agentJobId].label}
-                        </button>
-                      )}
+                      {(() => {
+                        const target = agentJobs.find((job) => job.id === message.agentJobId)?.result;
+                        if (!target) return null;
+                        return (
+                          <button
+                            onClick={() => {
+                              setChatOpen(false);
+                              navigate(target.route);
+                            }}
+                            className="press-feedback mt-2.5 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
+                            style={{ background: theme.accent, boxShadow: `0 8px 20px ${theme.accent}33` }}
+                          >
+                            <ArrowRight size={14} /> {target.label}
+                          </button>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -1570,7 +1238,7 @@ export default function AIChatDrawer() {
                     <button
                       onClick={() => { setChatOpen(false); navigate(message.openRoute!.route); }}
                       className="press-feedback mt-3 inline-flex items-center gap-2 rounded-[16px] px-4 py-2.5 text-[12px] font-black text-white shadow-lg"
-                      style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 8px 20px ${theme.accent}33` }}
+                      style={{ background: theme.accent, boxShadow: `0 8px 20px ${theme.accent}33` }}
                     >
                       <ArrowRight size={14} /> {message.openRoute.label}
                     </button>
@@ -1628,7 +1296,7 @@ export default function AIChatDrawer() {
                   )}
 
                   {message.role === 'assistant' && !message.agentJobId && message.content.trim() && !(isLastAssistant && loading) && (
-                    <div className={`mt-3 flex flex-wrap gap-1.5 transition-opacity duration-150 ${isLastAssistant ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+                    <div className={`mt-3 flex flex-wrap gap-1.5 transition-opacity duration-150 ${isLastAssistant ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100'}`}>
                       {([
                         { key: 'copy', label: 'Copiază', icon: <Copy size={12} />, onClick: () => void copyMessageToClipboard(message.content) },
                         { key: 'flashcard', label: 'Flashcard', icon: <CreditCard size={12} />, onClick: () => saveAnswerAsFlashcard(index) },
@@ -1676,10 +1344,18 @@ export default function AIChatDrawer() {
                 className="flex items-center gap-2.5 rounded-[22px] border px-4 py-3"
                 style={{ background: theme.surface2, borderColor: theme.border }}
               >
-                <Loader2 size={16} className="animate-spin" style={{ color: theme.accent }} />
+                <Loader2 size={16} className="animate-spin" style={{ color: theme.accentText }} />
                 <span className="text-[13px] font-semibold" style={{ color: theme.text2 }}>
                   {thinkingPhase ?? 'Mă gândesc…'}
                 </span>
+                <button
+                  onClick={stopGeneration}
+                  title="Oprește generarea"
+                  className="ml-1 flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide transition-colors hover:opacity-80"
+                  style={{ background: `${theme.danger}15`, color: theme.danger, border: `1px solid ${theme.danger}30` }}
+                >
+                  ⬛ Stop
+                </button>
               </div>
             </div>
           )}
@@ -1690,10 +1366,38 @@ export default function AIChatDrawer() {
     );
   };
 
-  const drawerWidth = view === 'studio'
-    ? (mobile ? 'min(600px, calc(100vw - 20px))' : 'min(1080px, calc(100vw - 28px))')
-    : (mobile ? 'min(520px, calc(100vw - 20px))' : 'min(560px, calc(100vw - 28px))');
-  const drawerHeight = view === 'studio' ? 'min(88vh, 880px)' : 'min(85vh, 860px)';
+  // The panel's position is always spelled out in px (sheet or full window) so switching
+  // between the two can animate as one smooth morph instead of jumping between CSS models.
+  const sheetWidth = view === 'studio'
+    ? Math.min(mobile ? 600 : 1080, windowSize.width - (mobile ? 20 : 28))
+    : mobile
+      ? Math.min(520, windowSize.width - 20)
+      : Math.min(wideChat ? 1080 : 560, windowSize.width - 28);
+  const sheetHeight = view === 'studio' || (wideChat && view === 'chat')
+    ? Math.min(windowSize.height * 0.88, 880)
+    : Math.min(windowSize.height * 0.85, 860);
+  // The Electron window is frameless: minimize/maximize/close float at the top-right,
+  // so the full-window chat starts below them instead of covering (and stealing clicks from) them.
+  const immersiveTop = typeof window !== 'undefined' && window.electronAPI ? 54 : 12;
+  // Wide enough: Studio is a real column next to the conversation (nothing is covered, and the form
+  // gets the full height). Narrow: it stays a slide-over drawer above the messages.
+  const panelInnerWidth = immersive ? windowSize.width - sidebarInset - 24 : sheetWidth;
+  const studioAsColumn = view === 'studio' && !mobile && panelInnerWidth >= 820;
+  const panelGeometry = immersive
+    ? {
+        left: sidebarInset + 12,
+        top: immersiveTop,
+        width: windowSize.width - sidebarInset - 24,
+        height: windowSize.height - immersiveTop - 12,
+        borderRadius: 28,
+      }
+    : {
+        left: windowSize.width - 20 - sheetWidth,
+        top: windowSize.height - 20 - sheetHeight,
+        width: sheetWidth,
+        height: sheetHeight,
+        borderRadius: 34,
+      };
 
   if (floatingUiSuppressed && !open) {
     return null;
@@ -1712,9 +1416,9 @@ export default function AIChatDrawer() {
           data-tutorial="ai-chat-button"
           className="fixed right-6 z-[9998] flex h-14 w-14 items-center justify-center rounded-[22px] text-white shadow-2xl press-feedback"
           style={{
-            // Sit above the mobile bottom-nav so it doesn't cover the last tab.
-            bottom: mobile ? 'calc(74px + env(safe-area-inset-bottom, 0px))' : '24px',
-            background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+            // Sit above the floating mobile bottom-nav (14px gap + 64px bar + 12px clearance) so it doesn't cover it.
+            bottom: mobile ? 'calc(90px + env(safe-area-inset-bottom, 0px))' : '24px',
+            background: theme.accent,
             boxShadow: `0 10px 30px ${theme.accent}45, 0 2px 8px rgba(0,0,0,0.12)`,
             backdropFilter: performanceLite ? 'blur(8px)' : 'blur(14px)',
           }}
@@ -1723,7 +1427,7 @@ export default function AIChatDrawer() {
           <motion.div
             animate={calmMotion ? undefined : { scale: [1, 1.18, 1], opacity: [0.45, 1, 0.45] }}
             transition={calmMotion ? undefined : { repeat: Infinity, duration: 2 }}
-            className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-white"
+            className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-[var(--bg)]"
             style={{ background: theme.success }}
           />
         </motion.button>
@@ -1732,57 +1436,74 @@ export default function AIChatDrawer() {
       <AnimatePresence>
         {open && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={closeChat}
-              className="fixed inset-0 z-[9996] bg-black/18"
-            />
+            {/* The dimming backdrop would swallow clicks meant for the app sidebar, so the
+                full-window mode leaves it out: the page stays visible (blurred) behind the glass. */}
+            {!immersive && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={closeChat}
+                className="fixed inset-0 z-[9996] bg-[var(--overlay)]"
+              />
+            )}
 
             <motion.div
               initial={{ opacity: 0, scale: 0.985 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.985 }}
               transition={calmMotion ? { duration: 0.2, ease: 'easeOut' } : { duration: 0.28, ease: [0.2, 0.9, 0.28, 1] }}
-              className="assistant-sheet fixed bottom-5 right-5 z-[9999] flex flex-col overflow-hidden rounded-[34px]"
-              style={{
-                width: drawerWidth,
-                height: drawerHeight,
+              className={`assistant-sheet fixed z-[9999] flex flex-col overflow-hidden${immersive ? ' immersive-chat' : ''}${calmMotion ? '' : ' chat-panel-morph'}`}
+              style={immersive ? {
+                ...panelGeometry,
+                background: theme.isDark
+                  ? `rgba(14,18,32,${glass.settings.opacity})`
+                  : `rgba(250,251,255,${glass.settings.opacity})`,
+                backdropFilter: `blur(${performanceLite ? Math.min(glass.settings.blur, 10) : glass.settings.blur}px) saturate(150%)`,
+                WebkitBackdropFilter: `blur(${performanceLite ? Math.min(glass.settings.blur, 10) : glass.settings.blur}px) saturate(150%)`,
+                border: `1px solid ${theme.border}`,
+                boxShadow: performanceLite ? '0 12px 28px rgba(0,0,0,0.16)' : '0 24px 70px rgba(0,0,0,0.28), inset 0 1px 0 var(--glass-highlight)',
+              } : {
+                ...panelGeometry,
                 background: theme.isDark ? 'rgba(18,18,22,0.88)' : 'rgba(252,252,255,0.88)',
                 backdropFilter: performanceLite ? 'blur(14px) saturate(124%)' : calmMotion ? 'blur(16px) saturate(132%)' : 'blur(30px) saturate(165%)',
                 border: `1px solid ${theme.border}`,
                 boxShadow: performanceLite ? '0 18px 36px rgba(0,0,0,0.14)' : calmMotion ? '0 20px 44px rgba(0,0,0,0.16)' : '0 28px 80px rgba(0,0,0,0.22), 0 6px 20px rgba(0,0,0,0.08)',
               }}
             >
-              <div className="sheet-handle" />
+              {!immersive && <div className="sheet-handle" />}
               <div className="relative z-10 flex h-full flex-col">
                 <div className="flex items-center gap-3 border-b px-5 py-4" style={{ borderColor: theme.border }}>
                   <AIOrb theme={theme} size={42} active={loading} calm={calmMotion} />
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-black tracking-tight" style={{ color: theme.text }}>StudyX AI</h3>
-                      <div className="flex items-center gap-1 rounded-full px-2 py-0.5"
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h3 className="min-w-0 truncate whitespace-nowrap text-base font-black tracking-tight" style={{ color: theme.text }}>
+                        StudyX AI{chatThread === 'rezidentiat' ? ' · Rezidențiat' : ''}
+                      </h3>
+                      <div className="flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5"
+                        title="Online"
                         style={{ background: `${theme.success}18`, border: `1px solid ${theme.success}30` }}>
                         <div className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: theme.success }} />
-                        <span className="text-[10px] font-bold" style={{ color: theme.success }}>Online</span>
+                        {immersive && <span className="text-[10px] font-bold" style={{ color: theme.success }}>Online</span>}
                       </div>
                     </div>
                     <p className="mt-0.5 text-[11px] font-medium truncate" style={{ color: theme.text3 }}>
-                      {view === 'studio'
-                        ? 'Generare grile și pachete din cursuri'
-                        : scopedSource
-                          ? `Focus activ: ${scopedSource.name}`
-                          : weakTopics[0]
-                            ? `Arii slabe: ${weakTopics.slice(0, 2).map(t => t.topic).join(', ')}`
-                            : memoryInteractions >= 3
-                              ? `Te cunoaște după ${memoryInteractions} interacțiuni`
-                              : 'Asistent calibrat pe profilul tău de studiu'}
+                      {chatThread === 'rezidentiat'
+                        ? 'Conversație separată, dedicată pregătirii de rezidențiat'
+                        : view === 'studio'
+                          ? 'Generare grile și pachete din cursuri'
+                          : scopedSource
+                            ? `Focus activ: ${scopedSource.name}`
+                            : weakTopics[0]
+                              ? `Arii slabe: ${weakTopics.slice(0, 2).map(t => t.topic).join(', ')}`
+                              : memoryInteractions >= 3
+                                ? `Te cunoaște după ${memoryInteractions} interacțiuni`
+                                : 'Asistent calibrat pe profilul tău de studiu'}
                     </p>
                   </div>
 
-                  <div className="hidden items-center gap-2 rounded-full border px-2 py-1.5 sm:flex" style={{ borderColor: theme.border, background: theme.surface2 }}>
+                  <div className="hidden flex-shrink-0 items-center gap-1 rounded-full border p-1 sm:flex" style={{ borderColor: theme.border, background: theme.surface2 }}>
                     {([
                       { id: 'chat', label: 'Chat', icon: <PanelRightClose size={14} /> },
                       { id: 'studio', label: 'Studio', icon: <PanelRightOpen size={14} /> },
@@ -1792,9 +1513,9 @@ export default function AIChatDrawer() {
                         <button
                           key={entry.id}
                           onClick={() => setView(entry.id)}
-                          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em]"
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.1em]"
                           style={{
-                            background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
+                            background: active ? theme.accent : 'transparent',
                             color: active ? '#fff' : theme.text3,
                           }}
                         >
@@ -1805,12 +1526,132 @@ export default function AIChatDrawer() {
                     })}
                   </div>
 
+                  {!mobile && immersive && (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setGlassPanelOpen((value) => !value)}
+                        aria-label="Transparență și estompare"
+                        aria-expanded={glassPanelOpen}
+                        title="Transparență și estompare"
+                        className="fine-row press-feedback rounded-2xl p-2.5 transition-colors hover:bg-[var(--hover-fill)]"
+                        style={{ color: glassPanelOpen ? theme.accent : theme.text3, background: glassPanelOpen ? `${theme.accent}18` : undefined }}
+                      >
+                        <SlidersHorizontal size={18} />
+                      </button>
+                      {glassPanelOpen && (
+                        <>
+                          <div className="fixed inset-0 z-[10001]" onClick={() => setGlassPanelOpen(false)} />
+                          <div
+                            className="absolute right-0 top-full z-[10002] mt-2 overflow-hidden rounded-[18px] border"
+                            style={{
+                              background: theme.isDark ? 'rgba(28,26,34,0.96)' : 'rgba(255,255,255,0.97)',
+                              borderColor: theme.border,
+                              boxShadow: '0 24px 60px rgba(0,0,0,0.35)',
+                            }}
+                          >
+                            <ChatGlassControls settings={glass.settings} onChange={glass.update} onPreset={glass.applyPreset} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {!mobile && (
+                    <button
+                      type="button"
+                      onClick={glass.toggleImmersive}
+                      aria-label={immersive ? 'Restrânge chatul (Esc)' : 'Ecran complet (Ctrl+Shift+F)'}
+                      title={immersive ? 'Restrânge chatul (Esc)' : 'Ecran complet (Ctrl+Shift+F)'}
+                      className="fine-row press-feedback rounded-2xl p-2.5 transition-colors hover:bg-[var(--hover-fill)]"
+                      style={{ color: immersive ? theme.accent : theme.text3, background: immersive ? `${theme.accent}18` : undefined }}
+                    >
+                      {immersive ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </button>
+                  )}
+
+                  <div className="relative">
+                    <motion.button
+                      whileHover={calmMotion ? undefined : { scale: 1.08 }}
+                      whileTap={calmMotion ? undefined : { scale: 0.92 }}
+                      onClick={() => setOverflowMenuOpen((value) => !value)}
+                      aria-label="Mai multe opțiuni"
+                      title="Mai multe opțiuni"
+                      className="fine-row rounded-2xl p-2.5 transition-colors hover:bg-[var(--hover-fill)] press-feedback"
+                      style={{
+                        color: overflowMenuOpen ? theme.accent : theme.text3,
+                        background: overflowMenuOpen ? `${theme.accent}18` : undefined,
+                      }}
+                    >
+                      <MoreHorizontal size={18} />
+                    </motion.button>
+
+                    <AnimatePresence>
+                      {overflowMenuOpen && (
+                        <>
+                          <div className="fixed inset-0 z-[10001]" onClick={() => setOverflowMenuOpen(false)} />
+                          <motion.div
+                            initial={calmMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
+                            animate={calmMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                            exit={calmMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
+                            transition={{ duration: calmMotion ? 0.08 : 0.14 }}
+                            className="absolute right-0 top-full z-[10002] mt-2 w-56 overflow-hidden rounded-[18px] border p-1.5"
+                            style={{
+                              background: theme.isDark ? 'rgba(28,26,34,0.96)' : 'rgba(255,255,255,0.97)',
+                              borderColor: theme.border,
+                              backdropFilter: performanceLite ? 'blur(10px)' : 'blur(24px) saturate(160%)',
+                              boxShadow: '0 24px 60px rgba(0,0,0,0.35)',
+                            }}
+                          >
+                            {view === 'chat' && !mobile && !immersive && (
+                              <button
+                                onClick={() => { setWideChat((value) => !value); setOverflowMenuOpen(false); }}
+                                className="fine-row flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-[var(--hover-fill)]"
+                                style={{ color: theme.text }}
+                              >
+                                {wideChat ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                                {wideChat ? 'Îngustează chatul' : 'Lățește chatul'}
+                              </button>
+                            )}
+                            {(() => {
+                              const lastAssistantIndex = [...messages].map((m, i) => ({ m, i })).reverse().find(({ m }) => m.role === 'assistant')?.i;
+                              if (lastAssistantIndex === undefined || loading) return null;
+                              return (
+                                <button
+                                  onClick={() => { setOverflowMenuOpen(false); regenerateAnswer(lastAssistantIndex); }}
+                                  className="fine-row flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-[var(--hover-fill)]"
+                                  style={{ color: theme.text }}
+                                >
+                                  <RotateCcw size={15} />
+                                  Regenerează ultimul răspuns
+                                </button>
+                              );
+                            })()}
+                            {messages.length > 0 && (
+                              <>
+                                <div className="my-1 h-px" style={{ background: theme.border }} />
+                                <button
+                                  onClick={() => { setConfirmClearOpen(true); setOverflowMenuOpen(false); }}
+                                  className="fine-row flex w-full items-center gap-2.5 rounded-[12px] px-3 py-2.5 text-left text-[12.5px] font-bold transition-colors hover:bg-[var(--hover-fill)]"
+                                  style={{ color: theme.danger }}
+                                >
+                                  <Trash2 size={15} />
+                                  Golește conversația
+                                </button>
+                              </>
+                            )}
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
                   <motion.button
                     whileHover={calmMotion ? undefined : { rotate: 90, scale: 1.08 }}
                     whileTap={calmMotion ? undefined : { scale: 0.92 }}
                     onClick={closeChat}
                     aria-label="Inchide chatul AI"
-                    className="rounded-2xl p-2.5 transition-colors hover:bg-white/5 press-feedback"
+                    className="fine-row rounded-2xl p-2.5 transition-colors hover:bg-[var(--hover-fill)] press-feedback"
                     style={{ color: theme.text3 }}
                   >
                     <X size={20} />
@@ -1818,41 +1659,83 @@ export default function AIChatDrawer() {
                 </div>
 
 
-                {view === 'studio' ? (
-                  <div className={`grid min-h-0 flex-1 ${mobile ? 'grid-cols-1' : 'grid-cols-[minmax(0,1.15fr)_340px]'}`}>
-                    <div className="custom-scrollbar min-h-0 overflow-y-auto px-6 py-5">
-                      {scopedSource && (
-                        <div
-                          className="mb-4 rounded-[24px] border p-4"
-                          style={{ background: theme.surface2, borderColor: theme.border }}
-                        >
-                          <div className="mb-2 flex flex-wrap items-center gap-2">
-                            <span className="citation-pill inline-flex items-center gap-1.5">
-                              <BookOpen size={12} />
-                              Sursă activă
-                            </span>
-                            <span className="premium-chip rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
-                              {scopedSource.name}
-                            </span>
-                          </div>
-                          <p className="text-sm leading-relaxed" style={{ color: theme.text }}>
-                            Poți discuta liber despre documentul selectat și, din panoul din dreapta, să generezi pachete de grile direct în folderul ales.
-                          </p>
-                        </div>
-                      )}
-                      {renderMessageList(true)}
-                    </div>
-
-                    <div className="custom-scrollbar min-h-0 overflow-y-auto border-l px-5 py-5" style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.02)' }}>
+                <div className="relative flex min-h-0 flex-1">
+                  <div
+                    className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 py-5"
+                    style={view === 'chat'
+                      ? {
+                          background: 'linear-gradient(180deg, rgba(255,255,255,0.04), transparent 28%)',
+                          // On glass the text should dissolve under the header/composer, not get sliced by a hard edge.
+                          ...(immersive ? {
+                            maskImage: 'linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 26px), transparent 100%)',
+                            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 26px), transparent 100%)',
+                          } : {}),
+                        }
+                      : undefined}
+                  >
+                    {view === 'studio' && scopedSource && (
                       <div
-                        className="rounded-[28px] border p-4"
+                        className="mb-4 rounded-[24px] border p-4"
                         style={{ background: theme.surface2, borderColor: theme.border }}
                       >
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className="citation-pill inline-flex items-center gap-1.5">
+                            <BookOpen size={12} />
+                            Sursă activă
+                          </span>
+                          <span className="premium-chip rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: theme.text3 }}>
+                            {scopedSource.name}
+                          </span>
+                        </div>
+                        <p className="text-sm leading-relaxed" style={{ color: theme.text }}>
+                          Poți discuta liber despre documentul selectat și, din panoul „Studio", să generezi pachete de grile direct în folderul ales.
+                        </p>
+                      </div>
+                    )}
+                    {renderMessageList(view === 'studio')}
+                  </div>
+
+                  {/*
+                    Studio used to be a permanent 340px grid column whenever its tab was
+                    active — it now overlays the chat instead (backdrop + slide-in drawer),
+                    so chat keeps full width until you actually open Studio.
+                  */}
+                  <AnimatePresence>
+                    {view === 'studio' && (
+                      <>
+                        {!studioAsColumn && (
+                        <motion.div
+                          key="studio-backdrop"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: calmMotion ? 0.1 : 0.18 }}
+                          onClick={() => setView('chat')}
+                          className="absolute inset-0 z-10"
+                          style={{ background: 'rgba(0,0,0,0.14)' }}
+                        />
+                        )}
+                        <motion.div
+                          key="studio-drawer"
+                          initial={calmMotion ? { opacity: 0 } : { x: '100%' }}
+                          animate={calmMotion ? { opacity: 1 } : { x: 0 }}
+                          exit={calmMotion ? { opacity: 0 } : { x: '100%' }}
+                          transition={{ type: 'spring', stiffness: 340, damping: 32 }}
+                          className={`relative z-20 flex flex-col overflow-hidden border-l ${studioAsColumn ? 'w-[340px] flex-shrink-0' : `absolute right-0 top-0 bottom-0 ${mobile ? 'w-full' : 'w-full max-w-[340px]'}`}`}
+                          style={{
+                            borderColor: theme.border,
+                            background: theme.isDark ? 'rgba(20,16,30,0.98)' : 'rgba(255,255,255,0.98)',
+                            backdropFilter: 'blur(28px) saturate(160%)',
+                            boxShadow: studioAsColumn ? 'none' : '-24px 0 60px rgba(0,0,0,0.35)',
+                          }}
+                        >
+                      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-5">
+                      <GlassCard variant="strong" radius="28px" padding="16px">
                         <div className="mb-3 flex items-center gap-2">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18`, color: theme.accent }}>
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: `${theme.accent}18`, color: theme.accentText }}>
                             <Wand2 size={18} />
                           </div>
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <div className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: theme.text3 }}>
                               AI Studio
                             </div>
@@ -1860,11 +1743,41 @@ export default function AIChatDrawer() {
                               Pachete smart din curs
                             </div>
                           </div>
+                          <motion.button
+                            whileHover={calmMotion ? undefined : { scale: 1.08, rotate: 90 }}
+                            whileTap={calmMotion ? undefined : { scale: 0.9 }}
+                            onClick={() => setView('chat')}
+                            aria-label="Închide Studio"
+                            className="flex-shrink-0 rounded-xl p-2"
+                            style={{ color: theme.text3, background: theme.surface2 }}
+                          >
+                            <X size={15} />
+                          </motion.button>
                         </div>
 
-                        <p className="mb-4 text-xs leading-6" style={{ color: theme.text2 }}>
-                          Încarci cursul în bibliotecă, alegi documentul și StudyX îți generează batch-uri de grile adaptate profilului tău, apoi le trimite direct în folderul ales.
-                        </p>
+                        <button
+                          onClick={() => setStudioInfoOpen((v) => !v)}
+                          className="mb-3 flex items-center gap-1.5 text-[10.5px] font-bold"
+                          style={{ color: theme.text3 }}
+                        >
+                          <Info size={12} /> Cum funcționează?
+                          <ChevronDown size={11} style={{ transform: studioInfoOpen ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }} />
+                        </button>
+                        <AnimatePresence initial={false}>
+                          {studioInfoOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: calmMotion ? 0.12 : 0.2 }}
+                              className="overflow-hidden"
+                            >
+                              <p className="mb-4 text-xs leading-6" style={{ color: theme.text2 }}>
+                                Încarci cursul în bibliotecă, alegi documentul și StudyX îți generează batch-uri de grile adaptate profilului tău, apoi le trimite direct în folderul ales.
+                              </p>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
 
                         <div className="space-y-4">
                           <StudioSelect
@@ -1872,6 +1785,7 @@ export default function AIChatDrawer() {
                             value={selectedStudioSourceId}
                             onChange={(nextValue) => {
                               setStudioSourceId(nextValue);
+                              setStudioHeading(WHOLE_DOCUMENT_HEADING);
                               const nextSource = readySources.find((source) => source.id === nextValue);
                               if (nextSource) {
                                 setScopedSource({ id: nextSource.id, name: nextSource.name });
@@ -1883,34 +1797,64 @@ export default function AIChatDrawer() {
                             theme={theme}
                           />
 
-                          <StudioSelect
-                            label="Folder țintă"
-                            value={studioFolderId}
-                            onChange={setStudioFolderId}
-                            options={studioFolderOptions}
-                            placeholder="Alege unde salvăm pachetele"
-                            theme={theme}
-                          />
+                          {studioChapterOptions.length > 1 && (
+                            <StudioSelect
+                              label="Capitol"
+                              value={studioHeading}
+                              onChange={setStudioHeading}
+                              options={studioChapterOptions}
+                              placeholder="Tot documentul"
+                              theme={theme}
+                            />
+                          )}
 
-                          <div className="grid grid-cols-2 gap-3">
-                            <label className="block">
+                          {studioResidencyPlacement ? (
+                            <div>
                               <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                                Pachete
+                                Folder țintă
                               </span>
-                              <input
-                                type="number"
-                                min={1}
-                                max={STUDIO_MAX_PACK_COUNT}
-                                value={studioPackCount}
-                                onChange={(event) => setStudioPackCount(clampStudioPackCount(Number(event.target.value) || 1))}
-                                className="w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none"
-                                style={{ background: theme.surface, borderColor: theme.border, color: theme.text }}
-                              />
-                            </label>
+                              <div className="rounded-2xl border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
+                                <div className="flex items-center gap-2 text-sm font-semibold [overflow-wrap:anywhere]" style={{ color: theme.text }}>
+                                  <FolderOpen size={14} className="flex-shrink-0" style={{ color: theme.accentText }} />
+                                  {describePlacement(studioResidencyPlacement)}
+                                </div>
+                                <div className="mt-1 text-[11px]" style={{ color: theme.text3 }}>
+                                  Se creează și se completează automat, ca să apară în pagina Rezidențiat.
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <StudioSelect
+                              label="Folder țintă"
+                              value={studioFolderId}
+                              onChange={setStudioFolderId}
+                              options={studioFolderOptions}
+                              placeholder="Alege unde salvăm pachetele"
+                              theme={theme}
+                            />
+                          )}
+
+                          <div className={studioHeading === WHOLE_DOCUMENT_HEADING ? 'grid grid-cols-2 gap-3' : ''}>
+                            {studioHeading === WHOLE_DOCUMENT_HEADING && (
+                              <label className="block">
+                                <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                                  Pachete
+                                </span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={STUDIO_MAX_PACK_COUNT}
+                                  value={studioPackCount}
+                                  onChange={(event) => setStudioPackCount(clampStudioPackCount(Number(event.target.value) || 1))}
+                                  className="w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none"
+                                  style={{ background: theme.surface, borderColor: theme.border, color: theme.text }}
+                                />
+                              </label>
+                            )}
 
                             <label className="block">
                               <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                                Întrebări / pachet
+                                {studioHeading === WHOLE_DOCUMENT_HEADING ? 'Întrebări / pachet' : 'Întrebări'}
                               </span>
                               <input
                                 type="number"
@@ -1942,7 +1886,7 @@ export default function AIChatDrawer() {
                                     onClick={() => setStudioDifficulty(entry.id)}
                                     className="rounded-2xl px-3 py-2 text-xs font-black uppercase tracking-[0.14em]"
                                     style={{
-                                      background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
+                                      background: active ? theme.accent : theme.surface,
                                       border: `1px solid ${active ? 'transparent' : theme.border}`,
                                       color: active ? '#fff' : theme.text,
                                     }}
@@ -1954,53 +1898,64 @@ export default function AIChatDrawer() {
                             </div>
                           </div>
 
-                          <div className="grid gap-2">
-                            <div className="rounded-[20px] border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
-                              <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                                Motor de adaptare
-                              </div>
-                              <div className="mt-2 text-xs leading-6" style={{ color: theme.text2 }}>
-                                {weakTopics[0]
-                                  ? `AI-ul ține cont de tema vulnerabilă "${weakTopics[0].topic}" și îți ajustează accentul de generare.`
-                                  : 'AI-ul folosește documentul selectat și preferințele actuale pentru a genera pachete curate.'}
-                              </div>
-                              <div className="mt-2 text-[11px] leading-5" style={{ color: theme.text3 }}>
-                                Poți cere până la {STUDIO_MAX_PACK_COUNT} pachete și {STUDIO_MAX_QUESTIONS_PER_PACK} întrebări per pachet. Dacă un apel AI cade, StudyX completează inteligent din document ca să nu pierzi sesiunea.
-                              </div>
-                            </div>
-
-                            <div className="rounded-[20px] border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
-                              <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
-                                Destinație
-                              </div>
-                              <div className="mt-2 flex items-center gap-2 text-sm font-semibold" style={{ color: theme.text }}>
-                                <FolderOpen size={14} style={{ color: theme.accent }} />
-                                {selectedStudioFolder ? `${selectedStudioFolder.emoji} ${selectedStudioFolder.name}` : 'Neclasificate'}
-                              </div>
+                          <div>
+                            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                              Tip de grilă
+                            </span>
+                            <div className="grid grid-cols-2 gap-2">
+                              {(['residency', 'simple'] as ExamStyle[]).map((style) => {
+                                const active = studioExamStyle === style;
+                                const meta = EXAM_STYLE_META[style];
+                                return (
+                                  <button
+                                    key={style}
+                                    onClick={() => setStudioExamStyle(style)}
+                                    title={meta.description}
+                                    className="rounded-2xl px-3 py-2 text-left"
+                                    style={{
+                                      background: active ? theme.accent : theme.surface,
+                                      border: `1px solid ${active ? 'transparent' : theme.border}`,
+                                      color: active ? '#fff' : theme.text,
+                                    }}
+                                  >
+                                    <div className="text-xs font-black uppercase tracking-[0.06em] [overflow-wrap:anywhere]">{meta.short}</div>
+                                    <div className="mt-0.5 text-[10px] font-semibold opacity-80">{meta.description}</div>
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
 
-                          <button
-                            onClick={() => void handleGeneratePackages()}
-                            disabled={!selectedStudioSource || studioGenerating}
-                            className="press-feedback flex w-full items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-45"
-                            style={{
-                              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
-                              boxShadow: `0 18px 30px ${theme.accent}24`,
-                            }}
-                          >
-                            {studioGenerating ? (
-                              <>
-                                <Loader2 size={16} className="animate-spin" />
-                                Generez pachetele...
-                              </>
-                            ) : (
-                              <>
-                                <Layers3 size={16} />
-                                Generează pachetele
-                              </>
-                            )}
-                          </button>
+                          {studioInfoOpen && (
+                            <div className="grid gap-2">
+                              <div className="rounded-[20px] border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
+                                <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                                  Motor de adaptare
+                                </div>
+                                <div className="mt-2 text-xs leading-6" style={{ color: theme.text2 }}>
+                                  {weakTopics[0]
+                                    ? `AI-ul ține cont de tema vulnerabilă "${weakTopics[0].topic}" și îți ajustează accentul de generare.`
+                                    : 'AI-ul folosește documentul selectat și preferințele actuale pentru a genera pachete curate.'}
+                                </div>
+                                <div className="mt-2 text-[11px] leading-5" style={{ color: theme.text3 }}>
+                                  Poți cere până la {STUDIO_MAX_PACK_COUNT} pachete și {STUDIO_MAX_QUESTIONS_PER_PACK} întrebări per pachet. Dacă un apel AI cade, StudyX completează inteligent din document ca să nu pierzi sesiunea.
+                                </div>
+                              </div>
+
+                              <div className="rounded-[20px] border px-4 py-3" style={{ background: theme.surface, borderColor: theme.border }}>
+                                <div className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: theme.text3 }}>
+                                  Destinație
+                                </div>
+                                <div className="mt-2 flex items-center gap-2 text-sm font-semibold" style={{ color: theme.text }}>
+                                  <FolderOpen size={14} style={{ color: theme.accentText }} />
+                                  {studioResidencyPlacement
+                                    ? describePlacement(studioResidencyPlacement)
+                                    : selectedStudioFolder ? `${selectedStudioFolder.emoji} ${selectedStudioFolder.name}` : 'Neclasificate'}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
 
                           {generatedSummary && (
                             <div
@@ -2011,23 +1966,81 @@ export default function AIChatDrawer() {
                             </div>
                           )}
                         </div>
+                      </GlassCard>
                       </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className="custom-scrollbar flex-1 overflow-y-auto px-6 py-5"
-                    style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.04), transparent 28%)' }}
+                          <div
+                            className="flex-shrink-0 border-t px-5 py-4"
+                            style={{ borderColor: theme.border }}
+                          >
+                  <button
+                    onClick={() => void handleGeneratePackages()}
+                    disabled={!selectedStudioSource || studioGenerating}
+                    className="press-feedback flex w-full items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-45"
+                    style={{
+                      background: theme.accent,
+                      boxShadow: `0 10px 24px ${theme.accent}30`,
+                    }}
                   >
-                    {renderMessageList()}
-                  </div>
-                )}
+                    {studioGenerating ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Generez pachetele...
+                      </>
+                    ) : (
+                      <>
+                        <Layers3 size={16} />
+                        Generează pachetele
+                      </>
+                    )}
+                  </button>
+                          </div>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 <div
                   className="border-t px-4 pt-3 pb-4"
-                  style={{ borderColor: theme.border, background: theme.isDark ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.6)' }}
+                  style={{
+                    borderColor: theme.border,
+                    background: immersive ? 'transparent' : theme.isDark ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.6)',
+                    // keep the input aligned with the centred reading column
+                    ...(immersive ? { paddingLeft: 'max(16px, calc((100% - 800px) / 2))', paddingRight: 'max(16px, calc((100% - 800px) / 2))' } : {}),
+                  }}
                 >
-                  <div className="rounded-[24px] p-1" style={{ background: theme.surface2, border: `1px solid ${theme.border}`, boxShadow: `0 2px 12px ${theme.accent}08` }}>
+                  <AnimatePresence>
+                    {activeQuizContext && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, height: 0 }}
+                        animate={{ opacity: 1, y: 0, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                        className="mb-3 overflow-hidden"
+                      >
+                        <div className="flex items-start gap-2 rounded-[16px] border px-3 py-2 text-xs"
+                          style={{
+                            background: `${theme.accent}10`,
+                            borderColor: `${theme.accent}25`,
+                            color: theme.text,
+                          }}>
+                          <div className="mt-0.5" style={{ color: theme.accentText }}><Sparkles size={14} /></div>
+                          <div className="flex-1">
+                            <span className="font-bold opacity-80 uppercase tracking-widest text-[9px] block mb-1">Tutor Contextual</span>
+                            <span className="line-clamp-2 opacity-90">{activeQuizContext.questionText}</span>
+                          </div>
+                          <button
+                            onClick={() => setActiveQuizContext(null)}
+                            className="fine-row p-1 rounded-full hover:bg-[var(--hover-fill)] transition-colors"
+                            style={{ color: theme.text3 }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  
+                  <div className="rounded-[24px] p-1" style={{ background: immersive ? `color-mix(in srgb, ${theme.surface2} 55%, transparent)` : theme.surface2, border: `1px solid ${theme.border}`, boxShadow: `0 2px 12px ${theme.accent}08` }}>
                     {pastedImage && (
                       <div className="relative mx-2 mt-2 mb-1 inline-block">
                         <img
@@ -2096,7 +2109,7 @@ export default function AIChatDrawer() {
                           aria-label="Trimite mesajul"
                           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] transition-all press-feedback"
                           style={{
-                            background: (input.trim() || pastedImage) ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : `${theme.accent}18`,
+                            background: (input.trim() || pastedImage) ? theme.accent : `${theme.accent}18`,
                             color: (input.trim() || pastedImage) ? '#fff' : theme.accent,
                             boxShadow: (input.trim() || pastedImage) ? `0 6px 14px ${theme.accent}40` : 'none',
                             cursor: (input.trim() || pastedImage) ? 'pointer' : 'default',
@@ -2112,7 +2125,7 @@ export default function AIChatDrawer() {
                           <button
                             onClick={() => setModePickerOpen(true)}
                             className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] whitespace-nowrap transition-all"
-                            style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}30` }}
+                            style={{ background: `${theme.accent}18`, color: theme.accentText, border: `1px solid ${theme.accent}30` }}
                             title="Modul răspunsului — apasă pentru a alege manual"
                           >
                             <Sparkles size={11} />
@@ -2152,19 +2165,6 @@ export default function AIChatDrawer() {
                           </div>
                         )}
                       </div>
-                      {messages.length > 0 && (
-                        <button
-                          onClick={() => {
-                            setMessages([]);
-                            setActiveCitationKey(null);
-                            conversationSummaryRef.current = '';
-                            summaryCoveredCountRef.current = 0;
-                            try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* ignore */ }
-                          }}
-                          className="shrink-0 text-[10px] font-semibold transition-opacity hover:opacity-80"
-                          style={{ color: theme.text3 }}
-                        >Golește</button>
-                      )}
                     </div>
 
                     {view === 'studio' && readySources.length > 0 && (
@@ -2215,6 +2215,47 @@ export default function AIChatDrawer() {
           </>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {zoomedBlock && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setZoomedBlock(null)}
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-8"
+            style={{ background: 'var(--overlay)', backdropFilter: performanceLite ? 'blur(6px)' : 'blur(14px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.97, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.97, opacity: 0 }}
+              onClick={(event) => event.stopPropagation()}
+              className="relative max-h-full w-full max-w-[1200px] overflow-auto rounded-3xl p-5 sm:p-7"
+              style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text }}
+            >
+              <button
+                onClick={() => setZoomedBlock(null)}
+                aria-label="Închide"
+                className="fine-row absolute right-3 top-3 rounded-2xl p-2 transition-colors hover:bg-[var(--hover-fill)]"
+                style={{ color: theme.text3 }}
+              >
+                <X size={18} />
+              </button>
+              <div dangerouslySetInnerHTML={{ __html: zoomedBlock }} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <ConfirmDialog
+        open={confirmClearOpen}
+        title="Golești conversația?"
+        description="Mesajele din acest fir se șterg de pe acest dispozitiv și nu mai pot fi recuperate."
+        confirmLabel="Golește"
+        onConfirm={() => { setConfirmClearOpen(false); clearConversation(); }}
+        onCancel={() => setConfirmClearOpen(false)}
+      />
     </>
   );
 }

@@ -94,6 +94,38 @@ export async function getFlashcardImage(refOrKey: string): Promise<string | null
   return typeof result === 'string' ? result : null;
 }
 
+/**
+ * Quiz ids that currently own stored images. Used to reclaim images whose deck
+ * no longer exists — deletion can be deferred (e.g. while an undo is still
+ * offered), so something has to sweep up afterwards.
+ */
+export async function listFlashcardImageQuizIds(): Promise<string[]> {
+  const db = await openDatabase();
+  if (!db) return [];
+
+  return new Promise<string[]>((resolve) => {
+    const ids = new Set<string>();
+    try {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const request = tx.objectStore(STORE_NAME).openKeyCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        if (typeof cursor.key === 'string') {
+          const separator = cursor.key.indexOf(':');
+          if (separator > 0) ids.add(cursor.key.slice(0, separator));
+        }
+        cursor.continue();
+      };
+      tx.oncomplete = () => resolve([...ids]);
+      tx.onerror = () => resolve([...ids]);
+      tx.onabort = () => resolve([...ids]);
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
 /** Remove every image belonging to a quiz (best effort, used on deck deletion). */
 export async function deleteFlashcardImagesForQuiz(quizId: string): Promise<void> {
   const db = await openDatabase();

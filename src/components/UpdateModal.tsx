@@ -216,6 +216,7 @@ export default function UpdateModal() {
   const { addFolder } = useFolderStore();
 
   const [contentError, setContentError] = useState<string | null>(null);
+  const [rollbackWarning, setRollbackWarning] = useState<string | null>(null);
 
   const contentUpdates = manifest?.contentUpdates ?? [];
   const latestVersion = manifest?.latestVersion ?? manifest?.version ?? localVersion;
@@ -240,18 +241,25 @@ export default function UpdateModal() {
   const close = () => {
     setShowUpdateModal(false);
     setContentError(null);
+    setRollbackWarning(null);
   };
 
   const handleInstallContent = async (pack: ContentUpdate) => {
     setContentError(null);
+    setRollbackWarning(null);
     setContentInstalling(pack.id);
     try {
-      saveRollbackSnapshot(
+      const rollbackSaved = saveRollbackSnapshot(
         useQuizStore.getState().quizzes,
         useQuizStore.getState().sessions,
         useFolderStore.getState().folders,
         `Înainte de instalare: ${pack.subject}`,
       );
+      if (!rollbackSaved) {
+        // Not a reason to block the install — but if it goes wrong, there is
+        // no copy to restore from, and the user has to know that up front.
+        setRollbackWarning('Nu am putut salva o copie de siguranță (spațiu de stocare plin) — dacă ceva nu merge după instalare, nu vei putea reveni automat.');
+      }
 
       const data = await fetchContentPack(pack.url);
       const existingFolder = useFolderStore.getState().folders.find((f) => f.name.toLowerCase() === pack.subject.toLowerCase());
@@ -302,7 +310,6 @@ export default function UpdateModal() {
               justifyContent: 'center',
               padding: 20,
               background: 'rgba(0,0,0,0.60)',
-              backdropFilter: 'blur(10px)',
             }}
           >
             <motion.div
@@ -362,7 +369,7 @@ export default function UpdateModal() {
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.1, rotate: 15 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => checkForUpdate()}
                   disabled={!canRefresh}
                   title="Verifică actualizările"
@@ -389,16 +396,17 @@ export default function UpdateModal() {
                   )}
                 </motion.button>
                 <motion.button
-                  whileHover={{ scale: 1.1, rotate: 90 }}
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={calmMotion ? undefined : { scale: 0.94 }}
                   onClick={close}
+                  aria-label="Închide"
+                  className="hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
                   style={{
                     width: 36,
                     height: 36,
-                    borderRadius: 12,
+                    borderRadius: 999,
                     border: 'none',
                     cursor: 'pointer',
-                    background: theme.surface2,
+                    background: 'transparent',
                     color: theme.text3,
                     display: 'flex',
                     alignItems: 'center',
@@ -589,7 +597,7 @@ export default function UpdateModal() {
                                                   padding: '3px 8px',
                                                   borderRadius: 999,
                                                   background: `${theme.accent}16`,
-                                                  color: theme.accent,
+                                                  color: theme.accentText,
                                                 }}
                                               >
                                                 {deliveryLabel}
@@ -622,7 +630,7 @@ export default function UpdateModal() {
                                              style={{
                                                width: '100%', padding: '10px 16px', borderRadius: 10, border: 'none',
                                                cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff',
-                                               background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                                               background: theme.accent,
                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                                                boxShadow: `0 4px 12px ${theme.accent}40`,
                                              }}
@@ -640,11 +648,11 @@ export default function UpdateModal() {
                                         }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, alignItems: 'center' }}>
                                             <span style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Se descarcă pachetul...</span>
-                                            <span style={{ fontSize: 13, fontWeight: 800, color: theme.accent, fontFamily: 'monospace' }}>{downloadPercent}%</span>
+                                            <span style={{ fontSize: 13, fontWeight: 800, color: theme.accentText, fontFamily: 'monospace' }}>{downloadPercent}%</span>
                                           </div>
                                           <div style={{ height: 6, borderRadius: 3, background: theme.surface2, overflow: 'hidden' }}>
                                             <motion.div
-                                              style={{ height: '100%', borderRadius: 3, background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                                              style={{ height: '100%', borderRadius: 3, background: theme.accent }}
                                               animate={{ width: `${downloadPercent}%` }}
                                               transition={{ duration: 0.2 }}
                                             />
@@ -705,6 +713,26 @@ export default function UpdateModal() {
                         />
                       ))}
                     </div>
+
+                    {rollbackWarning && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: '12px 16px',
+                          borderRadius: 12,
+                          background: 'rgba(245,158,11,0.08)',
+                          border: '1px solid rgba(245,158,11,0.20)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          fontSize: 13,
+                          color: '#f59e0b',
+                        }}
+                      >
+                        <AlertCircle size={14} />
+                        {rollbackWarning}
+                      </div>
+                    )}
 
                     {contentError && (
                       <div

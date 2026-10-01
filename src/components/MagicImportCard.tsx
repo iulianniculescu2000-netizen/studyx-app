@@ -67,7 +67,7 @@ export default function MagicImportCard() {
       <motion.button
         onClick={() => setOpen(true)}
         whileHover={calmMotion ? undefined : { y: -2, scale: 1.005 }}
-        whileTap={{ scale: 0.99 }}
+        whileTap={{ scale: 0.985 }}
         className="press-feedback relative w-full overflow-hidden rounded-[28px] p-5 text-left"
         style={{
           background: `linear-gradient(135deg, ${theme.accent}18, ${(theme.accent2 ?? theme.accent)}10)`,
@@ -77,7 +77,7 @@ export default function MagicImportCard() {
       >
         <span
           className="absolute right-4 top-4 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-white"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2 ?? theme.accent})` }}
+          style={{ background: theme.accent }}
         >
           Nou
         </span>
@@ -92,7 +92,7 @@ export default function MagicImportCard() {
             </p>
             <span
               className="mt-3 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-bold text-white"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2 ?? theme.accent})` }}
+              style={{ background: theme.accent }}
             >
               <Camera size={13} /> Începe acum
             </span>
@@ -102,7 +102,7 @@ export default function MagicImportCard() {
 
       {open && (
         <Portal>
-          <div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }} onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-50" style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }} onClick={() => setOpen(false)} />
           <div className="fixed top-[6%] left-1/2 z-50 w-full max-w-lg -translate-x-1/2 px-4">
             <div
               className="rounded-3xl p-6 shadow-2xl max-h-[86vh] overflow-y-auto"

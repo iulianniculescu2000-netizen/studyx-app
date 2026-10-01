@@ -1,3 +1,4 @@
+import Portal from './Portal';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -65,6 +66,7 @@ export default function GlobalSearch() {
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsContainerRef = useRef<HTMLDivElement>(null);
 
   const quickActions = useMemo<QuickAction[]>(() => [
     { id: 'new-quiz', label: 'Creează grilă nouă', sub: 'Ajungi direct în editorul de grile', href: '/create', icon: 'quiz' },
@@ -226,7 +228,14 @@ export default function GlobalSearch() {
     setActiveIdx(0);
   };
 
+  useEffect(() => {
+    resultsContainerRef.current
+      ?.querySelector('[data-result-active="true"]')
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [safeActiveIdx]);
+
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <>
@@ -236,8 +245,8 @@ export default function GlobalSearch() {
             exit={{ opacity: 0 }}
             transition={calmMotion ? { duration: 0.12 } : { duration: 0.15 }}
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-50"
-            style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: performanceLite ? 'blur(3px)' : 'blur(7px)' }}
+            className="fixed inset-0 z-[200]"
+            style={{ background: 'var(--overlay)', backdropFilter: performanceLite ? 'blur(3px)' : 'blur(7px)' }}
           />
 
           <motion.div
@@ -245,7 +254,7 @@ export default function GlobalSearch() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -12 }}
             transition={calmMotion ? { duration: 0.18, ease: 'easeOut' } : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed left-1/2 z-50 w-full max-w-[min(720px,calc(100vw-24px))] -translate-x-1/2"
+            className="fixed left-1/2 z-[200] w-full max-w-[min(720px,calc(100vw-24px))] -translate-x-1/2"
             style={{ top: 'clamp(72px, 12vh, 132px)', paddingInline: 12 }}
           >
             <div className="premium-modal overflow-hidden rounded-[30px] shadow-2xl">
@@ -291,7 +300,7 @@ export default function GlobalSearch() {
                 </div>
               </div>
 
-              <div className="custom-scrollbar max-h-[min(62vh,540px)] overflow-y-auto">
+              <div ref={resultsContainerRef} className="custom-scrollbar max-h-[min(62vh,540px)] overflow-y-auto">
                 {query.trim().length === 0 ? (
                   <div className="px-4 py-5 sm:px-5">
                     <div className="mb-4 flex items-center justify-center gap-1.5" style={{ color: theme.text3 }}>
@@ -400,6 +409,7 @@ export default function GlobalSearch() {
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }
 
@@ -424,6 +434,7 @@ function ResultRow({
     <button
       onClick={onSelect}
       onMouseEnter={onHover}
+      data-result-active={isActive}
       className="press-feedback w-full rounded-[22px] px-4 py-3 text-left transition-all sm:px-5"
       style={{
         background: isActive ? `linear-gradient(135deg, ${theme.surface2}, ${theme.surface})` : 'transparent',

@@ -107,8 +107,9 @@ export async function chunkDocument(
     overlap?: number;
     preserveStructure?: boolean;
     minChunkLength?: number;
+    knownHeadings?: string[];
   }
-): Promise<{ text: string; id: string }[]> {
+): Promise<{ text: string; id: string; heading?: string }[]> {
   try {
     const processedDoc = await documentProcessor.processDocument(text, sourceName, options);
     const validation = documentProcessor.validateDocument(processedDoc);
@@ -119,7 +120,8 @@ export async function chunkDocument(
 
     return processedDoc.chunks.map(chunk => ({
       text: chunk.text,
-      id: chunk.id
+      id: chunk.id,
+      heading: chunk.metadata.heading,
     }));
   } catch (error) {
     console.error('Enhanced document processing failed, falling back to legacy chunker:', error);

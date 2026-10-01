@@ -221,7 +221,7 @@ export default function PomodoroTimer() {
         aria-label="Deschide Pomodoro"
         className="fixed z-[9997] flex h-12 w-12 items-center justify-center rounded-2xl shadow-xl press-feedback"
         style={{
-          background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+          background: theme.accent,
           boxShadow: `0 8px 24px ${theme.accent}40`,
         }}
       >
@@ -334,7 +334,7 @@ export default function PomodoroTimer() {
 
               <div className="mt-4 flex gap-2">
                 <motion.button
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => reset()}
                   aria-label="Reseteaza timerul"
                   title="Resetează timerul"
@@ -344,7 +344,7 @@ export default function PomodoroTimer() {
                   <RotateCcw size={14} />
                 </motion.button>
                 <motion.button
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => setRunning(!running)}
                   aria-label={running ? 'Pune pauza Pomodoro' : 'Porneste Pomodoro'}
                   className="flex h-10 w-24 items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white"

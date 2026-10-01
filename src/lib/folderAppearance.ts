@@ -19,7 +19,7 @@ const RULES: Array<{ test: RegExp; emoji: string; color: QuizColor }> = [
   { test: /gastro|digestiv|hepat|ficat|intestin|stomac/i, emoji: '🍽️', color: 'orange' },
   { test: /nefro|renal|rinichi|urolog|urinar/i, emoji: '🫘', color: 'blue' },
   { test: /endocrin|diabet|tiroid|hormon/i, emoji: '🧬', color: 'green' },
-  { test: /hemato|s[aâ]nge|anemi|leucemi|coagul/i, emoji: '🩸', color: 'red' },
+  { test: /hemato|s[aâ]nge|anemi|leucemi|mielom|limfom|coagul|trombo/i, emoji: '🩸', color: 'red' },
   { test: /infect|microbio|bacterio|virus|viral|parazi/i, emoji: '🦠', color: 'green' },
   { test: /imuno|alergi/i, emoji: '🛡️', color: 'teal' },
   { test: /oncolog|cancer|tumor|neoplazi|malign/i, emoji: '🎗️', color: 'pink' },

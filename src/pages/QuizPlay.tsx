@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, BookOpen, Layers, Keyboard, Zap, Eye, GraduationCap, StickyNote, MessageSquare, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, BookOpen, Layers, Keyboard, Zap, Eye, GraduationCap, StickyNote, MessageSquare, Sparkles, Flame } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useNotesStore } from '../store/notesStore';
@@ -19,7 +19,7 @@ import QuizImage from '../components/QuizImage';
 import type { QuizSession, Question, Option, Confidence } from '../types';
 import type { AIAnalysisResult, HintResult } from '../ai/types';
 import ConfidenceButtons from './quiz-play/ConfidenceButtons';
-import { updateUserMemory } from '../lib/ai/userMemory';
+import { recordQuizSession } from '../ai/UserProfile';
 import {
   buildAnalysisFallback,
   buildHintFallback,
@@ -30,6 +30,7 @@ import {
 } from '../helpers/quizAi';
 import { evaluateSelection, formatQuizPlayTime, getCorrectOptionIds, isCorrectSelection, shuffleArray } from './quiz-play/helpers';
 import { AIExplanationPanel, HintPanel, MnemonicPanel } from './quiz-play/ai-panels';
+import SegmentedProgressBar from './quiz-play/SegmentedProgressBar';
 
 const loadAIEngine = () => import('../ai/AIEngine');
 
@@ -84,12 +85,35 @@ export default function QuizPlay() {
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [showKeys, setShowKeys] = useState(false);
   const [autoAdvance, setAutoAdvance] = useState(false);
+  const [autoAdvanceHold, setAutoAdvanceHold] = useState(false);
   const [questionTimer, setQuestionTimer] = useState(TIME_PER_Q);
+  // In-session "answered correctly in a row" count — mobile-only motivational
+  // pill, shown nowhere else. Deliberately local/transient (not persisted, no
+  // store write): unlike statsStore's streak (consecutive study DAYS) or the
+  // SM-2 repetition counter, there is no existing concept for this to reuse.
+  const [answerStreak, setAnswerStreak] = useState(0);
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
-  const aiAbortRef = useRef<AbortController | null>(null);
+  /**
+   * Generation token for in-flight AI requests. The AI helpers are plain
+   * promises with no abort support, so an AbortController here was never
+   * actually wired to anything — a slow explanation would land after the user
+   * had already moved on and repopulate the panel against the WRONG question.
+   * Bumping this invalidates any reply still in flight.
+   */
+  const aiRequestIdRef = useRef(0);
+  /** Question whose countdown already triggered an auto-advance, so it can't fire twice. */
+  const autoAdvancedQuestionRef = useRef<string | null>(null);
+  /** Answer-feedback animation timers, cleared on unmount. */
+  const feedbackTimersRef = useRef<number[]>([]);
+  useEffect(() => () => {
+    feedbackTimersRef.current.forEach((id) => window.clearTimeout(id));
+    feedbackTimersRef.current = [];
+  }, []);
   const [mnemonicText, setMnemonicText] = useState<string | null>(null);
   const [mnemonicLoading, setMnemonicLoading] = useState(false);
+  /** Which post-reveal AI panel is showing — explanation and mnemonic used to be able to stack at once. */
+  const [activeAIPanel, setActiveAIPanel] = useState<'explanation' | 'mnemonic'>('explanation');
   const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(null);
   const [analysisQuestionId, setAnalysisQuestionId] = useState<string | null>(null);
   const [nextTopicHint, setNextTopicHint] = useState<string | null>(null);
@@ -113,14 +137,25 @@ export default function QuizPlay() {
 
   const { focusMode, toggleFocusMode } = useFocusModeStore();
   const setChatOpen = useUIStore((state) => state.setChatOpen);
-  const openStudyChat = useCallback((mode: 'explain' | 'summarize' | 'test', prompt: string) => {
+  const openStudyChat = useCallback((
+    mode: 'explain' | 'summarize' | 'test',
+    prompt: string,
+    quizContext?: {
+      questionText: string;
+      correctAnswerText: string;
+      userAnswerText: string;
+      studyFocus?: string;
+    }
+  ) => {
     setChatOpen(true);
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
       detail: {
         open: true,
+        view: 'chat',
         mode,
         resetConversation: true,
         prompt,
+        quizContext,
       },
     }));
   }, [setChatOpen]);
@@ -186,11 +221,13 @@ export default function QuizPlay() {
     setFeedbackAnim(null);
     setHintLevel(0);
     setHintData(null);
+    setActiveAIPanel('explanation');
   }, [orderedQuestions]);
 
   useEffect(() => {
     setHintLevel(0);
     setHintData(null);
+    setAutoAdvanceHold(false);
   }, [currentIdx]);
 
   useEffect(() => {
@@ -239,21 +276,33 @@ export default function QuizPlay() {
     const duration = Math.floor((Date.now() - startedAt) / 1000);
     recordStudySession(duration);
 
-    // Feed the session into the AI's long-term memory (Task 4). Fire-and-forget.
+    // Single canonical write of the AI personalization profile (topic accuracy, weak/strong
+    // topics, study patterns, mistake bank) — recordAnswer above already updated the SM-2
+    // stats store, so questionStats is fresh by the time we read it here.
     if (activeProfileId) {
       const finishedAt = Date.now();
-      const memoryItems = questionQueue.map((q) => {
+      const allQuestions = useQuizStore.getState().quizzes.flatMap((item) =>
+        item.questions.map((q) => ({ ...q, category: item.category })),
+      );
+      const sessionItems = questionQueue.map((q) => {
         const userAnswers = finalAnswers[q.id] ?? [];
         const correctIds = getCorrectOptionIds(q.options);
         return {
           questionId: q.id,
-          questionText: q.text,
-          topic: q.tags?.[0] ?? quiz!.tags?.[0] ?? q.difficulty ?? 'general',
           correct: evaluateSelection(userAnswers, correctIds) === 'correct',
           confidence: confidenceRef.current[q.id],
+          userAnswer: getAnswerTextForOptionIds(q.options, userAnswers),
+          correctAnswer: getCorrectAnswerText(q),
         };
       });
-      void updateUserMemory(activeProfileId, { items: memoryItems, durationSeconds: duration, finishedAt });
+      recordQuizSession(activeProfileId, {
+        stats: useStatsStore.getState().questionStats,
+        questions: allQuestions,
+        streak: useStatsStore.getState().streak.currentStreak,
+        sessionItems,
+        durationSeconds: duration,
+        finishedAt,
+      });
     }
 
     // -- Rezidențiat penalty scoring ------------------------------------------
@@ -296,8 +345,7 @@ export default function QuizPlay() {
   }, [questionQueue, quiz, startedAt, addSession, navigate, recordAnswer, recordStudySession, examMode, timedMode, activeProfileId]);
 
   const resetAssistiveState = useCallback(() => {
-    aiAbortRef.current?.abort();
-    aiAbortRef.current = null;
+    aiRequestIdRef.current += 1; // discard anything still in flight
     setAiText(null);
     setAiLoading(false);
     setMnemonicText(null);
@@ -309,6 +357,7 @@ export default function QuizPlay() {
     setFeedbackAnim(null);
     setHintLevel(0);
     setHintData(null);
+    setActiveAIPanel('explanation');
   }, []);
 
   const handleSkipQuestion = useCallback(() => {
@@ -357,19 +406,24 @@ export default function QuizPlay() {
       setRevealed(true);
       const correctIdsForQuestion = getCorrectOptionIds(question.options);
       const result = evaluateSelection(selectedNow, correctIdsForQuestion);
+      // Tracked so unmounting mid-animation cannot leave a timer firing at a
+      // component that is no longer on screen.
       if (result === 'correct') {
         setFeedbackAnim('correct');
-        window.setTimeout(() => setFeedbackAnim(null), 420);
+        setAnswerStreak((n) => n + 1);
+        feedbackTimersRef.current.push(window.setTimeout(() => setFeedbackAnim(null), 420));
       } else if (result === 'partial') {
         setFeedbackAnim('partial');
-        window.setTimeout(() => setFeedbackAnim(null), 600);
+        setAnswerStreak(0);
+        feedbackTimersRef.current.push(window.setTimeout(() => setFeedbackAnim(null), 600));
       } else {
         setFeedbackAnim('wrong');
+        setAnswerStreak(0);
         setShakeId(selectedNow.find((id) => !correctIdsForQuestion.includes(id)) ?? selectedNow[0] ?? null);
-        window.setTimeout(() => {
+        feedbackTimersRef.current.push(window.setTimeout(() => {
           setFeedbackAnim(null);
           setShakeId(null);
-        }, 520);
+        }, 520));
       }
     }
   }, [selectedNow, question, answers, examMode, isLast, finishQuiz]);
@@ -385,6 +439,24 @@ export default function QuizPlay() {
     }
   }, [isLast, answers, finishQuiz, resetAssistiveState]);
 
+  // Go back to review or change an already-answered question — every real exam
+  // simulator allows this before final submission, and this one previously
+  // couldn't: once you picked an answer, it was locked in for the rest of the
+  // session. Restores that question's own recorded selection/reveal state
+  // rather than resetting it, so re-visiting doesn't discard what you already answered.
+  const handleGoPrevious = useCallback(() => {
+    if (currentIdx === 0) return;
+    resetAssistiveState();
+    const prevIdx = currentIdx - 1;
+    const prevQuestion = questionQueue[prevIdx];
+    const prevAnswer = answers[prevQuestion.id];
+    setCurrentIdx(prevIdx);
+    setSelectedNow(prevAnswer ?? []);
+    // Exam mode never reveals correctness mid-session; study/timed modes show
+    // the same reveal state you'd have seen the first time you answered it.
+    setRevealed(!examMode && prevAnswer !== undefined);
+  }, [currentIdx, questionQueue, answers, examMode, resetAssistiveState]);
+
   // Record the self-assessment for the current question, then advance. The ref
   // is updated synchronously so finishQuiz sees the rating of the last card.
   const handleConfidence = useCallback((level: Confidence) => {
@@ -393,12 +465,26 @@ export default function QuizPlay() {
     handleNext();
   }, [revealed, question, handleNext]);
 
+  // Auto-advance still needs a confidence rating for spaced repetition to work —
+  // silently calling handleNext() would leave confidenceRef empty for the question
+  // and degrade the SM-2 scheduling. Infer a reasonable rating from correctness
+  // instead of skipping it (the user can always tap a real rating before this fires).
+  const handleAutoAdvance = useCallback(() => {
+    if (!revealed || !question) return;
+    const selection = answers[question.id] ?? selectedNow;
+    const result = evaluateSelection(selection, getCorrectOptionIds(question.options));
+    const inferred: Confidence = result === 'correct' ? 'confident' : result === 'partial' ? 'guess' : 'blackout';
+    handleConfidence(inferred);
+  }, [revealed, question, answers, selectedNow, handleConfidence]);
+
   const handleAIExplain = useCallback(async () => {
     if (!question || aiLoading) return;
     if (analysisResult?.explanation && analysisQuestionId === question.id) {
       setAiText(analysisResult.explanation);
       return;
     }
+    const requestId = ++aiRequestIdRef.current;
+    const isStale = () => aiRequestIdRef.current !== requestId;
     setAiLoading(true);
     const currentAnswers = answers[question.id] ?? selectedNow;
     const userAnswer = getAnswerTextForOptionIds(question.options, currentAnswers);
@@ -416,17 +502,20 @@ export default function QuizPlay() {
       }
       const { analyzeAnswer } = await loadAIEngine();
       const { analysis } = await analyzeAnswer(activeProfileId, { question, userAnswer, correctAnswer, isCorrect });
+      if (isStale()) return; // user moved on — this answer belongs to a past question
       setAnalysisResult(analysis);
       setAnalysisQuestionId(question.id);
       setAiText(analysis.explanation);
     } catch {
+      if (isStale()) return;
       const fallbackAnalysis = buildAnalysisFallback({ question, userAnswer, correctAnswer, isCorrect });
       setAnalysisResult(fallbackAnalysis);
       setAnalysisQuestionId(question.id);
       setAiText(fallbackAnalysis.explanation);
       setNextTopicHint(fallbackAnalysis.recommendedTopic ?? null);
     } finally {
-      setAiLoading(false);
+      // Leave the spinner alone if a newer request owns it now.
+      if (!isStale()) setAiLoading(false);
     }
   }, [question, aiLoading, activeProfileId, analysisResult, analysisQuestionId, answers, selectedNow]);
 
@@ -480,35 +569,70 @@ export default function QuizPlay() {
     return () => { cancelled = true; };
   }, [revealed, examMode, question, answers, selectedNow, navigate, addToast]);
 
-  // Auto-advance after reveal
-  // Dacă AI-ul a fost activ, așteptăm 5s după ce finalizează (nu 2s) pentru a citi explicația.
-  // Timer-ul pornește NUMAI dacă nu s-a cerut explicație AI (aiText null = nu a fost apăsat).
+  // Auto-advance after reveal. Gives enough time to actually read before moving on,
+  // and backs off entirely (autoAdvanceHold) the moment the user shows they're still
+  // engaging with the question — see the interaction-cancel effect below.
   useEffect(() => {
-    if (!revealed || !autoAdvance || examMode || aiLoading || mnemonicLoading) return;
-    // Dacă există text AI deja afișat, dăm 5s să-l citească; altfel 2s standard
-    const delay = aiText ? 5000 : 2000;
-    const t = setTimeout(handleNext, delay);
+    if (!revealed || !autoAdvance || examMode || aiLoading || mnemonicLoading || autoAdvanceHold) return;
+    const hasExplanation = !!cleanQuestionExplanation(question?.explanation);
+    // Longer once AI explanation text is showing (more to read), shorter for a bare reveal.
+    const delay = aiText ? 6500 : hasExplanation ? 4500 : 3200;
+    const t = setTimeout(handleAutoAdvance, delay);
     return () => clearTimeout(t);
-  }, [revealed, autoAdvance, handleNext, examMode, aiLoading, mnemonicLoading, aiText]);
+  }, [revealed, autoAdvance, handleAutoAdvance, examMode, aiLoading, mnemonicLoading, aiText, autoAdvanceHold, question]);
+
+  // Any sign the user is still engaging with the revealed question — clicking into the
+  // explanation/AI/mnemonic panels, writing a note, scrolling to read — cancels the pending
+  // auto-advance instead of yanking them to the next question mid-read. Manually tapping a
+  // confidence rating or the Next button still advances immediately (unaffected: the effect
+  // above cleans itself up once `revealed` flips).
+  useEffect(() => {
+    if (!revealed || !autoAdvance || autoAdvanceHold) return;
+    const cancel = () => setAutoAdvanceHold(true);
+    window.addEventListener('wheel', cancel, { passive: true });
+    window.addEventListener('touchmove', cancel, { passive: true });
+    window.addEventListener('keydown', cancel);
+    window.addEventListener('pointerdown', cancel);
+    return () => {
+      window.removeEventListener('wheel', cancel);
+      window.removeEventListener('touchmove', cancel);
+      window.removeEventListener('keydown', cancel);
+      window.removeEventListener('pointerdown', cancel);
+    };
+  }, [revealed, autoAdvance, autoAdvanceHold]);
 
   // Timed mode: auto-advance when timer expires
   // Dacă utilizatorul a selectat ceva (parțial), păstrăm selecția — nu o anulăm
   useEffect(() => {
     if (!timedMode || revealed || questionTimer > 0) return;
     if (!question?.id) return;
+    // Guard against firing twice for the same question: this effect also depends
+    // on `answers`/`selectedNow`, which it updates itself.
+    if (autoAdvancedQuestionRef.current === question.id) return;
+    autoAdvancedQuestionRef.current = question.id;
+
     // Păstrăm selectedNow dacă există (răspuns parțial mai bun decât nimic)
     const effectiveAnswer = selectedNow.length > 0 ? selectedNow : [];
     const newAnswers = { ...answers, [question.id]: effectiveAnswer };
     setAnswers(newAnswers);
     setSelectedNow([]);
-    if (isLast) finishQuiz(newAnswers);
-    else setCurrentIdx(i => i + 1);
-  }, [questionTimer, timedMode, revealed, question, isLast, finishQuiz, answers, selectedNow]);
+    if (isLast) {
+      finishQuiz(newAnswers);
+      return;
+    }
+    // Re-arm the countdown in the SAME state batch as the index change.
+    // Without this the next render still saw `questionTimer === 0` (the reset in
+    // the countdown effect below only lands on the following commit), so this
+    // effect fired again immediately and blanked question N+1 as well — two
+    // questions lost to one expired timer.
+    setQuestionTimer(TIME_PER_Q);
+    setCurrentIdx(i => i + 1);
+  }, [questionTimer, timedMode, revealed, question, isLast, finishQuiz, answers, selectedNow, TIME_PER_Q]);
 
   // Maintain latest state for keyboard handler without re-binding listener
-  const kbStateRef = useRef({ question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, isMultiple, revealed, examMode });
+  const kbStateRef = useRef({ question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, handleGoPrevious, isMultiple, revealed, examMode, currentIdx });
   useEffect(() => {
-    kbStateRef.current = { question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, isMultiple, revealed, examMode };
+    kbStateRef.current = { question, handleSelect, confirmSelection, handleNext, handleGetHint, handleConfidence, handleGoPrevious, isMultiple, revealed, examMode, currentIdx };
   });
 
   // Keyboard shortcuts
@@ -532,8 +656,11 @@ export default function QuizPlay() {
         }
       }
 
-      // 1-4 or A-D to select option
-      const keyMap: Record<string, number> = { '1': 0, '2': 1, '3': 2, '4': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
+      // 1-5 or A-E to select option (rezidențiat questions have five answers)
+      const keyMap: Record<string, number> = {
+        '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
+        a: 0, b: 1, c: 2, d: 3, e: 4,
+      };
       const idx = keyMap[e.key.toLowerCase()];
       if (idx !== undefined && state.question?.options[idx]) {
         state.handleSelect(state.question.options[idx].id);
@@ -543,6 +670,12 @@ export default function QuizPlay() {
         e.preventDefault();
         if (!state.revealed) { state.confirmSelection(); }
         else if (state.revealed) { state.handleNext(); }
+      }
+      // ArrowLeft to revisit the previous question
+      if (e.key === 'ArrowLeft' && state.currentIdx > 0) {
+        e.preventDefault();
+        state.handleGoPrevious();
+        return;
       }
       // 'H' for Hint
       if (e.key.toLowerCase() === 'h' && !state.revealed && !state.examMode) {
@@ -558,7 +691,13 @@ export default function QuizPlay() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost găsită.</p>
-          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi la grile</Link>
+          <Link
+            to="/quizzes"
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
+          >
+            <ChevronLeft size={15} />Înapoi la grile
+          </Link>
         </div>
       </div>
     );
@@ -572,6 +711,9 @@ export default function QuizPlay() {
   const selectedAnswerText = getAnswerTextForOptionIds(question.options, currentSelection);
   const correctAnswerText = getCorrectAnswerText(question);
   const studyFocusTopic = analysisResult?.recommendedTopic ?? analysisResult?.missingConcept ?? nextTopicHint ?? question.tags?.[0] ?? null;
+  const autoAdvanceDelayMs = (!revealed || !autoAdvance || examMode || aiLoading || mnemonicLoading || autoAdvanceHold)
+    ? undefined
+    : aiText ? 6500 : cleanQuestionExplanation(question.explanation) ? 4500 : 3200;
   const focusSurface = focusMode
     ? (theme.isDark ? 'rgba(18, 22, 30, 0.96)' : 'rgba(255, 255, 255, 0.98)')
     : theme.surface;
@@ -718,7 +860,7 @@ export default function QuizPlay() {
           initial={{ width: 0 }}
           animate={{ width: `${progress}%` }}
           transition={{ duration: calmMotion ? 0.24 : 0.6, ease: [0.23, 1, 0.32, 1] }}
-          style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 0 10px ${theme.accent}60` }}
+          style={{ background: theme.accent, boxShadow: `0 0 10px ${theme.accent}60` }}
         />
       </div>
 
@@ -779,34 +921,53 @@ export default function QuizPlay() {
                 </div>
               </div>
 
-              {/* Metrics strip — compact, no wrapping */}
-              <div
-                className="flex shrink-0 self-start items-stretch divide-x rounded-[20px] overflow-hidden border border-white/18"
-                style={{ background: 'rgba(255,255,255,0.12)' }}
-              >
-                {[
-                  { label: 'Progres', value: progressSummary },
-                  { label: 'Timp', value: formatQuizPlayTime(timeElapsed) },
-                  { label: timedMode ? 'Timer' : 'Ritm', value: timedMode ? `${questionTimer}s` : autoAdvance ? 'Auto' : 'Man.' , accent: timedMode ? timerTone : undefined },
-                  { label: 'Rămase', value: `${Math.max(questionQueue.length - answeredCount, 0)}` },
-                ].map((metric, i) => (
-                  <div
-                    key={metric.label}
-                    className="flex flex-col items-center justify-center px-4 py-3 gap-1"
-                    style={{ borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.16)' : 'none' }}
-                  >
-                    <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/50 whitespace-nowrap leading-none">
-                      {metric.label}
-                    </span>
+              {/* Metrics strip — compact, no wrapping. Mobile gets a single-row summary instead: the 4-box grid is desktop-width-shaped and repeats "Întrebarea X din Y" already shown above it. */}
+              {mobile ? (
+                <div
+                  className="flex shrink-0 items-center justify-between gap-2 self-start rounded-[16px] border border-white/18 px-3.5 py-2.5"
+                  style={{ background: 'rgba(255,255,255,0.12)' }}
+                >
+                  <span className="truncate text-[11px] font-black uppercase tracking-[0.12em] text-white/75">
+                    {quiz.category}
+                  </span>
+                  {timedMode && (
                     <span
-                      className="text-sm font-black tracking-tight whitespace-nowrap leading-none"
-                      style={{ color: metric.accent ?? 'rgba(255,255,255,0.95)' }}
+                      className="flex-shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black tabular-nums"
+                      style={{ background: 'rgba(255,255,255,0.18)', color: timerTone === theme.danger ? '#FFD1CE' : '#FFFFFF' }}
                     >
-                      {metric.value}
+                      {questionTimer}s
                     </span>
-                  </div>
-                ))}
-              </div>
+                  )}
+                </div>
+              ) : (
+                <div
+                  className="flex shrink-0 self-start items-stretch divide-x rounded-[20px] overflow-hidden border border-white/18"
+                  style={{ background: 'rgba(255,255,255,0.12)' }}
+                >
+                  {[
+                    { label: 'Progres', value: progressSummary },
+                    { label: 'Timp', value: formatQuizPlayTime(timeElapsed) },
+                    { label: timedMode ? 'Timer' : 'Ritm', value: timedMode ? `${questionTimer}s` : autoAdvance ? 'Auto' : 'Man.' , accent: timedMode ? timerTone : undefined },
+                    { label: 'Rămase', value: `${Math.max(questionQueue.length - answeredCount, 0)}` },
+                  ].map((metric, i) => (
+                    <div
+                      key={metric.label}
+                      className="flex flex-col items-center justify-center px-4 py-3 gap-1"
+                      style={{ borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.16)' : 'none' }}
+                    >
+                      <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/50 whitespace-nowrap leading-none">
+                        {metric.label}
+                      </span>
+                      <span
+                        className="text-sm font-black tracking-tight whitespace-nowrap leading-none"
+                        style={{ color: metric.accent ?? 'rgba(255,255,255,0.95)' }}
+                      >
+                        {metric.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className={`grid ${denseLayout ? 'gap-3' : 'gap-4'} xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end`}>
@@ -815,14 +976,23 @@ export default function QuizPlay() {
                   <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/65">Progres sesiune</span>
                   <span className="text-sm font-black text-white">{Math.round(progress)}%</span>
                 </div>
-                <div className="h-2 rounded-full overflow-hidden bg-white/16">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.98), rgba(255,255,255,0.62))' }}
-                    animate={{ width: `${progress}%` }}
-                    transition={calmMotion ? { duration: 0.2, ease: 'linear' } : { duration: 0.4, ease: 'easeOut' }}
+                {/* One segment per question reads better than a continuous bar at this width — but stops being
+                    legible past ~24 questions (e.g. a combined "joacă tot folderul" session), so falls back to
+                    the same continuous bar desktop uses. */}
+                {mobile && questionQueue.length > 1 && questionQueue.length <= 24 ? (
+                  <SegmentedProgressBar
+                    segments={questionQueue.map((q, i) => ({ done: answers[q.id] !== undefined, current: i === currentIdx }))}
                   />
-                </div>
+                ) : (
+                  <div className="h-2 rounded-full overflow-hidden bg-white/16">
+                    <motion.div
+                      className="h-full rounded-full"
+                      style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.98), rgba(255,255,255,0.62))' }}
+                      animate={{ width: `${progress}%` }}
+                      transition={calmMotion ? { duration: 0.2, ease: 'linear' } : { duration: 0.4, ease: 'easeOut' }}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className={heroControlsWrapClass}>
@@ -838,7 +1008,7 @@ export default function QuizPlay() {
                   <button
                     onClick={() => setAutoAdvance(!autoAdvance)}
                     title={autoAdvance ? 'Dezactivează auto-avansarea' : 'Activează auto-avansarea (2 secunde)'}
-                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125"
                     style={{
                       background: autoAdvance ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.10)',
                       borderColor: autoAdvance ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.14)',
@@ -851,12 +1021,29 @@ export default function QuizPlay() {
                     </span>
                   </button>
                 )}
+                {currentIdx > 0 && (
+                  <button
+                    onClick={handleGoPrevious}
+                    title="Revino la întrebarea anterioară pentru a revedea sau schimba răspunsul"
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125"
+                    style={{
+                      background: 'rgba(255,255,255,0.10)',
+                      borderColor: 'rgba(255,255,255,0.14)',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <ChevronLeft size={12} />
+                      Anterior
+                    </span>
+                  </button>
+                )}
                 {!examMode && !timedMode && !revealed && (
                   <button
                     onClick={handleSkipQuestion}
                     disabled={isLast || questionQueue.length <= 1}
                     title="Sari peste această întrebare și revino la final"
-                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] disabled:opacity-45"
+                    className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125 disabled:opacity-45"
                     style={{
                       background: 'rgba(255,255,255,0.10)',
                       borderColor: 'rgba(255,255,255,0.14)',
@@ -871,7 +1058,7 @@ export default function QuizPlay() {
                 )}
                 <button
                   onClick={() => setShowKeys(!showKeys)}
-                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125"
                   style={{ background: 'rgba(255,255,255,0.10)', borderColor: 'rgba(255,255,255,0.14)', color: '#FFFFFF' }}
                 >
                   <span className="inline-flex items-center gap-1.5">
@@ -882,7 +1069,7 @@ export default function QuizPlay() {
                 <button
                   onClick={toggleFocusMode}
                   title={focusMode ? 'Ieși din Modul Focus' : 'Intră în Modul Focus'}
-                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em]"
+                  className="press-feedback rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-[filter] duration-300 hover:brightness-125"
                   style={{
                     background: focusMode ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.10)',
                     borderColor: focusMode ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.14)',
@@ -906,7 +1093,7 @@ export default function QuizPlay() {
                 exit={{ opacity: 0, height: 0 }}
                 className="relative z-10 mt-4 flex flex-wrap gap-2 overflow-hidden"
               >
-                {['1-4 / A-D selectează opțiunea', 'Enter / Space confirmă sau continuă', 'H deschide indiciul'].map((hint) => (
+                {['1-5 / A-E selectează opțiunea', 'Enter / Space confirmă sau continuă', '← revine la întrebarea anterioară', 'H deschide indiciul'].map((hint) => (
                   <span
                     key={hint}
                     className="rounded-full border border-white/16 bg-white/12 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/82"
@@ -943,7 +1130,7 @@ export default function QuizPlay() {
               }}
             >
               <div className="flex flex-wrap items-center gap-2 mb-3">
-                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accentText }}>
                   {modeLabel}
                 </span>
                 {isMultiple && (
@@ -1011,8 +1198,12 @@ export default function QuizPlay() {
                   disabled={revealed && !isMultiple}
                   className={`premium-option-card w-full flex items-center gap-4 rounded-[24px] text-left transition-all ${optionPaddingClass}`}
                   style={getOptionStyle(opt.id)}
-                  whileHover={!revealed ? { scale: calmMotion ? 1.005 : 1.01 } : {}}
-                  whileTap={!revealed && !calmMotion ? { scale: 0.99 } : {}}
+                  whileHover={!revealed ? { scale: calmMotion ? 1.005 : 1.015 } : {}}
+                  // The single most-repeated click in the whole app (every answer, every
+                  // question) deserves a real squish, not a 1% nudge — a fast press down
+                  // + its own spring back to rest (independent of the reveal-color
+                  // transition above) so the bounce doesn't get swallowed by that timing.
+                  whileTap={!revealed && !calmMotion ? { scale: 0.95, transition: { type: 'spring', stiffness: 500, damping: 15 } } : {}}
                 >
                   {/* Checkbox/Radio */}
                   <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold border-2 transition-all"
@@ -1054,7 +1245,7 @@ export default function QuizPlay() {
                     onClick={confirmSelection}
                     disabled={selectedNow.length === 0}
                     className="press-feedback flex-1 rounded-[22px] px-5 py-3.5 text-sm font-black text-white disabled:opacity-35 sm:flex-none sm:min-w-[220px]"
-                    style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 18px 36px ${theme.accent}22` }}
+                    style={{ background: theme.accent, boxShadow: `0 18px 36px ${theme.accent}22` }}
                     whileHover={calmMotion ? undefined : { scale: 1.01 }}
                     whileTap={calmMotion ? undefined : { scale: 0.98 }}
                   >
@@ -1087,33 +1278,51 @@ export default function QuizPlay() {
                   style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}25` }}
                 >
                   <p className="text-sm" style={{ color: theme.text2 }}>
-                    <span className="font-semibold" style={{ color: theme.accent }}>Explicație: </span>
+                    <span className="font-semibold" style={{ color: theme.accentText }}>Explicație: </span>
                     {cleanQuestionExplanation(question.explanation)}
                   </p>
-                  {autoAdvance && (
-                    <div className="mt-3 h-0.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
-                      <motion.div className="h-full rounded-full"
-                        initial={{ width: '0%' }} animate={{ width: '100%' }}
-                        transition={{ duration: calmMotion ? 1 : 1.5, ease: 'linear' }}
-                        style={{ background: theme.accent }} />
-                    </div>
-                  )}
                 </motion.div>
               )}
             </AnimatePresence>
 
-            <AIExplanationPanel
-              aiLoading={aiLoading}
-              aiText={aiText}
-              analysisResult={analysisResult}
-              examMode={examMode}
-                usesRemoteAI={hasKey}
-              nextTopicHint={nextTopicHint}
-              revealed={revealed}
-              onExplain={handleAIExplain}
-              theme={theme}
-            />
+            {/* Explanation and Mnemonic used to be able to stack expanded at once — a single
+                tab switcher keeps one active at a time when both are relevant (wrong answer). */}
+            {revealed && !examMode && wasWrong && (
+              <div className="mb-3 flex items-center gap-2">
+                <button
+                  onClick={() => setActiveAIPanel('explanation')}
+                  className="fine-chip rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em]"
+                  data-active={activeAIPanel === 'explanation'}
+                  style={{ color: activeAIPanel === 'explanation' ? undefined : theme.text3 }}
+                >
+                  Explicație
+                </button>
+                <button
+                  onClick={() => setActiveAIPanel('mnemonic')}
+                  className="fine-chip rounded-full px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.1em]"
+                  data-active={activeAIPanel === 'mnemonic'}
+                  style={{ color: activeAIPanel === 'mnemonic' ? undefined : theme.text3 }}
+                >
+                  Mnemonic
+                </button>
+              </div>
+            )}
 
+            {activeAIPanel === 'explanation' && (
+              <AIExplanationPanel
+                aiLoading={aiLoading}
+                aiText={aiText}
+                analysisResult={analysisResult}
+                examMode={examMode}
+                usesRemoteAI={hasKey}
+                nextTopicHint={nextTopicHint}
+                revealed={revealed}
+                onExplain={handleAIExplain}
+                theme={theme}
+              />
+            )}
+
+            {activeAIPanel === 'mnemonic' && (
             <MnemonicPanel
               examMode={examMode}
                 usesRemoteAI={hasKey}
@@ -1122,6 +1331,8 @@ export default function QuizPlay() {
               revealed={revealed}
               wasWrong={wasWrong}
               onGenerate={async () => {
+                const requestId = ++aiRequestIdRef.current;
+                const isStale = () => aiRequestIdRef.current !== requestId;
                 setMnemonicLoading(true);
                 try {
                   const correctAnswer = getCorrectAnswerText(question);
@@ -1135,17 +1346,20 @@ export default function QuizPlay() {
                   const repeatedMistake = profile.mistakeBank.find((entry) => entry.questionId === question.id)?.wrongCount ?? 0;
                   const targetConcept = repeatedMistake >= 2 ? concept : `${correctAnswer} | ${question.text}`;
                   const mnemonic = await generateMnemonicForConcept(targetConcept, correctAnswer);
+                  if (isStale()) return; // belongs to a question the user already left
                   setMnemonicText(mnemonic);
                 } catch {
+                  if (isStale()) return;
                   const correctAnswer = getCorrectAnswerText(question);
                   const concept = analysisResult?.missingConcept || analysisResult?.recommendedTopic || correctAnswer || question.text;
                   setMnemonicText(buildMnemonicFallback(concept, correctAnswer));
                 } finally {
-                  setMnemonicLoading(false);
+                  if (!isStale()) setMnemonicLoading(false);
                 }
               }}
               theme={theme}
             />
+            )}
 
             <AnimatePresence>
             {revealed && !examMode && hasKey && (
@@ -1186,7 +1400,13 @@ export default function QuizPlay() {
                     <button
                       onClick={() => openStudyChat(
                         'explain',
-                        `Explică-mi clar întrebarea aceasta și de ce răspunsul corect este "${correctAnswerText}". Întrebare: ${question.text}. Răspunsul meu: ${selectedAnswerText || "niciun răspuns"}.`,
+                        'Te rog să îmi explici această grilă. De ce am greșit și de ce este corect răspunsul indicat?',
+                        {
+                          questionText: question.text,
+                          correctAnswerText,
+                          userAnswerText: selectedAnswerText || "niciun răspuns",
+                          studyFocus: studyFocusTopic ?? undefined,
+                        }
                       )}
                       className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
                       style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
@@ -1203,13 +1423,19 @@ export default function QuizPlay() {
                     <button
                       onClick={() => openStudyChat(
                         'test',
-                        `Testează-mă rapid pe tema "${studyFocusTopic ?? question.text}". Pune-mi 3 întrebări scurte, una câte una, și verifică dacă am înțeles.`,
+                        `Testează-mă rapid pe acest subiect. Pune-mi 3 întrebări scurte, una câte una, ca să vezi dacă am înțeles.`,
+                        {
+                          questionText: question.text,
+                          correctAnswerText,
+                          userAnswerText: selectedAnswerText || "niciun răspuns",
+                          studyFocus: studyFocusTopic ?? undefined,
+                        }
                       )}
                       className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
                       style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
                     >
                       <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em]">
-                        <Sparkles size={14} style={{ color: theme.accent }} />
+                        <Sparkles size={14} style={{ color: theme.accentText }} />
                         Mini-test pe focus
                       </div>
                       <div className="mt-1 text-xs opacity-65" style={{ color: theme.text }}>
@@ -1220,7 +1446,13 @@ export default function QuizPlay() {
                     <button
                       onClick={() => openStudyChat(
                         'summarize',
-                        `Rezumă-mi pentru examen regula, capcanele și diferențele-cheie pentru această întrebare. Întrebare: ${question.text}. Răspuns corect: ${correctAnswerText}.${analysisResult?.rule ? ` Regulă actuală: ${analysisResult.rule}.` : ''}`,
+                        `Te rog să îmi rezumi regula pentru examen, capcanele și diferențele-cheie referitoare la această grilă.`,
+                        {
+                          questionText: question.text,
+                          correctAnswerText,
+                          userAnswerText: selectedAnswerText || "niciun răspuns",
+                          studyFocus: analysisResult?.rule ?? studyFocusTopic ?? undefined,
+                        }
                       )}
                       className="premium-card-hover press-feedback rounded-[20px] border px-4 py-3 text-left"
                       style={{ background: theme.surface2, borderColor: theme.border, color: theme.text }}
@@ -1273,6 +1505,8 @@ export default function QuizPlay() {
                   calmMotion={calmMotion}
                   isLast={isLast}
                   denseLayout={denseLayout}
+                  autoAdvanceMs={autoAdvanceDelayMs}
+                  onCancelAutoAdvance={() => setAutoAdvanceHold(true)}
                 />
               )}
             </AnimatePresence>
@@ -1286,6 +1520,12 @@ export default function QuizPlay() {
                   className="sticky bottom-3 z-20 mt-4"
                 >
                   <div className={`glass-panel premium-shadow rounded-[24px] border ${denseLayout ? 'px-3 py-3' : 'px-4 py-4'}`}>
+                    {mobile && !examMode && answerStreak > 1 && (
+                      <div className="mb-2.5 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.1em]" style={{ color: theme.warning }}>
+                        <Flame size={13} fill={theme.warning} />
+                        {answerStreak} corecte la rând
+                      </div>
+                    )}
                     {revealed && !examMode ? (
                       <ConfidenceButtons
                         onRate={handleConfidence}
@@ -1316,7 +1556,7 @@ export default function QuizPlay() {
                             onClick={revealed ? handleNext : confirmSelection}
                             disabled={!revealed && selectedNow.length === 0}
                             className={`press-feedback rounded-[20px] text-sm font-black text-white disabled:opacity-35 ${denseLayout ? 'px-4 py-2.5' : 'px-5 py-3'} ${mobile ? 'w-full' : 'min-w-[220px]'}`}
-                            style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 18px 36px ${theme.accent}22` }}
+                            style={{ background: theme.accent, boxShadow: `0 18px 36px ${theme.accent}22` }}
                             whileHover={calmMotion ? undefined : { scale: 1.01 }}
                             whileTap={calmMotion ? undefined : { scale: 0.98 }}
                           >

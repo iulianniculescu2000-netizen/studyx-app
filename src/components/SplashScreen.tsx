@@ -1,14 +1,29 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Logo from './Logo';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
+import { useTheme } from '../theme/ThemeContext';
 
 interface SplashScreenProps {
   visible: boolean;
+  /** Total time the splash stays mounted, in ms — the progress bar fill is paced to exactly this, so it never lies about how long the wait actually is. */
+  durationMs: number;
 }
 
-const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
+const SplashScreen: React.FC<SplashScreenProps> = ({ visible, durationMs }) => {
   const { calmMotion: calm } = useAdaptiveMotion();
+  const theme = useTheme();
+  const [nearDone, setNearDone] = useState(false);
+
+  // Quiet payoff right as the bar finishes filling, instead of an abrupt cut
+  // from "loading" straight to gone — skipped under calmMotion, where the
+  // whole splash is already short enough that a caption swap would just feel
+  // rushed rather than satisfying.
+  useEffect(() => {
+    if (!visible || calm) return;
+    const timer = setTimeout(() => setNearDone(true), Math.max(0, durationMs - 320));
+    return () => clearTimeout(timer);
+  }, [visible, calm, durationMs]);
 
   return (
     <AnimatePresence>
@@ -24,7 +39,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'radial-gradient(circle at 50% 18%, rgba(0,113,227,0.14), transparent 28%), #0a0a0f',
+            background: `radial-gradient(circle at 50% 18%, color-mix(in srgb, ${theme.accent} 14%, transparent), transparent 32%), ${theme.bg}`,
           }}
         >
           <motion.div
@@ -32,7 +47,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: calm ? 0.12 : 0.2, ease: [0.16, 1, 0.3, 1] }}
             style={{
-              boxShadow: calm ? '0 10px 24px rgba(0,113,227,0.08)' : '0 12px 28px rgba(0,113,227,0.10)',
+              boxShadow: calm ? `0 10px 24px color-mix(in srgb, ${theme.accent} 10%, transparent)` : `0 12px 28px color-mix(in srgb, ${theme.accent} 14%, transparent)`,
               borderRadius: 30,
               padding: 12,
               willChange: 'transform, opacity',
@@ -49,7 +64,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
           >
             <h1
               style={{
-                color: 'white',
+                color: theme.text,
                 fontSize: '1.92rem',
                 fontWeight: 'bold',
                 letterSpacing: '1.8px',
@@ -57,20 +72,25 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
                 fontFamily: '"SF Pro Display", "SF Pro Text", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif',
               }}
             >
-              STUDY<span style={{ color: '#0071E3' }}>X</span>
+              STUDY
+              <span style={{
+                background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>X</span>
             </h1>
             <div
               style={{
                 height: 2,
                 width: 34,
-                background: '#0071E3',
+                background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`,
                 margin: '10px auto',
                 borderRadius: 2,
               }}
             />
             <p
               style={{
-                color: '#aeb4c3',
+                color: theme.text2,
                 fontSize: '0.78rem',
                 fontWeight: 500,
                 textTransform: 'uppercase',
@@ -97,27 +117,39 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ visible }) => {
               style={{
                 width: '100%',
                 height: 2,
-                background: 'rgba(255,255,255,0.05)',
+                background: theme.fillSubtle,
                 borderRadius: 10,
                 overflow: 'hidden',
                 position: 'relative',
               }}
             >
               <motion.div
-                animate={calm ? { x: '18%' } : { x: ['-42%', '42%'] }}
-                transition={calm ? { duration: 0.12 } : { duration: 0.5, ease: 'easeInOut', repeat: Infinity }}
+                initial={{ width: '0%' }}
+                animate={{ width: '100%' }}
+                transition={
+                  calm
+                    ? { duration: 0.2 }
+                    : { duration: (durationMs - 100) / 1000, ease: [0.22, 0.61, 0.36, 1] }
+                }
                 style={{
-                  width: '54%',
                   height: '100%',
-                  background: 'linear-gradient(90deg, transparent, #0071E3, transparent)',
-                  position: 'absolute',
-                  willChange: 'transform',
+                  background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`,
+                  willChange: 'width',
                 }}
               />
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.24)', fontSize: '0.68rem', marginTop: 8 }}>
-              Se încarcă experiența premium...
-            </p>
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={nearDone ? 'ready' : 'loading'}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                style={{ color: theme.text3, fontSize: '0.68rem', marginTop: 8 }}
+              >
+                {nearDone ? 'Bine ai venit.' : 'Se încarcă experiența premium...'}
+              </motion.p>
+            </AnimatePresence>
           </motion.div>
         </motion.div>
       )}

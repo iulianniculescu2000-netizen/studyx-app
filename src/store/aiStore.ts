@@ -1,23 +1,88 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { chunkDocument } from '../ai/chunker';
-import { addChunksToVault, clearVault, removeChunksBySource, searchVault } from '../ai/vectorStore';
+import { addChunksToVault, clearVault, getVaultChunksBySource, removeChunksBySource, searchVault } from '../ai/vectorStore';
+import { currentProfileEpoch } from './profileEpoch';
+import { matchBookByName } from '../data/residencyCurriculum';
 
 export type AIModel =
+  // Deprecated by Groq (2026-08-16, see console.groq.com/docs/deprecations) —
+  // kept in the union only so already-persisted state still type-checks;
+  // `normalizeProviderModel` migrates any of these to the current default the
+  // next time the store rehydrates. Never offer them in PROVIDER_MODELS again.
   | 'llama-3.3-70b-versatile'
   | 'llama-3.1-8b-instant'
   | 'mixtral-8x7b-32768'
+  | 'openai/gpt-oss-120b'
+  | 'openai/gpt-oss-20b'
+  // Retired by Google (confirmed live, 2026-08-24: all three 404 "no longer
+  // available to new users") — same reasoning as the Groq entries above, kept
+  // only so persisted state still type-checks and migrates cleanly.
   | 'gemini-2.5-flash'
   | 'gemini-2.0-flash'
   | 'gemini-2.5-pro'
+  | 'gemini-3.8-flash'
+  | 'gemini-3.7-flash'
+  | 'gemini-3.6-flash'
+  | 'gemini-3.5-flash'
+  | 'gemini-3.1-pro-preview'
   | 'gpt-oss-120b'
+  // 2026-09-08: confirmed against Cerebras's own docs — 'qwen-3-235b-a22b-instruct-2507'
+  // was replaced by 'qwen-3.8-27b', and 'zai-glm-4.7' hit its already-announced
+  // 2026-08-17 deprecation date and is gone. Both kept in the union (same
+  // reasoning as the Groq/Google entries above) purely so already-persisted
+  // state still type-checks; removed from PROVIDER_MODELS so normalizeProviderModel
+  // migrates them away on next hydrate.
   | 'qwen-3-235b-a22b-instruct-2507'
-  | 'zai-glm-4.7';
+  | 'zai-glm-4.7'
+  | 'qwen-3.8-27b'
+  // Mistral AI (La Plateforme) — 4th free provider, added 2026-09-08 after
+  // NVIDIA NIM turned out to reject browser CORS entirely (reverted). Verified
+  // THIS time before shipping: CORS confirmed live via curl OPTIONS preflight
+  // (returns access-control-allow-origin: *), free "Experiment" tier needs no
+  // card (multiple independent sources agree — the "activate billing" step in
+  // their console just turns the free tier on, doesn't collect payment info),
+  // ~1B tokens/month. "-latest" aliases used deliberately instead of a dated
+  // model name — Mistral keeps them pointed at their current model, so this
+  // shouldn't go stale the way the NVIDIA pick did within 2 weeks.
+  | 'mistral-small-latest'
+  | 'mistral-large-latest';
 
-export type AIProvider = 'groq' | 'google' | 'cerebras';
+export type AIProvider = 'groq' | 'google' | 'cerebras' | 'mistral';
 
 export type AIKnowledgeSourceType = 'txt' | 'pdf' | 'docx' | 'image';
 export type AIKnowledgeSourceStatus = 'indexing' | 'ready' | 'error';
+
+export type AIStudySessionKind = 'first-pass' | 'recap';
+
+export interface AIStudyPlanChapterRef {
+  sourceId: string;
+  sourceName: string;
+  heading: string;
+  label: string;
+}
+
+export interface AIStudyPlanSession {
+  id: string;
+  /** 'YYYY-MM-DD', local calendar date — never toISOString() (shifts a day across timezones). */
+  date: string;
+  kind: AIStudySessionKind;
+  /** 0 = first pass, 1..N = recap pass number. */
+  passIndex: number;
+  chapters: AIStudyPlanChapterRef[];
+  done: boolean;
+}
+
+export interface AIExamPlan {
+  /** 'YYYY-MM-DD' */
+  examDate: string;
+  /** 1-10, Romanian grading scale. */
+  targetGrade: number;
+  generatedAt: number;
+  /** Source ids the plan was built from — lets the UI detect newly-added documents. */
+  sourceIds: string[];
+  sessions: AIStudyPlanSession[];
+}
 
 export interface AILibraryFolder {
   id: string;
@@ -26,6 +91,8 @@ export interface AILibraryFolder {
   /** null for a top-level folder; otherwise the id of the parent folder. */
   parentId: string | null;
   createdAt: number;
+  /** Absent/null = the exam-plan feature isn't used for this folder. */
+  examPlan?: AIExamPlan | null;
 }
 
 export interface AIKnowledgeSource {
@@ -103,6 +170,14 @@ export interface AIState {
   apiKey: string;
   /** Per-provider keys so switching Groq↔Google keeps each key intact. */
   providerKeys: Partial<Record<AIProvider, string>>;
+  /**
+   * Per-provider model choice — mirrors providerKeys so a background model
+   * check (e.g. "Actualizează" in Settings, which verifies every configured
+   * provider, not just the active one) can fix a provider you aren't
+   * currently using and have it actually stick the next time you switch to it,
+   * instead of resetting to the static default.
+   */
+  providerModels: Partial<Record<AIProvider, AIModel>>;
   provider: AIProvider;
   model: AIModel;
   hasKey: boolean;
@@ -125,6 +200,8 @@ export interface AIActions {
   setApiKey: (apiKey: string) => void;
   setProvider: (provider: AIProvider) => void;
   setModel: (model: AIModel) => void;
+  /** Sets the model for ANY provider, not just the active one — used by the multi-provider model check. Keeps `model` in sync only if that provider happens to be active right now. */
+  setProviderModel: (provider: AIProvider, model: AIModel) => void;
   setHasKey: (hasKey: boolean) => void;
   addKnowledgeSource: (
     name: string,
@@ -137,6 +214,8 @@ export interface AIActions {
   renameLibraryFolder: (folderId: string, name: string) => void;
   deleteLibraryFolder: (folderId: string) => void;
   moveSourceToLibraryFolder: (sourceId: string, folderId: string | null) => void;
+  setFolderExamPlan: (folderId: string, plan: AIExamPlan | null) => void;
+  toggleExamPlanSession: (folderId: string, sessionId: string) => void;
   getKnowledgeContext: (query: string, maxChars?: number) => Promise<string>;
   clearCache: () => void;
   updateCacheSize: () => void;
@@ -145,13 +224,19 @@ export interface AIActions {
   clearAIMemory: (profileId?: string) => void;
   markHydrated: () => void;
   reset: () => void;
+  /** Per-profile: knowledge sources + library folders load/save through profileStorage.ts, not the global zustand persist blob. */
+  _hydrate: (data: { knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] }) => void;
+  /** Sources left "indexing" by an interrupted run (closed app, profile switch): ready if their chunks exist, else error. */
+  reconcileInterruptedIndexing: () => Promise<void>;
+  _snapshot: () => { knowledgeSources: AIKnowledgeSource[]; libraryFolders: AILibraryFolder[] };
 }
 
-const DEFAULT_MODEL: AIModel = 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL: AIModel = 'openai/gpt-oss-120b';
 const PROVIDER_MODELS: Record<AIProvider, AIModel[]> = {
-  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
-  google: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'],
-  cerebras: ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507', 'zai-glm-4.7'],
+  groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+  google: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.1-pro-preview'],
+  cerebras: ['gpt-oss-120b', 'qwen-3.8-27b'],
+  mistral: ['mistral-small-latest', 'mistral-large-latest'],
 };
 
 function isValidProviderKey(provider: AIProvider, apiKey: string) {
@@ -161,14 +246,17 @@ function isValidProviderKey(provider: AIProvider, apiKey: string) {
   if (provider === 'groq') return trimmed.startsWith('gsk_') && trimmed.length > 20;
   // Cerebras keys are prefixed with "csk-".
   if (provider === 'cerebras') return trimmed.startsWith('csk-') && trimmed.length > 20;
-  // Google/Gemini keys vary in prefix (AIza, AQ., …), so don't gate on a prefix.
-  // Accept any substantial key that isn't a Groq/Cerebras key; the live API check decides.
+  // Google/Gemini and Mistral keys are both opaque tokens with no distinctive
+  // prefix, so don't gate on one. Accept any substantial key that isn't a
+  // Groq/Cerebras key; the live API check decides the rest.
   return trimmed.length >= 20 && !trimmed.startsWith('gsk_') && !trimmed.startsWith('csk-');
 }
 
 function getDefaultModelForProvider(provider: AIProvider): AIModel {
-  if (provider === 'google') return 'gemini-2.5-flash';
+  if (provider === 'google') return 'gemini-3.8-flash';
   if (provider === 'cerebras') return 'gpt-oss-120b';
+  if (provider === 'mistral') return 'mistral-small-latest';
+  // groq
   return DEFAULT_MODEL;
 }
 
@@ -186,6 +274,7 @@ const createDefaultState = (): AIState => ({
   error: null,
   apiKey: '',
   providerKeys: {},
+  providerModels: {},
   provider: 'groq',
   model: DEFAULT_MODEL,
   hasKey: false,
@@ -326,6 +415,14 @@ function updateSourceEntry(
   return sources.map((source) => (source.id === sourceId ? updater(source) : source));
 }
 
+/** Legacy sources saved before indexing was tracked have no status; they are usable, so they count as ready. */
+export function isSourceReady(source: { indexStatus?: AIKnowledgeSource['indexStatus'] }): boolean {
+  return source.indexStatus === 'ready' || source.indexStatus === undefined;
+}
+
+/** Documents being indexed right now, so a hydrate does not mistake them for interrupted ones. */
+const indexingInFlight = new Set<string>();
+
 export const useAIStore = create<AIState & AIActions>()(
   devtools(
     persist(
@@ -349,7 +446,10 @@ export const useAIStore = create<AIState & AIActions>()(
         },
 
         setProvider: (provider) => {
-          const nextModel = getDefaultModelForProvider(provider);
+          // Prefer a model already confirmed working for this provider (set by
+          // the user, or by the multi-provider model check) over the static
+          // default, so a background fix actually sticks on switch-back.
+          const nextModel = normalizeProviderModel(provider, get().providerModels[provider] ?? getDefaultModelForProvider(provider));
           // Load the key already saved for this provider so the user doesn't
           // have to re-enter it every time they switch Groq↔Google.
           const nextKey = get().providerKeys[provider] ?? '';
@@ -361,11 +461,23 @@ export const useAIStore = create<AIState & AIActions>()(
           }, false, 'ai/setProvider');
         },
 
-        setModel: (model) => set({ model }, false, 'ai/setModel'),
+        setModel: (model) => set((state) => ({
+          model,
+          providerModels: { ...state.providerModels, [state.provider]: model },
+        }), false, 'ai/setModel'),
+
+        setProviderModel: (provider, model) => set((state) => ({
+          providerModels: { ...state.providerModels, [provider]: model },
+          ...(state.provider === provider ? { model } : {}),
+        }), false, 'ai/setProviderModel'),
         setHasKey: (hasKey) => set({ hasKey }, false, 'ai/setHasKey'),
 
         addKnowledgeSource: async (name, text, type = 'txt', options = {}) => {
           const sourceId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+          // The stores are global: if the profile changes while this runs, its results belong to the old one.
+          const startedInEpoch = currentProfileEpoch();
+          const sameProfile = () => currentProfileEpoch() === startedInEpoch;
+          indexingInFlight.add(sourceId);
           const now = Date.now();
           const normalizedText = text.trim();
           const preview = buildSourcePreview(normalizedText);
@@ -390,16 +502,19 @@ export const useAIStore = create<AIState & AIActions>()(
           }), false, 'ai/addKnowledgeSource:start');
 
           try {
+            const curriculumBook = matchBookByName(name);
             const chunks = await chunkDocument(normalizedText, name, {
               chunkSize: 1500,
               overlap: 200,
               preserveStructure: true,
               minChunkLength: 100,
+              knownHeadings: curriculumBook?.chapters,
             });
 
             await addChunksToVault(chunks, name, sourceId, {
               onProgress: (progress) => {
                 options.onIndexProgress?.(progress);
+                if (!sameProfile()) return;
                 set((state) => ({
                   knowledgeSources: updateSourceEntry(state.knowledgeSources, sourceId, (source) => ({
                     ...source,
@@ -417,6 +532,10 @@ export const useAIStore = create<AIState & AIActions>()(
               indexProgress: 100,
             };
 
+            // The chunks were saved under the profile this started in; the other profile's list is not ours to touch.
+            // (The first profile fixes its own entry the next time it loads: see reconcileInterruptedIndexing.)
+            if (!sameProfile()) return readySource;
+
             set((state) => ({
               knowledgeSources: updateSourceEntry(state.knowledgeSources, sourceId, () => readySource),
               cache: {
@@ -428,6 +547,7 @@ export const useAIStore = create<AIState & AIActions>()(
             return readySource;
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Indexarea documentului a eșuat.';
+            if (!sameProfile()) throw error;
             set((state) => ({
               knowledgeSources: updateSourceEntry(state.knowledgeSources, sourceId, (source) => ({
                 ...source,
@@ -437,7 +557,29 @@ export const useAIStore = create<AIState & AIActions>()(
               })),
             }), false, 'ai/addKnowledgeSource:error');
             throw error;
+          } finally {
+            indexingInFlight.delete(sourceId);
           }
+        },
+
+        reconcileInterruptedIndexing: async () => {
+          const stale = get().knowledgeSources.filter((source) => source.indexStatus === 'indexing' && !indexingInFlight.has(source.id));
+          if (stale.length === 0) return;
+          const startedInEpoch = currentProfileEpoch();
+          const found = await Promise.all(stale.map(async (source) => ({
+            id: source.id,
+            chunks: (await getVaultChunksBySource(source.id)).length,
+          })));
+          if (currentProfileEpoch() !== startedInEpoch) return;
+          set((state) => ({
+            knowledgeSources: state.knowledgeSources.map((source) => {
+              const result = found.find((entry) => entry.id === source.id);
+              if (!result || source.indexStatus !== 'indexing' || indexingInFlight.has(source.id)) return source;
+              return result.chunks > 0
+                ? { ...source, indexStatus: 'ready' as const, indexProgress: 100, chunkCount: result.chunks }
+                : { ...source, indexStatus: 'error' as const, indexProgress: 0, indexError: 'Indexarea a fost întreruptă. Șterge documentul și adaugă-l din nou.' };
+            }),
+          }), false, 'ai/reconcileInterruptedIndexing');
         },
 
         removeKnowledgeSource: async (sourceId) => {
@@ -501,6 +643,31 @@ export const useAIStore = create<AIState & AIActions>()(
               source.id === sourceId ? { ...source, folderId } : source
             )),
           }), false, 'ai/moveSourceToLibraryFolder');
+        },
+
+        setFolderExamPlan: (folderId, plan) => {
+          set((state) => ({
+            libraryFolders: state.libraryFolders.map((folder) => (
+              folder.id === folderId ? { ...folder, examPlan: plan } : folder
+            )),
+          }), false, 'ai/setFolderExamPlan');
+        },
+
+        toggleExamPlanSession: (folderId, sessionId) => {
+          set((state) => ({
+            libraryFolders: state.libraryFolders.map((folder) => {
+              if (folder.id !== folderId || !folder.examPlan) return folder;
+              return {
+                ...folder,
+                examPlan: {
+                  ...folder.examPlan,
+                  sessions: folder.examPlan.sessions.map((session) => (
+                    session.id === sessionId ? { ...session, done: !session.done } : session
+                  )),
+                },
+              };
+            }),
+          }), false, 'ai/toggleExamPlanSession');
         },
 
         getKnowledgeContext: async (query, maxChars = 6000) => {
@@ -618,6 +785,12 @@ export const useAIStore = create<AIState & AIActions>()(
 
         markHydrated: () => set({ isHydrated: true }, false, 'ai/markHydrated'),
 
+        _hydrate: (data) => set({
+          knowledgeSources: data.knowledgeSources ?? [],
+          libraryFolders: data.libraryFolders ?? [],
+        }, false, 'ai/_hydrate'),
+        _snapshot: () => ({ knowledgeSources: get().knowledgeSources, libraryFolders: get().libraryFolders }),
+
         reset: () => {
           void clearVault();
           set({
@@ -631,11 +804,10 @@ export const useAIStore = create<AIState & AIActions>()(
         partialize: (state) => ({
           apiKey: state.apiKey,
           providerKeys: state.providerKeys,
+          providerModels: state.providerModels,
           provider: state.provider,
           model: state.model,
           hasKey: state.hasKey,
-          knowledgeSources: state.knowledgeSources,
-          libraryFolders: state.libraryFolders,
           cache: state.cache,
           studyMemory: state.studyMemory,
         }),
@@ -649,6 +821,17 @@ export const useAIStore = create<AIState & AIActions>()(
           }
           state.provider = state.provider ?? 'groq';
           state.model = normalizeProviderModel(state.provider, state.model);
+          // Drop any per-provider model that's since been retired (same reasoning
+          // as the active-model normalize above) — a stale entry here would
+          // silently resurface a dead model the next time that provider becomes active.
+          const cleanedProviderModels: Partial<Record<AIProvider, AIModel>> = {};
+          for (const [key, value] of Object.entries(state.providerModels ?? {})) {
+            const providerKey = key as AIProvider;
+            if (value && PROVIDER_MODELS[providerKey]?.includes(value)) {
+              cleanedProviderModels[providerKey] = value;
+            }
+          }
+          state.providerModels = cleanedProviderModels;
           // Migrate the old single-key storage into per-provider keys. Seed the
           // active provider's slot from the legacy key (only if it's the right
           // format for that provider), then make apiKey reflect the active slot.

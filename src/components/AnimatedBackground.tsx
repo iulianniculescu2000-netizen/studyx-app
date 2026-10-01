@@ -37,9 +37,12 @@ const AnimatedBackground: React.FC = () => {
       {/* Very Soft Ambient Glow - Top Right */}
       <motion.div
         className="animated-background-orb"
-        animate={useStaticBackground ? { opacity: 0.08, scale: 1, x: 0, y: 0 } : {
+        animate={useStaticBackground ? { opacity: 0.08, x: 0, y: 0 } : {
           opacity: [0.06, 0.12, 0.06],
-          scale: [1, 1.14, 1],
+          // No scale: this layer is 70vw wide with a 112px blur, and scaling it
+          // forces the compositor to re-raster that whole blurred surface every
+          // frame — the main source of stutter behind modals and the tour.
+          // Drifting it with x/y and fading opacity stays on the GPU.
           x: [0, 36, 0],
           y: [0, 22, 0],
         }}
@@ -60,9 +63,8 @@ const AnimatedBackground: React.FC = () => {
       {/* Very Soft Ambient Glow - Bottom Left */}
       <motion.div
         className="animated-background-orb"
-        animate={useStaticBackground ? { opacity: 0.06, scale: 1, x: 0, y: 0 } : {
+        animate={useStaticBackground ? { opacity: 0.06, x: 0, y: 0 } : {
           opacity: [0.04, 0.1, 0.04],
-          scale: [1, 1.18, 1],
           x: [0, -28, 0],
           y: [0, -16, 0],
         }}

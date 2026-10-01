@@ -3,17 +3,21 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft, Check, Brain,
-  Sparkles, Trophy, Loader2, Bot,
+  Sparkles, Trophy, Loader2, Bot, Undo2,
 } from 'lucide-react';
 import { useAIStore } from '../store/aiStore';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
+import type { QuestionStat } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import { buildClarificationFallback, cleanQuestionExplanation, getCorrectAnswerText } from '../helpers/quizAi';
+import { cleanFlashcardText } from '../lib/flashcardText';
 import { explainWrongAnswer } from '../lib/groq';
 import QuizImage from '../components/QuizImage';
+import AIRichText from '../components/ai-chat/AIRichText';
+import { isFlashcardDeck } from '../lib/deckKind';
 import type { Question, Quiz } from '../types';
 
 interface CardItem {
@@ -77,21 +81,29 @@ export default function FlashcardSession() {
   const { quizzes } = useQuizStore();
   const { questionStats, recordAnswer, recordStudySession } = useStatsStore();
 
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   const modeAll = searchParams.get('mode') === 'all';
 
+  // `now` este captat o singură dată la montare — cardurile „due" sunt calculate
+  // la începutul sesiunii și nu se schimbă în timpul ei. Dacă `now` ar fi în
+  // state (actualizat din minut în minut) ar invalida `initialCards` și ar
+  // recalcula întreaga coadă de carduri în fundal la fiecare 60 s, schimbând
+  // silențios sesiunea activă.
+  const sessionStartRef = useRef(Date.now());
+
   const initialCards = useMemo<CardItem[]>(() => {
+    const sessionNow = sessionStartRef.current;
     if (id === 'all') {
       const items: CardItem[] = [];
-      quizzes.filter((quiz) => !quiz.archived && quiz.questions.length > 0).forEach((quiz) => {
+      // Only real flashcard decks belong in a flip-card session. Without this
+      // filter "Recapitulează tot" swept in every multiple-choice grilă in the
+      // app and showed it as a card with a single visible answer.
+      quizzes
+        .filter((quiz) => !quiz.archived && quiz.questions.length > 0 && isFlashcardDeck(quiz))
+        .forEach((quiz) => {
         quiz.questions.forEach((question) => {
           const stat = questionStats[`${quiz.id}:${question.id}`];
-          if (!stat || (stat.nextReview > 0 && stat.nextReview <= now)) {
+          if (!stat || (stat.nextReview > 0 && stat.nextReview <= sessionNow)) {
             items.push({ question, quiz });
           }
         });
@@ -106,12 +118,13 @@ export default function FlashcardSession() {
       .filter((question) => {
         if (modeAll) return true;
         const stat = questionStats[`${quiz.id}:${question.id}`];
-        return !stat || (stat.nextReview > 0 && stat.nextReview <= now);
+        return !stat || (stat.nextReview > 0 && stat.nextReview <= sessionNow);
       })
       .map((question) => ({ question, quiz }));
 
     return modeAll ? items : shuffleArr(items);
-  }, [id, quizzes, questionStats, modeAll, now]);
+  }, [id, quizzes, questionStats, modeAll]); // `sessionStartRef` e stabil — nu e nevoie în deps
+
 
   const sessionRouteKey = `${id ?? 'all'}:${modeAll ? 'all' : 'due'}`;
   const [activeRouteKey, setActiveRouteKey] = useState(sessionRouteKey);
@@ -127,6 +140,16 @@ export default function FlashcardSession() {
 
   const startTime = useRef(Date.now());
   const answerScrollRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Single-level undo for the last rating. Re-calling recordAnswer for a
+   * "changed my mind" re-rate would double-count the SM-2 review (it mutates
+   * timesCorrect/timesWrong and recomputes the interval from the CURRENT
+   * stat each time) — so instead of re-invoking the algorithm, this snapshots
+   * the question's stat right before rating it and restores that exact
+   * snapshot on undo, then lets the real rating flow run again cleanly.
+   */
+  const lastRatingSnapshotRef = useRef<{ key: string; prevStat: QuestionStat | undefined } | null>(null);
+  const [canUndoRating, setCanUndoRating] = useState(false);
 
   useEffect(() => {
     const shouldResetForRoute = activeRouteKey !== sessionRouteKey;
@@ -142,6 +165,8 @@ export default function FlashcardSession() {
     setElapsed(0);
     setAiExplanation(null);
     setAiLoading(false);
+    lastRatingSnapshotRef.current = null;
+    setCanUndoRating(false);
     startTime.current = Date.now();
     setActiveRouteKey(sessionRouteKey);
   }, [activeRouteKey, cards.length, initialCards, sessionRouteKey]);
@@ -153,6 +178,10 @@ export default function FlashcardSession() {
   const handleRating = useCallback((rating: Rating) => {
     if (!cards[currentIdx]) return;
     const { question, quiz } = cards[currentIdx];
+
+    const key = `${quiz.id}:${question.id}`;
+    lastRatingSnapshotRef.current = { key, prevStat: useStatsStore.getState().questionStats[key] };
+    setCanUndoRating(true);
 
     const isCorrect = rating !== 'hard';
     recordAnswer(quiz.id, question.id, isCorrect);
@@ -170,6 +199,27 @@ export default function FlashcardSession() {
       setSessionDone(true);
     }
   }, [cards, currentIdx, recordAnswer, recordStudySession, getElapsedSeconds]);
+
+  // Restore the exact pre-rating stat snapshot (not a second recordAnswer call —
+  // see the ref comment above) and drop back onto the card you just rated, still
+  // flipped, so a misclick has a real way out instead of being permanent.
+  const handleUndoLastRating = useCallback(() => {
+    const snapshot = lastRatingSnapshotRef.current;
+    if (!snapshot || currentIdx === 0) return;
+    useStatsStore.setState((s) => {
+      const next = { ...s.questionStats };
+      if (snapshot.prevStat) next[snapshot.key] = snapshot.prevStat;
+      else delete next[snapshot.key];
+      return { questionStats: next };
+    });
+    lastRatingSnapshotRef.current = null;
+    setCanUndoRating(false);
+    setRatings((prev) => prev.slice(0, -1));
+    setAiExplanation(null);
+    setCurrentIdx((index) => index - 1);
+    setFlipped(true);
+    setCardKey((key) => key + 1);
+  }, [currentIdx]);
 
   const handleExplain = async () => {
     if (aiLoading || !cards[currentIdx]) return;
@@ -192,6 +242,10 @@ export default function FlashcardSession() {
   useEffect(() => {
     const handleKeys = (event: KeyboardEvent) => {
       if (sessionDone) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // A focused button/field keeps its own Enter/Space.
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest('button, a, input, textarea, select, [role="button"]'))) return;
 
       if (event.code === 'Space' || event.key === 'Enter') {
         event.preventDefault();
@@ -203,11 +257,16 @@ export default function FlashcardSession() {
         if (event.key === '2') { event.preventDefault(); handleRating('good'); }
         if (event.key === '3') { event.preventDefault(); handleRating('easy'); }
       }
+
+      if (event.key.toLowerCase() === 'u' && canUndoRating && currentIdx > 0) {
+        event.preventDefault();
+        handleUndoLastRating();
+      }
     };
 
     window.addEventListener('keydown', handleKeys);
     return () => window.removeEventListener('keydown', handleKeys);
-  }, [flipped, handleRating, sessionDone]);
+  }, [flipped, handleRating, sessionDone, canUndoRating, currentIdx, handleUndoLastRating]);
 
   useEffect(() => {
     if (!flipped) return;
@@ -240,7 +299,7 @@ export default function FlashcardSession() {
         >
           <div
             className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 16px 40px ${theme.accent}30` }}
+            style={{ background: theme.accent, boxShadow: `0 16px 40px ${theme.accent}30` }}
           >
             <Trophy size={36} className="text-white" />
           </div>
@@ -255,7 +314,7 @@ export default function FlashcardSession() {
               <div className="text-[10px] font-black uppercase opacity-50" style={{ color: theme.text }}>Dificile</div>
             </div>
             <div className="p-4 rounded-2xl" style={{ background: `${theme.accent}10`, border: `1px solid ${theme.accent}20` }}>
-              <div className="text-xl font-black mb-1" style={{ color: theme.accent }}>{goodCount}</div>
+              <div className="text-xl font-black mb-1" style={{ color: theme.accentText }}>{goodCount}</div>
               <div className="text-[10px] font-black uppercase opacity-50" style={{ color: theme.text }}>Bune</div>
             </div>
             <div className="p-4 rounded-2xl" style={{ background: `${theme.success}10`, border: `1px solid ${theme.success}20` }}>
@@ -267,7 +326,7 @@ export default function FlashcardSession() {
           <button
             onClick={() => navigate('/flashcards')}
             className={`w-full rounded-2xl font-black uppercase tracking-widest text-xs text-white shadow-2xl transition-all ${mobile ? 'py-3.5' : 'py-4'}`}
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 12px 30px ${theme.accent}40` }}
+            style={{ background: theme.accent, boxShadow: `0 12px 30px ${theme.accent}40` }}
           >
             Înapoi la Flashcards
           </button>
@@ -283,7 +342,13 @@ export default function FlashcardSession() {
           <Sparkles size={48} className="mx-auto mb-4 opacity-20" style={{ color: theme.text }} />
           <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Niciun card de studiat</h2>
           <p className="text-sm opacity-60 mb-6" style={{ color: theme.text }}>Toate cardurile tale sunt la zi sau nu există întrebări.</p>
-          <button onClick={() => navigate('/flashcards')} className="text-accent font-bold">Înapoi</button>
+          <button
+            onClick={() => navigate('/flashcards')}
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
+          >
+            <ChevronLeft size={15} />Înapoi la flashcarduri
+          </button>
         </div>
       </div>
     );
@@ -381,7 +446,12 @@ export default function FlashcardSession() {
           >
             <div className={`flex items-center gap-3 ${mobile ? 'flex-wrap' : ''}`}>
               <button
-                onClick={() => navigate('/flashcards')}
+                onClick={() => {
+                  // Înregistrează timpul petrecut chiar dacă sesiunea e la mijloc —
+                  // altfel tot studiul dispare din statistici la ieșirea devreme.
+                  recordStudySession(getElapsedSeconds());
+                  navigate('/flashcards');
+                }}
                 className={`press-feedback inline-flex shrink-0 items-center gap-2 rounded-full font-black uppercase tracking-[0.18em] ${denseLayout ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-[11px]'}`}
                 style={{ background: theme.surface2, color: theme.text, border: `1px solid ${theme.border}` }}
               >
@@ -390,7 +460,7 @@ export default function FlashcardSession() {
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <Brain size={14} style={{ color: theme.accent }} />
+                  <Brain size={14} style={{ color: theme.accentText }} />
                   <h1 className="truncate font-black tracking-tight" style={{ color: theme.text, ...titleStyle }}>
                     {current.quiz.title}
                   </h1>
@@ -398,14 +468,24 @@ export default function FlashcardSession() {
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: theme.surface2 }}>
                   <motion.div
                     className="h-full rounded-full"
-                    style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                    style={{ background: theme.accent }}
                     animate={{ width: `${progress}%` }}
                   />
                 </div>
               </div>
 
               <div className={`flex shrink-0 items-center gap-2 ${mobile ? 'w-full justify-between' : ''}`}>
-                <span className="rounded-full px-3 py-1.5 text-[11px] font-black tabular-nums" style={{ background: `${theme.accent}14`, color: theme.accent, border: `1px solid ${theme.accent}24` }}>
+                {canUndoRating && currentIdx > 0 && (
+                  <button
+                    onClick={handleUndoLastRating}
+                    title="Anulează ultima evaluare și revino la cardul anterior"
+                    className={`press-feedback inline-flex shrink-0 items-center gap-1.5 rounded-full font-black uppercase tracking-[0.16em] ${denseLayout ? 'px-2.5 py-1.5 text-[10px]' : 'px-3 py-2 text-[11px]'}`}
+                    style={{ background: `${theme.warning}12`, color: theme.warning, border: `1px solid ${theme.warning}28` }}
+                  >
+                    <Undo2 size={13} /> Anulează
+                  </button>
+                )}
+                <span className="rounded-full px-3 py-1.5 text-[11px] font-black tabular-nums" style={{ background: `${theme.accent}14`, color: theme.accentText, border: `1px solid ${theme.accent}24` }}>
                   {currentIdx + 1} / {cards.length}
                 </span>
                 <span className="rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em]" style={{ background: theme.surface2, color: theme.text3, border: `1px solid ${theme.border}` }}>
@@ -440,14 +520,14 @@ export default function FlashcardSession() {
                       animate={faceAnimate}
                       exit={faceExit}
                       transition={faceTransition}
-                      className={`absolute inset-0 overflow-hidden rounded-[34px] border border-white/10 ${frontPanelPaddingClass} text-center shadow-2xl glass-panel flex flex-col items-center justify-center`}
+                      className={`absolute inset-0 overflow-hidden rounded-[34px] border border-[var(--hairline)] ${frontPanelPaddingClass} text-center shadow-2xl glass-panel flex flex-col items-center justify-center`}
                       style={{ position: 'absolute', background: theme.surface, backfaceVisibility: 'hidden' }}
                     >
                   {frontUsesSplitMedia && current.question.imageUrl ? (
                     <div className="grid h-full w-full grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] items-center gap-7">
                       <div className="custom-scrollbar min-h-0 overflow-y-auto pr-1 text-left">
                         <h2 className={`${frontCopyTone} whitespace-pre-wrap break-words`} style={{ color: theme.text }}>
-                          {current.question.text}
+                          {cleanFlashcardText(current.question.text)}
                         </h2>
                       </div>
                       <div className={`${imageFrameClass} flex items-center justify-center`}>
@@ -461,7 +541,7 @@ export default function FlashcardSession() {
                   ) : (
                     <div className={`custom-scrollbar mx-auto flex max-h-full ${hasMedia ? 'w-full' : ''} ${frontContentWidthClass} flex-col items-center justify-center overflow-y-auto px-1`}>
                       <h2 className={`${frontCopyTone} whitespace-pre-wrap break-words`} style={{ color: theme.text }}>
-                        {current.question.text}
+                        {cleanFlashcardText(current.question.text)}
                       </h2>
 
                       {current.question.imageUrl && (
@@ -485,10 +565,10 @@ export default function FlashcardSession() {
                       animate={faceAnimate}
                       exit={faceExit}
                       transition={faceTransition}
-                      className={`absolute inset-0 rounded-[34px] border border-white/10 ${backPanelPaddingClass} text-center shadow-2xl glass-panel flex flex-col overflow-hidden`}
+                      className={`absolute inset-0 rounded-[34px] border border-[var(--hairline)] ${backPanelPaddingClass} text-center shadow-2xl glass-panel flex flex-col overflow-hidden`}
                       style={{ position: 'absolute', background: theme.isDark ? 'rgba(30,30,35,0.95)' : 'rgba(255,255,255,0.95)', backfaceVisibility: 'hidden' }}
                     >
-                  <div className="mx-auto mb-3 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
+                  <div className="mx-auto mb-3 flex items-center gap-2 rounded-full border border-[var(--hairline)] bg-[var(--fill-subtle)] px-3 py-1.5">
                     <Check size={14} style={{ color: theme.success }} />
                     <span className="text-[10px] font-black uppercase tracking-widest opacity-60" style={{ color: theme.text }}>
                       Răspuns corect
@@ -507,8 +587,8 @@ export default function FlashcardSession() {
                             className={`rounded-[22px] border text-left ${answerCardPaddingClass}`}
                             style={{
                               background: theme.isDark ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.78)',
-                              borderColor: theme.isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.08)',
-                              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10), 0 10px 26px rgba(0,0,0,0.07)',
+                              borderColor: 'var(--hairline)',
+                              boxShadow: 'inset 0 1px 0 var(--glass-highlight), 0 10px 26px rgba(0,0,0,0.07)',
                             }}
                           >
                             <p
@@ -521,7 +601,7 @@ export default function FlashcardSession() {
                               className={`${getAnswerTone(option.text, denseLayout)} whitespace-pre-wrap break-words`}
                               style={{ color: theme.text }}
                             >
-                              {option.text}
+                              {cleanFlashcardText(option.text)}
                             </p>
                           </div>
                         ))}
@@ -531,14 +611,14 @@ export default function FlashcardSession() {
                         <div
                           className="rounded-[20px] border p-4 text-left"
                           style={{
-                            background: theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.035)',
-                            borderColor: theme.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(15,23,42,0.07)',
+                            background: 'var(--fill-subtle)',
+                            borderColor: 'var(--hairline)',
                           }}
                         >
                           <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: theme.text3 }}>
                             Explicația din grilă
                           </p>
-                          <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{cleanQuestionExplanation(current.question.explanation)}</p>
+                          <p className="text-sm leading-relaxed" style={{ color: theme.text2 }}>{cleanFlashcardText(cleanQuestionExplanation(current.question.explanation))}</p>
                         </div>
                       )}
 
@@ -553,8 +633,8 @@ export default function FlashcardSession() {
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="flex items-center gap-2">
-                              <Bot size={15} style={{ color: theme.accent }} />
-                              <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: theme.accent }}>
+                              <Bot size={15} style={{ color: theme.accentText }} />
+                              <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: theme.accentText }}>
                                 {hasKey ? 'Clarificare AI' : 'Clarificare ghidată'}
                               </p>
                             </div>
@@ -562,7 +642,7 @@ export default function FlashcardSession() {
                               className="rounded-full px-2.5 py-1 text-[10px] font-bold"
                               style={{
                                 background: `${theme.accent}16`,
-                                color: theme.accent,
+                                color: theme.accentText,
                                 border: `1px solid ${theme.accent}22`,
                               }}
                             >
@@ -572,9 +652,9 @@ export default function FlashcardSession() {
                           <p className="mt-2 text-xs leading-relaxed" style={{ color: theme.text3 }}>
                             Explicație reformulată pe scurt, într-un ton mai ușor de reținut.
                           </p>
-                          <p className="mt-4 whitespace-pre-wrap text-sm leading-7 sm:text-[15px]" style={{ color: theme.text2 }}>
-                            {aiExplanation}
-                          </p>
+                          <div className="mt-4 text-sm leading-7 sm:text-[15px]" style={{ color: theme.text2 }}>
+                            <AIRichText text={aiExplanation} />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -589,7 +669,7 @@ export default function FlashcardSession() {
                             }}
                             className="press-feedback inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] transition-all"
                             style={{
-                              color: theme.accent,
+                              color: theme.accentText,
                               border: `1px solid ${theme.accent}22`,
                               background: `${theme.accent}10`,
                               boxShadow: `0 10px 24px ${theme.accent}10`,
@@ -600,7 +680,7 @@ export default function FlashcardSession() {
                         )}
 
                         {aiLoading && (
-                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-70" style={{ color: theme.accent }}>
+                          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-70" style={{ color: theme.accentText }}>
                             <Loader2 size={14} className="animate-spin" /> Se analizează...
                           </div>
                         )}
@@ -656,7 +736,7 @@ export default function FlashcardSession() {
                   style={{
                     background: `${theme.accent}10`,
                     border: `1.5px solid ${theme.accent}35`,
-                    color: theme.accent,
+                    color: theme.accentText,
                     boxShadow: `0 12px 24px ${theme.accent}10`,
                   }}
                 >

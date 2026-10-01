@@ -13,6 +13,17 @@ interface RuntimeStore {
   featureFlags: RuntimeFeatureFlags;
   setPerformanceMode: (mode: PerformanceMode) => void;
   setLowPowerMode: (enabled: boolean) => void;
+  /**
+   * Same effect as setLowPowerMode(true) but doesn't persist — for the
+   * automatic "previous boot didn't finish" safety net (see App.tsx /
+   * startupSessionGuard.ts). That detector can't tell a real crash apart from
+   * the app just being closed a second after opening, so degrading THIS
+   * session is a reasonable precaution, but writing it to localStorage would
+   * silently and permanently flatten every animation in the app on every
+   * future launch until the user happens to find the Setări toggle — a much
+   * bigger cost than one cautious session.
+   */
+  setLowPowerModeForThisSessionOnly: () => void;
   setFeatureFlag: <K extends keyof RuntimeFeatureFlags>(flag: K, enabled: RuntimeFeatureFlags[K]) => void;
 }
 
@@ -83,6 +94,7 @@ export const useRuntimeStore = create<RuntimeStore>()((set, get) => ({
       featureFlags: get().featureFlags,
     });
   },
+  setLowPowerModeForThisSessionOnly: () => set({ lowPowerMode: true }),
   setFeatureFlag: (flag, enabled) => {
     const featureFlags = { ...get().featureFlags, [flag]: enabled };
     set({ featureFlags });

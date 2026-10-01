@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Plus, Filter, X, ArrowUpDown, Archive, Tag, BookOpen, Sparkles } from 'lucide-react';
 import { useQuizStore } from '../store/quizStore';
+import { isRezidentiatQuiz } from '../lib/rezidentiatBank';
 import { useTheme } from '../theme/ThemeContext';
 import QuizCard from '../components/QuizCard';
 import ImportQuizButton from '../components/ImportQuizButton';
@@ -22,8 +23,12 @@ export default function QuizList() {
   const ITEMS_PER_PAGE = 12;
   const [page, setPage] = useState(1);
 
-  const activeQuizzes = quizzes.filter(q => !q.archived);
-  const archivedQuizzes = quizzes.filter(q => q.archived);
+  // Rezidențiat content (the real Lawrence+Kumar bank, and any AI-generated
+  // packs from Rezidențiat book chapters) lives only in the Rezidențiat page —
+  // "Toate grilele" is exclusively the year's coursework materii, so it stays
+  // a clean, undiluted subject list instead of a mix of the two.
+  const activeQuizzes = quizzes.filter(q => !q.archived && !isRezidentiatQuiz(q));
+  const archivedQuizzes = quizzes.filter(q => q.archived && !isRezidentiatQuiz(q));
 
   const categories = useMemo(() => 
     ['Toate', ...Array.from(new Set(activeQuizzes.map((q) => q.category).filter(Boolean))).sort()],
@@ -81,7 +86,7 @@ export default function QuizList() {
   if (!_hasHydrated) {
     return (
       <div className="h-full px-8 py-10 max-w-5xl mx-auto">
-        <div className="h-10 w-48 bg-white/5 rounded-2xl mb-10 animate-pulse" />
+        <div className="h-10 w-48 bg-[var(--fill-subtle)] rounded-2xl mb-10 animate-pulse" />
         <SkeletonList count={8} />
       </div>
     );
@@ -96,11 +101,11 @@ export default function QuizList() {
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, color: '#fff' }}>
+                  style={{ background: theme.accent, color: '#fff' }}>
                   <BookOpen size={20} />
                 </div>
                 <h1 className="text-3xl font-black tracking-tight" style={{ color: theme.text }}>
-                  Grilele <span style={{ color: theme.accent }}>Tale</span>
+                  Grilele <span style={{ color: theme.accentText }}>Tale</span>
                 </h1>
               </div>
               <p className="text-sm font-medium opacity-50" style={{ color: theme.text }}>
@@ -110,7 +115,7 @@ export default function QuizList() {
             <div className="flex items-center gap-3">
               <div data-tutorial="btn-import"><ImportQuizButton /></div>
               <Link to="/create"
-                className="flex items-center gap-2.5 px-6 py-3 rounded-2xl font-black text-white transition-all shadow-xl hover:scale-[1.03] active:scale-[0.97]"
+                className="press-feedback accent-shadow-hover flex items-center gap-2.5 px-6 py-3 rounded-2xl font-black text-white shadow-xl"
                 style={{ background: theme.accent, boxShadow: `0 8px 24px ${theme.accent}40` }}>
                 <Plus size={18} strokeWidth={3} />
                 Grilă nouă
@@ -122,9 +127,9 @@ export default function QuizList() {
         {/* Search & Filters Premium Glass Container */}
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }} 
-          className="mb-10 p-6 rounded-[32px] glass-panel premium-shadow border border-white/5">
+          className="mb-10 p-6 rounded-[32px] glass-panel premium-shadow border border-[var(--hairline)]">
           
-          <div className="flex items-center gap-4 px-5 py-4 rounded-2xl transition-all bg-black/5 dark:bg-white/5 border border-white/5 focus-within:border-accent/30 focus-within:bg-transparent">
+          <div className="flex items-center gap-4 px-5 py-4 rounded-2xl transition-[background-color,border-color,box-shadow] duration-300 bg-[var(--fill-subtle)] border border-[var(--hairline)] focus-within:border-[var(--accent)] focus-within:bg-transparent focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
             <Search size={20} className="opacity-40" style={{ color: theme.text }} />
             <input
               type="text"
@@ -136,7 +141,8 @@ export default function QuizList() {
             />
             {search && (
               <button onClick={() => { setSearch(''); setPage(1); }}
-                className="p-1.5 rounded-xl hover:bg-white/10 transition-colors"
+                aria-label="Șterge căutarea"
+                className="fine-row press-feedback p-1.5 hover:!text-[var(--text)]"
                 style={{ color: theme.text3 }}>
                 <X size={16} />
               </button>
@@ -149,12 +155,9 @@ export default function QuizList() {
                 <Tag size={14} className="opacity-30 mr-1" style={{ color: theme.text }} />
                 {allTags.map(tag => (
                   <button key={tag} onClick={() => { setActiveTag(activeTag === tag ? null : tag); setPage(1); }}
-                    className="px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all"
-                    style={{
-                      background: activeTag === tag ? `${theme.accent2}25` : theme.surface2,
-                      border: `1.5px solid ${activeTag === tag ? theme.accent2 + '60' : 'transparent'}`,
-                      color: activeTag === tag ? theme.accent2 : theme.text3,
-                    }}>
+                    aria-pressed={activeTag === tag}
+                    className="fine-chip px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider press-feedback"
+                    style={activeTag === tag ? undefined : { color: theme.text3 }}>
                     #{tag.replace(/>/g, ' › ')}
                   </button>
                 ))}
@@ -166,12 +169,9 @@ export default function QuizList() {
               <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-1">
                 {categories.map((cat) => (
                   <button key={cat} onClick={() => { setCategory(cat); setPage(1); }}
-                    className="px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap"
-                    style={{
-                      background: category === cat ? `${theme.accent}20` : 'transparent',
-                      border: `1.5px solid ${category === cat ? `${theme.accent}50` : 'transparent'}`,
-                      color: category === cat ? theme.accent : theme.text2,
-                    }}>
+                    aria-pressed={category === cat}
+                    className="fine-chip px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest whitespace-nowrap press-feedback"
+                    style={category === cat ? undefined : { color: theme.text2, borderColor: 'transparent' }}>
                     {cat}
                   </button>
                 ))}
@@ -191,10 +191,10 @@ export default function QuizList() {
         <AnimatePresence mode="popLayout">
           {filtered.length === 0 ? (
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-              className="text-center py-24 rounded-[40px] glass-panel border border-dashed border-white/10 premium-shadow">
+              className="text-center py-24 rounded-[40px] glass-panel border border-dashed border-[var(--hairline)] premium-shadow">
               <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center"
                 style={{ background: `${theme.accent}12` }}>
-                <BookOpen size={36} style={{ color: theme.accent, opacity: 0.6 }} />
+                <BookOpen size={36} style={{ color: theme.accentText, opacity: 0.6 }} />
               </div>
               <h2 className="text-2xl font-black mb-2" style={{ color: theme.text }}>
                 {search || category !== 'Toate' ? 'Nicio grilă găsită' : 'Biblioteca ta este goală'}
@@ -207,12 +207,12 @@ export default function QuizList() {
               <div className="flex items-center justify-center gap-4">
                 {(search || category !== 'Toate' || activeTag) && (
                   <button onClick={() => { setSearch(''); setCategory('Toate'); setActiveTag(null); }}
-                    className="px-6 py-3 rounded-2xl font-bold transition-all hover:bg-white/5"
-                    style={{ color: theme.accent }}>
+                    className="fine-row press-feedback px-6 py-3 rounded-2xl font-bold"
+                    style={{ color: theme.accentText }}>
                     Resetează filtrele
                   </button>
                 )}
-                <Link to="/create" className="px-8 py-3 rounded-2xl font-black text-sm text-white shadow-xl transition-all hover:scale-105 active:scale-95"
+                <Link to="/create" className="press-feedback accent-shadow-hover px-8 py-3 rounded-2xl font-black text-sm text-white shadow-xl"
                   style={{ background: theme.accent, boxShadow: `0 8px 24px ${theme.accent}40` }}>
                   <Plus size={18} className="inline mr-2" /> Grilă nouă
                 </Link>
@@ -230,7 +230,7 @@ export default function QuizList() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   onClick={() => setPage(p => p + 1)}
-                  className="col-span-full flex items-center justify-center gap-3 py-5 rounded-[28px] font-black uppercase tracking-[0.2em] text-xs transition-all glass-panel border border-white/5 hover:border-accent/30"
+                  className="press-feedback col-span-full flex items-center justify-center gap-3 py-5 rounded-[28px] font-black uppercase tracking-[0.2em] text-xs glass-panel border border-[var(--hairline)] hover:border-accent/30"
                   style={{ color: theme.text2 }}>
                   <Sparkles size={16} className="text-accent" /> Încarcă mai multe ({filtered.length - paginated.length} rămase)
                 </motion.button>
@@ -244,7 +244,7 @@ export default function QuizList() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-12 pt-12 border-t" style={{ borderColor: theme.border }}>
             <button
               onClick={() => setShowArchived(!showArchived)}
-              className="flex items-center gap-3 mb-6 px-4 py-2 rounded-xl text-sm font-black uppercase tracking-widest transition-all hover:bg-white/5"
+              className="flex items-center gap-3 mb-6 px-4 py-2 rounded-xl text-sm font-black uppercase tracking-widest fine-row"
               style={{ color: theme.text3 }}>
               <Archive size={16} />
               Grile Arhivate ({archivedQuizzes.length})

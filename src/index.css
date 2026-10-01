@@ -1,5 +1,137 @@
 @import "tailwindcss";
 
+/* ── Display typography (self-hosted — Electron has no network guarantee) ──
+ * Bricolage Grotesque is opt-in through the `.display` class; the app body itself
+ * uses the system font stack (SF Pro / Segoe UI / Roboto). */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/bricolage-600-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/bricolage-600-latinext.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/bricolage-700-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/bricolage-700-latinext.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/bricolage-800-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/bricolage-800-latinext.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/manrope-400-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/manrope-400-latinext.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/manrope-500-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/manrope-500-latinext.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/manrope-600-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/manrope-600-latinext.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/manrope-700-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/manrope-700-latinext.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/manrope-800-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/manrope-800-latinext.woff2") format("woff2");
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 @theme {
   --color-border: var(--border);
   --color-input: var(--input);
@@ -108,25 +240,28 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "SF Pro Display", "SF Pro Text", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", Roboto, system-ui, sans-serif;
     -webkit-app-region: no-drag;
     user-select: none;
     transition: background-color 0.25s ease-out, color 0.2s ease-out;
     transform: translateZ(0);
     text-rendering: optimizeLegibility;
   }
+  .display {
+    font-family: "Bricolage Grotesque", "SF Pro Display", "Segoe UI Variable Display", system-ui, sans-serif;
+  }
   :root[data-theme="light"] body {
     background-image:
-      radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 20%),
-      radial-gradient(circle at 86% 14%, color-mix(in srgb, var(--accent2) 10%, transparent), transparent 22%),
+      radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 22%),
+      radial-gradient(circle at 86% 14%, color-mix(in srgb, var(--accent2) 4%, transparent), transparent 24%),
       radial-gradient(circle at 56% 100%, rgba(255,255,255,0.42), transparent 34%),
       linear-gradient(180deg, rgba(255,255,255,0.48), transparent 18%);
     background-attachment: fixed;
   }
   :root[data-theme="dark"] body {
     background-image:
-      radial-gradient(circle at 12% 6%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 26%),
-      radial-gradient(circle at 88% 10%, color-mix(in srgb, var(--accent2) 7%, transparent), transparent 24%),
+      radial-gradient(circle at 12% 6%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 26%),
+      radial-gradient(circle at 88% 10%, color-mix(in srgb, var(--accent2) 4%, transparent), transparent 24%),
       radial-gradient(circle at 50% 112%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 32%);
     background-attachment: fixed;
   }
@@ -190,7 +325,8 @@
     background: color-mix(in srgb, var(--selection) 78%, transparent);
     color: white;
   }
-  input, textarea, [contenteditable="true"] {
+  /* Only text-like fields: sliders, checkboxes, radios, file and color pickers keep their own look. */
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]), textarea, [contenteditable="true"] {
     user-select: text !important;
     cursor: text;
     outline: none !important;
@@ -198,22 +334,24 @@
     background: color-mix(in srgb, var(--input-bg) 82%, transparent);
     border-radius: 16px;
     padding: 10px 14px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px var(--shadow-color-soft);
+    box-shadow: inset 0 1px 0 var(--glass-highlight), 0 1px 2px var(--shadow-color-soft);
     transition: background-color 0.18s ease, border-color 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   }
-  .dark input, .dark textarea {
+  .dark input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]), .dark textarea {
     background: color-mix(in srgb, var(--input-bg) 88%, transparent);
     border: 1px solid color-mix(in srgb, var(--border2) 90%, transparent);
   }
-  input::placeholder, textarea::placeholder {
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"])::placeholder, textarea::placeholder {
     color: var(--text3);
     opacity: 0.65; /* Crescut de la ~0.2-0.3 */
   }
-  input:focus, textarea:focus {
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]):focus, textarea:focus {
     background: color-mix(in srgb, var(--input-bg) 94%, transparent);
     border-color: var(--accent) !important;
-    box-shadow: 0 0 0 3.5px var(--focus-ring), 0 8px 28px var(--shadow-color-soft), inset 0 1px 0 rgba(255,255,255,0.10);
-    transform: scale(1.003);
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring), inset 0 1px 0 var(--glass-highlight);
+  }
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]):hover:not(:focus):not(:disabled), textarea:hover:not(:focus):not(:disabled) {
+    border-color: color-mix(in srgb, var(--border2) 100%, var(--text3) 12%);
   }
   button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
     outline: none !important;
@@ -224,15 +362,29 @@
     cursor: pointer;
     transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94), background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), color 0.16s ease, opacity 0.16s ease;
   }
+  /* Motion tokens — one press/hover feel for buttons, .press-feedback and the
+     Framer presets in theme/motion.ts (keep the three in sync). */
+  :root {
+    --hover-lift: -1px;
+    --hover-scale: 1.01;
+    --press-scale: 0.97;
+    --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-release: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  /* Elements Framer Motion drives (inline transform) must not also get a CSS
+     transform transition — the two easings stack and the motion turns laggy. */
+  button[style*="transform"], a[style*="transform"], [role="button"][style*="transform"] {
+    transition-property: background-color, border-color, box-shadow, color, opacity;
+  }
   button:not(:disabled):hover,
   a[role="button"]:hover,
   [role="button"]:not(:disabled):hover {
-    transform: translateY(-1px);
+    transform: translateY(var(--hover-lift));
   }
   button:not(:disabled):active,
   a[role="button"]:active,
   [role="button"]:not(:disabled):active {
-    transform: translateY(0) scale(0.972);
+    transform: translateY(0) scale(var(--press-scale));
     transition-duration: 0.08s;
   }
   button:disabled {
@@ -259,7 +411,7 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(255,255,255,0.12), transparent 32%);
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 32%);
   opacity: 0.9;
 }
 
@@ -269,7 +421,7 @@
   inset: 1px;
   border-radius: inherit;
   pointer-events: none;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-sheen);
   mask: linear-gradient(180deg, rgba(255,255,255,0.85), transparent 44%);
   opacity: 0.42;
 }
@@ -292,7 +444,7 @@
   inset: 10px 10px 14px 10px;
   border-radius: calc(var(--shell-curve) + 10px);
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.08), transparent 20%),
+    linear-gradient(180deg, var(--glass-sheen), transparent 20%),
     radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 36%);
   pointer-events: none;
   opacity: 0.85;
@@ -307,7 +459,7 @@
   border: 1px solid color-mix(in srgb, var(--border2) 68%, transparent);
   background: color-mix(in srgb, var(--glass-panel) 96%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 1px 0 var(--glass-highlight),
     0 26px 70px var(--shadow-color-soft),
     0 6px 18px rgba(0,0,0,0.04);
 }
@@ -321,7 +473,7 @@
     linear-gradient(180deg, color-mix(in srgb, var(--surface2) 92%, transparent), color-mix(in srgb, var(--surface) 86%, transparent));
   border: 1px solid color-mix(in srgb, var(--border2) 70%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.09),
+    inset 0 1px 0 var(--glass-highlight),
     0 32px 76px var(--shadow-color-soft);
 }
 
@@ -343,7 +495,7 @@
   background: color-mix(in srgb, var(--glass-panel) 98%, transparent);
   border: 1px solid color-mix(in srgb, var(--border2) 70%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 1px 0 var(--glass-highlight),
     0 22px 52px var(--shadow-color-soft),
     0 2px 10px rgba(0,0,0,0.03);
 }
@@ -352,7 +504,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(165deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.04) 38%, transparent 58%);
+  background: linear-gradient(165deg, var(--glass-sheen) 0%, color-mix(in srgb, var(--glass-sheen) 35%, transparent) 38%, transparent 58%);
   pointer-events: none;
 }
 
@@ -361,7 +513,7 @@
     linear-gradient(180deg, color-mix(in srgb, var(--glass-panel-strong) 98%, transparent), color-mix(in srgb, var(--glass-panel) 92%, transparent));
   border: 1px solid color-mix(in srgb, var(--border2) 72%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 1px 0 var(--glass-highlight),
     0 34px 90px rgba(0,0,0,0.22),
     0 10px 24px rgba(0,0,0,0.06);
 }
@@ -383,7 +535,7 @@
 .message-bubble-assistant {
   background: color-mix(in srgb, var(--surface2) 94%, transparent);
   border: 1px solid color-mix(in srgb, var(--border2) 64%, transparent);
-  box-shadow: 0 10px 26px var(--shadow-color-soft), inset 0 1px 0 rgba(255,255,255,0.07);
+  box-shadow: 0 10px 26px var(--shadow-color-soft), inset 0 1px 0 var(--glass-highlight);
 }
 
 .citation-pill {
@@ -395,7 +547,7 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 14px var(--shadow-color-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 6px 14px var(--shadow-color-soft);
   transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease, box-shadow 0.22s ease, transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
@@ -403,7 +555,7 @@ button.citation-pill:hover {
   border-color: var(--accent-glow);
   background: var(--accent-soft);
   color: var(--accent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 20px var(--accent-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 8px 20px var(--accent-soft);
   transform: translateY(-1px);
 }
 
@@ -416,24 +568,24 @@ button.citation-pill:hover {
   position: absolute;
   inset: 1px;
   border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255,255,255,0.10), transparent 32%);
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 32%);
   opacity: 0.9;
   pointer-events: none;
 }
 
 .premium-option-card:hover {
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.10),
+    inset 0 1px 0 var(--glass-highlight),
     0 26px 60px var(--shadow-color-soft),
     0 8px 18px rgba(0,0,0,0.06);
 }
 
 .premium-option-badge {
-  box-shadow: 0 14px 28px var(--shadow-color-soft), inset 0 1px 0 rgba(255,255,255,0.14);
+  box-shadow: 0 14px 28px var(--shadow-color-soft), inset 0 1px 0 var(--glass-highlight);
 }
 
 .premium-empty-state {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 22px 48px var(--shadow-color-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 22px 48px var(--shadow-color-soft);
 }
 
 /* ── Custom Thin Scrollbar ── */
@@ -509,45 +661,57 @@ button.citation-pill:hover {
 .skeleton-block {
   background:
     linear-gradient(105deg,
-      rgba(255,255,255,0.00) 0%,
-      rgba(255,255,255,0.00) 30%,
-      rgba(255,255,255,0.07) 48%,
-      rgba(255,255,255,0.11) 52%,
-      rgba(255,255,255,0.07) 56%,
-      rgba(255,255,255,0.00) 72%,
-      rgba(255,255,255,0.00) 100%
+      transparent 0%,
+      transparent 30%,
+      color-mix(in srgb, var(--skeleton) 70%, transparent) 48%,
+      var(--skeleton) 52%,
+      color-mix(in srgb, var(--skeleton) 70%, transparent) 56%,
+      transparent 72%,
+      transparent 100%
     );
   background-size: 260% 100%;
   animation: skeleton-shimmer 1.7s linear infinite;
   border: 1px solid color-mix(in srgb, var(--border2) 70%, transparent);
 }
 
+/*
+ * Rest → hover/active uses a fast, linear-ish curve (you should feel the
+ * press land instantly). Active → rest (the release) uses a "back" easing
+ * that overshoots past 1 before settling — the bounce is what makes letting
+ * go feel rewarding instead of just "undoing" the press. Since this is the
+ * base rule (not scoped to :hover/:active), it's what governs every
+ * transform transition back to rest.
+ */
 .press-feedback {
-  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.16s ease, filter 0.18s ease;
+  transition: transform 0.32s var(--ease-release), box-shadow 0.26s ease, opacity 0.16s ease, filter 0.2s ease;
 }
 
-.press-feedback:hover {
-  transform: translateY(-1.5px);
-  filter: saturate(1.03);
-  box-shadow: 0 8px 24px var(--shadow-color-soft);
+.press-feedback:hover,
+button.press-feedback:not(:disabled):hover {
+  transform: translateY(var(--hover-lift)) scale(var(--hover-scale));
+  filter: saturate(1.05);
+  box-shadow: 0 10px 26px var(--shadow-color-soft);
+  transition-duration: 0.16s;
 }
 
-.press-feedback:active {
-  transform: translateY(0) scale(0.972);
-  transition-duration: 0.08s;
-  filter: saturate(0.98);
+.press-feedback:active,
+button.press-feedback:not(:disabled):active {
+  transform: translateY(0) scale(var(--press-scale));
+  transition: transform 0.09s cubic-bezier(0.4, 0, 0.6, 1), filter 0.1s ease, box-shadow 0.12s ease;
+  filter: saturate(0.96);
+  box-shadow: 0 2px 8px var(--shadow-color-soft);
 }
 
 .premium-chip {
   background: color-mix(in srgb, var(--glass-panel-strong) 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--border2) 72%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 20px var(--shadow-color-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 20px var(--shadow-color-soft);
   transition: border-color 0.18s ease, box-shadow 0.22s ease;
 }
 
 .premium-chip:hover {
   border-color: var(--accent-glow);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 26px var(--accent-soft);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 12px 26px var(--accent-soft);
 }
 
 /* ── Theme switch crossfade (View Transitions API) ── */
@@ -568,7 +732,7 @@ button.citation-pill:hover {
 
 .premium-card-hover:hover {
   transform: translateY(-3px);
-  box-shadow: 0 28px 60px var(--shadow-color-soft), 0 6px 18px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.10);
+  box-shadow: 0 28px 60px var(--shadow-color-soft), 0 6px 18px rgba(0,0,0,0.04), inset 0 1px 0 var(--glass-highlight);
 }
 
 .soft-divider {
@@ -597,7 +761,7 @@ button.citation-pill:hover {
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 24px rgba(0,0,0,0.03);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 24px rgba(0,0,0,0.03);
 }
 
 :root[data-theme="light"] .glass-panel,
@@ -605,8 +769,16 @@ button.citation-pill:hover {
 :root[data-theme="light"] .matte-surface {
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.88),
+    0 0 0 0.5px rgba(60,60,67,0.10),
+    0 1px 3px rgba(26,33,56,0.07),
     0 22px 48px rgba(26,33,56,0.08),
     0 4px 16px rgba(26,33,56,0.04);
+}
+
+:root[data-theme="dark"] .apple-titlebar {
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 8px 20px rgba(0,0,0,0.28);
 }
 
 :root[data-theme="light"] .apple-titlebar {
@@ -650,6 +822,12 @@ button.citation-pill:hover {
 :root[data-performance="lite"] [role="button"],
 :root[data-performance="lite"] label {
   transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+:root[data-performance="lite"] button:not(:disabled):hover,
+:root[data-performance="lite"] a[role="button"]:hover,
+:root[data-performance="lite"] [role="button"]:not(:disabled):hover {
+  transform: none;
 }
 
 :root[data-performance="lite"] .interactive-lift:hover {
@@ -769,8 +947,317 @@ button.citation-pill:hover {
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 639px) {
   .studyx-sidebar {
     display: none !important;
   }
+}
+
+/* While a fullscreen overlay (tur de noutăți, tutorial) is open, the ambient
+   orbs sit behind its backdrop-filter. Anything moving back there forces the
+   blurred backdrop to be recomputed every frame, which is what made the tour
+   animations stutter. The orbs are invisible under the overlay anyway. */
+:root[data-overlay="open"] .animated-background-orb {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ── POLISH v2.2 — Serotonin UI (Lent, fluid, luxos, fără recul) ──
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Intrare pagini — fade + lift lung și catifelat ── */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.page-enter {
+  animation: page-enter 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Card pop-in — intrare organică ── */
+@keyframes card-pop {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.card-pop {
+  animation: card-pop 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.card-pop-stagger > *:nth-child(1)  { animation: card-pop 0.65s 0.00s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(2)  { animation: card-pop 0.65s 0.08s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(3)  { animation: card-pop 0.65s 0.16s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(4)  { animation: card-pop 0.65s 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(5)  { animation: card-pop 0.65s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(6)  { animation: card-pop 0.65s 0.34s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.card-pop-stagger > *:nth-child(n+7){ animation: card-pop 0.65s 0.40s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* ── Glow pulse — Respirație lentă ── */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0   var(--accent-soft), 0 4px 16px var(--shadow-color-soft); }
+  50%       { box-shadow: 0 0 0 8px transparent,        0 12px 32px var(--accent-soft); }
+}
+.glow-pulse {
+  animation: glow-pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── Float ambiant — foarte lent ── */
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-3px); }
+}
+.float-gentle {
+  animation: float-gentle 5s ease-in-out infinite;
+}
+
+/* ── Shimmer text — val de lumină lent ── */
+@keyframes shimmer-text {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+.shimmer-text {
+  background: linear-gradient(
+    105deg,
+    var(--text) 0%,
+    var(--text) 40%,
+    color-mix(in srgb, var(--accent) 90%, white) 50%,
+    var(--text) 60%,
+    var(--text) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer-text 5s linear infinite;
+}
+
+/* ── Hover lift — lent, de expansiune (serotonin) ── */
+.lift-card {
+  transition:
+    transform  0.55s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.4s ease;
+  will-change: transform, box-shadow;
+}
+.lift-card:hover {
+  transform: translateY(-2px) scale(1.012);
+  box-shadow:
+    0 24px 64px var(--shadow-color-soft),
+    0 8px  24px rgba(0,0,0,0.04),
+    inset 0 1px 0 var(--glass-highlight);
+}
+.lift-card:active {
+  transform: translateY(-0.5px) scale(0.995);
+  transition-duration: 0.2s;
+}
+
+/* ── Umbră colorată accent — extindere organică ── */
+.accent-shadow {
+  box-shadow:
+    0 8px 28px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 2px 8px  color-mix(in srgb, var(--accent) 8%, transparent),
+    inset 0 1px 0 var(--glass-highlight);
+}
+.accent-shadow-hover {
+  transition: box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.accent-shadow-hover:hover {
+  box-shadow:
+    0 16px 44px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 6px  16px color-mix(in srgb, var(--accent) 12%, transparent),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+/* ── Reveal line — tranziție catifelată ── */
+.reveal-line { position: relative; }
+.reveal-line::after {
+  content: "";
+  position: absolute;
+  bottom: -1px; left: 50%; right: 50%;
+  height: 2px;
+  border-radius: 99px;
+  background: var(--accent);
+  transition:
+    left    0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    right   0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.4s ease;
+  opacity: 0;
+}
+.reveal-line:hover::after,
+.reveal-line[data-active="true"]::after {
+  left: 12%; right: 12%; opacity: 1;
+}
+
+/* ── Icon pop — respirație lentă fără rotire zbuciumată ── */
+.icon-pop {
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), color 0.4s ease, filter 0.4s ease;
+  display: inline-flex;
+}
+.icon-pop:hover {
+  transform: scale(1.08);
+  filter: drop-shadow(0 4px 12px var(--shadow-color-soft));
+}
+
+/* ── Badge entrance — catifelat ── */
+@keyframes badge-in {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.badge-in {
+  animation: badge-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Progress bar fill ── */
+@keyframes progress-fill { from { width: 0%; } }
+.progress-fill-anim {
+  animation: progress-fill 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Inset depth — suprafețe concave ── */
+.inset-depth {
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.06), inset 0 1px 3px rgba(0,0,0,0.04);
+}
+:root[data-theme="dark"] .inset-depth {
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.18), inset 0 1px 4px rgba(0,0,0,0.10);
+}
+
+/* ── Focus ring premium ── */
+.focus-ring-premium:focus-visible {
+  outline: none !important;
+  box-shadow:
+    0 0 0 2px   var(--bg),
+    0 0 0 4.5px var(--accent),
+    0 4px 20px  color-mix(in srgb, var(--accent) 30%, transparent) !important;
+  transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .card-pop, .card-pop-stagger > *,
+  .glow-pulse, .float-gentle, .shimmer-text, .badge-in, .progress-fill-anim {
+    animation: none !important; opacity: 1 !important; transform: none !important;
+  }
+  .lift-card:hover, .icon-pop:hover { transform: none !important; }
+  button, a, [role="button"], .press-feedback { transition-property: background-color, border-color, box-shadow, color, opacity !important; }
+  button:hover, button:active, a[role="button"]:hover, a[role="button"]:active,
+  [role="button"]:hover, [role="button"]:active, .press-feedback:hover, .press-feedback:active { transform: none !important; }
+}
+
+/* ── Performance lite ── */
+:root[data-performance="lite"] .lift-card:hover,
+:root[data-performance="lite"] .icon-pop:hover { transform: none; filter: none; }
+:root[data-performance="lite"] .glow-pulse,
+:root[data-performance="lite"] .float-gentle,
+:root[data-performance="lite"] .shimmer-text { animation: none; }
+
+
+
+/* ── Chat AI în ecran complet (sticlă) ── */
+.immersive-chat .message-bubble-assistant {
+  background: color-mix(in srgb, var(--surface2) 58%, transparent);
+}
+.immersive-chat .custom-scrollbar {
+  scrollbar-gutter: stable;
+}
+@media (prefers-reduced-motion: reduce) {
+  .immersive-chat { transition: none !important; }
+}
+
+/* Sheet <-> ecran complet: aceeași cutie, își schimbă geometria fluid */
+.chat-panel-morph {
+  transition:
+    left 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
+    top 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
+    width 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
+    height 0.42s cubic-bezier(0.2, 0.9, 0.28, 1),
+    border-radius 0.42s cubic-bezier(0.2, 0.9, 0.28, 1);
+}
+
+/* ── Interacțiuni fine (rețeta din bara laterală, pe tokeni) ─────────────────
+   .fine-row  – rând / buton plat: fundal discret la hover, tint accent când e activ
+   .fine-card – card: linia de sus se luminează și marginea se apropie de accent
+   .fine-chip – etichetă / filtru: hover discret, activ = tint + margine accent   */
+/* Textul generat de AI (coduri, adrese lungi) nu are voie să iasă din balon. */
+.ai-rich-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Câmp de text fără chenar propriu, pentru cazul în care un input stă într-un container deja stilat
+   (ex. câmpul de căutare): altfel regula globală pentru input desenează un al doilea chenar. */
+.input-bare,
+.input-bare:hover,
+.input-bare:focus {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0;
+  padding: 0;
+}
+.search-field:focus-within {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring);
+}
+
+/* Radius lives in a layer so rounded-full / rounded-2xl on a row still win; unlayered, it beat them. */
+@layer components {
+  .fine-row { border-radius: 12px; }
+}
+.fine-row {
+  transition: background-color 0.5s var(--ease-out-soft), color 0.3s var(--ease-out-soft), box-shadow 0.5s var(--ease-out-soft);
+}
+/* A row is a whole-width surface: the global button hover lift / press shrink made list separators jump. */
+.fine-row:hover, .fine-row:active { transform: none; }
+.fine-row:hover:not([aria-current="page"]):not([data-active="true"]) {
+  background-color: var(--hover-fill);
+}
+.fine-row[aria-current="page"],
+.fine-row[data-active="true"] {
+  background-color: var(--accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 19%, transparent), 0 4px 18px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.fine-card {
+  border: 1px solid var(--hairline);
+  transition: border-color 0.4s var(--ease-out-soft), box-shadow 0.5s var(--ease-out-soft), transform 0.5s var(--ease-out-soft);
+}
+.fine-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--hairline));
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 28px var(--shadow-color-soft);
+}
+
+.fine-chip {
+  border: 1px solid var(--hairline);
+  background: transparent;
+  transition: background-color 0.3s var(--ease-out-soft), border-color 0.3s var(--ease-out-soft), color 0.3s var(--ease-out-soft), box-shadow 0.4s var(--ease-out-soft);
+}
+.fine-chip:hover:not([aria-pressed="true"]):not([data-active="true"]) {
+  background-color: var(--hover-fill);
+}
+.fine-chip[aria-pressed="true"],
+.fine-chip[data-active="true"] {
+  background-color: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+/* Inel de focus consecvent pe tastatură (spațiu de fundal + accent), pentru tot ce poate primi focus. */
+.fine-card:focus-visible,
+.fine-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring);
+}
+/* Rows sit inside cards with overflow-hidden, which clip an outer ring: draw it inside, in solid accent. */
+.fine-row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+/* A selected row in a list: the tint is enough, without the glow (and it keeps its focus ring). */
+.fine-row--flat[data-active="true"] { box-shadow: none; }
+.fine-row--flat[data-active="true"]:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fine-row, .fine-card, .fine-chip { transition-duration: 0.01ms !important; }
+}
+:root[data-performance="lite"] .fine-row,
+:root[data-performance="lite"] .fine-card,
+:root[data-performance="lite"] .fine-chip {
+  transition-duration: 0.12s;
 }

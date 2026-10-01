@@ -335,25 +335,23 @@
   }
 }
 
-/* Dark mode accessibility adjustments */
-@media (prefers-color-scheme: dark) {
-  .skip-links {
-    background: #1f2937;
-    border-bottom-color: #3b82f6;
-  }
+/* Dark mode accessibility adjustments — follow the theme the user chose in the app, not the OS */
+:root[data-theme="dark"] .skip-links {
+  background: #1f2937;
+  border-bottom-color: #3b82f6;
+}
 
-  .skip-links button {
-    background: #374151;
-    color: #f9fafb;
-    border-color: #4b5563;
-  }
+:root[data-theme="dark"] .skip-links button {
+  background: #374151;
+  color: #f9fafb;
+  border-color: #4b5563;
+}
 
-  .skip-links button:hover,
-  .skip-links button:focus {
-    background: #3b82f6;
-    color: #ffffff;
-    border-color: #3b82f6;
-  }
+:root[data-theme="dark"] .skip-links button:hover,
+:root[data-theme="dark"] .skip-links button:focus {
+  background: #3b82f6;
+  color: #ffffff;
+  border-color: #3b82f6;
 }
 
 /* Accessibility testing helpers */

@@ -9,11 +9,14 @@ interface QuizStore {
   _hasHydrated: boolean;
   addQuiz: (quiz: Quiz) => void;
   updateQuiz: (id: string, updates: Partial<Quiz>) => void;
-  deleteQuiz: (id: string) => void;
+  /** `keepImages` defers the picture purge, for deletions that can still be undone. */
+  deleteQuiz: (id: string, options?: { keepImages?: boolean }) => void;
   duplicateQuiz: (id: string) => string | null;
   togglePin: (id: string) => void;
   toggleArchive: (id: string) => void;
   moveToFolder: (quizId: string, folderId: string | null) => void;
+  /** Detach quizzes from folders that no longer exist, so they stay reachable. */
+  detachFromFolders: (folderIds: string[]) => void;
   addSession: (session: QuizSession) => void;
   getSessionsForQuiz: (quizId: string) => QuizSession[];
   getBestScore: (quizId: string) => number | null;
@@ -39,8 +42,16 @@ export const useQuizStore = create<QuizStore>()(
         quizzes: s.quizzes.map((q) => q.id === id ? { ...q, ...updates, updatedAt: Date.now() } : q),
       })),
 
-    deleteQuiz: (id) => {
-      void import('../lib/flashcardImageStore').then((m) => m.deleteFlashcardImagesForQuiz(id)).catch((e) => console.error('[StudyX] Failed to delete flashcard images for quiz', id, e));
+    deleteQuiz: (id, options) => {
+      // `keepImages` is for deletions that can still be undone. The image purge
+      // used to fire unconditionally as a floating promise, so an undo restored
+      // the deck with every picture already gone — and the delete could even
+      // land AFTER the undo. Whatever is kept is reclaimed by cleanupOrphanImages.
+      if (!options?.keepImages) {
+        void import('../lib/flashcardImageStore')
+          .then((m) => m.deleteFlashcardImagesForQuiz(id))
+          .catch((e) => console.error('[StudyX] Failed to delete flashcard images for quiz', id, e));
+      }
       set((s) => ({ quizzes: s.quizzes.filter((q) => q.id !== id) }));
     },
 
@@ -60,6 +71,9 @@ export const useQuizStore = create<QuizStore>()(
         questions: original.questions.map((q) => ({
           ...q,
           id: uid(),
+          // Deep copy al opțiunilor — referința partajată ar face ca editele din
+          // copie să modifice și originalul (shallow copy bug).
+          options: (q.options ?? []).map((o) => ({ ...o, id: uid() })),
         })),
       };
       set((s) => ({ quizzes: [copy, ...s.quizzes] }));
@@ -82,6 +96,14 @@ export const useQuizStore = create<QuizStore>()(
       set((s) => ({
         quizzes: s.quizzes.map((q) => q.id === quizId ? { ...q, folderId } : q),
       })),
+
+    detachFromFolders: (folderIds) =>
+      set((s) => {
+        const removed = new Set(folderIds);
+        return {
+          quizzes: s.quizzes.map((q) => (q.folderId && removed.has(q.folderId) ? { ...q, folderId: null } : q)),
+        };
+      }),
 
     addSession: (session) =>
       set((s) => ({ sessions: [session, ...s.sessions] })),
@@ -114,9 +136,24 @@ export const useQuizStore = create<QuizStore>()(
       })),
 
     cleanupOrphanImages: () => {
-      // Images stored as base64 in questions — no action needed for orphan cleanup
-      // since images are embedded directly in question data
-      // This is a no-op stub for API compatibility
+      // Was a no-op stub whose comment claimed images live inline as base64 —
+      // they haven't since flashcardImageStore moved them to IndexedDB, so
+      // pictures from deleted decks simply accumulated forever.
+      void (async () => {
+        try {
+          const store = await import('../lib/flashcardImageStore');
+          const stored = await store.listFlashcardImageQuizIds();
+          // Re-read AFTER the await — reading before would snapshot the quiz list
+          // before the IO, then any deck added concurrently during the await would
+          // not be in `owned` and its images would be wrongly deleted as "orphans".
+          const owned = new Set(get().quizzes.map((q) => q.id));
+          await Promise.all(
+            stored.filter((quizId) => !owned.has(quizId)).map((quizId) => store.deleteFlashcardImagesForQuiz(quizId)),
+          );
+        } catch (error) {
+          console.error('[StudyX] Orphan image cleanup failed', error);
+        }
+      })();
     },
 
     _hydrate: (data) => set({ quizzes: data.quizzes ?? [], sessions: data.sessions ?? [], _hasHydrated: true }),

@@ -17,7 +17,7 @@ export default function CategoryRadarChart({ data, theme }: { data: RadarPoint[]
   return (
     <ResponsiveContainer width="100%" height={260}>
       <RadarChart data={chartData}>
-        {detail.showGrid && <PolarGrid stroke={theme.border} />}
+        {detail.showGrid && <PolarGrid stroke="var(--hairline)" />}
         <PolarAngleAxis dataKey="subject" tick={{ fill: theme.text3, fontSize: 11 }} />
         <Radar
           dataKey="acuratete"

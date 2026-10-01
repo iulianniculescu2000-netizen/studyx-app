@@ -58,8 +58,8 @@ function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: ()
       className="fixed inset-0 z-[19999] flex cursor-zoom-out items-center justify-center bg-black/90 p-6 backdrop-blur-xl"
     >
       <motion.button
-        whileHover={{ scale: 1.1, rotate: 90 }}
-        whileTap={{ scale: 0.9 }}
+        whileHover={{ scale: 1.08, rotate: 90 }}
+        whileTap={{ scale: 0.94 }}
         onClick={onClose}
         className="absolute right-6 top-6 z-[20000] flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white backdrop-blur-md"
       >
@@ -138,8 +138,8 @@ export default function QuizImage({
   const imageRadius = variant === 'flashcard' ? 18 : variant === 'compact' ? 10 : 12;
   const framePadding = variant === 'flashcard' ? 10 : variant === 'compact' ? 6 : 8;
   const shadow = variant === 'flashcard'
-    ? 'inset 0 1px 0 rgba(255,255,255,0.10), 0 22px 44px rgba(0,0,0,0.18)'
-    : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 24px rgba(0,0,0,0.10)';
+    ? 'inset 0 1px 0 var(--glass-highlight), 0 22px 44px rgba(0,0,0,0.18)'
+    : 'inset 0 1px 0 var(--glass-highlight), 0 10px 24px rgba(0,0,0,0.10)';
 
   return (
     <>

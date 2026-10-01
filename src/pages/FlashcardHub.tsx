@@ -1,22 +1,35 @@
 import { motion } from 'framer-motion';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { localDateStr } from '../lib/studyPlan';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useAIStore } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
+import { useToastStore } from '../store/toastStore';
+import { friendlyAIError, rateLimitWaitSeconds } from '../lib/ai/friendlyError';
+import { suggestFlashcardFolder } from '../lib/flashcardPlacement';
 import { useFolderStore } from '../store/folderStore';
-import { notesToFlashcards } from '../lib/groq';
+import { useFlashcardHubSession, getFlashcardResume, type FlashcardResumeHandle } from '../store/flashcardHubSessionStore';
+import TourHelpButton from '../tutorial/TourHelpButton';
+import { FlashcardGenerationInterrupted, NoNewFlashcardsError, notesToFlashcards } from '../lib/groq';
 import { buildMistakeFlashcardQuiz } from '../lib/adaptiveStudy';
 import { extractCaptionedImagesFromPdf, renderPdfPagesAsImages, renderPdfPagesWithText, resizeImageFile, type CaptionedPdfImage, type PdfFlashcardPageSnapshot } from '../lib/imageProcessing';
 import { flashcardImageKey, flashcardImageRef, putFlashcardImage } from '../lib/flashcardImageStore';
 import { isFlashcardDeck } from '../lib/deckKind';
 import { CARD_COLOR_MAP } from '../theme/colorMaps';
-import type { Difficulty, Question } from '../types';
+import type { Difficulty, Folder, Question } from '../types';
 import { suggestFolderAppearance } from '../lib/folderAppearance';
-import { FlashcardDeckGrid, FlashcardHubActions } from './flashcard-hub/sections';
+import {
+  FlashcardDeckGrid,
+  FlashcardHubActions,
+  GeneratedDeckCard,
+  ReviewHeroCard,
+  type GeneratedDeckInfo,
+} from './flashcard-hub/sections';
+import { AnkiImportModal } from './flashcard-hub/AnkiImportModal';
 
 function generateId() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
@@ -25,7 +38,6 @@ function generateId() {
 const OPTION_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
 const FLASHCARD_ANSWER_SOFT_LIMIT = 210;
 const VISUAL_FLASHCARD_IMAGE_MAX_EDGE = 1680;
-const USE_NATIVE_TEXT_ONLY_PDF_IMPORT = false;
 const PHOTO_CARD_PROMPT = 'Privește imaginea și descrie aspectul clinic.';
 const LAST_FOLDER_LS_KEY = 'studyx-flashcard-last-folder';
 
@@ -78,24 +90,28 @@ function splitFlashcardAnswer(rawBack: string) {
   let explanation = '';
 
   if (sentences.length > 1) {
+    // Track where the answer ends inside `cleaned`, so the explanation starts exactly after it
+    // even when sentences were separated by newlines (which the split above consumed).
+    let end = 0;
     for (const sentence of sentences) {
-      const candidate = `${answer} ${sentence}`.trim();
+      const sentenceEnd = cleaned.indexOf(sentence, end) + sentence.length;
+      const candidate = cleaned.slice(0, sentenceEnd).trim();
       if (candidate.length > FLASHCARD_ANSWER_SOFT_LIMIT) break;
       answer = candidate;
+      end = sentenceEnd;
       if (answer.length >= 120) break;
     }
 
-    if (answer) {
-      explanation = cleaned.slice(answer.length).trim().replace(/^[,;:\-\s]+/, '');
+    if (!answer) {
+      // The first sentence alone is longer than the limit: keep it whole.
+      answer = sentences[0];
+      end = cleaned.indexOf(sentences[0]) + sentences[0].length;
     }
+    explanation = cleaned.slice(end).trim().replace(/^[,;:\-\s]+/, '');
   }
 
-  if (!answer) {
-    const softCut = cleaned.lastIndexOf(' ', FLASHCARD_ANSWER_SOFT_LIMIT);
-    const splitIndex = softCut > 96 ? softCut : FLASHCARD_ANSWER_SOFT_LIMIT;
-    answer = `${cleaned.slice(0, splitIndex).trim()}...`;
-    explanation = cleaned.slice(splitIndex).trim().replace(/^[,;:\-\s]+/, '');
-  }
+  // One long sentence (or nothing to split on): show it whole instead of cutting it mid-sentence with "...".
+  if (!answer) return { answer: cleaned, explanation: '' };
 
   return { answer, explanation };
 }
@@ -136,17 +152,26 @@ function pickKeywords(value: string) {
     .slice(0, 12);
 }
 
+/**
+ * Images travel inside the deck as data URLs, i.e. inside the profile's localStorage entry (a few MB in
+ * all). A handful of modest images is worth it; dozens of full pages would crowd out the user's data.
+ */
+const MAX_DECK_IMAGES = 10;
+const MAX_IMAGE_DATA_URL_CHARS = 260_000;
+
 function attachRelevantPdfImages(questions: Question[], pages: PdfFlashcardPageSnapshot[]) {
   if (pages.length === 0 || questions.length === 0) return questions;
 
   const visualCandidates = pages
     .flatMap((page) => page.visuals.map((visual) => ({ page, visual })))
+    .filter(({ visual }) => visual.dataUrl.length <= MAX_IMAGE_DATA_URL_CHARS)
     .slice(0, 40);
   if (visualCandidates.length === 0) return questions;
 
   const usedPages = new Set<number>();
 
   return questions.map((question) => {
+    if (usedPages.size >= MAX_DECK_IMAGES) return question;
     const keywords = pickKeywords(`${question.text} ${question.options[0]?.text ?? ''}`);
     let bestCandidate: typeof visualCandidates[number] | null = null;
     let bestScore = 0;
@@ -180,10 +205,13 @@ function attachRelevantPdfImages(questions: Question[], pages: PdfFlashcardPageS
 export default function FlashcardHub() {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { quizzes, addQuiz } = useQuizStore();
+  const { quizzes, addQuiz, updateQuiz } = useQuizStore();
+  const addToast = useToastStore((state) => state.addToast);
   const folders = useFolderStore((state) => state.folders);
   const addFolder = useFolderStore((state) => state.addFolder);
-  const { questionStats, getDueQuestions } = useStatsStore();
+  const { questionStats } = useStatsStore();
+  const streak = useStatsStore((state) => state.streak);
+  const createSectionRef = useRef<HTMLDivElement>(null);
   const { hasKey, addKnowledgeSource, knowledgeSources } = useAIStore();
   const activeProfileId = useUserStore((state) => state.activeProfileId);
 
@@ -196,6 +224,16 @@ export default function FlashcardHub() {
   const [photoError, setPhotoError] = useState('');
   const [aiProgress, setAiProgress] = useState('');
   const [libraryGenerating, setLibraryGenerating] = useState(false);
+  const [ankiModalOpen, setAnkiModalOpen] = useState(false);
+  // Kept outside the page so leaving and coming back doesn't lose the card or the way to resume.
+  const hubSession = useFlashcardHubSession();
+  const createdDeck = hubSession.profileId === activeProfileId ? hubSession.createdDeck : null;
+  const setCreatedDeck = (next: GeneratedDeckInfo | null | ((previous: GeneratedDeckInfo | null) => GeneratedDeckInfo | null)) => (
+    useFlashcardHubSession.getState().setCreatedDeck(activeProfileId, next)
+  );
+  const setResume = (next: FlashcardResumeHandle | null) => useFlashcardHubSession.getState().setResume(activeProfileId, next);
+  const [resuming, setResuming] = useState(false);
+  const createdCardRef = useRef<HTMLDivElement>(null);
   const [targetFolderId, setTargetFolderId] = useState<string>(() => {
     if (typeof localStorage === 'undefined') return '__uncategorized__';
     return localStorage.getItem(LAST_FOLDER_LS_KEY) ?? '__uncategorized__';
@@ -222,6 +260,112 @@ export default function FlashcardHub() {
     return addFolder(name, parentId ? '📁' : appearance.emoji, appearance.color, parentId);
   };
 
+  // Where an AI deck goes: the folder picked in "Salvează în", else a folder whose
+  // name matches the course, else Neclasificate.
+  const resolveGeneratedFolder = (sourceName: string): { folder: Folder | null; suggested: boolean } => {
+    if (selectedFolder) return { folder: selectedFolder, suggested: false };
+    const match = suggestFlashcardFolder(sourceName, folders);
+    return { folder: match, suggested: match !== null };
+  };
+
+  // A finished AI deck is announced, not silently opened: a toast says where it
+  // landed and the card at the top of the page lets the user move it.
+  const announceGeneratedDeck = (deck: {
+    id: string;
+    title: string;
+    count: number;
+    folder: Folder | null;
+    suggested: boolean;
+    /** The AI stopped early: the deck holds what was made and can be resumed. */
+    interrupted?: { requested: number; reason: string; waitSeconds: number | null };
+  }) => {
+    setCreatedDeck({
+      id: deck.id,
+      title: deck.title,
+      count: deck.count,
+      folderId: deck.folder?.id ?? null,
+      suggested: deck.suggested,
+      interrupted: deck.interrupted ? { ...deck.interrupted, at: Date.now() } : undefined,
+    });
+    const where = deck.folder ? `„${deck.folder.name}"` : 'Neclasificate';
+    if (deck.interrupted) {
+      addToast(
+        `Am creat ${deck.count} din ${deck.interrupted.requested} flashcarduri în ${where}. ${deck.interrupted.reason}`,
+        'warning',
+        9000,
+      );
+      return;
+    }
+    addToast(
+      `Flashcardurile au fost generate în ${where}.`,
+      'success',
+      7000,
+      { label: 'Începe', onClick: () => navigate(`/flashcards/session/${deck.id}?mode=all`) },
+    );
+  };
+
+  // Runs the AI for one deck. If it fails after some cards exist, those come back
+  // with the reason instead of being lost, so the deck can be created and resumed.
+  const generateCards = async (
+    text: string,
+    sourceName: string,
+    count: number,
+    resume?: { startChunk: number; chunkBudget: number; already: number; requested: number; avoidFronts: string[] },
+  ): Promise<{
+    cards: { front: string; back: string }[];
+    interruption: { reason: string; waitSeconds: number | null; nextChunk: number } | null;
+  }> => {
+    try {
+      const cards = await notesToFlashcards(text, {
+        count,
+        avoidFronts: resume?.avoidFronts ?? existingFlashcardFronts,
+        sourceName,
+        keepPartialOnError: true,
+        startChunk: resume?.startChunk,
+        chunkBudget: resume?.chunkBudget,
+        onProgress: (done, target) => setAiProgress(
+          `Generez flashcardurile... ${(resume?.already ?? 0) + done}/${resume?.requested ?? target}`,
+        ),
+        onWait: (seconds) => setAiProgress(`Limita modelului AI e atinsă — reiau în ${seconds} s...`),
+      });
+      return { cards, interruption: null };
+    } catch (error: unknown) {
+      if (error instanceof FlashcardGenerationInterrupted) {
+        return {
+          cards: error.partial,
+          interruption: { reason: friendlyAIError(error.original), waitSeconds: error.waitSeconds, nextChunk: error.nextChunk },
+        };
+      }
+      throw error;
+    }
+  };
+
+  // One generation at a time: a second flow would overwrite the card and resume handle of the first.
+  const guardBusy = (): boolean => {
+    if (!(aiLoading || resuming || libraryGenerating)) return false;
+    addToast('Așteaptă să se termine generarea curentă.', 'info', 4000);
+    return true;
+  };
+
+  const notifyGenerationFailed = (message: string) => {
+    // Some messages already open with "Nu s-au putut genera…"; do not say it twice.
+    const alreadySaysIt = /^nu s-au (putut )?genera/i.test(message);
+    addToast(alreadySaysIt ? message : `Nu s-au generat flashcardurile. ${message}`, 'error', 8000);
+  };
+
+  const moveCreatedDeck = (folderId: string) => {
+    if (!createdDeck) return;
+    const folder = folderId === '__uncategorized__'
+      ? null
+      : useFolderStore.getState().folders.find((item) => item.id === folderId) ?? null;
+    updateQuiz(createdDeck.id, {
+      folderId: folder?.id ?? null,
+      category: folder?.name ?? 'AI Flashcards',
+      ...(folder ? { color: folder.color } : {}),
+    });
+    setCreatedDeck({ ...createdDeck, folderId: folder?.id ?? null, suggested: false });
+  };
+
   // One card per captioned course photo (front = image, back = verbatim caption).
   const generateVisualDeckFromCaptions = async (captioned: CaptionedPdfImage[], sourceName: string) => {
     const deckId = generateId();
@@ -231,15 +375,17 @@ export default function FlashcardHub() {
 
     const questions: Question[] = captioned.map((entry) => buildPhotoCardQuestion(entry, deckId));
     const baseName = sourceName.replace(/\.[^.]+$/, '') || 'Curs';
+    const target = resolveGeneratedFolder(sourceName);
+    const title = `Atlas foto · ${baseName}`;
 
     addQuiz({
       id: deckId,
-      title: `Atlas foto · ${baseName}`,
+      title,
       description: `${questions.length} carduri vizuale din ${sourceName}. Față = imaginea din curs, spate = descrierea originală.`,
       emoji: '🩺',
-      color: selectedFolder?.color ?? 'pink',
-      category: selectedFolder?.name ?? 'Atlas vizual',
-      folderId: selectedFolder?.id ?? null,
+      color: target.folder?.color ?? 'pink',
+      category: target.folder?.name ?? 'Atlas vizual',
+      folderId: target.folder?.id ?? null,
       kind: 'flashcard',
       shuffleQuestions: true,
       shuffleAnswers: false,
@@ -248,7 +394,7 @@ export default function FlashcardHub() {
       createdAt: Date.now(),
     });
 
-    navigate(`/flashcards/session/${deckId}?mode=all`);
+    announceGeneratedDeck({ id: deckId, title, count: questions.length, folder: target.folder, suggested: target.suggested });
   };
 
   const existingFlashcardFronts = useMemo(() => (
@@ -260,15 +406,16 @@ export default function FlashcardHub() {
   const generateDeckFromPdf = async (text: string, sourceName = 'PDF', pages: PdfFlashcardPageSnapshot[] = []) => {
     setAiLoading(true);
     setAiError('');
+    const profileAtStart = useUserStore.getState().activeProfileId;
 
     try {
-      const generated = await notesToFlashcards(text, {
-        count: aiCount,
-        avoidFronts: existingFlashcardFronts,
-        sourceName,
-      });
+      const outcome = await generateCards(text, sourceName, aiCount);
+      if (useUserStore.getState().activeProfileId !== profileAtStart) {
+        addToast('Profilul s-a schimbat în timpul generării, deci pachetul nu a fost salvat.', 'warning', 7000);
+        return;
+      }
       const questions: Question[] = attachRelevantPdfImages(
-        generated.map((entry) => buildFlashcardQuestion(entry.front, entry.back)),
+        outcome.cards.map((entry) => buildFlashcardQuestion(entry.front, entry.back)),
         pages,
       );
 
@@ -284,14 +431,16 @@ export default function FlashcardHub() {
         void addKnowledgeSource(sourceName, text, sourceName.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt').catch((e) => console.error('[StudyX] KB indexing failed for', sourceName, e));
       }
 
+      const target = resolveGeneratedFolder(sourceName);
+      const title = `Deck AI · ${new Date().toLocaleDateString('ro-RO')}`;
       addQuiz({
         id,
-        title: `Deck AI · ${new Date().toLocaleDateString('ro-RO')}`,
+        title,
         description: `Flashcarduri smart generate din ${sourceName}. Imaginile relevante din PDF sunt pastrate pe cardurile potrivite.`,
         emoji: '🤖',
-        color: selectedFolder?.color ?? 'purple',
-        category: selectedFolder?.name ?? 'AI Flashcards',
-        folderId: selectedFolder?.id ?? null,
+        color: target.folder?.color ?? 'purple',
+        category: target.folder?.name ?? 'AI Flashcards',
+        folderId: target.folder?.id ?? null,
         kind: 'flashcard',
         shuffleQuestions: true,
         shuffleAnswers: true,
@@ -300,11 +449,26 @@ export default function FlashcardHub() {
         createdAt: Date.now(),
       });
 
-      navigate(`/flashcards/session/${id}?mode=all`);
+      setResume(outcome.interruption
+        ? { deckId: id, text, sourceName, requested: aiCount, nextChunk: outcome.interruption.nextChunk, pages }
+        : null);
+      announceGeneratedDeck({
+        id,
+        title,
+        count: questions.length,
+        folder: target.folder,
+        suggested: target.suggested,
+        interrupted: outcome.interruption
+          ? { requested: aiCount, reason: outcome.interruption.reason, waitSeconds: outcome.interruption.waitSeconds }
+          : undefined,
+      });
     } catch (error: unknown) {
-      setAiError(error instanceof Error ? error.message : 'Eroare la generare.');
+      const message = friendlyAIError(error);
+      setAiError(message);
+      notifyGenerationFailed(message);
     } finally {
       setAiLoading(false);
+      setAiProgress('');
     }
   };
 
@@ -318,11 +482,12 @@ export default function FlashcardHub() {
 
   const generateDeckFromLibrary = async (sourceId: string) => {
     const source = readyLibrarySources.find((entry) => entry.id === sourceId);
-    if (!source || libraryGenerating || aiLoading) return;
+    if (!source || libraryGenerating || aiLoading || resuming) return;
 
     setLibraryGenerating(true);
     setAiError('');
     setAiProgress(`Citesc „${source.name}" din bibliotecă...`);
+    const profileAtStart = useUserStore.getState().activeProfileId;
 
     try {
       const { getVaultChunksBySource } = await import('../ai/vectorStore');
@@ -337,26 +502,28 @@ export default function FlashcardHub() {
       }
 
       setAiProgress('AI generează cardurile pe subpuncte...');
-      const generated = await notesToFlashcards(text, {
-        count: aiCount,
-        avoidFronts: existingFlashcardFronts,
-        sourceName: source.name,
-      });
-      const questions = generated.map((entry) => buildFlashcardQuestion(entry.front, entry.back));
+      const outcome = await generateCards(text, source.name, aiCount);
+      if (useUserStore.getState().activeProfileId !== profileAtStart) {
+        addToast('Profilul s-a schimbat în timpul generării, deci pachetul nu a fost salvat.', 'warning', 7000);
+        return;
+      }
+      const questions = outcome.cards.map((entry) => buildFlashcardQuestion(entry.front, entry.back));
       if (questions.length === 0) {
         throw new Error('AI nu a putut genera flashcarduri din acest curs.');
       }
 
       const id = generateId();
+      const target = resolveGeneratedFolder(source.name);
+      const title = `Flashcarduri · ${source.name.replace(/\.[^.]+$/, '')}`;
       addQuiz({
         id,
-        title: `Flashcarduri · ${source.name.replace(/\.[^.]+$/, '')}`,
+        title,
         description: `${questions.length} flashcarduri AI pe subpunctele cursului „${source.name}".`,
         emoji: '🤖',
-        color: selectedFolder?.color ?? 'purple',
-        category: selectedFolder?.name ?? 'AI Flashcards',
+        color: target.folder?.color ?? 'purple',
+        category: target.folder?.name ?? 'AI Flashcards',
         kind: 'flashcard',
-        folderId: selectedFolder?.id ?? null,
+        folderId: target.folder?.id ?? null,
         shuffleQuestions: true,
         shuffleAnswers: true,
         tags: ['ai', 'flashcard', 'biblioteca'],
@@ -364,26 +531,108 @@ export default function FlashcardHub() {
         createdAt: Date.now(),
       });
 
-      navigate(`/flashcards/session/${id}?mode=all`);
+      setResume(outcome.interruption
+        ? { deckId: id, text, sourceName: source.name, requested: aiCount, nextChunk: outcome.interruption.nextChunk, pages: [] }
+        : null);
+      announceGeneratedDeck({
+        id,
+        title,
+        count: questions.length,
+        folder: target.folder,
+        suggested: target.suggested,
+        interrupted: outcome.interruption
+          ? { requested: aiCount, reason: outcome.interruption.reason, waitSeconds: outcome.interruption.waitSeconds }
+          : undefined,
+      });
     } catch (error: unknown) {
-      setAiError(error instanceof Error ? error.message : 'Eroare la generarea din bibliotecă.');
+      const message = friendlyAIError(error);
+      setAiError(message);
+      notifyGenerationFailed(message);
     } finally {
       setLibraryGenerating(false);
       setAiProgress('');
     }
   };
 
-  const handlePdfImport = async () => {
-    if (USE_NATIVE_TEXT_ONLY_PDF_IMPORT && window.electronAPI?.openPdfFile) {
-      const text = await window.electronAPI.openPdfFile();
-      if (text) {
-        await generateDeckFromPdf(text);
-      } else {
-        setAiError('Nu s-a putut extrage text din PDF. Încearcă un alt fișier.');
-      }
-      return;
-    }
+  // Picks an interrupted run up where it stopped and adds the new cards to the same deck.
+  const resumeGeneration = async () => {
+    const resume = getFlashcardResume(activeProfileId);
+    const current = createdDeck;
+    const deck = resume ? quizzes.find((quiz) => quiz.id === resume.deckId) : undefined;
+    if (!resume || !current?.interrupted || !deck || resume.deckId !== current.id || resuming || aiLoading || libraryGenerating) return;
 
+    const profileAtStart = useUserStore.getState().activeProfileId;
+    setResuming(true);
+    setAiError('');
+    const already = deck.questions.length;
+    // Functional updates: the user may move the deck while this runs.
+    const patchInfo = (changes: Partial<GeneratedDeckInfo>) => setCreatedDeck((previous) => (
+      previous && previous.id === current.id ? { ...previous, ...changes } : previous
+    ));
+
+    try {
+      const outcome = await generateCards(resume.text, resume.sourceName, resume.requested - already, {
+        startChunk: resume.nextChunk,
+        chunkBudget: resume.requested,
+        already,
+        requested: resume.requested,
+        avoidFronts: [...existingFlashcardFronts, ...deck.questions.map((question) => question.text)],
+      });
+      // Read the deck now: the user may have edited, or deleted, it while the AI worked.
+      const liveDeck = useQuizStore.getState().quizzes.find((quiz) => quiz.id === deck.id);
+      if (!liveDeck || useUserStore.getState().activeProfileId !== profileAtStart) {
+        setResume(null);
+        setCreatedDeck((previous) => (previous && previous.id === current.id ? null : previous));
+        addToast('Pachetul nu mai este disponibil, deci cardurile noi nu au fost adăugate.', 'info', 6000);
+        return;
+      }
+      const fresh = attachRelevantPdfImages(
+        outcome.cards.map((entry) => buildFlashcardQuestion(entry.front, entry.back)),
+        resume.pages,
+      );
+      updateQuiz(liveDeck.id, { questions: [...liveDeck.questions, ...fresh] });
+      const total = liveDeck.questions.length + fresh.length;
+
+      if (outcome.interruption) {
+        setResume({ ...resume, nextChunk: outcome.interruption.nextChunk });
+        patchInfo({
+          count: total,
+          interrupted: {
+            requested: resume.requested,
+            reason: outcome.interruption.reason,
+            waitSeconds: outcome.interruption.waitSeconds,
+            at: Date.now(),
+          },
+        });
+        addToast(`${total} din ${resume.requested} flashcarduri. ${outcome.interruption.reason}`, 'warning', 9000);
+      } else {
+        setResume(null);
+        patchInfo({ count: total, interrupted: undefined });
+        addToast(`Gata: ${total} flashcarduri în pachet.`, 'success', 6000);
+      }
+    } catch (error: unknown) {
+      if (error instanceof NoNewFlashcardsError) {
+        setResume(null);
+        patchInfo({ interrupted: undefined });
+        addToast('Nu am mai găsit carduri noi în textul acestui curs.', 'info', 6000);
+      } else {
+        const message = friendlyAIError(error);
+        notifyGenerationFailed(message);
+        patchInfo({
+          interrupted: { ...current.interrupted, reason: message, waitSeconds: rateLimitWaitSeconds(error), at: Date.now() },
+        });
+      }
+    } finally {
+      setResuming(false);
+      setAiProgress('');
+    }
+  };
+
+  // The Electron-native "text only" branch that used to sit here was gated behind
+  // a constant hard-wired to false, so it never ran. The browser file picker path
+  // below handles both builds and additionally supports captioned-image decks.
+  const handlePdfImport = async () => {
+    if (guardBusy()) return;
     const input = fileInputRef.current;
     if (!input) return;
     input.value = '';
@@ -391,6 +640,7 @@ export default function FlashcardHub() {
   };
 
   const handleCsvImport = () => {
+    if (guardBusy()) return;
     const input = csvInputRef.current;
     if (!input) return;
     input.value = '';
@@ -398,6 +648,7 @@ export default function FlashcardHub() {
   };
 
   const handlePhotoImport = () => {
+    if (guardBusy()) return;
     const input = photoInputRef.current;
     if (!input) return;
     input.value = '';
@@ -669,9 +920,6 @@ export default function FlashcardHub() {
     navigate(`/flashcards/session/${deckId}?mode=all`);
   };
 
-  const dueQuestions = getDueQuestions();
-  const totalDue = dueQuestions.length;
-
   const decks = useMemo(() => {
     return quizzes
       .filter((quiz) => !quiz.archived && quiz.questions.length > 0)
@@ -696,9 +944,35 @@ export default function FlashcardHub() {
 
   const totalCards = decks.reduce((sum, deck) => sum + deck.total, 0);
   const totalMastered = decks.reduce((sum, deck) => sum + deck.mastered, 0);
+  // Summed from the flashcard decks above, not from the store's app-wide due
+  // list — that counted every due multiple-choice question too, so the hub
+  // advertised far more "carduri restante" than it actually had cards.
+  const totalDue = decks.reduce((sum, deck) => sum + deck.due, 0);
+
+  // What the "Începe repetarea" button actually serves: the session for "all"
+  // takes every due card plus every card that was never studied.
+  const totalFresh = totalCards - decks.reduce((sum, deck) => sum + deck.seen, 0);
+
+  // currentStreak is only recomputed when a session ends, so a streak that was
+  // not continued yesterday or today must read as 0 here.
+  const activeStreak = useMemo(() => {
+    if (streak.currentStreak <= 0) return 0;
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const last = streak.lastStudyDate;
+    return last === localDateStr() || last === localDateStr(yesterday) ? streak.currentStreak : 0;
+  }, [streak.currentStreak, streak.lastStudyDate]);
+
+  const createdDeckId = createdDeck?.id;
+  useEffect(() => {
+    if (createdDeckId) createdCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [createdDeckId]);
+
+  // The deck may have been deleted since — then there is nothing to confirm or move.
+  const visibleCreatedDeck = createdDeck && quizzes.some((quiz) => quiz.id === createdDeck.id) ? createdDeck : null;
 
   return (
-    <div className="h-full overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
+    <div data-tutorial="flashcard-hub" className="h-full overflow-y-auto px-4 py-6 sm:px-8 sm:py-10">
       <input
         ref={fileInputRef}
         type="file"
@@ -794,59 +1068,118 @@ export default function FlashcardHub() {
         }}
       />
 
-      <div className="max-w-4xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="flex items-end justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-4">
-              <div
-                className="w-12 h-12 rounded-[18px] flex items-center justify-center shadow-lg"
-                style={{ background: `linear-gradient(135deg, ${theme.accent2} 0%, ${theme.accent} 100%)`, color: '#fff' }}
-              >
-                <CreditCard size={24} />
-              </div>
-              <div>
-                <h1 className="text-3xl font-black tracking-tight mb-0.5" style={{ color: theme.text }}>
-                  Flashcarduri
-                </h1>
-                <p className="text-[11px] font-black uppercase tracking-widest opacity-60" style={{ color: theme.text }}>
-                  Repetare Spațiată · SM-2
-                </p>
-              </div>
+      <div className="mx-auto max-w-3xl space-y-7">
+        {/* ── Header (compact, Residency-style) ── */}
+        <motion.header
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-start justify-between gap-4"
+        >
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="page-title-compact" style={{ color: theme.text }}>
+                Flashcarduri
+              </h1>
+              <TourHelpButton tour="flashcards" label="Vezi turul paginii Flashcarduri" />
             </div>
+            <p className="mt-1 text-[13px]" style={{ color: theme.text3 }}>
+              {decks.length > 0
+                ? `${decks.length} ${decks.length === 1 ? 'pachet' : 'pachete'} · ${totalCards} carduri · SM-2`
+                : 'Repetare spațiată și carduri inteligente.'}
+            </p>
           </div>
-        </motion.div>
+          <button
+            type="button"
+            onClick={() => createSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            aria-label="Creează pachet nou"
+            title="Creează pachet nou"
+            className="fine-row press-feedback flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full"
+            style={{ background: theme.surface2, color: theme.text2 }}
+          >
+            <Plus size={18} />
+          </button>
+        </motion.header>
 
-        <FlashcardHubActions
-          aiCount={aiCount}
-          aiError={aiError}
-          aiLoading={aiLoading}
-          aiProgress={aiProgress}
-          csvError={csvError}
-          csvImporting={csvImporting}
-          folders={folders}
-          hasAI={hasKey}
-          photoError={photoError}
-          photoImporting={photoImporting}
-          theme={theme}
-          totalCards={totalCards}
+        {/* ── Pachet generat: unde a ajuns + mută ── */}
+        {visibleCreatedDeck && (
+          <div ref={createdCardRef} className="scroll-mt-6">
+            <GeneratedDeckCard
+              info={visibleCreatedDeck}
+              folders={folders}
+              theme={theme}
+              resuming={resuming}
+              progress={aiProgress}
+              onMove={moveCreatedDeck}
+              onCreateFolder={handleCreateFolder}
+              onStart={() => navigate(`/flashcards/session/${visibleCreatedDeck.id}?mode=all`)}
+              onResume={() => void resumeGeneration()}
+              onDismiss={() => {
+                setResume(null);
+                setCreatedDeck(null);
+              }}
+            />
+          </div>
+        )}
+
+        {/* ── De repetat azi ── */}
+        <div data-tutorial="flashcards-due" className="empty:hidden">
+        <ReviewHeroCard
           totalDue={totalDue}
+          totalFresh={totalFresh}
+          totalCards={totalCards}
           totalMastered={totalMastered}
-          targetFolderId={targetFolderId}
-          librarySources={readyLibrarySources.map((source) => ({ id: source.id, name: source.name }))}
-          libraryGenerating={libraryGenerating}
-          onAiCountChange={setAiCount}
-          onCreateFolder={handleCreateFolder}
-          onCsvImport={handleCsvImport}
-          onLibraryGenerate={generateDeckFromLibrary}
-          onMistakeDeckCreate={createMistakeDeck}
-          onPhotoImport={handlePhotoImport}
-          onPdfImport={handlePdfImport}
-          onQuickDeckCreate={createQuickDeck}
-          onTargetFolderChange={handleTargetFolderChange}
+          streak={activeStreak}
+          theme={theme}
         />
+        </div>
 
-        <FlashcardDeckGrid decks={decks} folders={folders} theme={theme} />
+        {/* ── Pachetele tale ── */}
+        <div data-tutorial="flashcards-decks" className="empty:hidden">
+          <FlashcardDeckGrid decks={decks} folders={folders} theme={theme} />
+        </div>
+
+        {/* ── Creează pachet nou ── */}
+        <div ref={createSectionRef} data-tutorial="flashcards-create" className="scroll-mt-6">
+          <FlashcardHubActions
+            aiCount={aiCount}
+            aiError={aiError}
+            aiLoading={aiLoading || resuming}
+            aiProgress={aiProgress}
+            csvError={csvError}
+            csvImporting={csvImporting}
+            folders={folders}
+            hasAI={hasKey}
+            photoError={photoError}
+            photoImporting={photoImporting}
+            theme={theme}
+            targetFolderId={targetFolderId}
+            librarySources={readyLibrarySources.map((source) => ({ id: source.id, name: source.name }))}
+            libraryGenerating={libraryGenerating || aiLoading || resuming}
+            onAiCountChange={setAiCount}
+            onCreateFolder={handleCreateFolder}
+            onCsvImport={handleCsvImport}
+            onAnkiImport={() => { if (!guardBusy()) setAnkiModalOpen(true); }}
+            onLibraryGenerate={generateDeckFromLibrary}
+            onMistakeDeckCreate={createMistakeDeck}
+            onPhotoImport={handlePhotoImport}
+            onPdfImport={handlePdfImport}
+            onQuickDeckCreate={createQuickDeck}
+            onTargetFolderChange={handleTargetFolderChange}
+          />
+        </div>
       </div>
+
+      {ankiModalOpen && (
+        <AnkiImportModal
+          folders={folders}
+          theme={theme}
+          onClose={() => setAnkiModalOpen(false)}
+          onImported={(firstQuizId) => {
+            setAnkiModalOpen(false);
+            if (firstQuizId) navigate(`/flashcards/session/${firstQuizId}?mode=all`);
+          }}
+        />
+      )}
     </div>
   );
 }

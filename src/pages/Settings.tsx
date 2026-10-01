@@ -1,3 +1,5 @@
+import Portal from '../components/Portal';
+import ThemeModeSwitcher from '../components/ThemeModeSwitcher';
 import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -8,16 +10,26 @@ import {
   Cpu,
   Database,
   Gauge,
+  History,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Trash2,
 } from 'lucide-react';
 import BackupExport from '../components/BackupExport';
 import AISettings from '../components/AISettings';
-import { useViewportProfile } from '../hooks/useViewportProfile';
+import AIKeyGuide from '../tutorial/AIKeyGuide';
+import { WHATS_NEW_OPEN_EVENT } from '../components/WhatsNewTour';
+import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { detectDeviceCapabilities } from '../lib/deviceTier';
 import { getHealthBadgeLabel } from '../lib/healthReporter';
 import { runStartupHealthCheck } from '../lib/startupHealthCheck';
+import { clearRollbackSnapshot, formatSnapshotDate, getRollbackSnapshot } from '../lib/rollback';
+import { isAIDebugEnabled, setAIDebugEnabled } from '../ai/debug';
+import { saveProfileData } from '../store/profileStorage';
+import { useQuizStore } from '../store/quizStore';
+import { useFolderStore } from '../store/folderStore';
+import type { Folder, Quiz, QuizSession } from '../types';
 import { useAIStore } from '../store/aiStore';
 import { useDiagnosticsStore } from '../store/diagnosticsStore';
 import { useFocusModeStore } from '../store/focusModeStore';
@@ -27,7 +39,6 @@ import { useTutorialStore } from '../store/tutorialStore';
 import { useUpdateStore } from '../store/updateStore';
 import { useUserStore } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
-import { THEME_LIST, type ThemeId } from '../theme/themes';
 
 function ConfirmResetModal({
   open,
@@ -41,6 +52,7 @@ function ConfirmResetModal({
   const theme = useTheme();
 
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <>
@@ -49,7 +61,7 @@ function ConfirmResetModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onCancel}
-            className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[1000] bg-[var(--overlay)] backdrop-blur-sm"
           />
           <motion.div
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -86,18 +98,20 @@ function ConfirmResetModal({
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }
 
 function Section({ title, children, delay }: { title: string; children: ReactNode; delay: number }) {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={calmMotion ? false : { opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.4 }}
-      className="premium-shadow mb-6 rounded-[28px] border border-white/5 glass-panel p-5 sm:p-6"
+      transition={calmMotion ? { duration: 0 } : { delay, duration: 0.4 }}
+      className="premium-shadow mb-6 rounded-[28px] border border-[var(--hairline)] glass-panel p-5 sm:p-6"
     >
       <h3 className="mb-6 text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: theme.text3 }}>
         {title}
@@ -108,8 +122,7 @@ function Section({ title, children, delay }: { title: string; children: ReactNod
 }
 
 function Divider() {
-  const theme = useTheme();
-  return <div className="my-4 h-px w-full" style={{ background: theme.border }} />;
+  return <div className="my-1 h-[0.5px] w-full" style={{ background: 'var(--hairline)' }} />;
 }
 
 function ToggleRow({
@@ -128,10 +141,11 @@ function ToggleRow({
   accent?: string;
 }) {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const color = accent ?? theme.accent;
 
   return (
-    <div className="flex items-center gap-3 py-3 sm:gap-4">
+    <div className="fine-row -mx-2 flex items-center gap-3 px-2 py-3 sm:gap-4">
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
         style={{ background: `${color}15`, color }}
@@ -149,13 +163,18 @@ function ToggleRow({
         )}
       </div>
       <motion.button
-        whileTap={{ scale: 0.9 }}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        whileTap={calmMotion ? undefined : { scale: 0.94 }}
         onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 rounded-full transition-colors ${checked ? '' : 'bg-white/10'}`}
-        style={{ background: checked ? color : theme.surface2 }}
+        className="relative h-6 w-11 rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+        style={{ background: checked ? color : 'var(--fill-subtle)', boxShadow: checked ? undefined : 'inset 0 0 0 0.5px var(--hairline)' }}
       >
         <motion.div
           animate={{ x: checked ? 22 : 4 }}
+          transition={calmMotion ? { duration: 0 } : undefined}
           className="absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm"
         />
       </motion.button>
@@ -184,7 +203,7 @@ function ActionRow({
   const color = danger ? theme.danger : theme.accent;
 
   return (
-    <div className="flex flex-col gap-4 py-3 sm:flex-row sm:items-start">
+    <div className="fine-row -mx-2 flex flex-col gap-4 px-2 py-3 sm:flex-row sm:items-start">
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
         style={{ background: `${color}15`, color }}
@@ -203,15 +222,13 @@ function ActionRow({
             {description}
           </div>
         )}
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+        <button
           onClick={onClick}
-          className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all"
+          className="press-feedback rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
           style={{ background: `${color}10`, borderColor: `${color}30`, color }}
         >
           {buttonLabel}
-        </motion.button>
+        </button>
       </div>
     </div>
   );
@@ -219,8 +236,9 @@ function ActionRow({
 
 export default function Settings() {
   const theme = useTheme();
+  const { calmMotion } = useAdaptiveMotion();
   const { addToast } = useToastStore();
-  const { themeId, setTheme } = useUserStore();
+  const { activeProfileId } = useUserStore();
   const { screenshotProtection, setContentProtection } = useFocusModeStore();
   const { hasKey } = useAIStore();
   const { localVersion } = useUpdateStore();
@@ -230,23 +248,73 @@ export default function Settings() {
   const setPerformanceMode = useRuntimeStore((state) => state.setPerformanceMode);
   const setLowPowerMode = useRuntimeStore((state) => state.setLowPowerMode);
   const setFeatureFlag = useRuntimeStore((state) => state.setFeatureFlag);
+  const [aiDebug, setAiDebug] = useState(() => isAIDebugEnabled());
   const healthStatus = useDiagnosticsStore((state) => state.healthStatus);
   const checks = useDiagnosticsStore((state) => state.checks);
   const events = useDiagnosticsStore((state) => state.events);
   const lastCheckedAt = useDiagnosticsStore((state) => state.lastCheckedAt);
   const setHealthReport = useDiagnosticsStore((state) => state.setHealthReport);
   const clearDiagnostics = useDiagnosticsStore((state) => state.clearDiagnostics);
-  const { compact, mobile, shortHeight, uiScale } = useViewportProfile();
 
   const [showBackup, setShowBackup] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
+  const [showKeyGuide, setShowKeyGuide] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const deviceInfo = detectDeviceCapabilities();
 
-  const themeCardHeight = mobile ? 132 : shortHeight ? 140 : compact ? 156 : 180;
+  // A rollback snapshot is written before every content-pack install. Until now
+  // nothing ever read it back, so the safety net only performed the half that
+  // costs storage and none of the half that saves you.
+  const [snapshot, setSnapshot] = useState(() => getRollbackSnapshot());
+  const [restoring, setRestoring] = useState(false);
+
+  const handleRestoreSnapshot = async () => {
+    if (!snapshot || restoring) return;
+    setRestoring(true);
+    try {
+      useQuizStore.getState()._hydrate({
+        quizzes: snapshot.quizzes as Quiz[],
+        sessions: snapshot.sessions as QuizSession[],
+      });
+      useFolderStore.getState()._hydrate({ folders: snapshot.folders as Folder[] });
+      if (activeProfileId) await saveProfileData(activeProfileId);
+      clearRollbackSnapshot();
+      setSnapshot(null);
+      addToast('Am restaurat starea dinaintea ultimei instalări.', 'success');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Restaurarea a eșuat.', 'error');
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const handleReset = async () => {
-    await window.electronAPI?.hardReset();
+    if (window.electronAPI?.hardReset) {
+      await window.electronAPI.hardReset();
+      return;
+    }
+    // Browser build has no electronAPI — `?.` on hardReset used to make this
+    // a silent no-op: the user confirms an "ireversibil" reset and nothing
+    // happens, with no indication it didn't work.
+    try {
+      localStorage.clear();
+      if (window.indexedDB?.databases) {
+        const databases = await window.indexedDB.databases();
+        await Promise.all(
+          databases
+            .filter((db): db is { name: string } => !!db.name)
+            .map((db) => new Promise<void>((resolve) => {
+              const req = window.indexedDB.deleteDatabase(db.name);
+              req.onsuccess = () => resolve();
+              req.onerror = () => resolve();
+              req.onblocked = () => resolve();
+            })),
+        );
+      }
+      window.location.reload();
+    } catch (error) {
+      addToast(error instanceof Error ? `Resetarea a eșuat: ${error.message}` : 'Resetarea a eșuat.', 'error');
+    }
   };
 
   const rerunHealthCheck = async () => {
@@ -271,67 +339,15 @@ export default function Settings() {
           </p>
         </motion.div>
 
-        <Section title="Aparență" delay={0.1}>
-          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-            {THEME_LIST.map((entry) => (
-              <motion.button
-                key={entry.id}
-                onClick={() => setTheme(entry.id as ThemeId)}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="group relative flex flex-col items-start justify-between overflow-hidden rounded-[24px] border-2 p-4 text-left transition-all"
-                style={{
-                  background: entry.id === 'auto' ? '#F2F2F7' : entry.bg,
-                  borderColor: themeId === entry.id ? theme.accent : 'transparent',
-                  boxShadow: themeId === entry.id ? `0 8px 24px ${theme.accent}25` : 'none',
-                  minHeight: `${themeCardHeight}px`,
-                  padding: `${Math.max(14, Math.round(16 * uiScale))}px`,
-                }}
-              >
-                <div
-                  className="pointer-events-none absolute inset-x-0 top-0 h-16 opacity-60"
-                  style={{
-                    background: entry.id === 'auto'
-                      ? 'linear-gradient(180deg, rgba(0,0,0,0.06), transparent)'
-                      : 'linear-gradient(180deg, rgba(255,255,255,0.1), transparent)',
-                  }}
-                />
-                <div
-                  className="relative z-10 flex h-11 w-11 items-center justify-center rounded-2xl text-2xl"
-                  style={{ background: entry.id === 'auto' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }}
-                >
-                  {entry.emoji}
-                </div>
-                <div className="relative z-10 mt-auto">
-                  <div className="text-sm font-black leading-tight" style={{ color: entry.id === 'auto' ? '#000' : entry.text }}>
-                    {entry.name}
-                  </div>
-                  <div className="mt-1 text-[11px] font-semibold opacity-70" style={{ color: entry.id === 'auto' ? '#111' : entry.text }}>
-                    {entry.id === 'auto' ? 'Se adaptează sistemului' :
-                     entry.id === 'obsidian' ? 'Negru mat, iOS accent' :
-                     entry.id === 'bigsur' ? 'macOS luminos, curat' :
-                     entry.id === 'pearl' ? 'Cald, terracotta' :
-                     entry.id === 'aurora' ? 'Violet profund' :
-                     entry.id === 'midnight' ? 'GitHub dark, albastru' :
-                     'Previzualizare temă'}
-                  </div>
-                </div>
-                {themeId === entry.id && (
-                  <motion.div
-                    layoutId="theme-active"
-                    className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-black"
-                    style={{ background: `${theme.accent}18`, borderColor: `${theme.accent}35`, color: theme.accent }}
-                  >
-                    ✓
-                  </motion.div>
-                )}
-              </motion.button>
-            ))}
-          </div>
+        <Section title="Aspect" delay={0.1}>
+          <p className="mb-3 text-[13px] leading-relaxed" style={{ color: theme.text2 }}>
+            Alege între tema luminoasă, cea întunecată sau lasă aplicația să urmeze sistemul (se schimbă singură seara).
+          </p>
+          <ThemeModeSwitcher />
         </Section>
 
         <Section title="Stabilitate & Performanță" delay={0.15}>
-          <div className="mb-5 rounded-[24px] border p-4" style={{ background: theme.surface2, borderColor: theme.border }}>
+          <div className="glass-panel mb-5 rounded-[24px] p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-bold" style={{ color: theme.text }}>
@@ -356,11 +372,13 @@ export default function Settings() {
                 <button
                   key={mode}
                   onClick={() => setPerformanceMode(mode)}
-                  className="rounded-xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
+                  aria-pressed={performanceMode === mode}
+                  data-active={performanceMode === mode}
+                  className="fine-chip rounded-xl px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em]"
                   style={{
-                    background: performanceMode === mode ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
-                    color: performanceMode === mode ? '#fff' : theme.text,
-                    border: `1px solid ${performanceMode === mode ? 'transparent' : theme.border}`,
+                    background: performanceMode === mode ? 'var(--accent-soft)' : theme.surface,
+                    color: performanceMode === mode ? theme.accent : theme.text,
+                    border: `1px solid ${performanceMode === mode ? `${theme.accent}40` : theme.border}`,
                   }}
                 >
                   {mode === 'auto' ? 'Auto' : mode === 'lite' ? 'Lite' : 'Full'}
@@ -393,6 +411,15 @@ export default function Settings() {
           />
           <Divider />
           <ToggleRow
+            icon={<Bot size={16} />}
+            label="Jurnal AI detaliat"
+            description="Scrie în consola browserului (F12) cererea și răspunsul brut la fiecare apel AI — util ca să trimiți exact ce a răspuns modelul când o generare eșuează."
+            checked={aiDebug}
+            onChange={(value) => { setAIDebugEnabled(value); setAiDebug(value); }}
+            accent={theme.accent2 ?? theme.accent}
+          />
+          <Divider />
+          <ToggleRow
             icon={<Gauge size={16} />}
             label="Coadă fundal sigură"
             description="Rulează sarcinile grele de AI în serie pentru sisteme mai slabe și importuri mai stabile."
@@ -412,19 +439,19 @@ export default function Settings() {
           <Divider />
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={calmMotion ? undefined : { scale: 1.02 }}
+              whileTap={calmMotion ? undefined : { scale: 0.97 }}
               onClick={() => void rerunHealthCheck()}
-              className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all"
-              style={{ background: `${theme.accent}10`, borderColor: `${theme.accent}30`, color: theme.accent }}
+              className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+              style={{ background: `${theme.accent}10`, borderColor: `${theme.accent}30`, color: theme.accentText }}
             >
               Rulează health check
             </motion.button>
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={calmMotion ? undefined : { scale: 1.02 }}
+              whileTap={calmMotion ? undefined : { scale: 0.97 }}
               onClick={clearDiagnostics}
-              className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all"
+              className="rounded-xl border px-5 py-2 text-xs font-black uppercase tracking-widest transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
               style={{ background: theme.surface2, borderColor: theme.border, color: theme.text3 }}
             >
               Resetează diagnosticul
@@ -494,6 +521,19 @@ export default function Settings() {
             buttonLabel="Deschide"
             onClick={() => setShowBackup(true)}
           />
+          {snapshot && (
+            <>
+              <Divider />
+              <ActionRow
+                icon={<History size={16} />}
+                label="Restaurează dinaintea ultimei instalări"
+                description={`${snapshot.label} · ${formatSnapshotDate(snapshot.savedAt)} · ${snapshot.quizzes.length} seturi`}
+                buttonLabel={restoring ? 'Se restaurează...' : 'Restaurează'}
+                onClick={handleRestoreSnapshot}
+                danger
+              />
+            </>
+          )}
           <Divider />
           <ToggleRow
             icon={<ShieldCheck size={16} />}
@@ -521,18 +561,39 @@ export default function Settings() {
               </span>
             )}
           />
+          <Divider />
+          <ActionRow
+            icon={<Sparkles size={16} />}
+            label="Ghid chei gratuite"
+            description="Obții o cheie gratuită, o testezi și o salvezi, pas cu pas. Mai multe chei înseamnă rezerve automate."
+            buttonLabel={showKeyGuide ? 'Ascunde' : 'Deschide'}
+            onClick={() => setShowKeyGuide((open) => !open)}
+          />
+          {showKeyGuide && (
+            <div className="pb-3 pl-0 sm:pl-14">
+              <AIKeyGuide />
+            </div>
+          )}
         </Section>
 
         <Section title="Ajutor & Sistem" delay={0.4}>
           <ActionRow
             icon={<Brain size={16} />}
-            label="Tutorial"
+            label="Tur de bun venit"
             description="Reia ghidul de utilizare a platformei."
             buttonLabel="Pornește"
             onClick={() => {
               useTutorialStore.getState().startTutorial();
-              addToast('Tutorial repornit!', 'info');
+              addToast('Turul a pornit.', 'info');
             }}
+          />
+          <Divider />
+          <ActionRow
+            icon={<Sparkles size={16} />}
+            label="Ce e nou"
+            description="Noutățile din versiunea curentă, cu trimitere la fiecare pagină."
+            buttonLabel="Vezi"
+            onClick={() => window.dispatchEvent(new CustomEvent(WHATS_NEW_OPEN_EVENT))}
           />
           <Divider />
           <ActionRow

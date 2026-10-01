@@ -1,4 +1,4 @@
-import { Check, Loader2, X, AlertTriangle, RotateCcw, Sparkles, Minus, Plus } from 'lucide-react';
+import { Check, Loader2, X, AlertTriangle, RotateCcw, Sparkles, Minus, Plus, Target } from 'lucide-react';
 import { useAgentJobsStore, type AgentJobStep, type AgentJobStepParams } from '../../store/agentJobsStore';
 import type { Theme } from '../../theme/themes';
 
@@ -47,7 +47,7 @@ function StepParamEditor({
   const countMax = usesPackCount ? 60 : 100;
 
   const chipStyle = (active: boolean) => ({
-    background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface,
+    background: active ? theme.accent : theme.surface,
     color: active ? '#fff' : theme.text3,
     border: `1px solid ${active ? `${theme.accent}50` : theme.border}`,
   });
@@ -111,12 +111,20 @@ function StepParamEditor({
   );
 }
 
+/** Green when the batch matches the exam, amber when it drifts, red when it doesn't. */
+function conformanceColor(score: number, theme: Theme) {
+  if (score >= 83) return theme.success;
+  if (score >= 50) return theme.warning;
+  return theme.danger;
+}
+
 export default function AgentJobCard({
   jobId,
   theme,
   onConfirm,
   onCancel,
   onUndo,
+  onRetry,
   onEditParams,
 }: {
   jobId: string;
@@ -124,6 +132,7 @@ export default function AgentJobCard({
   onConfirm: () => void;
   onCancel: () => void;
   onUndo: () => void;
+  onRetry?: () => void;
   onEditParams?: (stepId: string, patch: Partial<AgentJobStepParams>) => void;
 }) {
   const job = useAgentJobsStore((state) => state.jobs.find((entry) => entry.id === jobId));
@@ -140,8 +149,8 @@ export default function AgentJobCard({
       style={{ background: theme.surface2, borderColor: `${theme.accent}30` }}
     >
       <div className="mb-2.5 flex items-center gap-2">
-        <Sparkles size={14} style={{ color: theme.accent }} />
-        <span className="text-[11px] font-black uppercase tracking-[0.16em]" style={{ color: theme.accent }}>
+        <Sparkles size={14} style={{ color: theme.accentText }} />
+        <span className="text-[11px] font-black uppercase tracking-[0.16em]" style={{ color: theme.accentText }}>
           {awaiting ? 'Plan agent · confirmă' : running ? 'Agent lucrează' : done ? 'Agent · gata' : errored ? 'Agent · cu probleme' : 'Agent'}
         </span>
       </div>
@@ -181,6 +190,31 @@ export default function AgentJobCard({
         })}
       </div>
 
+      {job.conformance && (
+        <div
+          className="mt-3 flex items-start gap-2 rounded-2xl px-3 py-2"
+          style={{
+            background: `${conformanceColor(job.conformance.score, theme)}12`,
+            border: `1px solid ${conformanceColor(job.conformance.score, theme)}30`,
+          }}
+          title={job.conformance.issues.length > 0
+            ? `Sub țintă: ${job.conformance.issues.join(', ')}`
+            : 'Toate metricile sunt în ținta măsurată pe subiectele reale.'}
+        >
+          <Target size={12} className="mt-0.5 flex-shrink-0" style={{ color: conformanceColor(job.conformance.score, theme) }} />
+          <div className="min-w-0">
+            <div className="text-[11px] font-black" style={{ color: conformanceColor(job.conformance.score, theme) }}>
+              {job.conformance.score}/100 · seamănă cu examenul ({job.conformance.label})
+            </div>
+            {job.conformance.issues.length > 0 && (
+              <div className="mt-0.5 text-[10px] font-medium" style={{ color: theme.text3 }}>
+                Sub țintă: {job.conformance.issues.join(' · ')}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {awaiting && (
         <div className="mt-3 flex items-center gap-2">
           {job.summary && (
@@ -199,7 +233,7 @@ export default function AgentJobCard({
           <button
             onClick={onConfirm}
             className="rounded-xl px-3.5 py-1.5 text-[11px] font-black uppercase tracking-wider text-white"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+            style={{ background: theme.accent }}
           >
             Execută
           </button>
@@ -214,6 +248,17 @@ export default function AgentJobCard({
         >
           <RotateCcw size={12} />
           Anulează acțiunile (Undo)
+        </button>
+      )}
+
+      {errored && onRetry && (
+        <button
+          onClick={onRetry}
+          className="mt-3 flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[11px] font-black uppercase tracking-wider text-white"
+          style={{ background: theme.accent }}
+        >
+          <RotateCcw size={12} />
+          Reîncearcă
         </button>
       )}
     </div>

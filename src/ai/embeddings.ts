@@ -1,4 +1,5 @@
 import { getCached, setCached } from './cache';
+import { fetchApiEmbeddings } from './apiEmbeddings';
 
 const EMBEDDING_DIM = 256; // Mărit de la 128 → mai puțin coliziuni hash
 
@@ -57,7 +58,8 @@ function hashToken(token: string): number {
   return Math.abs(hash);
 }
 
-export function embedText(text: string): number[] {
+/** Hash-based bag-of-words embedding — no network, no AI, works fully offline. Used as the fallback when a real embedding isn't available. */
+export function embedTextLocal(text: string): number[] {
   const cached = getCached<number[]>('embedding_v2', text);
   if (cached) return cached;
 
@@ -96,8 +98,54 @@ export function embedText(text: string): number[] {
   return normalized;
 }
 
-export function embedBatch(texts: string[]): number[][] {
-  return texts.map(embedText);
+/**
+ * Embeds one piece of text — a real semantic embedding via the Gemini API when
+ * a Google key is configured and reachable, otherwise the local hash-based
+ * fallback. The two are never mixed for the *same* text: a cache hit always
+ * came from the same source as a fresh call would pick, since key availability
+ * doesn't change mid-session in practice.
+ */
+export async function embedText(text: string): Promise<number[]> {
+  const cached = getCached<number[]>('embedding_api_v1', text);
+  if (cached) return cached;
+
+  const [apiVector] = (await fetchApiEmbeddings([text])) ?? [null];
+  if (apiVector) {
+    setCached('embedding_api_v1', text, apiVector, 48 * 60 * 60 * 1000);
+    return apiVector;
+  }
+  return embedTextLocal(text);
+}
+
+/**
+ * Embeds many texts, batching them into as few API calls as possible instead
+ * of one request per chunk — matters for vault indexing, which can be hundreds
+ * of chunks. Any text the API failed to embed (or when no key is configured
+ * at all) falls back to the local embedder individually, so a partial network
+ * hiccup doesn't degrade the whole document to keyword-only search.
+ */
+export async function embedBatch(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
+
+  const uncached: { index: number; text: string }[] = [];
+  const results: (number[] | null)[] = texts.map((text, index) => {
+    const cached = getCached<number[]>('embedding_api_v1', text);
+    if (!cached) uncached.push({ index, text });
+    return cached;
+  });
+
+  if (uncached.length > 0) {
+    const apiVectors = await fetchApiEmbeddings(uncached.map((entry) => entry.text));
+    uncached.forEach(({ index, text }, i) => {
+      const vector = apiVectors?.[i] ?? null;
+      if (vector) {
+        setCached('embedding_api_v1', text, vector, 48 * 60 * 60 * 1000);
+        results[index] = vector;
+      }
+    });
+  }
+
+  return results.map((vector, i) => vector ?? embedTextLocal(texts[i]));
 }
 
 export function cosineSimilarity(a: number[], b: number[]): number {

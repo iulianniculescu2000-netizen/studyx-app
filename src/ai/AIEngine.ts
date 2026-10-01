@@ -1,6 +1,7 @@
 import type { Difficulty, Question } from '../types';
 import { groqRequest, groqStream } from '../lib/groq';
 import { logAIDebug } from './debug';
+import { DEFAULT_EXAM_STYLE, type ExamStyle } from '../lib/ai/examStyle';
 import { runAIPipeline } from './pipeline';
 import {
   buildExplanationPrompt,
@@ -24,8 +25,10 @@ import type {
   RetrievedChunk,
   UserProfileData,
 } from './types';
-import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile, generateFromMistakes } from './UserProfile';
+import { loadUserProfile, updateUserProfileAfterAnswer, getWeakTopicsForProfile } from './UserProfile';
 import { validateJson } from './validator';
+import { verifyQuestionsMedically } from './medicalJudge';
+import { fitHistoryToBudget, type StudentState } from './chatMemory';
 
 type ContextChunk = ChunkRecord | RetrievedChunk;
 export type ChatMode = 'grounded' | 'explain' | 'summarize' | 'diagram' | 'test' | 'mnemonic';
@@ -49,6 +52,10 @@ interface ChatResponseOptions {
   focusTopics?: string[];
   /** Compressed summary of earlier turns, injected when the thread grows long. */
   conversationSummary?: string;
+  /** Durable facts about the student (already filtered for relevance), one per line. */
+  personalMemory?: string;
+  /** How the student seems to be doing right now, derived from their message and the clock. */
+  tone?: { state: StudentState; late: boolean };
 }
 
 async function buildRelevantContext(query: string, limit: number, userProfile?: UserProfileData | null) {
@@ -79,10 +86,13 @@ function clampConfidence(value: number | undefined, fallback = 0.72) {
 }
 
 function normalizeQuestion(question: QuestionGenerationResponse['questions'][number], index: number): Question {
-  const options = question.options.map((option, optionIndex) => ({
+  // Guard against a malformed single item (model omitted "options" for just
+  // that one question) — drop its options instead of throwing and losing the
+  // whole batch; sanitizeGeneratedQuestions filters it out right after anyway.
+  const options = (Array.isArray(question.options) ? question.options : []).map((option, optionIndex) => ({
     id: `${index}-${optionIndex}-${crypto.randomUUID().replace(/-/g, '').slice(0, 6)}`,
-    text: option.text,
-    isCorrect: option.isCorrect,
+    text: option?.text ?? '',
+    isCorrect: Boolean(option?.isCorrect),
   }));
   const correctCount = options.filter((option) => option.isCorrect).length;
   return {
@@ -95,6 +105,41 @@ function normalizeQuestion(question: QuestionGenerationResponse['questions'][num
     difficulty: (question.difficulty as Difficulty) ?? 'medium',
     ...(question.type ? { type: question.type } : {}),
   };
+}
+
+/** Loose comparison key for spotting option texts that are the same answer twice. */
+function optionKey(text: string): string {
+  return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/**
+ * Drops generated questions that cannot be answered, and de-duplicates repeated
+ * options. Nothing validated model output before this: a reply could yield a
+ * question with an empty stem, with no correct option at all, or with the same
+ * distractor twice — and it was saved as a real quiz the user then studied.
+ */
+export function sanitizeGeneratedQuestions(questions: Question[]): Question[] {
+  const usable: Question[] = [];
+
+  for (const question of questions) {
+    if (!question.text || question.text.trim().length < 6) continue;
+
+    const seen = new Set<string>();
+    const options = question.options.filter((option) => {
+      const key = optionKey(option.text);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (options.length < 2) continue;
+    const correctCount = options.filter((option) => option.isCorrect).length;
+    if (correctCount === 0) continue; // unanswerable
+
+    usable.push({ ...question, options, multipleCorrect: correctCount > 1 });
+  }
+
+  return usable;
 }
 
 function normalizeAnalysisResult(result: AIAnalysisResult, context: AIContextPayload): AIAnalysisResult {
@@ -158,6 +203,7 @@ export class QuestionGenerator {
           request.questionType ?? 'single',
           request.questionTypes,
           request.count ?? 1,
+          request.examStyle ?? DEFAULT_EXAM_STYLE,
         );
         // Self-gated by the localStorage "studyx-ai-debug" flag (see debug.ts).
         logAIDebug('buildQuestionPrompt', { questionTypes: request.questionTypes, count: request.count, prompt });
@@ -176,22 +222,31 @@ export class QuestionGenerator {
         const result = validateJson<QuestionGenerationResponse>(raw);
         return result.ok && result.value?.questions?.length ? result.value : null;
       },
-      fix: async (_raw, error) => (
+      fix: async (raw, error) => (
         groqRequest({
           task: 'questions',
           messages: [
-            { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Păstrează conținutul în română.' },
-            { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}` },
+            { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Nu inventa conținut nou — corectează doar sintaxa JSON-ului primit. Păstrează conținutul în română.' },
+            // The broken JSON must travel with the request. Sending only the
+            // parser error left the model nothing to repair, so it invented a
+            // fresh set of questions from nothing — ungrounded content that was
+            // then saved as a real quiz.
+            { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}\n\nJSON de reparat:\n${raw}` },
           ],
           skipLibraryContext: true,
         })
       ),
     });
 
+    const sanitized = sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion));
+    const judged = await verifyQuestionsMedically(sanitized, context.summary);
+
     return {
-      questions: parsed.questions.map(normalizeQuestion),
+      questions: judged.questions,
       sources: uniqueSourceList((context.chunks as ContextChunk[] | undefined) ?? []),
       mode: request.mode ?? 'standard',
+      medicallyFlaggedCount: judged.flaggedCount,
+      flaggedReasons: judged.flaggedReasons,
     };
   }
 }
@@ -213,13 +268,29 @@ export async function generateQuestionsFromTopic(
   difficulty: Difficulty,
   questionType: 'single' | 'multiple',
   profile: UserProfileData | null,
+  examStyle: ExamStyle = DEFAULT_EXAM_STYLE,
 ): Promise<AIQuestionResult> {
+  // TASK_MAX_TOKENS.questions (groq.ts) is a flat 2200-token budget meant for
+  // a handful of questions — it doesn't scale with `count`. This is the one
+  // caller that can ask for up to 60 questions in a SINGLE completion
+  // (chapter/pack generation elsewhere batches in smaller chunks). A
+  // residency-style question alone (5 lettered options, an explanation, a
+  // vignette stem for medium/hard difficulty) commonly runs 150-250 tokens,
+  // so 10 questions already sits at or past the flat cap — the response gets
+  // cut off mid-JSON, fails validation, and the one repair attempt can't
+  // recover missing content (it's told explicitly not to invent any). This
+  // was reproduced live: "10 grile despre arsuri" (residency style) failed
+  // this way twice in a row. Scaling the budget with `count` instead of a
+  // constant fixes it for any topic/size, not just this one.
+  const maxTokens = Math.min(8000, Math.max(2200, count * 220 + 300));
+
   const parsed = await runAIPipeline<QuestionGenerationResponse>({
     retrieve: () => topic,
     generate: async () => {
-      const prompt = buildQuestionPrompt(profile, [], difficulty, undefined, questionType, undefined, count);
+      const prompt = buildQuestionPrompt(profile, [], difficulty, undefined, questionType, undefined, count, examStyle);
       return groqRequest({
         task: 'questions',
+        maxTokens,
         messages: [
           { role: 'system', content: prompt },
           {
@@ -234,22 +305,54 @@ export async function generateQuestionsFromTopic(
       const result = validateJson<QuestionGenerationResponse>(raw);
       return result.ok && result.value?.questions?.length ? result.value : null;
     },
-    fix: async (_raw, error) => (
+    fix: async (raw, error) => (
       groqRequest({
         task: 'questions',
+        maxTokens,
         messages: [
-          { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Păstrează conținutul în română.' },
-          { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}` },
+          { role: 'system', content: 'Repară JSON-ul și returnează doar JSON valid, fără trailing commas și fără text suplimentar. Nu inventa conținut nou — corectează doar sintaxa JSON-ului primit. Păstrează conținutul în română.' },
+          { role: 'user', content: `JSON-ul anterior a fost invalid: ${error}\n\nJSON de reparat:\n${raw}` },
         ],
         skipLibraryContext: true,
       })
     ),
   });
 
+  const sanitized = sanitizeGeneratedQuestions(parsed.questions.map(normalizeQuestion));
+  // Silent before this: the model returning fewer than `count` items to begin
+  // with, or one item in an otherwise-fine batch glitching (empty text, no
+  // options left after dedup, no option marked correct) and getting dropped
+  // by sanitizeGeneratedQuestions — either way "asked for 10, got 7" had zero
+  // explanation anywhere in the UI. Tracked the same way medicallyFlaggedCount
+  // already was, and surfaced by the same warning in agent.ts's
+  // generate_quiz_topic step. Deliberately NOT the same bucket as the medical
+  // judge's drops below — that's an intentional safety filter, this is a
+  // shortfall against what was actually asked for.
+  const malformedDroppedCount = Math.max(0, count - sanitized.length);
+  const judged = await verifyQuestionsMedically(sanitized, undefined);
+
+  if (judged.questions.length === 0 && import.meta.env.DEV) {
+    // Dev-only diagnostic: pinpoint WHERE the batch got dropped to zero —
+    // the raw model output, or sanitize, or the medical judge — since the
+    // generic "couldn't generate" error alone doesn't say which.
+    console.error('[StudyX AI] generateQuestionsFromTopic produced 0 questions ' + JSON.stringify({
+      topic,
+      examStyle,
+      rawParsedCount: parsed.questions?.length ?? 0,
+      rawParsedSample: parsed.questions?.[0],
+      sanitizedCount: sanitized.length,
+      flaggedCount: judged.flaggedCount,
+      flaggedReasons: judged.flaggedReasons,
+    }, null, 2));
+  }
+
   return {
-    questions: parsed.questions.map(normalizeQuestion),
+    questions: judged.questions,
     sources: [],
     mode: 'standard',
+    medicallyFlaggedCount: judged.flaggedCount,
+    malformedDroppedCount,
+    flaggedReasons: judged.flaggedReasons,
   };
 }
 
@@ -317,12 +420,12 @@ export async function analyzeAnswer(
       const result = validateJson<AIAnalysisResult>(raw);
       return result.ok && result.value?.explanation ? result.value : null;
     },
-    fix: async (_raw, error) => (
+    fix: async (raw, error) => (
       groqRequest({
         task: 'explanation',
         messages: [
-          { role: 'system', content: 'Repară JSON-ul invalid și păstrează exact aceeași schemă. Nu adăuga text în afara JSON-ului. Păstrează valorile în română.' },
-          { role: 'user', content: `JSON invalid: ${error}` },
+          { role: 'system', content: 'Repară JSON-ul invalid și păstrează exact aceeași schemă. Nu inventa conținut nou — corectează doar sintaxa. Nu adăuga text în afara JSON-ului. Păstrează valorile în română.' },
+          { role: 'user', content: `JSON invalid: ${error}\n\nJSON de reparat:\n${raw}` },
         ],
         skipLibraryContext: true,
       })
@@ -337,10 +440,6 @@ export async function analyzeAnswer(
 export async function generateQuestions(request: AIQuestionRequest) {
   const profile = request.userProfile ?? null;
   return QuestionGenerator.generate(profile, request);
-}
-
-export function getNextQuestion(state: AINextQuestionState) {
-  return LearningStrategist.getNextQuestion(state);
 }
 
 export async function generateHint(question: Question) {
@@ -440,7 +539,7 @@ export class ExamSimulator {
       count: 10,
       difficulty: 'hard',
       weakTopics: getWeakTopicsForProfile(profileId),
-      userProfile: { ...profile, examModeEnabled: true },
+      userProfile: profile,
       mode: 'exam',
     });
   }
@@ -468,6 +567,16 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
   const studyContext = deepCleanText(options.studyContext ?? '');
   const conversationSummary = deepCleanText(options.conversationSummary ?? '');
   const focusTopics = (options.focusTopics ?? []).map((topic) => deepCleanText(topic)).filter(Boolean);
+  const personalMemory = deepCleanText(options.personalMemory ?? '');
+  const toneLines: string[] = [];
+  if (options.tone?.state === 'frustrated') {
+    toneLines.push('- studentul pare frustrat sau epuizat: recunoaște-o într-o jumătate de propoziție (fără dramatism), apoi simplifică — un singur pas concret, fără liste lungi');
+  } else if (options.tone?.state === 'confused') {
+    toneLines.push('- studentul spune că nu înțelege: NU repeta explicația la fel; schimbă unghiul (analogie, exemplu clinic, schemă) și verifică la final cu o singură întrebare scurtă');
+  }
+  if (options.tone?.late) {
+    toneLines.push('- e târziu noaptea: rămâi concis și, dacă se potrivește firesc, menționează o dată (nu insistent) că memoria se consolidează mai bine după somn');
+  }
 
   const modeInstructions: Record<ChatMode, string[]> = {
     grounded: [
@@ -486,9 +595,21 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
       'Pune accent pe ce ar transforma profesorul ușor într-o grilă: diferențe, excepții, indicații, contraindicații, triade, criterii.',
     ],
     diagram: [
-      'Rol: arhitect de scheme. Transformă conținutul în structură vizuală textuală, nu în eseu.',
-      'Când există mecanism, folosește lanțuri cu săgeți: cauză -> proces -> manifestare -> consecință -> capcană.',
-      'Când există diferențial, folosește tabel compact. Când există conduită, folosește algoritm pas-cu-pas.',
+      'Rol: arhitect de scheme. Transformă conținutul în structură vizuală, nu în eseu.',
+      'OBLIGATORIU pentru mecanisme, fluxuri și algoritmi de decizie: desenează o diagramă într-un bloc de cod ```mermaid, folosind sintaxa flowchart. Aplicația o randează ca schemă grafică reală.',
+      'Format acceptat (respectă-l exact):',
+      '```mermaid',
+      'graph TD',
+      '  A([Punct de plecare]) --> B[Proces sau mecanism]',
+      '  B --> C{Decizie?}',
+      '  C -->|Da| D[Conduită A]',
+      '  C -->|Nu| E[Conduită B]',
+      '  D --> F((Capcană de examen))',
+      '```',
+      'Reguli de diagramă: id-uri scurte fără diacritice (A, B, C1); etichete de maximum 6 cuvinte, fără ghilimele și fără paranteze în interior; maximum 14 noduri; folosește `graph TD` pentru algoritmi și `graph LR` pentru lanțuri cauzale liniare.',
+      'Semantica formelor: ([...]) = start/final, [...] = proces, {...} = decizie, ((...)) = capcană sau punct critic de examen.',
+      'Când există diferențial sau clasificare, folosește tabel Markdown compact în loc de diagramă (tabelul e mai lizibil decât un graf).',
+      'După diagramă, explică pe scurt în text ramurile importante — diagrama nu trebuie să rămână singură.',
       'După schemă, adaugă 3-5 "noduri de examen" care sunt cele mai probabile de întrebat.',
     ],
     test: [
@@ -511,13 +632,37 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
   return [
     'Ești asistentul medical virtual premium din StudyX: empatic, clar, organizat și riguros.',
     '',
+    // Fără asta, modelul cade pe reflexele generice de "asistent de cod" —
+    // confirmat live: întrebat "unde a fost pus acest folder?" după ce
+    // agentul chiar crease un folder cu grile în aplicație, a răspuns că nu
+    // are acces la sistemul de fișiere al userului și a dat instrucțiuni să
+    // creeze manual un folder pe Windows/Mac/Linux cu un fișier .txt — o
+    // halucinație completă, fără nicio legătură cu StudyX. "Folder"/"agent"
+    // nu au un sens implicit universal; trebuie spus explicit ce înseamnă AICI.
+    'CONTEXT DESPRE APLICAȚIE (StudyX, nu un sistem de fișiere sau un IDE):',
+    '- „folder" înseamnă un folder DIN APLICAȚIE (organizează grile/flashcarduri, vizibil în bara laterală sub FOLDERE) — NU un folder de pe computerul userului. Nu ai și nu ai avea nevoie de acces la sistemul de fișiere; nu sugera niciodată userului să creeze manual foldere/fișiere pe disc pentru ceva ce aplicația gestionează singură.',
+    '- „agentul"/„acțiunea agentului" se referă la asistentul AI integrat în aplicație care creează grile, flashcarduri și foldere direct în StudyX când i se cere — nu la un „agent patogen" sau alt sens medical al cuvântului, decât dacă întrebarea e clar despre un subiect medical concret.',
+    '- când userul întreabă despre o acțiune recentă ("ce a făcut agentul", "de ce a eșuat", "unde s-a salvat X") — răspunsul e în istoricul conversației de mai jos (mesajele agentului conțin rezultatul real). Dacă nu găsești acolo un răspuns clar, spune sincer că nu ai destule detalii, nu inventa un scenariu plauzibil dar greșit.',
+    '',
+    'STIL CONVERSAȚIONAL (cum vorbești, peste formatarea de mai jos):',
+    '- vorbești ca un mentor care îl cunoaște pe student, nu ca un manual: direct, cald, fără formule de umplutură („Desigur!", „Excelentă întrebare!") și fără să reiei salutul în fiecare mesaj',
+    '- folosește ce știi despre student NATURAL și rar, când ajută (ex. „ai zis că preferi scheme, uite una"); nu enumera ce ai reținut și nu spune „conform memoriei mele"',
+    '- dacă cererea e cu adevărat ambiguă, pune O SINGURĂ întrebare de clarificare în loc să ghicești; altfel răspunde direct',
+    '- dacă nu ești sigur de o valoare, doză sau prag, spune-o explicit în loc să pară sigur; nu inventa',
+    '- după o explicație grea, poți oferi (nu impune) o mini-întrebare de verificare, mai ales dacă studentul a mai greșit subiectul',
+    '- variază structura răspunsurilor; nu începe mai multe răspunsuri la rând cu aceeași formulă',
+    ...toneLines,
+    '',
     'STIL:',
     '- răspunde exclusiv în limba română',
     '- folosește paragrafe scurte și liste doar când clarifică; evită blocuri dense de text',
+    '- structurează pe secțiuni scurte separate prin linie goală, fiecare cu titlu îngroșat; enumerările merg pe rânduri separate, niciodată „1. … 2. … 3. …" înșirate în același paragraf',
+    '- nu pune backslash înaintea caracterelor markdown (scrie **text**, nu \\*\\*text\\*\\*)',
     '- dacă utilizatorul cere ceva practic, oferă pași concreți numerotați',
     '- folosește formatare Markdown bogată: titluri scurte cu emoji relevant (ex: ## 🔑 Mecanism, ## ⚠️ Capcană), **bold** pentru termeni-cheie, liste cu - sau numerotate, și TABELE Markdown (| col | col |) pentru diferențiale, clasificări sau comparații',
     '- pentru mecanisme folosește lanțuri cu săgeți (cauză → efect → consecință); pentru comparații folosește un tabel; pentru pași folosește liste numerotate',
     '- când o schemă, un algoritm sau un tabel ar scurta înțelegerea cu 50%+, include-l fără să aștepți să fie cerut explicit',
+    '- aplicația randează grafic blocurile ```mermaid cu sintaxă `graph TD` / `graph LR`: folosește-le pentru mecanisme înlănțuite și algoritmi de decizie (etichete scurte, maximum 14 noduri), nu pentru simple enumerări',
     '- dimensiunea răspunsului trebuie să fie proporțională cu complexitatea întrebării: simplu → scurt și direct, complex → structurat și complet',
     '- NU copia propoziții întregi din context — reformulează cu cuvintele tale; NU repeta același conținut de două ori în răspuns',
     '- dacă contextul e prea subțire pentru cerere, spune-o pe scurt și răspunde din cunoștințe medicale generale, în loc să umpli cu text copiat',
@@ -539,6 +684,9 @@ function buildChatSystemPrompt(contextSummary: string, options: ChatResponseOpti
     `MOD ACTIV: ${mode.toUpperCase()}`,
     ...modeInstructions[mode],
     '',
+    personalMemory ? `CE ȘTII DESPRE STUDENT (memorie persistentă, ajustabilă de el; folosește-o doar când e relevantă, nu o enumera):
+${personalMemory}
+` : '',
     conversationSummary ? `REZUMATUL CONVERSAȚIEI PÂNĂ ACUM (memorie de context — folosește-l ca să păstrezi continuitatea, nu îl repeta):\n${conversationSummary}\n` : '',
     studyContext ? `PROFIL DE STUDIU ȘI ADAPTARE:\n${studyContext}\n` : '',
     hasContext
@@ -554,7 +702,7 @@ export async function generateChatResponse(
   options: ChatResponseOptions = {},
 ): Promise<string> {
   const systemPrompt = buildChatSystemPrompt(contextSummary, options);
-  const recentHistory = history.slice(-10);
+  const recentHistory = fitHistoryToBudget(history);
 
   return groqRequest({
     task: 'chat',
@@ -577,7 +725,7 @@ export async function generateChatResponseStream(
   abortSignal?: AbortSignal,
 ): Promise<void> {
   const systemPrompt = buildChatSystemPrompt(contextSummary, options);
-  const recentHistory = history.slice(-10);
+  const recentHistory = fitHistoryToBudget(history);
 
   await groqStream(
     [
@@ -640,6 +788,3 @@ export function getUserProfile(profileId: string) {
   return loadUserProfile(profileId);
 }
 
-export function generateFromMistakeBank(profileId: string) {
-  return generateFromMistakes(profileId);
-}

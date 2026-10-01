@@ -85,7 +85,7 @@ export default function DropzoneOverlay({ onFilesDropped }: Props) {
               transition={calmMotion ? { duration: 0.18 } : { repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
               className="w-28 h-28 rounded-[32px] flex items-center justify-center shadow-2xl"
               style={{ 
-                background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, 
+                background: theme.accent, 
                 color: '#fff',
                 boxShadow: `0 20px 40px ${theme.accent}66`
               }}
@@ -95,7 +95,7 @@ export default function DropzoneOverlay({ onFilesDropped }: Props) {
             
             <div className="space-y-3">
               <h2 className="text-4xl font-black tracking-tight" style={{ color: theme.text }}>
-                Import <span style={{ color: theme.accent }}>Inteligent</span>
+                Import <span style={{ color: theme.accentText }}>Inteligent</span>
               </h2>
               <p className="text-lg font-medium opacity-60 max-w-xs mx-auto leading-relaxed" style={{ color: theme.text }}>
                 Eliberează fișierele aici pentru a le indexa în Biblioteca AI.
@@ -104,7 +104,7 @@ export default function DropzoneOverlay({ onFilesDropped }: Props) {
 
             <div className="flex gap-3 flex-wrap justify-center">
               {[
-                { label: 'PDF / Word', color: theme.accent },
+                { label: 'PDF / Word', color: theme.accentText },
                 { label: 'OCR Medical', color: '#FF9F0A' },
                 { label: 'RAG Indexing', color: theme.success }
               ].map(t => (

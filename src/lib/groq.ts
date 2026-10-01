@@ -1,11 +1,17 @@
 import { useAIStore } from '../store/aiStore';
-import { HEART_IMG, ECG_IMG, CELL_IMG, DNA_IMG, NEURON_IMG } from '../data/sampleImages';
 import { getMedicalSystemPrompt } from './aiContext';
 import { logAIDebug } from '../ai/debug';
 import type { AIRequestTask } from '../ai/types';
 import { createRequestGovernor } from './aiRequestGovernor';
+import { extractJsonArrayLenient } from './jsonExtract';
 import { logDiagnosticEvent } from '../store/diagnosticsStore';
+import { useToastStore } from '../store/toastStore';
+import { cleanFlashcardText, normalizeRomanianDiacritics } from './flashcardText';
+import { rateLimitWaitSeconds } from './ai/friendlyError';
+import { parseRateHeaders } from './ai/rateHeaders';
+import { estimateTokens, useAIUsageStore } from '../store/aiUsageStore';
 import { buildQuestionTypeInstruction, type QuestionType } from './ai/questionTypes';
+import { healPrimaryModelChoice, isModelUnavailableError, nextCandidateModel } from './ai/modelHealing';
 
 /**
  * Providers don't agree on an error shape: Groq/Google follow the OpenAI
@@ -21,16 +27,27 @@ async function extractApiErrorMessage(res: Response): Promise<string> {
   const body = await res.json().catch(() => null) as
     | { error?: { message?: string } | string; detail?: string | Array<{ msg?: string }>; message?: string }
     | null;
+  let message: string | null = null;
   if (body) {
-    if (typeof body.error === 'string') return body.error;
-    if (body.error?.message) return body.error.message;
-    if (typeof body.detail === 'string') return body.detail;
-    if (Array.isArray(body.detail) && body.detail.length > 0) {
-      return body.detail.map((d) => d.msg).filter(Boolean).join('; ') || JSON.stringify(body.detail);
+    if (typeof body.error === 'string') message = body.error;
+    else if (body.error?.message) message = body.error.message;
+    else if (typeof body.detail === 'string') message = body.detail;
+    else if (Array.isArray(body.detail) && body.detail.length > 0) {
+      message = body.detail.map((d) => d.msg).filter(Boolean).join('; ') || JSON.stringify(body.detail);
     }
-    if (body.message) return body.message;
+    else if (body.message) message = body.message;
   }
-  return res.statusText || `HTTP ${res.status}`;
+  message ??= res.statusText || `HTTP ${res.status}`;
+
+  // 402 is the one status where the raw provider text (usually terse English,
+  // e.g. Google's "Payment required to access this resource") leaves the user
+  // with no idea what to actually do — unlike 401/403/429, which already get
+  // a clear Romanian message elsewhere. Append actionable guidance instead of
+  // just passing the raw string through to the chat bubble.
+  if (res.status === 402) {
+    return `${message} — cheia API a atins limita gratuită și necesită activarea facturării la provider, sau schimbă providerul din Setări AI.`;
+  }
+  return message;
 }
 
 export type GroqMessagePart =
@@ -113,6 +130,17 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
     };
   }
 
+  if (provider === 'mistral') {
+    return {
+      name: 'Mistral AI',
+      // OpenAI-compatible, ~1B tokens/lună gratis pe tier-ul "Experiment",
+      // fără card — CORS confirmat live (access-control-allow-origin: *),
+      // spre deosebire de NVIDIA NIM (încercat și scos, vezi istoricul git).
+      endpoint: 'https://api.mistral.ai/v1/chat/completions',
+      keyHint: 'Cheia API Mistral nu este configurata. Mergi la Setari AI.',
+    };
+  }
+
   return {
     name: 'Groq',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
@@ -121,34 +149,95 @@ function getProviderConfig(provider: ReturnType<typeof useAIStore.getState>['pro
 }
 
 /** Default model to use when we fall back to another provider mid-request. */
-const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras', string> = {
-  groq: 'llama-3.3-70b-versatile',
-  google: 'gemini-2.5-flash',
+const FALLBACK_MODEL: Record<'groq' | 'google' | 'cerebras' | 'mistral', string> = {
+  groq: 'openai/gpt-oss-120b',
+  google: 'gemini-3.8-flash',
   cerebras: 'gpt-oss-120b',
+  mistral: 'mistral-small-latest',
 };
 
-type ProviderId = 'groq' | 'google' | 'cerebras';
+type ProviderId = 'groq' | 'google' | 'cerebras' | 'mistral';
+
+const PROVIDER_ORDER: ProviderId[] = ['groq', 'google', 'cerebras', 'mistral'];
+
+/**
+ * How long we keep starting requests on a fallback provider after switching away
+ * from a rate-limited one, before giving the primary another shot. Without this,
+ * every single request would re-hit the still-limited primary first and eat its
+ * retry attempts before falling back again.
+ */
+const FALLBACK_STICKY_MS = 10 * 60 * 1000;
+
+/** In-memory only (per app session) — which provider we're currently "stuck" on. */
+let stickyFallback: { provider: ProviderId; primary: ProviderId; until: number } | null = null;
 
 /**
  * Provider chain: the active provider first, then any OTHER provider that has a
  * saved key. When one hits its free-tier limit (or errors), callers transparently
  * continue on the next — so the three free tiers act like one big pool.
+ *
+ * If we recently switched away from `primaryProvider` due to a failure, requests
+ * start on that fallback provider instead (still trying `primaryProvider` later in
+ * the chain, in case it already recovered) until FALLBACK_STICKY_MS elapses.
  */
 function buildProviderChain(
   primaryProvider: ProviderId,
-  primaryKey: string,
   primaryModel: string,
-  providerKeys: Partial<Record<ProviderId, string>> | undefined,
+  providerKeys: Partial<Record<ProviderId, string>>,
 ): Array<{ provider: ProviderId; key: string; model: string }> {
-  const chain: Array<{ provider: ProviderId; key: string; model: string }> = [
-    { provider: primaryProvider, key: primaryKey, model: primaryModel },
-  ];
-  for (const p of ['groq', 'google', 'cerebras'] as const) {
-    if (p === primaryProvider) continue;
-    const k = sanitizeKey(providerKeys?.[p] ?? '');
-    if (k) chain.push({ provider: p, key: k, model: FALLBACK_MODEL[p] });
+  if (stickyFallback && stickyFallback.until <= Date.now()) stickyFallback = null;
+
+  const startProvider =
+    stickyFallback &&
+    stickyFallback.primary === primaryProvider &&
+    sanitizeKey(providerKeys[stickyFallback.provider] ?? '')
+      ? stickyFallback.provider
+      : primaryProvider;
+
+  const modelFor = (p: ProviderId) => (p === primaryProvider ? primaryModel : FALLBACK_MODEL[p]);
+  const ordered = [startProvider, ...PROVIDER_ORDER.filter((p) => p !== startProvider)];
+
+  const chain: Array<{ provider: ProviderId; key: string; model: string }> = [];
+  for (const p of ordered) {
+    const k = sanitizeKey(providerKeys[p] ?? '');
+    if (k) chain.push({ provider: p, key: k, model: modelFor(p) });
   }
   return chain;
+}
+
+/**
+ * Records which provider actually served a request and, when it's a fallback
+ * (not the user's configured primary), notifies the user once via toast so
+ * they know the app quietly switched — e.g. "Limita Groq atinsă — am trecut
+ * automat pe Google Gemini." Clears the sticky state once the primary answers
+ * again (it recovered on its own).
+ */
+function trackProviderOutcome(provider: ProviderId, primaryProvider: ProviderId, providerName: string, armSticky = true) {
+  if (provider === primaryProvider) {
+    stickyFallback = null;
+    return;
+  }
+  // A request the primary rejected for its own content (too large, malformed) says nothing about the primary's health.
+  if (!armSticky) return;
+  const isNewSwitch = !stickyFallback || stickyFallback.provider !== provider;
+  // Armed once per switch: extending it on every success would keep the app on the fallback forever.
+  if (isNewSwitch) {
+    stickyFallback = { provider, primary: primaryProvider, until: Date.now() + FALLBACK_STICKY_MS };
+    useToastStore.getState().addToast(
+      `Furnizorul curent nu a răspuns (limită sau eroare) — am trecut automat pe ${providerName}.`,
+      'info',
+      6000,
+    );
+  }
+}
+
+/** The request itself was refused (too big, malformed) — retrying elsewhere is fine, but it does not mean the provider is down. */
+function isRequestSpecificError(message: string): boolean {
+  return /\b(?:400|413|422)\b|request too large|too large|bad request|invalid request|context length/i.test(message);
+}
+
+function estimateMessagesTokens(messages: GroqMessage[]): number {
+  return estimateTokens(messages.reduce((text, message) => text + (typeof message.content === 'string' ? message.content : ''), ''));
 }
 
 /**
@@ -156,9 +245,19 @@ function buildProviderChain(
  * on 429. When a fallback provider is available we retry less (fail fast → switch);
  * on the last provider we ride out per-minute rate limits with more attempts.
  */
+/** A timer Stop can cut short: rejects with an AbortError the moment the signal fires. */
+function sleepMs(ms: number, abortSignal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+    const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+    const timer = setTimeout(() => { abortSignal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 async function attemptOnProvider(
   cfg: { name: string; endpoint: string },
-  link: { key: string; model: string },
+  link: { key: string; model: string; provider?: ProviderId },
   finalMessages: GroqMessage[],
   temperature: number,
   maxTokens: number,
@@ -170,34 +269,61 @@ async function attemptOnProvider(
   let lastError = 'Eroare necunoscuta';
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
+      const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
       const response = await fetch(cfg.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${link.key}` },
         body: JSON.stringify({ model: link.model, messages: finalMessages, temperature, max_tokens: maxTokens }),
-        signal: abortSignal,
+        signal: abortSignal ? AbortSignal.any([abortSignal, timeoutSignal]) : timeoutSignal,
       });
 
       if (!response.ok) {
         const msg = await extractApiErrorMessage(response);
+        if (link.provider) {
+          const window = parseRateHeaders(response.headers);
+          if (window) useAIUsageStore.getState().noteWindow(link.provider, window);
+        }
         if (response.status === 429 && attempt < maxAttempts - 1) {
           const retryAfter = response.headers.get('retry-after');
-          const delayMs = getRetryDelayMs(attempt, retryAfter);
+          const retryAfterSeconds = retryAfter ? Number(retryAfter) : 0;
+          // A daily/minute quota that resets in minutes would otherwise hold the request queue
+          // (and the Stop button) hostage; fail fast so the fallback provider or the user can act.
+          // Only the provider's own wait counts here: the backoff we add on top must not trigger it.
+          if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds * 1000 > MAX_RATE_LIMIT_WAIT_MS) throw new NonRetryableError(msg);
+          const delayMs = Math.min(getRetryDelayMs(attempt, retryAfter), MAX_RATE_LIMIT_WAIT_MS);
           logAIDebug('groq:ratelimit', { task, provider: cfg.name, retryAfter, delayMs });
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          await sleepMs(delayMs, abortSignal);
           continue;
         }
+        if (NON_RETRYABLE_STATUSES.has(response.status)) throw new NonRetryableError(msg);
         throw new Error(msg);
       }
 
       const data = await response.json();
       const output = (data.choices?.[0]?.message?.content ?? '').trim();
       logAIDebug('groq:response', { task, provider: cfg.name, output });
+      if (link.provider) {
+        const reported = Number(data.usage?.total_tokens ?? (Number(data.usage?.prompt_tokens ?? 0) + Number(data.usage?.completion_tokens ?? 0)));
+        const exact = Number.isFinite(reported) && reported > 0;
+        useAIUsageStore.getState().record(
+          link.provider,
+          exact ? reported : estimateMessagesTokens(finalMessages) + estimateTokens(output),
+          { estimated: !exact, window: parseRateHeaders(response.headers) },
+        );
+      }
       return output;
     } catch (error: unknown) {
+      // Stop pressed, or a failure retrying cannot fix: surface it now instead of after the backoff.
+      if (error instanceof NonRetryableError || (error instanceof Error && error.name === 'AbortError')) throw error;
+      // No answer within the limit: retrying the same stalled provider would only repeat the wait,
+      // so fail this one now and let the provider chain (or the user) move on.
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        throw new NonRetryableError(`${cfg.name} nu a răspuns în ${REQUEST_TIMEOUT_MS / 1000} de secunde. Încearcă din nou.`);
+      }
       lastError = error instanceof Error ? error.message : String(error);
       logAIDebug('groq:error', { task, provider: cfg.name, attempt, error: lastError });
       if (attempt < maxAttempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(attempt, null)));
+        await sleepMs(getRetryDelayMs(attempt, null), abortSignal);
       }
     }
   }
@@ -218,49 +344,66 @@ export async function validateApiKey(
   if (!cleanKey) return { ok: false, error: 'Cheia este goală.' };
 
   const config = getProviderConfig(provider);
-  const testModel =
-    provider === 'google' ? 'gemini-2.0-flash' : provider === 'cerebras' ? 'gpt-oss-120b' : 'llama-3.1-8b-instant';
+  let testModel =
+    provider === 'google' ? 'gemini-3.8-flash'
+    : provider === 'cerebras' ? 'gpt-oss-120b'
+    : provider === 'mistral' ? 'mistral-small-latest'
+    : 'openai/gpt-oss-20b';
 
-  try {
-    const res = await fetch(config.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleanKey}` },
-      body: JSON.stringify({
-        model: testModel,
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 1,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
+  // A single hardcoded test model can go dead on the provider's own schedule
+  // (the same class of problem modelHealing.ts guards live requests against —
+  // Google/Groq/Cerebras all retire model IDs without warning) and make a
+  // perfectly valid key look "rejected" here even though other models work
+  // fine on it. Try one fallback candidate before concluding the KEY itself
+  // is bad, not just this particular model.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const res = await fetch(config.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleanKey}` },
+        body: JSON.stringify({
+          model: testModel,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
 
-    if (res.ok) return { ok: true };
+      if (res.ok) return { ok: true };
 
-    const message = await extractApiErrorMessage(res);
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: `Cheie respinsă de ${config.name} (${res.status}). Verifică sau regenerează cheia.` };
+      const message = await extractApiErrorMessage(res);
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, error: `Cheie respinsă de ${config.name} (${res.status}). Verifică sau regenerează cheia.` };
+      }
+      if (res.status === 429) {
+        // A 429 only happens AFTER the key authenticates (an invalid key returns
+        // 401/403), so the key is valid — it just hit the rate limit during this
+        // test ping. Treat as success with a soft note, not a hard failure.
+        return { ok: true, warning: 'Cheie validă. Ai atins temporar limita de rate (free tier) — AI-ul merge, doar lasă câteva secunde între cereri.' };
+      }
+
+      const fallback = attempt === 0 ? nextCandidateModel(provider, testModel) : null;
+      if (fallback) {
+        testModel = fallback;
+        continue;
+      }
+      return { ok: false, error: `Eroare ${config.name} (${res.status}): ${message}` };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        return { ok: false, error: 'Verificarea a expirat — verifică conexiunea la internet.' };
+      }
+      return { ok: false, error: error instanceof Error ? error.message : 'Nu am putut contacta serverul AI.' };
     }
-    if (res.status === 429) {
-      // A 429 only happens AFTER the key authenticates (an invalid key returns
-      // 401/403), so the key is valid — it just hit the rate limit during this
-      // test ping. Treat as success with a soft note, not a hard failure.
-      return { ok: true, warning: 'Cheie validă. Ai atins temporar limita de rate (free tier) — AI-ul merge, doar lasă câteva secunde între cereri.' };
-    }
-    return { ok: false, error: `Eroare ${config.name} (${res.status}): ${message}` };
-  } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      return { ok: false, error: 'Verificarea a expirat — verifică conexiunea la internet.' };
-    }
-    return { ok: false, error: error instanceof Error ? error.message : 'Nu am putut contacta serverul AI.' };
   }
+  return { ok: false, error: `Eroare ${config.name}: nu am putut valida cheia.` };
 }
 
 function extractJsonArray(raw: string): string | null {
-  const stripped = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '');
-  const start = stripped.indexOf('[');
-  const end = stripped.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) return null;
-  return stripped.slice(start, end + 1);
+  // Slicing to the last `]` used to land on an inner `options` array whenever a
+  // reply was cut short by max_tokens, so the batch failed to parse and every
+  // complete question in it was thrown away. This keeps the finished ones.
+  return extractJsonArrayLenient(raw);
 }
 
 function detectLanguage(text: string): string {
@@ -299,26 +442,36 @@ export function isDuplicateQuestion(newText: string, existingTexts: string[]): b
 
 // ── Anti-Hallucination Validator ──────────────────────────────────────────────
 // Ensures AI output is coherent: exactly 1 correct option, non-empty, non-duplicate options.
-function isValidQuestion(q: GeneratedQuestion): boolean {
+export function isValidQuestion(q: GeneratedQuestion): boolean {
   if (!q.text?.trim() || !Array.isArray(q.options) || q.options.length < 2) return false;
-  if (q.text.toLowerCase().includes('json') || q.text.toLowerCase().includes('format')) return false;
+  // Reject a stem that is ABOUT the output format ("returnează în format JSON"),
+  // not any stem that merely contains those words. The old substring test threw
+  // away perfectly good medical questions — "Din ce este format nefronul?" is
+  // ordinary Romanian, and every such question vanished silently.
+  if (/\b(format|formatul)\s+(json|de\s+r[aă]spuns)\b|\bjson\b/i.test(q.text)) return false;
+
   const corrects = q.options.filter(o => o.isCorrect === true);
   // Hallucination check 1: must have exactly one correct option
   if (corrects.length !== 1) return false;
   // Hallucination check 2: correct option must have non-empty text
   if (!corrects[0].text?.trim()) return false;
-  // Hallucination check 3: correct option must not be virtually identical to a wrong option
-  // (catches cases where AI copies the answer into a distractor with minimal edits)
-  const correctNorm = corrects[0].text.toLowerCase().trim();
-  const hasPhantomDuplicate = q.options
-    .filter(o => !o.isCorrect)
-    .some(o => {
-      const wrongNorm = (o.text ?? '').toLowerCase().trim();
-      if (!wrongNorm) return false;
-      const maxLen = Math.max(correctNorm.length, wrongNorm.length);
-      return maxLen > 0 && levenshtein(correctNorm, wrongNorm) / maxLen < 0.07; // >93% identical
-    });
-  return !hasPhantomDuplicate;
+  // Hallucination check 3: every option needs real text. An empty distractor
+  // used to be skipped by the duplicate scan below and so passed validation,
+  // leaving a blank choice in a saved quiz.
+  if (q.options.some(o => !o.text?.trim())) return false;
+
+  // Hallucination check 4: no two options may say the same thing — previously
+  // only distractor-vs-correct was compared, so the AI could repeat the same
+  // wrong answer twice and it was accepted.
+  const normalized = q.options.map(o => o.text.toLowerCase().trim());
+  for (let i = 0; i < normalized.length; i += 1) {
+    for (let j = i + 1; j < normalized.length; j += 1) {
+      const maxLen = Math.max(normalized[i].length, normalized[j].length);
+      if (maxLen === 0) return false;
+      if (levenshtein(normalized[i], normalized[j]) / maxLen < 0.07) return false; // >93% identical
+    }
+  }
+  return true;
 }
 
 // ── Smart Context Chunking ────────────────────────────────────────────────────
@@ -347,73 +500,21 @@ function chunkText(text: string, maxSize = 4500, overlap = 350, maxChunks = 4): 
   return chunks;
 }
 
-// ── Image Recommendation ──────────────────────────────────────────────────────
-// Returns the most relevant sample medical diagram for a given question's topic.
-const IMAGE_KEYWORD_MAP: Array<{ keywords: string[]; image: string }> = [
-  {
-    keywords: [
-      'inimă', 'cardiac', 'atriu', 'ventricul', 'cord', 'mitral', 'aortă',
-      'pericardiu', 'coronarian', 'endocard', 'miocard', 'valvă', 'sinusal',
-      'heart', 'atrial', 'ventricular', 'tricuspidă', 'pulmonară',
-    ],
-    image: HEART_IMG,
-  },
-  {
-    keywords: [
-      'ecg', 'ekg', 'electrocardiog', 'pqrst', 'fibrilație atrială',
-      'tahicardie', 'bradicardie', 'aritmie', 'flutter', 'bloc av',
-      'st-', 'qrs', 'interval qt', 'undă p', 'infarct miocardic',
-    ],
-    image: ECG_IMG,
-  },
-  {
-    keywords: [
-      'celulă', 'nucleu', 'mitocondri', 'golgi', 'lizozom', 'ribozom',
-      'reticul endoplasmatic', 'eucariot', 'citoplasmă', 'membrană celulară',
-      'organit', 'celular', 'procariote',
-    ],
-    image: CELL_IMG,
-  },
-  {
-    keywords: [
-      'adn', 'dna', 'cromozom', 'genă', 'mutație', 'helix', 'nucleotid',
-      'baze azotate', 'transcripție', 'translație', 'replicare', 'codon',
-      'genomic', 'alele', 'genotip', 'fenotip',
-    ],
-    image: DNA_IMG,
-  },
-  {
-    keywords: [
-      'neuron', 'axon', 'dendrit', 'sinapsă', 'sistem nervos', 'neural',
-      'mielină', 'potențial de acțiune', 'neurotransmițător', 'sinaptic',
-      'glia', 'neuro', 'acetilcolină', 'dopamină',
-    ],
-    image: NEURON_IMG,
-  },
-];
-
-/**
- * Recommends the most relevant sample medical diagram for a question.
- * Returns a data URL string or null if no strong match is found.
- */
-export function recommendImage(questionText: string): string | null {
-  const text = questionText.toLowerCase();
-  let best: { image: string; score: number } | null = null;
-  for (const entry of IMAGE_KEYWORD_MAP) {
-    const score = entry.keywords.reduce((acc, kw) => acc + (text.includes(kw) ? 1 : 0), 0);
-    if (score > 0 && (!best || score > best.score)) {
-      best = { image: entry.image, score };
-    }
-  }
-  return best?.image ?? null;
-}
-
 // ── Request Queue & Rate Limiting ──────────────────────────────────────────
 // Two governors:
 //  - groqGovernor: chat / stream / analysis / hints — serial, generous spacing
 //  - generationGovernor: question generation — 2 concurrent, tighter spacing
 const groqGovernor = createRequestGovernor({ concurrency: 1, baseSpacingMs: 400 });
 const generationGovernor = createRequestGovernor({ concurrency: 2, baseSpacingMs: 450 });
+
+/** An error another attempt cannot fix (bad key, oversized request, a limit that resets in minutes). */
+class NonRetryableError extends Error {}
+
+/** A 429 whose reset is further away than this is not worth waiting out inside one request. */
+const MAX_RATE_LIMIT_WAIT_MS = 8000;
+/** A request with no answer after this long is dropped, so a stalled connection cannot spin the UI forever. */
+const REQUEST_TIMEOUT_MS = 90_000;
+const NON_RETRYABLE_STATUSES = new Set([400, 401, 402, 403, 404, 405, 410, 413, 422]);
 
 function getRetryDelayMs(attempt: number, retryAfterHeader: string | null) {
   const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : 0;
@@ -447,6 +548,7 @@ export async function groqRequest({
     const primaryProvider = state.provider;
     const primaryKey = sanitizeKey(state.apiKey);
     if (!primaryKey) throw new Error(getProviderConfig(primaryProvider).keyHint);
+    const effectiveKeys: Partial<Record<ProviderId, string>> = { ...state.providerKeys, [primaryProvider]: primaryKey };
 
     const kb = skipLibraryContext ? '' : await state.getKnowledgeContext(buildKnowledgeQuery(messages), 6000);
     const finalMessages: GroqMessage[] = kb
@@ -467,7 +569,7 @@ export async function groqRequest({
 
     if (abortSignal?.aborted) throw new Error('Request aborted before start');
 
-    const chain = buildProviderChain(primaryProvider, primaryKey, state.model, state.providerKeys);
+    const chain = buildProviderChain(primaryProvider, state.model, effectiveKeys);
 
     let lastError = 'Eroare necunoscuta';
     for (let ci = 0; ci < chain.length; ci++) {
@@ -483,10 +585,37 @@ export async function groqRequest({
         messagesCount: messages.length,
       });
       try {
-        return await attemptOnProvider(cfg, link, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal);
+        const result = await attemptOnProvider(cfg, link, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal);
+        trackProviderOutcome(link.provider, primaryProvider, cfg.name, !isRequestSpecificError(lastError));
+        return result;
       } catch (error: unknown) {
+        // Stop pressed: not a provider failure, so do not try the next provider with a dead signal.
+        if (abortSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
         lastError = error instanceof Error ? error.message : String(error);
         logAIDebug('groq:providerFailed', { provider: link.provider, error: lastError });
+
+        // The model itself is gone (provider deprecated/decommissioned it), not
+        // just rate-limited or down — retry immediately on a known-good model
+        // for this SAME provider before giving up on it and moving to the next
+        // provider in the chain. A dead model would otherwise fail every future
+        // request forever, indistinguishable from the whole provider being down.
+        if (isModelUnavailableError(lastError)) {
+          const altModel = nextCandidateModel(link.provider, link.model);
+          if (altModel) {
+            try {
+              const healedResult = await attemptOnProvider(
+                cfg, { ...link, model: altModel }, finalMessages, finalTemperature, finalMaxTokens, task, !!next, abortSignal,
+              );
+              trackProviderOutcome(link.provider, primaryProvider, cfg.name, !isRequestSpecificError(lastError));
+              healPrimaryModelChoice(link.provider, primaryProvider, link.model, altModel, cfg.name);
+              return healedResult;
+            } catch (healError: unknown) {
+              lastError = healError instanceof Error ? healError.message : String(healError);
+              logAIDebug('groq:healAttemptFailed', { provider: link.provider, altModel, error: lastError });
+            }
+          }
+        }
+
         if (next) {
           logDiagnosticEvent({
             area: 'ai',
@@ -506,7 +635,7 @@ export async function groqRequest({
 export async function groqChat(
   messages: GroqMessage[],
   temperature = 0.7,
-  options: { skipLibraryContext?: boolean; task?: AIRequestTask; maxTokens?: number } = {},
+  options: { skipLibraryContext?: boolean; task?: AIRequestTask; maxTokens?: number; abortSignal?: AbortSignal } = {},
 ): Promise<string> {
   return groqRequest({
     task: options.task ?? 'chat',
@@ -514,6 +643,7 @@ export async function groqChat(
     temperature,
     maxTokens: options.maxTokens ?? 4096,
     skipLibraryContext: options.skipLibraryContext,
+    abortSignal: options.abortSignal,
   });
 }
 
@@ -588,32 +718,42 @@ export async function groqStream(
         ]
       : messages;
 
-    const timeoutSignal = AbortSignal.timeout(60_000);
-    const combinedSignal = abortSignal
-      ? AbortSignal.any([abortSignal, timeoutSignal])
-      : timeoutSignal;
-
     // Try each provider in the chain for the INITIAL connection only — once bytes
     // start streaming to the UI we commit to that provider (switching mid-stream
     // would mean discarding partial output the user already sees).
-    const chain = buildProviderChain(state.provider, primaryKey, state.model, state.providerKeys);
+    const primaryProvider = state.provider;
+    const effectiveKeys: Partial<Record<ProviderId, string>> = { ...state.providerKeys, [primaryProvider]: primaryKey };
+    const chain = buildProviderChain(primaryProvider, state.model, effectiveKeys);
     let res: Response | null = null;
-    let providerName = getProviderConfig(state.provider).name;
+    let usedProvider: ProviderId | null = null;
+    let providerName = getProviderConfig(primaryProvider).name;
     let lastError = 'Eroare necunoscuta';
+    // One controller for the whole stream: Stop reaches the body too, while the
+    // 60 s limit below only covers waiting for the provider to start answering.
+    let controller = new AbortController();
+    const onUserAbort = () => controller.abort(abortSignal?.reason);
+    abortSignal?.addEventListener('abort', onUserAbort, { once: true });
+    const cleanupAbort = () => abortSignal?.removeEventListener('abort', onUserAbort);
 
     for (let ci = 0; ci < chain.length; ci++) {
       const link = chain[ci];
       const cfg = getProviderConfig(link.provider);
+      // A fresh wait per provider: a stalled first one must not leave the next with an already-expired signal.
+      let timedOut = false;
+      const startTimer = setTimeout(() => { timedOut = true; controller.abort(new DOMException('timeout', 'TimeoutError')); }, 60_000);
       try {
         const attempt = await fetch(cfg.endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${link.key}` },
           body: JSON.stringify({ model: link.model, messages: finalMessages, temperature, max_tokens: 4096, stream: true }),
-          signal: combinedSignal,
+          signal: controller.signal,
         });
+        clearTimeout(startTimer);
         if (attempt.ok) {
           res = attempt;
+          usedProvider = link.provider;
           providerName = cfg.name;
+          trackProviderOutcome(link.provider, primaryProvider, cfg.name, !isRequestSpecificError(lastError));
           break;
         }
         lastError = await extractApiErrorMessage(attempt);
@@ -626,18 +766,36 @@ export async function groqStream(
             : lastError,
         });
       } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
+        clearTimeout(startTimer);
+        if (abortSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          cleanupAbort();
+          throw error;
+        }
+        if (timedOut) {
+          // The controller is spent; the next provider gets a clean one.
+          lastError = `${cfg.name} nu a răspuns în 60 de secunde.`;
+          controller = new AbortController();
+        } else {
+          lastError = error instanceof Error ? error.message : String(error);
+        }
       }
     }
 
-    if (!res) throw new Error(`Eroare ${providerName} API: ${lastError}`);
-    if (!res.body) throw new Error('Răspuns fără corp — încearcă din nou.');
+    if (!res) {
+      cleanupAbort();
+      throw new Error(`Eroare ${providerName} API: ${lastError}`);
+    }
+    if (!res.body) {
+      cleanupAbort();
+      throw new Error('Răspuns fără corp — încearcă din nou.');
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let full = '';
     let carry = '';
 
+    try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
@@ -670,6 +828,17 @@ export async function groqStream(
           console.error(err);
         }
       }
+    }
+    } finally {
+      cleanupAbort();
+    }
+    // Streamed replies carry no token count, so this is an estimate (shown with "≈").
+    if (usedProvider) {
+      useAIUsageStore.getState().record(
+        usedProvider,
+        estimateMessagesTokens(finalMessages) + estimateTokens(full),
+        { estimated: true, window: parseRateHeaders(res.headers) },
+      );
     }
     return full;
   });
@@ -735,7 +904,7 @@ ${chunk.slice(0, 5000)}
 ---
 
 Format (${needed} obiecte):
-[{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""${typeFormatField}}]`;
+[{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false},{"text":"E","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""${typeFormatField}}]`;
     logAIDebug('generateQuestionsFromText.prompt', { questionTypes, needed, userPrompt });
 
     let raw = '';
@@ -790,7 +959,7 @@ TEXT:
 ${chunks[0].slice(0, 5000)}
 ---
 
-Format: [{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false}],"explanation":"...","tags":[],"reference":""}]`;
+Format: [{"text":"?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false},{"text":"E","isCorrect":false}],"explanation":"...","tags":[],"reference":""}]`;
 
     try {
       const regenRaw = await groqChat([
@@ -830,7 +999,7 @@ export async function generateClinicalCase(
 STRUCTURA OBLIGATORIE:
 - "text": istoricul pacientului detaliat (sex, vârstă, simptome, analize) + întrebarea clinică
   Ex: "Pacient 45 ani, bărbat, dispnee 3 săptămâni, edeme gambiere. FCC=110. Rx: cardiomegalie. Diagnostic?"
-- "options": 4 opțiuni, un singur răspuns corect
+- "options": 5 opțiuni (A-E), un singur răspuns corect — formatul de la rezidențiat
 - "explanation": argumentare medicală (3-4 fraze)
 - "tags": 3-5 cuvinte cheie
 - "reference": Harrison/Gomella sau ""
@@ -841,15 +1010,20 @@ ${cleanText}
 ---
 
 Format JSON pur (${count} cazuri):
-[{"text":"Pacient...?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""}]`;
+[{"text":"Pacient...?","options":[{"text":"A","isCorrect":false},{"text":"B","isCorrect":true},{"text":"C","isCorrect":false},{"text":"D","isCorrect":false},{"text":"E","isCorrect":false}],"explanation":"...","tags":["tag"],"reference":""}]`;
 
   let raw = '';
+  let lastClinicalJsonError = '';
   for (let attempt = 0; attempt < 3; attempt++) {
+    const retryNote = lastClinicalJsonError
+      ? `\n\nATENTIE: Ultima incercare a returnat JSON invalid (${lastClinicalJsonError}). Returneaza STRICT un array JSON valid, fara text sau markdown in afara lui.`
+      : '';
     raw = await groqChat([
       { role: 'system', content: getMedicalSystemPrompt('examiner') + '\nGenerează cazuri clinice EXCLUSIV din textul primit.' },
-      { role: 'user', content: userPrompt },
+      { role: 'user', content: userPrompt + retryNote },
     ], 0.3, { skipLibraryContext: true, task: 'questions' });
     if (raw.includes('[') && raw.includes(']')) break;
+    lastClinicalJsonError = 'lipsesc parantezele [ ]';
   }
 
   const jsonStr = extractJsonArray(raw);
@@ -873,7 +1047,9 @@ function normalizeFlashcardKey(text: string) {
     .slice(0, 140);
 }
 
-function isDuplicateFlashcard(front: string, existingFronts: string[]) {
+const numbersIn = (text: string) => (text.match(/\d+/g) ?? []).join(',');
+
+export function isDuplicateFlashcard(front: string, existingFronts: string[]) {
   const normalized = normalizeFlashcardKey(front);
   if (!normalized) return true;
 
@@ -881,10 +1057,60 @@ function isDuplicateFlashcard(front: string, existingFronts: string[]) {
     const candidate = normalizeFlashcardKey(existing);
     if (!candidate) return false;
     if (candidate === normalized) return true;
+    // "MEN1" and "MEN2", "stadiul 2" and "stadiul 3" differ by one character yet are different questions.
+    if (numbersIn(candidate) !== numbersIn(normalized)) return false;
     const maxLen = Math.max(candidate.length, normalized.length);
-    if (maxLen < 24) return candidate.includes(normalized) || normalized.includes(candidate);
-    return 1 - levenshtein(candidate, normalized) / maxLen > 0.82;
+    // Short fronts: a substring match ("HTA" inside "Tratamentul HTA") is not a repeat, only a near-identical wording is.
+    return 1 - levenshtein(candidate, normalized) / maxLen > (maxLen < 24 ? 0.85 : 0.82);
   });
+}
+
+/**
+ * Thrown by `notesToFlashcards` (with `keepPartialOnError`) when the AI failed
+ * after some cards were already made, so the caller can keep them and resume.
+ */
+export class FlashcardGenerationInterrupted extends Error {
+  /** Cards generated before the failure. */
+  readonly partial: { front: string; back: string }[];
+  /** The error that stopped the run. */
+  readonly original: unknown;
+  /** Seconds the provider asked to wait, when it said so. */
+  readonly waitSeconds: number | null;
+  /** Chunk to resume from — the one that failed. */
+  readonly nextChunk: number;
+
+  constructor(
+    partial: { front: string; back: string }[],
+    original: unknown,
+    waitSeconds: number | null,
+    nextChunk: number,
+  ) {
+    super(original instanceof Error ? original.message : 'Generarea a fost întreruptă.');
+    this.name = 'FlashcardGenerationInterrupted';
+    this.partial = partial;
+    this.original = original;
+    this.waitSeconds = waitSeconds;
+    this.nextChunk = nextChunk;
+  }
+}
+
+/** Nothing new could be made from the text (everything it offered was already a card). */
+export class NoNewFlashcardsError extends Error {
+  constructor() {
+    super('Nu s-au putut genera flashcardurile. Textul ar putea fi prea complex sau ilizibil.');
+    this.name = 'NoNewFlashcardsError';
+  }
+}
+
+/** A per-minute limit resets within this; longer waits are left to the caller to surface. */
+const AUTO_WAIT_MAX_SECONDS = 75;
+const AUTO_WAIT_MAX_TIMES = 3;
+
+async function sleepWithCountdown(seconds: number, onTick?: (secondsLeft: number) => void, abortSignal?: AbortSignal) {
+  for (let left = Math.ceil(seconds); left > 0; left -= 1) {
+    onTick?.(left);
+    await sleepMs(1000, abortSignal);
+  }
 }
 
 export async function notesToFlashcards(
@@ -893,24 +1119,56 @@ export async function notesToFlashcards(
     count?: number;
     avoidFronts?: string[];
     sourceName?: string;
+    /** Called before the first batch and after every finished one, so the UI can show real progress. */
+    onProgress?: (done: number, target: number) => void;
+    /**
+     * Opt in to riding out a short rate limit: when the provider asks for up to
+     * ~75 s, wait and retry the same batch, calling this each second with the
+     * seconds left. Without it a rate limit fails the call immediately.
+     */
+    onWait?: (secondsLeft: number) => void;
+    /** If the AI fails after some cards exist, throw `FlashcardGenerationInterrupted` carrying them instead of losing them. */
+    keepPartialOnError?: boolean;
+    /** Resume: first chunk to use (from a previous interruption). */
+    startChunk?: number;
+    /** Resume: the card count of the original request, so the chunk list matches the first run. */
+    chunkBudget?: number;
+    /** Stop: cancels the request in flight and any rate-limit wait. */
+    abortSignal?: AbortSignal;
   } = {},
 ): Promise<{ front: string; back: string }[]> {
   if (!notesText || notesText.trim().length < 20)
     throw new Error('Notitele sunt prea scurte pentru conversie in flashcarduri.');
 
   const targetCount = Math.max(1, Math.min(100, Math.round(options.count ?? 15)));
-  const cleanText = notesText
+  const cleanText = normalizeRomanianDiacritics(notesText)
     .replace(/\f/g, '\n')
     .replace(/[ \t]{3,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  const maxChunks = Math.max(4, Math.min(14, Math.ceil(targetCount / 8)));
+  const maxChunks = Math.max(4, Math.min(14, Math.ceil((options.chunkBudget ?? targetCount) / 8)));
   const chunks = chunkText(cleanText, 5200, 420, maxChunks);
   const batchSize = 10;
   const generated: { front: string; back: string }[] = [];
   const seenFronts = [...(options.avoidFronts ?? [])];
+  options.onProgress?.(0, targetCount);
 
-  for (let index = 0; index < chunks.length && generated.length < targetCount; index += 1) {
+  let autoWaits = 0;
+  const askModel = async (messages: GroqMessage[], temperature: number): Promise<string> => {
+    for (;;) {
+      try {
+        return await groqChat(messages, temperature, { skipLibraryContext: true, task: 'questions', abortSignal: options.abortSignal });
+      } catch (error: unknown) {
+        const wait = rateLimitWaitSeconds(error);
+        const canWait = options.onWait && wait !== null && wait <= AUTO_WAIT_MAX_SECONDS && autoWaits < AUTO_WAIT_MAX_TIMES;
+        if (!canWait) throw error;
+        autoWaits += 1;
+        await sleepWithCountdown(wait + 1, options.onWait, options.abortSignal);
+      }
+    }
+  };
+
+  for (let index = options.startChunk ?? 0; index < chunks.length && generated.length < targetCount; index += 1) {
     const requested = Math.min(batchSize, targetCount - generated.length);
     const avoidList = seenFronts.slice(-35).map((front) => `- ${front.slice(0, 120)}`).join('\n');
     const userPrompt = `Transforma textul medical de mai jos in exact ${requested} flashcarduri ultra-eficiente pentru examen.
@@ -920,6 +1178,8 @@ REGULI:
 - Acopera definitii, mecanisme, semne clinice, diagnostic, tratament, capcane si diferente intre concepte apropiate.
 - Nu repeta carduri deja existente.
 - Nu formula carduri despre document/PDF/pagina; intreaba despre continutul medical.
+- In "front" si "back" scrie text simplu: fara markdown (fara **, #, liste cu -), cu diacritice romanesti corecte (ș, ț, ă, â, î), nu cu sedila (ş, ţ).
+- Fiecare "back" se termina cu o propozitie completa, nu cu "...".
 - Raspunde strict cu array JSON valid, fara markdown.
 ${avoidList ? `CARDURI DE EVITAT (deja exista sau au fost generate):\n${avoidList}\n` : ''}
 
@@ -931,12 +1191,23 @@ ${chunks[index]}
 Format: [{"front":"?","back":"..."}]`;
 
     let raw = '';
-    for (let attempt = 0; attempt < 3; attempt++) {
-      raw = await groqChat([
-        { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEsti expert in transformarea cursurilor medicale dense in flashcarduri de tip Active Recall, fara repetitii si fara umplutura.' },
-        { role: 'user', content: userPrompt },
-      ], attempt === 0 ? 0.32 : 0.45, { skipLibraryContext: true, task: 'questions' });
-      if (raw.includes('[') && raw.includes(']')) break;
+    let lastJsonError = '';
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const retryNote = lastJsonError
+          ? `\n\nATENTIE: Ultima incercare a returnat JSON invalid (${lastJsonError}). Returneaza STRICT un array JSON valid, fara text sau markdown in afara lui.`
+          : '';
+        raw = await askModel([
+          { role: 'system', content: getMedicalSystemPrompt('tutor') + '\nEsti expert in transformarea cursurilor medicale dense in flashcarduri de tip Active Recall, fara repetitii si fara umplutura.' },
+          { role: 'user', content: userPrompt + retryNote },
+        ], attempt === 0 ? 0.32 : 0.45);
+        if (raw.includes('[') && raw.includes(']')) break;
+        lastJsonError = 'lipsesc parantezele [ ]';
+      }
+    } catch (error: unknown) {
+      // Cards already made are worth more than a clean failure: hand them back so the caller can keep and resume.
+      if (!options.keepPartialOnError || generated.length === 0) throw error;
+      throw new FlashcardGenerationInterrupted(generated.slice(0, targetCount), error, rateLimitWaitSeconds(error), index);
     }
 
     const jsonStr = extractJsonArray(raw);
@@ -944,25 +1215,23 @@ Format: [{"front":"?","back":"..."}]`;
 
     try {
       const parsed = JSON.parse(jsonStr) as { front: string; back: string }[];
-      parsed
-        .filter(f => f.front?.trim() && f.back?.trim())
-        .filter(f => !isDuplicateFlashcard(f.front, seenFronts))
-        .forEach((flashcard) => {
-          if (generated.length >= targetCount) return;
-          generated.push({
-            front: flashcard.front.trim(),
-            back: flashcard.back.trim(),
-          });
-          seenFronts.push(flashcard.front);
-        });
+      // One pass, so a front repeated inside this same reply is compared with the ones just accepted.
+      for (const flashcard of parsed) {
+        if (generated.length >= targetCount) break;
+        if (typeof flashcard?.front !== 'string' || typeof flashcard?.back !== 'string') continue;
+        const front = cleanFlashcardText(flashcard.front).trim();
+        const back = cleanFlashcardText(flashcard.back).trim();
+        if (!front || !back || isDuplicateFlashcard(front, seenFronts)) continue;
+        generated.push({ front, back });
+        seenFronts.push(front);
+      }
     } catch {
       // Continue with the next chunk; partial high-quality output is better than losing the deck.
     }
+    options.onProgress?.(Math.min(generated.length, targetCount), targetCount);
   }
 
-  if (generated.length === 0) {
-    throw new Error('Nu s-au putut genera flashcardurile. Textul ar putea fi prea complex sau ilizibil.');
-  }
+  if (generated.length === 0) throw new NoNewFlashcardsError();
 
   return generated.slice(0, targetCount);
 }
@@ -1060,7 +1329,10 @@ export async function generateStudyRecommendation(
     { role: 'system', content: getMedicalSystemPrompt('advisor', userContext) },
     {
       role: 'user',
-      content: `Recomandă-mi ce să studiez azi.${dueCount > 0 ? ` Am ${dueCount} întrebări de recapitulat.` : ''}${weakTopics.length > 0 ? ` Cele mai slabe topicuri: ${weakTopics.join(', ')}.` : ''} Maxim 2 fraze scurte, concrete.`,
+      content: `Recomandă-mi ce să studiez azi.${dueCount > 0 ? ` Am ${dueCount} întrebări de recapitulat.` : ''}${weakTopics.length > 0 ? ` Cele mai slabe topicuri: ${weakTopics.join(', ')}.` : ''} Răspunde EXACT în acest format, fără tabele, fără titluri și fără text în plus:
+🎯 Focus: o singură propoziție scurtă (maxim 14 cuvinte)
+⏱ Plan: o singură propoziție scurtă cu durata totală (maxim 14 cuvinte)
+💡 Sfat: o singură propoziție scurtă (maxim 14 cuvinte)`,
     },
   ], 0.5);
 }
@@ -1108,7 +1380,8 @@ ${weakList ? `\nCATEGORII CU ACURATEȚE SCĂZUTĂ:\n${weakList}` : ''}
 ${mistakeTopics ? `\nTOPICURI CU GREȘELI RECENTE: ${mistakeTopics}` : ''}
 
 INSTRUCȚIUNI:
-- 3-5 fraze, fără bullet points, ton de tutor
+- 3-5 fraze, un singur paragraf scurt de text simplu, ton de tutor
+- FĂRĂ titluri, tabele, liste, bullet points, emoji-uri sau text îngroșat; ignoră orice format structurat cerut în altă parte
 - Identifică zona cea mai problematică și explică DE CE poate fi dificilă
 - O recomandare concretă și acționabilă pentru săptămâna asta
 - Un sfat tactic pentru examen legat de punctele slabe

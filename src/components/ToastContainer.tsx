@@ -86,7 +86,7 @@ export default function ToastContainer() {
                       removeToast(toast.id);
                     }}
                     className="mt-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-colors"
-                    style={{ background: `${theme.accent}1a`, color: theme.accent }}
+                    style={{ background: `${theme.accent}1a`, color: theme.accentText }}
                   >
                     {toast.action.label}
                   </button>
@@ -96,7 +96,7 @@ export default function ToastContainer() {
               <button
                 onClick={() => removeToast(toast.id)}
                 aria-label="Inchide notificarea"
-                className="flex-shrink-0 rounded-lg p-1 transition-colors hover:bg-white/5"
+                className="fine-row flex-shrink-0 rounded-lg p-1 transition-colors hover:bg-[var(--hover-fill)]"
                 style={{ color: theme.text3 }}
               >
                 <X size={13} />

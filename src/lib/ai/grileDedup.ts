@@ -73,8 +73,12 @@ export function dedupeQuestions(questions: ParsedQuestion[]): DedupeResult {
     if (bothAnswered && !sameAnswer(existing, q)) {
       conflicts += 1;
       const winner = pickBetter(existing, q);
-      winner.warnings = [...new Set([...winner.warnings, 'Surse diferite dau răspunsuri diferite — verifică.'])];
-      map.set(sig, winner);
+      // Copy rather than mutate: `q`/`existing` belong to the caller's array,
+      // and assigning here made the warning appear on the original input too.
+      map.set(sig, {
+        ...winner,
+        warnings: [...new Set([...winner.warnings, 'Surse diferite dau răspunsuri diferite — verifică.'])],
+      });
     } else {
       map.set(sig, pickBetter(existing, q));
     }

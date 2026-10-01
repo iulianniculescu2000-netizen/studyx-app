@@ -40,6 +40,21 @@ export function cleanQuestionExplanation(text?: string | null): string {
   return isMetaExplanation(text) ? '' : normalizeInlineText(text);
 }
 
+// Common short Romanian function words (interrogatives, articles, prepositions,
+// conjunctions) that happen to clear the ">=4 chars" bar in pickLeadKeywords but
+// are never a real topic — "Care clasă de medicamente e contraindicată..." was
+// producing the "topic" *"Care"* (the question's own first word) as a fallback
+// hint anchor, which reads as nonsense to the user ("Gândește-te la Care...").
+const LEAD_KEYWORD_STOPWORDS = new Set([
+  'care', 'ceea', 'este', 'sunt', 'fost', 'fiind', 'daca', 'dacă', 'sau', 'unde',
+  'cand', 'când', 'cum', 'catre', 'către', 'dupa', 'după', 'peste', 'intre',
+  'între', 'prin', 'fara', 'fără', 'asupra', 'toate', 'toti', 'toți', 'orice',
+  'fiecare', 'atunci', 'dintre', 'despre', 'unei', 'unui', 'acei', 'acele',
+  'acest', 'această', 'aceasta', 'acesti', 'aceștia', 'aceste', 'acel', 'acea',
+  'cele', 'cei', 'din', 'spre', 'pana', 'până', 'insa', 'însă', 'insă', 'deci',
+  'deoarece', 'pentru', 'poate', 'trebuie', 'exista', 'există', 'avand', 'având',
+]);
+
 function pickQuestionTopic(question: Question) {
   const realTag = question.tags?.find((tag) => tag && !isMetaTag(tag))?.trim();
   if (realTag) return realTag;
@@ -50,8 +65,8 @@ function pickQuestionTopic(question: Question) {
 
 function pickLeadKeywords(text: string, limit = 3) {
   const words = normalizeInlineText(text)
-    .split(/[^A-Za-z0-9]+/)
-    .filter((word) => word.length >= 4);
+    .split(/[^A-Za-z0-9ĂÂÎȘȚăâîșț]+/)
+    .filter((word) => word.length >= 4 && !LEAD_KEYWORD_STOPWORDS.has(word.toLowerCase()));
   return uniqueStrings(words).slice(0, limit);
 }
 

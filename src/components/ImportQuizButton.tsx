@@ -125,7 +125,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
               exit={{ opacity: 0 }}
               onClick={closeModal}
               className="fixed inset-0 z-50"
-              style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+              style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: -20 }}
@@ -192,7 +192,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
                       whileHover={{ scale: status === 'loading' ? 1 : 1.01 }}
                       whileTap={{ scale: status === 'loading' ? 1 : 0.98 }}
                       className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white"
-                      style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, opacity: status === 'loading' ? 0.7 : 1 }}
+                      style={{ background: theme.accent, opacity: status === 'loading' ? 0.7 : 1 }}
                     >
                       {status === 'loading' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                       {status === 'loading' ? 'Se importă...' : 'Alege fișier .json'}
@@ -228,7 +228,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
                           onClick={() => setQuestionCount(n)}
                           className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all"
                           style={{
-                            background: questionCount === n ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                            background: questionCount === n ? theme.accent : theme.surface2,
                             color: questionCount === n ? '#fff' : theme.text3,
                           }}
                         >
@@ -239,7 +239,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
 
                     <motion.button
                       onClick={copyPrompt}
-                      whileTap={{ scale: 0.98 }}
+                      whileTap={{ scale: 0.97 }}
                       className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold"
                       style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text }}
                     >
@@ -270,7 +270,7 @@ export default function ImportQuizButton({ targetFolderId }: Props) {
                       whileTap={{ scale: aiResponse.trim() ? 0.98 : 1 }}
                       className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white"
                       style={{
-                        background: aiResponse.trim() ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                        background: aiResponse.trim() ? theme.accent : theme.surface2,
                         color: aiResponse.trim() ? '#fff' : theme.text3,
                       }}
                     >

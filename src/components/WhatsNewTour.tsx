@@ -4,34 +4,25 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
-  Camera,
-  Check,
-  CheckCircle2,
-  ClipboardPaste,
-  Copy,
-  FileText,
-  FolderOpen,
+  BookOpen,
   ImageIcon,
+  Layers,
   MessageCircle,
-  Minus,
   Pencil,
-  Plus,
   Quote,
   Rocket,
   Sparkles,
-  TrendingUp,
+  Stethoscope,
   Wand2,
   X,
   Zap,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useTutorialStore } from '../store/tutorialStore';
+import { CURRENT_TOUR_VERSION, type TourId } from '../tutorial/tourMeta';
 import { useUserStore } from '../store/userStore';
-
-const WHATS_NEW_VERSION = '1.0.6';
-// Bump the suffix when the tour content changes within the same app version, so
-// users who already dismissed the previous tour see the new highlights once more.
-const SEEN_KEY = `studyx:whatsnew:${WHATS_NEW_VERSION}-examsplit:seen`;
+import { useOverlayFlag } from '../hooks/useOverlayFlag';
 
 /** Force-open event (Settings → "Vezi noutățile" or dev preview). */
 export const WHATS_NEW_OPEN_EVENT = 'studyx:whats-new:open';
@@ -51,7 +42,7 @@ function DemoFrame({ theme, children }: { theme: Theme; children: React.ReactNod
           ? 'linear-gradient(160deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012))'
           : 'linear-gradient(160deg, rgba(255,255,255,0.9), rgba(244,246,255,0.7))',
         borderColor: theme.border,
-        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.07), 0 18px 44px ${theme.accent}12`,
+        boxShadow: `inset 0 1px 0 var(--glass-highlight), 0 18px 44px ${theme.accent}12`,
       }}
     >
       {children}
@@ -59,206 +50,103 @@ function DemoFrame({ theme, children }: { theme: Theme; children: React.ReactNod
   );
 }
 
-function ExternalAiImportDemo({ theme }: { theme: Theme }) {
-  const [phase, setPhase] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setPhase((p) => (p + 1) % 4), 1300);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <DemoFrame theme={theme}>
-      <div className="flex w-full max-w-[360px] items-center justify-center gap-5 px-4">
-        <div
-          className="flex w-[110px] flex-col items-center gap-2 rounded-[16px] border p-3"
-          style={{ background: theme.surface2, borderColor: theme.border }}
-        >
-          <span className="text-[8px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>StudyX</span>
-          <motion.div
-            animate={{
-              scale: phase === 0 ? [1, 1.08, 1] : 1,
-              background: [`${theme.accent}18`],
-            }}
-            transition={{ duration: 0.5 }}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-[10px] text-[9.5px] font-bold"
-            style={{ background: `${theme.accent}18`, color: theme.accent }}
-          >
-            {phase === 0 ? <Check size={12} /> : <Copy size={11} />}
-            {phase === 0 ? 'Copiat!' : 'Copiază prompt'}
-          </motion.div>
-        </div>
-
-        <motion.div
-          animate={{ x: phase >= 1 ? [0, 6, 0] : 0, opacity: phase >= 1 ? 1 : 0.35 }}
-          transition={{ duration: 1, repeat: phase >= 1 ? Infinity : 0 }}
-        >
-          <ArrowRight size={16} style={{ color: theme.text3 }} />
-        </motion.div>
-
-        <div
-          className="flex w-[130px] flex-col gap-1.5 rounded-[16px] border p-3"
-          style={{
-            background: phase >= 1 ? `${theme.accent}0c` : theme.surface2,
-            borderColor: phase >= 2 ? `${theme.success}45` : theme.border,
-          }}
-        >
-          <div className="flex items-center gap-1.5 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
-            <MessageCircle size={10} /> ChatGPT / Gemini
-          </div>
-          <AnimatePresence mode="wait">
-            {phase < 2 ? (
-              <motion.div key="wait" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-1">
-                {[70, 55, 40].map((w, i) => (
-                  <div key={i} className="h-[5px] rounded-full" style={{ width: w, background: `${theme.text3}30` }} />
-                ))}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="json"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-[9px] font-bold"
-                style={{ background: `${theme.success}16`, color: theme.success }}
-              >
-                {phase === 3 ? <CheckCircle2 size={12} /> : <ClipboardPaste size={12} />}
-                {phase === 3 ? 'Grilă importată' : '{ questions: [...] }'}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </DemoFrame>
-  );
-}
-
-function EditableAgentParamsDemo({ theme }: { theme: Theme }) {
-  const [count, setCount] = useState(15);
-  const [difficulty, setDifficulty] = useState(0);
-  const difficulties = ['Auto', 'Mediu', 'Dificil'];
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setCount((c) => (c >= 25 ? 15 : c + 5));
-      setDifficulty((d) => (d + 1) % difficulties.length);
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [difficulties.length]);
-
-  return (
-    <DemoFrame theme={theme}>
-      <div
-        className="w-[300px] rounded-[18px] border p-4"
-        style={{ background: theme.surface2, borderColor: `${theme.accent}30` }}
-      >
-        <div className="mb-2.5 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider" style={{ color: theme.accent }}>
-          <Sparkles size={12} /> Plan agent · confirmă
-        </div>
-        <div className="mb-2 text-[11.5px] font-semibold" style={{ color: theme.text2 }}>
-          Generez grile din &bdquo;Cursul 4&rdquo;
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-[10px] border px-2 py-1" style={{ borderColor: theme.border, background: theme.surface }}>
-            <Minus size={11} style={{ color: theme.text3 }} />
-            <motion.span
-              key={count}
-              initial={{ scale: 1.3, color: theme.accent }}
-              animate={{ scale: 1, color: theme.text2 }}
-              className="min-w-[3.2rem] text-center text-[11px] font-bold tabular-nums"
-            >
-              {count} întrebări
-            </motion.span>
-            <Plus size={11} style={{ color: theme.text3 }} />
-          </div>
-          <AnimatePresence mode="wait">
-            <motion.span
-              key={difficulty}
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              className="rounded-[10px] px-2.5 py-1 text-[10.5px] font-bold text-white"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
-            >
-              {difficulties[difficulty]}
-            </motion.span>
-          </AnimatePresence>
-        </div>
-      </div>
-    </DemoFrame>
-  );
-}
-
-function RealPredictionsDemo({ theme }: { theme: Theme }) {
-  const topics = [
-    { name: 'Cardiologie', value: 38 },
-    { name: 'Hematologie', value: 61 },
-    { name: 'Neurologie', value: 74 },
-  ];
-  const [cycle, setCycle] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setCycle((c) => c + 1), 3200);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <DemoFrame theme={theme}>
-      <div key={cycle} className="w-full max-w-[300px] px-4">
-        <div className="mb-2.5 flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
-          <TrendingUp size={11} style={{ color: theme.success }} /> Calculat din statisticile tale reale
-        </div>
-        <div className="space-y-2">
-          {topics.map((topic, i) => (
-            <div key={topic.name} className="flex items-center gap-2">
-              <span className="w-[76px] flex-shrink-0 text-[10px] font-semibold" style={{ color: theme.text2 }}>{topic.name}</span>
-              <div className="h-[9px] flex-1 overflow-hidden rounded-full" style={{ background: theme.surface2 }}>
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${topic.value}%` }}
-                  transition={{ duration: 0.9, delay: 0.2 + i * 0.15, ease: 'easeOut' }}
-                />
-              </div>
-              <span className="w-[28px] text-right text-[10px] font-bold tabular-nums" style={{ color: theme.text3 }}>{topic.value}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </DemoFrame>
-  );
-}
-
+/**
+ * The icons used to "orbit" by animating x/y between three keyframes with an
+ * easeInOut curve — which means they slowed to a stop and reversed twice per
+ * cycle. That reads as stutter, not motion. A continuous rotation of the whole
+ * ring (linear, one transform per element) is both genuinely smooth and cheaper
+ * for the compositor; each icon counter-rotates so it stays upright.
+ */
 function HeroDemo({ theme }: { theme: Theme }) {
   const icons = [Bot, ImageIcon, Pencil, Quote, Zap, Wand2];
+  const radiusX = 92;
+  const radiusY = 58;
+
   return (
     <DemoFrame theme={theme}>
       <div className="relative flex h-full w-full items-center justify-center">
+        {/* Glow pulses on opacity only; scaling a large box-shadow re-rasters it every frame. */}
         <motion.div
-          animate={{ scale: [1, 1.07, 1] }}
-          transition={{ repeat: Infinity, duration: 3 }}
+          animate={{ opacity: [0.35, 0.75, 0.35] }}
+          transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+          className="absolute h-[120px] w-[120px] rounded-full"
+          style={{ background: theme.accent, filter: 'blur(38px)', willChange: 'opacity' }}
+        />
+        <div
           className="z-10 flex h-[84px] w-[84px] items-center justify-center rounded-[26px] text-white"
-          style={{
-            background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
-            boxShadow: `0 22px 50px ${theme.accent}55`,
-          }}
+          style={{ background: theme.accent }}
         >
           <Sparkles size={38} />
+        </div>
+
+        <motion.div
+          className="absolute inset-0"
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 26, ease: 'linear' }}
+          style={{ willChange: 'transform' }}
+        >
+          {icons.map((Icon, i) => {
+            const angle = (i / icons.length) * Math.PI * 2;
+            return (
+              <motion.div
+                key={i}
+                className="absolute left-1/2 top-1/2 flex h-10 w-10 items-center justify-center rounded-[13px] border"
+                style={{
+                  marginLeft: -20,
+                  marginTop: -20,
+                  x: Math.cos(angle) * radiusX,
+                  y: Math.sin(angle) * radiusY,
+                  background: theme.surface2,
+                  borderColor: theme.border,
+                  color: theme.accentText,
+                  willChange: 'transform',
+                }}
+                animate={{ rotate: -360 }}
+                transition={{ repeat: Infinity, duration: 26, ease: 'linear' }}
+              >
+                <Icon size={17} />
+              </motion.div>
+            );
+          })}
         </motion.div>
-        {icons.map((Icon, i) => {
-          const angle = (i / icons.length) * Math.PI * 2;
-          const radius = 92;
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** Rezidențiat's new layout: the three things that changed, cycling in place. */
+function ResidencySectionDemo({ theme }: { theme: Theme }) {
+  const rows = useMemo(
+    () => [
+      { Icon: Stethoscope, label: 'Disciplină → specialitate, cu progres pe fiecare' },
+      { Icon: Sparkles, label: 'Grilele generate de AI intră singure în Grile › specialitate' },
+      { Icon: BookOpen, label: '„Joacă tot”: o sesiune din toate testele unei specialități' },
+    ],
+    [],
+  );
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % rows.length), 1600);
+    return () => window.clearInterval(id);
+  }, [rows.length]);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-full max-w-[340px] space-y-2 px-2">
+        {rows.map((row, i) => {
+          const active = i === phase;
           return (
             <motion.div
-              key={i}
-              animate={{
-                x: [Math.cos(angle) * radius, Math.cos(angle + 0.5) * radius, Math.cos(angle) * radius],
-                y: [Math.sin(angle) * radius * 0.62, Math.sin(angle + 0.5) * radius * 0.62, Math.sin(angle) * radius * 0.62],
-                opacity: [0.55, 1, 0.55],
+              key={row.label}
+              animate={{ opacity: active ? 1 : 0.4, scale: active ? 1.02 : 1 }}
+              className="flex items-center gap-2.5 rounded-[12px] border px-3 py-2.5"
+              style={{
+                background: active ? `${theme.accent}12` : theme.surface2,
+                borderColor: active ? `${theme.accent}35` : theme.border,
               }}
-              transition={{ repeat: Infinity, duration: 6 + i * 0.6, ease: 'easeInOut' }}
-              className="absolute flex h-10 w-10 items-center justify-center rounded-[13px] border"
-              style={{ background: theme.surface2, borderColor: theme.border, color: theme.accent }}
             >
-              <Icon size={17} />
+              <row.Icon size={14} style={{ color: active ? theme.accent : theme.text3 }} />
+              <span className="text-[10.5px] font-bold" style={{ color: active ? theme.text : theme.text3 }}>{row.label}</span>
             </motion.div>
           );
         })}
@@ -267,131 +155,158 @@ function HeroDemo({ theme }: { theme: Theme }) {
   );
 }
 
-function DocScanDemo({ theme }: { theme: Theme }) {
-  // 0: page/photo shown · 1: scanning · 2: recognized grilă
+/** A generated deck is announced, not opened; if the AI stops halfway the cards already made are kept. */
+function FlashcardsDemo({ theme }: { theme: Theme }) {
+  const phases = useMemo(
+    () => [
+      { badge: 'se generează', tone: theme.warning, title: 'Generez 25 de carduri…', note: 'poți continua să lucrezi în aplicație' },
+      { badge: 'gata', tone: theme.success, title: 'Pachet creat în „Cardiologie”', note: 'ai „Mută în” dacă vrei alt folder' },
+      { badge: 'limită atinsă', tone: theme.danger, title: '14 din 25 de carduri păstrate', note: '„Continuă generarea” reia din lotul care a picat' },
+    ],
+    [theme.danger, theme.success, theme.warning],
+  );
   const [phase, setPhase] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setPhase((p) => (p + 1) % 3), 1500);
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % phases.length), 2100);
     return () => window.clearInterval(id);
-  }, []);
-  const rows = [0, 1, 2, 3];
-  const correctRow = 1;
+  }, [phases.length]);
+  const current = phases[phase];
 
   return (
     <DemoFrame theme={theme}>
-      <div className="flex w-full max-w-[380px] items-center justify-center gap-4 px-4">
-        {/* source: a photographed page */}
-        <div className="relative" style={{ transform: 'rotate(-4deg)' }}>
-          <div
-            className="relative w-[112px] overflow-hidden rounded-[14px] border p-2.5"
+      <div className="w-full max-w-[300px]">
+        <span
+          className="mb-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-wider"
+          style={{ background: `${current.tone}18`, color: current.tone }}
+        >
+          {current.badge}
+        </span>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={phase}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="rounded-[14px] border px-3 py-2.5"
             style={{ background: theme.surface2, borderColor: theme.border }}
           >
-            <div className="mb-1.5 flex items-center gap-1 text-[7px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
-              <Camera size={9} style={{ color: theme.accent }} /> Poză
+            <div className="mb-1 flex items-center gap-1.5 text-[8px] font-black uppercase tracking-wider" style={{ color: theme.accentText }}>
+              <Layers size={10} /> Flashcarduri
             </div>
-            {rows.map((r) => (
-              <div key={r} className="mb-1.5 flex items-center gap-1">
-                <div className="h-[4px] w-[4px] rounded-full" style={{ background: `${theme.text3}55` }} />
-                <div className="h-[4px] rounded-full" style={{ width: 62 - r * 6, background: `${theme.text3}40` }} />
-              </div>
-            ))}
-            {/* sweeping scan line */}
-            <motion.div
-              className="absolute left-0 right-0 h-[3px]"
-              style={{ background: `linear-gradient(90deg, transparent, ${theme.accent}, transparent)`, boxShadow: `0 0 10px ${theme.accent}` }}
-              animate={{ top: ['12%', '88%', '12%'] }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          </div>
-        </div>
-
-        <motion.div animate={{ x: phase >= 1 ? [0, 5, 0] : 0, opacity: phase >= 1 ? 1 : 0.4 }} transition={{ duration: 0.9, repeat: Infinity }}>
-          <ArrowRight size={16} style={{ color: theme.text3 }} />
-        </motion.div>
-
-        {/* result: recognized grilă */}
-        <div
-          className="w-[150px] rounded-[14px] border p-2.5 transition-colors"
-          style={{ background: phase >= 2 ? `${theme.success}0e` : theme.surface2, borderColor: phase >= 2 ? `${theme.success}50` : theme.border }}
-        >
-          <div className="mb-1.5 flex items-center gap-1 text-[7px] font-black uppercase tracking-wider" style={{ color: phase >= 2 ? theme.success : theme.text3 }}>
-            <FileText size={9} /> {phase >= 2 ? 'Grilă recunoscută' : 'Analizez…'}
-          </div>
-          {rows.map((r) => {
-            const isCorrect = r === correctRow;
-            return (
-              <div key={r} className="mb-1.5 flex items-center gap-1.5 rounded-[5px] px-1 py-0.5"
-                style={{ background: phase >= 2 && isCorrect ? `${theme.success}20` : 'transparent' }}>
-                <motion.div
-                  className="flex items-center justify-center rounded-full"
-                  style={{ width: 9, height: 9, border: `1.4px solid ${phase >= 2 && isCorrect ? theme.success : `${theme.text3}55`}`, background: phase >= 2 && isCorrect ? theme.success : 'transparent' }}
-                  animate={phase >= 2 && isCorrect ? { scale: [0.5, 1.2, 1] } : { scale: 1 }}
-                  transition={{ duration: 0.4 }}
-                >
-                  {phase >= 2 && isCorrect && <Check size={6} color="#fff" strokeWidth={3.5} />}
-                </motion.div>
-                <div className="h-[4px] rounded-full" style={{ width: 58 - r * 5, background: phase >= 2 && isCorrect ? theme.success : `${theme.text3}40` }} />
-              </div>
-            );
-          })}
-        </div>
+            <div className="text-[11px] font-semibold" style={{ color: theme.text }}>{current.title}</div>
+            <div className="mt-0.5 text-[10px] font-medium" style={{ color: theme.text3 }}>{current.note}</div>
+          </motion.div>
+        </AnimatePresence>
       </div>
     </DemoFrame>
   );
 }
 
-function ExamSplitDemo({ theme }: { theme: Theme }) {
-  const [phase, setPhase] = useState(0);
+/** A command in Romanian is typed, then the place it landed appears. */
+function ChatCommandDemo({ theme }: { theme: Theme }) {
+  const command = 'fă-mi 5 grile din mielom multiplu';
+  const [typed, setTyped] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setPhase((p) => (p + 1) % 3), 1600);
+    const id = window.setInterval(() => setTyped((count) => (count >= command.length + 14 ? 0 : count + 1)), 110);
     return () => window.clearInterval(id);
-  }, []);
-  const sessions = [
-    { label: 'Ses. 1', date: '12 iul', q: 75 },
-    { label: 'Ses. 2', date: '19 iul', q: 75 },
-    { label: 'Ses. 3', date: '26 iul', q: 75 },
-    { label: 'Ses. 4', date: '2 aug', q: 75 },
-  ];
+  }, [command.length]);
+  const done = typed >= command.length + 3;
 
   return (
     <DemoFrame theme={theme}>
-      <div className="w-full max-w-[340px] px-4">
-        <div className="mb-2.5 flex items-center justify-between text-[9px] font-black uppercase tracking-wider" style={{ color: theme.text3 }}>
-          <span className="flex items-center gap-1"><FolderOpen size={11} /> 300 grile</span>
-          <motion.span
-            animate={{ opacity: phase >= 1 ? 1 : 0.4 }}
-            style={{ color: phase >= 1 ? theme.success : theme.text3 }}
-          >
-            {phase >= 1 ? '4 sesiuni create' : 'analizez zilele rămase…'}
-          </motion.span>
+      <div className="w-full max-w-[320px] space-y-2">
+        <div className="flex items-center gap-2 rounded-[12px] border px-3 py-2.5" style={{ background: theme.surface2, borderColor: theme.border }}>
+          <MessageCircle size={13} style={{ color: theme.accent }} />
+          <span className="min-h-[14px] text-[11px] font-semibold" style={{ color: theme.text }}>{command.slice(0, typed)}</span>
         </div>
-        <div className="flex gap-1.5">
-          {sessions.map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ scaleY: 0.3, opacity: 0.3 }}
-              animate={phase >= 1 ? { scaleY: 1, opacity: 1 } : { scaleY: 0.3, opacity: 0.3 }}
-              transition={{ delay: i * 0.12, duration: 0.4, ease: 'backOut' }}
-              style={{ transformOrigin: 'bottom' }}
-              className="flex-1 rounded-[10px] border p-2 text-center"
-            >
-              <div
-                className="mb-1.5 h-8 w-full rounded-[6px]"
-                style={{ background: `linear-gradient(180deg, ${theme.accent}, ${theme.accent2})`, opacity: 0.85 }}
-              />
-              <div className="text-[8px] font-black" style={{ color: theme.text2 }}>{s.label}</div>
-              <div className="text-[7px]" style={{ color: theme.text3 }}>{s.date}</div>
-            </motion.div>
-          ))}
-        </div>
+        <motion.div
+          animate={{ opacity: done ? 1 : 0, y: done ? 0 : 6 }}
+          transition={{ duration: 0.3 }}
+          className="flex items-center gap-2 rounded-[12px] border px-3 py-2"
+          style={{ background: `${theme.success}12`, borderColor: `${theme.success}30` }}
+        >
+          <Stethoscope size={13} style={{ color: theme.success }} />
+          <span className="text-[10.5px] font-bold" style={{ color: theme.text }}>Rezidențiat › Grile › Hematologie</span>
+        </motion.div>
       </div>
     </DemoFrame>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Slides
-// ─────────────────────────────────────────────────────────────────────────────
+/** One key's limit is reached and the next one takes over by itself. */
+function AIKeysDemo({ theme }: { theme: Theme }) {
+  const providers = ['Groq', 'Gemini', 'Cerebras'];
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setActive((current) => (current + 1) % providers.length), 1700);
+    return () => window.clearInterval(id);
+  }, [providers.length]);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-[260px] space-y-1.5">
+        {providers.map((name, i) => {
+          const isActive = i === active;
+          const isFull = i < active;
+          return (
+            <motion.div
+              key={name}
+              animate={{ opacity: isFull ? 0.45 : 1, x: isActive ? 4 : 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+              className="flex items-center justify-between rounded-[12px] border px-3 py-2.5"
+              style={{
+                background: isActive ? `${theme.accent}14` : theme.surface2,
+                borderColor: isActive ? `${theme.accent}38` : theme.border,
+              }}
+            >
+              <span className="text-[11px] font-bold" style={{ color: isActive ? theme.text : theme.text2 }}>{name}</span>
+              <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: isFull ? theme.warning : isActive ? theme.success : theme.text3 }}>
+                {isFull ? 'limită atinsă' : isActive ? 'răspunde' : 'rezervă'}
+              </span>
+            </motion.div>
+          );
+        })}
+      </div>
+    </DemoFrame>
+  );
+}
+
+/** Active nav item glow, spring-driven. */
+function GlassFluidDemo({ theme }: { theme: Theme }) {
+  const items = ['Dashboard', 'Grile', 'Rezidențiat'];
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setActive((a) => (a + 1) % items.length), 1300);
+    return () => window.clearInterval(id);
+  }, [items.length]);
+
+  return (
+    <DemoFrame theme={theme}>
+      <div className="w-[220px] space-y-1.5">
+        {items.map((label, i) => {
+          const isActive = i === active;
+          return (
+            <motion.div
+              key={label}
+              animate={{
+                boxShadow: isActive ? `0 4px 18px ${theme.accent}2e` : '0 0 0 rgba(0,0,0,0)',
+                x: isActive ? 4 : 0,
+              }}
+              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+              className="rounded-[12px] px-3 py-2.5 text-[11px] font-bold"
+              style={{
+                background: isActive ? `${theme.accent}16` : 'transparent',
+                color: isActive ? theme.accentText : theme.text3,
+              }}
+            >
+              {label}
+            </motion.div>
+          );
+        })}
+      </div>
+    </DemoFrame>
+  );
+}
 
 type Slide = {
   id: string;
@@ -400,54 +315,58 @@ type Slide = {
   description: string;
   Demo: (props: { theme: Theme }) => ReactElement;
   tip?: string;
+  /** "Arată-mi": closes the slides, opens the page and, when there is one, starts its short tour. */
+  cta?: { label: string; to: string; tour?: TourId };
 };
 
 const SLIDES: Slide[] = [
   {
     id: 'hero',
-    badge: `Update ${WHATS_NEW_VERSION}`,
-    title: 'StudyX v1.0.6 — fă o poză, primești grile',
-    description: 'Cea mai tare noutate: bagi un PDF, un Word sau doar o poză cu grile și ți le recunosc automat — întrebări, variante și răspunsul corect. Plus import fără JSON, agent AI mai controlabil și predicții din statisticile tale reale.',
+    badge: `Versiunea ${CURRENT_TOUR_VERSION}`,
+    title: 'StudyX 2.3 — mai multă ordine, mai puține surprize',
+    description: 'Rezidențiat și Flashcarduri au fost refăcute, Biblioteca AI e mai clară, iar AI-ul poate folosi mai multe chei gratuite ca rezerve. În plus, zeci de reparații la datele tale și la interfață.',
     Demo: HeroDemo,
   },
   {
-    id: 'grile-scan',
-    badge: 'Grile din poză / document',
-    title: 'Fă o poză. Primești grile.',
-    description: 'Fotografiezi o pagină de grile, arunci un PDF, Word sau un scan — StudyX recunoaște întrebările, variantele și răspunsul corect (din bold, culoare sau cheie), iar unde e nevoie completează cu AI. Verifici rapid și le ai gata de învățat.',
-    Demo: DocScanDemo,
-    tip: 'Găsești butonul „Fă o poză. Primești grile." pe Dashboard sau în „Import grile” → „Din document”.',
+    id: 'residency',
+    badge: 'Rezidențiat',
+    title: 'Rezidențiat, organizat pe discipline și specialități',
+    description: 'Intri într-o disciplină, alegi specialitatea și vezi testele cu progresul lor. Grilele generate de AI intră singure în Grile › specialitate, iar cele arhivate se găsesc oricând la „Arhivate”.',
+    Demo: ResidencySectionDemo,
+    tip: 'Butonul „?” de lângă titlu deschide un tur scurt.',
+    cta: { label: 'Arată-mi Rezidențiat', to: '/rezidentiat', tour: 'residency' },
   },
   {
-    id: 'external-ai-import',
-    badge: 'Import grile',
-    title: 'Generezi grile cu orice AI, fără fișiere JSON',
-    description: 'Copiezi un prompt gata făcut, îl lipești în ChatGPT sau Gemini gratuit, copiezi răspunsul înapoi în StudyX și apeși Importă. Fără cotă internă epuizată, fără să atingi vreun fișier .json.',
-    Demo: ExternalAiImportDemo,
-    tip: 'Găsești opțiunea în butonul „Import grile” → tab-ul „AI extern”.',
+    id: 'flashcards',
+    badge: 'Flashcarduri',
+    title: 'Pagina Flashcarduri, refăcută',
+    description: '„De repetat azi” numără exact ce primești în sesiune. Un pachet generat de AI nu mai deschide sesiunea singur: te anunță unde a ajuns și îl muți cu „Mută în”. Dacă AI-ul se oprește la mijloc, cardurile făcute rămân și poți continua generarea.',
+    Demo: FlashcardsDemo,
+    cta: { label: 'Arată-mi Flashcardurile', to: '/flashcards', tour: 'flashcards' },
   },
   {
-    id: 'editable-agent',
-    badge: 'Chat AI mai controlabil',
-    title: 'Ajustezi planul agentului înainte să-l confirmi',
-    description: 'Dacă agentul a înțeles greșit câte întrebări vrei sau ce dificultate, acum poți corecta direct din cardul de confirmare — fără să anulezi și să retastezi toată comanda.',
-    Demo: EditableAgentParamsDemo,
+    id: 'vault-chat',
+    badge: 'Biblioteca AI și chat',
+    title: 'Biblioteca AI redesenată, chat care te înțelege mai bine',
+    description: 'Căutarea din bibliotecă ignoră diacriticele. În chat, comenzile în română sunt înțelese corect, erorile îți spun ce poți face, iar Studio se deschide ca panou lângă conversație, pe ferestrele late.',
+    Demo: ChatCommandDemo,
+    cta: { label: 'Arată-mi Biblioteca', to: '/vault', tour: 'vault' },
   },
   {
-    id: 'real-predictions',
-    badge: 'Analiză predictivă',
-    title: 'Predicțiile se calculează din statisticile tale',
-    description: 'Lacunele de cunoștințe și planul de recuperare nu mai sunt exemple fixe identice pentru toată lumea — se calculează din topicurile la care chiar greșești, cu prioritate reală pe ce contează.',
-    Demo: RealPredictionsDemo,
-    tip: 'Căutarea globală (Cmd/Ctrl+K) e și ea mai precisă: rezultatele exacte apar primele.',
+    id: 'ai-keys',
+    badge: 'AI',
+    title: 'Mai multe chei gratuite = rezerve automate',
+    description: 'Cu două sau mai multe chei, când limita unui furnizor se atinge aplicația trece singură pe următorul. În Setări → Asistent AI vezi și cât ai consumat, pe furnizor.',
+    Demo: AIKeysDemo,
+    tip: 'Ghidul de chei din Setări te duce pas cu pas, cu testarea cheii.',
+    cta: { label: 'Deschide Setările', to: '/settings' },
   },
   {
-    id: 'exam-split',
-    badge: 'Plan de examen',
-    title: 'Distribui un folder întreg pe zilele rămase',
-    description: 'Ai 300 de grile într-un folder și un examen în 3 săptămâni? Alegi data examenului, iar StudyX le împarte automat în câteva sesiuni egale, spațiate până în ziua examenului — grilele originale rămân neatinse.',
-    Demo: ExamSplitDemo,
-    tip: 'Găsești butonul „Distribuie pe zile” în orice folder cu grile.',
+    id: 'polish',
+    badge: 'Interfață și siguranță',
+    title: 'Mai curat, mai accesibil, mai sigur',
+    description: 'Contrast mai bun în tema Luminos, bară laterală cu animație la „Restrânge”, ferestre care se închid cu Esc și respectă tastatura, „Golește conversația” cu confirmare. Salvarea modificărilor la închidere a fost întărită.',
+    Demo: GlassFluidDemo,
   },
 ];
 
@@ -457,25 +376,29 @@ const SLIDES: Slide[] = [
 
 export default function WhatsNewTour() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const activeProfileId = useUserStore((state) => state.activeProfileId);
   const tutorialActive = useTutorialStore((state) => state.active);
+  const hydrated = useTutorialStore((state) => state._hasHydrated);
+  const seenTours = useTutorialStore((state) => state.seen);
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
+  useOverlayFlag(open);
   const [direction, setDirection] = useState(1);
 
   const slide = SLIDES[index];
   const isLast = index === SLIDES.length - 1;
   const isFirst = index === 0;
 
-  // Auto-open once per version, only when a profile is active and the new-user tutorial isn't running.
+  // Opens once per version, for people who already finished the onboarding (a new user is not told what
+  // is new in an app they have just met) and only while no tour is running.
   useEffect(() => {
-    if (!activeProfileId || tutorialActive) return;
-    let seen = false;
-    try { seen = localStorage.getItem(SEEN_KEY) === '1'; } catch { /* ignore */ }
-    if (seen) return;
+    if (!hydrated || !activeProfileId || tutorialActive) return;
+    const store = useTutorialStore.getState();
+    if (!store.hasSeen(activeProfileId, 'onboarding') || store.hasSeen(activeProfileId, 'whatsNew')) return;
     const timer = window.setTimeout(() => setOpen(true), 1400);
     return () => window.clearTimeout(timer);
-  }, [activeProfileId, tutorialActive]);
+  }, [activeProfileId, hydrated, seenTours, tutorialActive]);
 
   // Manual re-open (Settings / dev).
   useEffect(() => {
@@ -486,8 +409,15 @@ export default function WhatsNewTour() {
 
   const close = useCallback(() => {
     setOpen(false);
-    try { localStorage.setItem(SEEN_KEY, '1'); } catch { /* ignore */ }
-  }, []);
+    if (activeProfileId) useTutorialStore.getState().markSeen(activeProfileId, 'whatsNew');
+  }, [activeProfileId]);
+
+  // "Arată-mi": leave the slides, open the page and start its short tour.
+  const showMe = useCallback((cta: NonNullable<Slide['cta']>) => {
+    close();
+    navigate(cta.to);
+    if (cta.tour) window.setTimeout(() => useTutorialStore.getState().startTour(cta.tour as TourId), 400);
+  }, [close, navigate]);
 
   const go = useCallback((delta: number) => {
     setDirection(delta);
@@ -536,7 +466,7 @@ export default function WhatsNewTour() {
             {/* ambient glow */}
             <div
               className="pointer-events-none absolute -top-28 left-1/2 h-56 w-[480px] -translate-x-1/2 rounded-full opacity-40 blur-[80px]"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ background: theme.accent }}
             />
 
             {/* header */}
@@ -546,23 +476,23 @@ export default function WhatsNewTour() {
                   animate={{ rotate: [0, 12, -8, 0] }}
                   transition={{ repeat: Infinity, duration: 5, repeatDelay: 1.5 }}
                   className="flex h-9 w-9 items-center justify-center rounded-[13px] text-white"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 10px 22px ${theme.accent}44` }}
+                  style={{ background: theme.accent, boxShadow: `0 10px 22px ${theme.accent}44` }}
                 >
                   <Rocket size={17} />
                 </motion.div>
                 <div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: theme.accent }}>
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: theme.accentText }}>
                     Ce e nou
                   </div>
                   <div className="text-[13px] font-black tracking-tight" style={{ color: theme.text }}>
-                    StudyX {WHATS_NEW_VERSION}
+                    StudyX {CURRENT_TOUR_VERSION}
                   </div>
                 </div>
               </div>
               <button
                 onClick={close}
                 aria-label="Închide turul de noutăți"
-                className="rounded-[12px] p-2 transition-colors hover:bg-white/5"
+                className="rounded-full p-2 transition-colors hover:bg-[var(--hover-fill)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
                 style={{ color: theme.text3 }}
               >
                 <X size={18} />
@@ -586,7 +516,7 @@ export default function WhatsNewTour() {
                   <div className="mt-5 text-center">
                     <span
                       className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em]"
-                      style={{ background: `${theme.accent}12`, borderColor: `${theme.accent}30`, color: theme.accent }}
+                      style={{ background: `${theme.accent}12`, borderColor: `${theme.accent}30`, color: theme.accentText }}
                     >
                       <Sparkles size={10} />
                       {slide.badge}
@@ -597,6 +527,16 @@ export default function WhatsNewTour() {
                     <p className="mx-auto mt-2.5 max-w-[470px] text-[13px] font-medium leading-relaxed" style={{ color: theme.text2 }}>
                       {slide.description}
                     </p>
+                    {slide.cta && (
+                      <button
+                        type="button"
+                        onClick={() => showMe(slide.cta as NonNullable<Slide['cta']>)}
+                        className="press-feedback mt-3 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12.5px] font-semibold"
+                        style={{ background: `${theme.accent}16`, color: theme.accentText }}
+                      >
+                        {slide.cta.label} <ArrowRight size={13} />
+                      </button>
+                    )}
                     <div className="mt-2 h-[30px]">
                       {slide.tip && (
                         <motion.p
@@ -638,7 +578,7 @@ export default function WhatsNewTour() {
                       width: i === index ? 22 : 7,
                       height: 7,
                       background: i === index
-                        ? `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})`
+                        ? theme.accent
                         : `${theme.text3}38`,
                     }}
                   />
@@ -647,12 +587,12 @@ export default function WhatsNewTour() {
 
               {isLast ? (
                 <motion.button
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={close}
                   className="flex h-10 items-center gap-2 rounded-[14px] px-5 text-[12px] font-black text-white"
                   style={{
-                    background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                    background: theme.accent,
                     boxShadow: `0 12px 26px ${theme.accent}40`,
                   }}
                 >
@@ -665,7 +605,7 @@ export default function WhatsNewTour() {
                   aria-label="Slide următor"
                   className="flex h-10 w-10 items-center justify-center rounded-[14px] text-white transition-all"
                   style={{
-                    background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                    background: theme.accent,
                     boxShadow: `0 10px 22px ${theme.accent}38`,
                   }}
                 >

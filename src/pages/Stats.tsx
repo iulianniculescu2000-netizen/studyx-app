@@ -1,14 +1,15 @@
 import { motion } from 'framer-motion';
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Trophy, Flame, Target, Clock, BookOpen, TrendingUp, Brain, Sparkles, Loader2, RefreshCw, Award, ArrowRight } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { useAIStore } from '../store/aiStore';
 import { useUserStore } from '../store/userStore';
-import { loadUserProfile } from '../ai/UserProfile';
+import AIRichText from '../components/ai-chat/AIRichText';
+import { getStrongTopicsForProfile, loadUserProfile } from '../ai/UserProfile';
 
 const ActivityBarChart = lazy(() => import('../components/stats/ActivityBarChart'));
 const AccuracyTrendChart = lazy(() => import('../components/stats/AccuracyTrendChart'));
@@ -47,6 +48,7 @@ function ChartSkeleton({ height = 180 }: { height?: number }) {
 
 export default function Stats() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const { calmMotion } = useAdaptiveMotion();
   const compact = typeof window !== 'undefined' && (window.innerHeight < 860 || window.innerWidth < 1280);
   const { quizzes, sessions } = useQuizStore();
@@ -104,6 +106,16 @@ export default function Stats() {
       setAiReportLoading(false);
     }
   };
+  // The profile has tracked strong topics since the personalization rewrite, but
+  // nothing ever displayed them — the data was computed and stored on every quiz
+  // and then went nowhere.
+  const strongTopics = useMemo(
+    () => (activeProfileId ? getStrongTopicsForProfile(activeProfileId).slice(0, 6) : []),
+    // questionStats re-triggers the read: the profile store is not a reactive dep
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeProfileId, questionStats],
+  );
+
   const sessionsByDay = useMemo(() => {
     const grouped = new Map<string, typeof sessions>();
     for (const session of sessions) {
@@ -242,7 +254,7 @@ export default function Stats() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                  style={{ background: theme.accent }}>
                   <Brain size={16} className="text-white" />
                 </div>
                 <div>
@@ -266,7 +278,7 @@ export default function Stats() {
                     onClick={handleGenerateReport}
                     disabled={aiReportLoading}
                     className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60"
-                    style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                    style={{ background: theme.accent }}
                   >
                     {aiReportLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                     {aiReportLoading ? 'Analizez...' : 'Analizează'}
@@ -282,7 +294,7 @@ export default function Stats() {
                 className="rounded-2xl px-4 py-3.5 text-sm leading-relaxed"
                 style={{ background: `${theme.accent}08`, border: `1px solid ${theme.accent}18`, color: theme.text2 }}
               >
-                {aiReport}
+                <AIRichText text={aiReport} />
                 {aiReportLoading && (
                   <span className="inline-block w-0.5 h-4 ml-0.5 align-text-bottom animate-pulse rounded-sm"
                     style={{ background: theme.accent }} />
@@ -320,7 +332,7 @@ export default function Stats() {
             </p>
             <Link to="/quizzes"
               className="inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold text-white shadow-xl"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+              style={{ background: theme.accent }}>
               Începe acum
             </Link>
           </motion.div>
@@ -330,7 +342,7 @@ export default function Stats() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
               className={`grid grid-cols-2 ${compact ? 'xl:grid-cols-3' : 'md:grid-cols-3'} gap-4 mb-8`}>
               {[
-                { label: 'Sesiuni Totale', value: sessions.length, icon: <BookOpen size={18} />, color: theme.accent },
+                { label: 'Sesiuni Totale', value: sessions.length, icon: <BookOpen size={18} />, color: theme.accentText },
                 { label: 'Acuratețe Medie', value: `${accuracy}%`, icon: <Target size={18} />, color: theme.success },
                 { label: 'Scor Maxim', value: `${bestScore}%`, icon: <Trophy size={18} />, color: '#FFD60A' },
                 { label: 'Streak Curent', value: `${streak.currentStreak} ${streak.currentStreak === 1 ? 'zi' : 'zile'}`, icon: <Flame size={18} />, color: theme.warning },
@@ -396,7 +408,7 @@ export default function Stats() {
                     <p className="text-[10px] font-medium leading-snug opacity-60" style={{ color: theme.text }}>{ach.desc}</p>
                     {ach.earned && (
                       <div className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center shadow-lg"
-                        style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+                        style={{ background: theme.accent }}>
                         <span className="text-[10px] text-white font-black">✓</span>
                       </div>
                     )}
@@ -521,7 +533,7 @@ export default function Stats() {
                 <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full opacity-10"
                   style={{ background: examPrediction.predicted >= 70 ? theme.success : examPrediction.predicted >= 50 ? theme.warning : theme.danger }} />
                 <h2 className="font-semibold mb-4 flex items-center gap-2" style={{ color: theme.text }}>
-                  <TrendingUp size={16} style={{ color: theme.accent }} />
+                  <TrendingUp size={16} style={{ color: theme.accentText }} />
                   Predictor examen
                 </h2>
                 <div className="flex items-center gap-6">
@@ -572,6 +584,36 @@ export default function Stats() {
             )}
 
             {/* Weak questions */}
+            {strongTopics.length > 0 && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+                className="luxe-card rounded-[28px] p-5"
+                style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+                <h2 className="font-semibold mb-1 flex items-center gap-2" style={{ color: theme.text }}>
+                  <Award size={16} style={{ color: theme.success }} />
+                  Puncte forte
+                </h2>
+                <p className="mb-4 text-xs" style={{ color: theme.text3 }}>
+                  Subiecte pe care le stăpânești — bune de păstrat prin recapitulări rare.
+                </p>
+                <div className="space-y-2">
+                  {strongTopics.map((topic) => (
+                    <div key={topic.topic} className="flex items-center gap-3 rounded-xl p-3"
+                      style={{ background: `${theme.success}08`, border: `1px solid ${theme.success}20` }}>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium" style={{ color: theme.text }}>{topic.topic}</p>
+                        <p className="mt-0.5 text-xs" style={{ color: theme.text3 }}>
+                          {topic.total} {topic.total === 1 ? 'întrebare' : 'întrebări'}
+                        </p>
+                      </div>
+                      <span className="flex-shrink-0 text-sm font-bold" style={{ color: theme.success }}>
+                        {Math.round(topic.accuracy)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
             {weakQuestions.length > 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.45 }}
                 className="luxe-card rounded-[28px] p-5"
@@ -584,19 +626,26 @@ export default function Stats() {
                   {weakQuestions.map(ws => {
                     const quiz = quizzes.find(q => q.id === ws.quizId);
                     const question = quiz?.questions.find(q => q.id === ws.questionId);
-                    if (!question) return null;
+                    if (!question || !quiz) return null;
                     const acc = Math.round(ws.timesCorrect / (ws.timesCorrect + ws.timesWrong) * 100);
                     return (
-                      <div key={ws.questionId} className="flex items-start gap-3 p-3 rounded-xl"
+                      <button
+                        key={ws.questionId}
+                        onClick={() => navigate(`/play/${quiz.id}`, { state: { wrongQuestionsOnly: [ws.questionId] } })}
+                        title="Exersează doar această întrebare"
+                        className="premium-card-hover flex w-full items-start gap-3 rounded-xl p-3 text-left transition-all"
                         style={{ background: `${theme.danger}08`, border: `1px solid ${theme.danger}20` }}>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate" style={{ color: theme.text }}>{question.text}</p>
                           <p className="text-xs mt-0.5" style={{ color: theme.text3 }}>
-                            {quiz?.title} · {ws.timesCorrect}/{ws.timesCorrect + ws.timesWrong} corecte
+                            {quiz.title} · {ws.timesCorrect}/{ws.timesCorrect + ws.timesWrong} corecte
                           </p>
                         </div>
-                        <span className="text-sm font-bold flex-shrink-0" style={{ color: theme.danger }}>{acc}%</span>
-                      </div>
+                        <span className="flex flex-shrink-0 items-center gap-2">
+                          <span className="text-sm font-bold" style={{ color: theme.danger }}>{acc}%</span>
+                          <ArrowRight size={14} style={{ color: theme.text3 }} />
+                        </span>
+                      </button>
                     );
                   })}
                 </div>

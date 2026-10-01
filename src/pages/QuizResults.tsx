@@ -1,9 +1,10 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { RotateCcw, Home, Check, X, Star, Download, Bot, Loader2, Scale, MessageSquare, BookOpen } from 'lucide-react';
+import { RotateCcw, Home, Check, X, Star, Download, Bot, Loader2, Scale, MessageSquare, BookOpen, ChevronLeft } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { QuizSession, Question, QuestionStat } from '../types';
+import type { WrongOptionAnalysis } from '../ai/types';
 import { useQuizStore } from '../store/quizStore';
 import { useStatsStore } from '../store/statsStore';
 import { useTheme } from '../theme/ThemeContext';
@@ -12,9 +13,9 @@ import { useUserStore } from '../store/userStore';
 import { useUIStore } from '../store/uiStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import { buildClarificationFallback, cleanQuestionExplanation, getAnswerTextForOptionIds, getCorrectAnswerText } from '../helpers/quizAi';
-import { explainWrongAnswer } from '../lib/groq';
+import { explainAnswerInline } from '../lib/groq';
+import AIRichText from '../components/ai-chat/AIRichText';
 import { buildAdaptiveExamQuiz, buildMistakeFlashcardQuiz, buildWeaknessRecoveryQuiz } from '../lib/adaptiveStudy';
-import { syncProfileFromStats } from '../ai/UserProfile';
 
 export default function QuizResults() {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +30,8 @@ export default function QuizResults() {
   const activeProfileId = useUserStore((state) => state.activeProfileId);
   const setChatOpen = useUIStore((state) => state.setChatOpen);
   const [aiExplanations, setAiExplanations] = useState<Record<string, string>>({});
+  const [optionAnalysis, setOptionAnalysis] = useState<Record<string, WrongOptionAnalysis[]>>({});
+  const [optionAnalysisLoading, setOptionAnalysisLoading] = useState<Record<string, boolean>>({});
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
   const [followUpLoading, setFollowUpLoading] = useState<'flashcards' | 'recovery' | 'exam' | null>(null);
 
@@ -66,37 +69,41 @@ export default function QuizResults() {
     })
     .filter((entry) => !entry.isCorrect), [questions, session?.answers]);
 
-  const pct = Math.round(((session?.score ?? 0) / (session?.total ?? 1)) * 100);
+  // `?? 1` only guards `undefined`; a session with total 0 (imported/legacy data,
+  // or a quiz whose questions were later deleted) still gave 0/0 = NaN, which
+  // rendered as "NaN%" and poisoned the score ring's strokeDashoffset.
+  const pct = session && session.total > 0
+    ? Math.round((session.score / session.total) * 100)
+    : 0;
 
   useEffect(() => {
     if (pct >= 90 && session && quiz) {
       confetti({ particleCount: 120, spread: 70, origin: { y: 0.35 }, colors: ['#FFD60A', '#FF9F0A', '#30D158', '#0A84FF'] });
       if (pct >= 95) {
-        setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 60, colors: ['#FFD60A', '#FF375F'] }), 400);
-        setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 120, colors: ['#30D158', '#5E5CE6'] }), 700);
+        // Cleared on unmount so a burst can't paint over the next screen.
+        const first = window.setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 60, colors: ['#FFD60A', '#FF375F'] }), 400);
+        const second = window.setTimeout(() => confetti({ particleCount: 80, spread: 100, origin: { y: 0.3 }, angle: 120, colors: ['#30D158', '#5E5CE6'] }), 700);
+        return () => {
+          window.clearTimeout(first);
+          window.clearTimeout(second);
+        };
       }
     }
+    return undefined;
   }, [pct, session, quiz]);
-
-  useEffect(() => {
-    if (!activeProfileId) return;
-    // Citim direct din store (fără a crea array nou la fiecare render)
-    // pentru a evita re-declanșarea useEffect la fiecare re-render
-    const allQuestions = useQuizStore.getState().quizzes.flatMap((item) =>
-      item.questions.map((question) => ({ ...question, category: item.category })),
-    );
-    const currentStreak = useStatsStore.getState().streak.currentStreak;
-    syncProfileFromStats(activeProfileId, questionStats, allQuestions, currentStreak);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProfileId, questionStats]);
-  // quizzes exclus din deps — se citesc direct din store pentru a evita array nou la fiecare render
 
   if (!session || !quiz) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="mb-4" style={{ color: theme.text2 }}>Sesiunea nu a fost găsită.</p>
-          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi</Link>
+          <Link
+            to="/quizzes"
+            className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+            style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
+          >
+            <ChevronLeft size={15} />Înapoi la grile
+          </Link>
         </div>
       </div>
     );
@@ -110,12 +117,42 @@ export default function QuizResults() {
     const total = Object.values(questionStats).reduce((s, qs: QuestionStat) => s + qs.timesCorrect + qs.timesWrong, 0);
     const userContext = total > 0 ? `Student medical: ${total} grile rezolvate, acuratețe ${getAccuracy()}%.` : undefined;
     try {
-      const explanation = await explainWrongAnswer(q.text, userAnswerText, correctText, userContext);
-      setAiExplanations((p) => ({ ...p, [q.id]: explanation }));
+      // Streams, and — unlike the previous explainer — first checks whether the
+      // marked answer is medically correct at all, saying so loudly when it
+      // isn't. Imported banks do carry mis-keyed questions.
+      let streamed = '';
+      await explainAnswerInline(
+        q.text,
+        q.options.map((option) => ({ text: option.text, isCorrect: option.isCorrect })),
+        (chunk) => {
+          streamed += chunk;
+          setAiExplanations((p) => ({ ...p, [q.id]: streamed }));
+        },
+        undefined,
+        userContext,
+      );
+      if (!streamed.trim()) {
+        setAiExplanations((p) => ({ ...p, [q.id]: buildClarificationFallback(q, userAnswerText, correctText) }));
+      }
     } catch {
       setAiExplanations((p) => ({ ...p, [q.id]: buildClarificationFallback(q, userAnswerText, correctText) }));
     } finally {
       setAiLoading((p) => ({ ...p, [q.id]: false }));
+    }
+  };
+
+  /** Per-distractor breakdown: why each wrong option fails, and when it wouldn't. */
+  const handleExplainOptions = async (q: Question) => {
+    if (optionAnalysisLoading[q.id] || optionAnalysis[q.id]) return;
+    setOptionAnalysisLoading((p) => ({ ...p, [q.id]: true }));
+    try {
+      const { explainWrongOptions } = await import('../ai/AIEngine');
+      const options = await explainWrongOptions(q);
+      setOptionAnalysis((p) => ({ ...p, [q.id]: options }));
+    } catch {
+      setOptionAnalysis((p) => ({ ...p, [q.id]: [] }));
+    } finally {
+      setOptionAnalysisLoading((p) => ({ ...p, [q.id]: false }));
     }
   };
 
@@ -129,6 +166,7 @@ export default function QuizResults() {
     window.dispatchEvent(new CustomEvent('studyx:ai-prompt', {
       detail: {
         open: true,
+        view: 'chat', // a debrief is a conversation, never the Studio pane
         mode,
         resetConversation: true,
         prompt,
@@ -310,7 +348,7 @@ export default function QuizResults() {
                 </span>
               </div>
               <div style={{ fontSize: 12, color: theme.text2, marginTop: 6 }}>
-                {Math.round((session.penalizedScore / session.total) * 100)}% din punctajul maxim ·{' '}
+                {session.total > 0 ? Math.round((session.penalizedScore / session.total) * 100) : 0}% din punctajul maxim ·{' '}
                 <span style={{ color: theme.text3 }}>+1 corect · −0.25/greșit</span>
               </div>
             </motion.div>
@@ -332,7 +370,7 @@ export default function QuizResults() {
             style={{ background: `${theme.accent}10` }}
           />
           <div className="relative">
-            <div className="text-[11px] uppercase tracking-[0.18em] font-black mb-2" style={{ color: theme.accent }}>
+            <div className="text-[11px] uppercase tracking-[0.18em] font-black mb-2" style={{ color: theme.accentText }}>
               Continuă inteligent
             </div>
             <h2 className="text-xl font-black tracking-tight mb-1" style={{ color: theme.text }}>{insightTitle}</h2>
@@ -364,7 +402,7 @@ export default function QuizResults() {
               <button
                 onClick={() => openResultsDebrief(debriefPrompt, wrongEntries.length > 0 ? 'explain' : 'summarize')}
                 className="premium-card-hover press-feedback mt-4 inline-flex items-center gap-2 rounded-[18px] px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white"
-                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`, boxShadow: `0 14px 30px ${theme.accent}26` }}
+                style={{ background: theme.accent, boxShadow: `0 14px 30px ${theme.accent}26` }}
               >
                 <MessageSquare size={14} />
                 Debrief cu AI Coach
@@ -460,13 +498,44 @@ export default function QuizResults() {
                                 animate={{ opacity: 1, height: 'auto' }}
                                 className="mt-1 p-2.5 rounded-xl text-xs leading-relaxed overflow-hidden"
                                 style={{ background: `${theme.accent}0d`, border: `1px solid ${theme.accent}20`, color: theme.text2 }}>
-                                <span className="font-semibold flex items-center gap-1 mb-1" style={{ color: theme.accent }}>
+                                <span className="font-semibold flex items-center gap-1 mb-1" style={{ color: theme.accentText }}>
                                   <Bot size={11} />{hasKey ? 'Explicație AI' : 'Explicație ghidată'}
                                 </span>
-                                {aiExplanations[q.id]}
+                                <AIRichText text={aiExplanations[q.id]} />
                               </motion.div>
                             </AnimatePresence>
                           )}
+
+                          {hasKey && (optionAnalysis[q.id] ? (
+                            <div
+                              className="mt-1 space-y-2 rounded-xl p-2.5 text-xs leading-relaxed"
+                              style={{ background: `${theme.warning}0d`, border: `1px solid ${theme.warning}20` }}
+                            >
+                              <span className="mb-1 flex items-center gap-1 font-semibold" style={{ color: theme.warning }}>
+                                <Bot size={11} /> De ce pică fiecare variantă
+                              </span>
+                              {optionAnalysis[q.id].length === 0 ? (
+                                <p style={{ color: theme.text3 }}>Nu am putut analiza variantele acum.</p>
+                              ) : optionAnalysis[q.id].map((entry) => (
+                                <div key={entry.option} style={{ color: theme.text2 }}>
+                                  <div className="font-semibold" style={{ color: theme.text }}>{entry.option}</div>
+                                  <div>{entry.whyWrong}</div>
+                                  {entry.whenCorrect && <div className="mt-0.5 opacity-80">Ar fi corectă când: {entry.whenCorrect}</div>}
+                                  {entry.classicConfusion && <div className="mt-0.5 opacity-80">Confuzie clasică: {entry.classicConfusion}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleExplainOptions(q)}
+                              disabled={optionAnalysisLoading[q.id]}
+                              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all disabled:opacity-60"
+                              style={{ background: `${theme.warning}12`, color: theme.warning, border: `1px solid ${theme.warning}28` }}
+                            >
+                              <Bot size={11} />
+                              {optionAnalysisLoading[q.id] ? 'Analizez variantele...' : 'De ce pică fiecare variantă'}
+                            </button>
+                          ))}
 
                           <button
                             onClick={() => openResultsDebrief(
@@ -499,7 +568,7 @@ export default function QuizResults() {
           {/* Primary: retry */}
           <Link to={`/play/${quiz.id}`}
             className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-semibold text-white transition-all hover:opacity-90"
-            style={{ background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`, boxShadow: `0 6px 20px ${theme.accent}25` }}>
+            style={{ background: theme.accent, boxShadow: `0 6px 20px ${theme.accent}25` }}>
             <RotateCcw size={15} />
             Încearcă din nou
           </Link>

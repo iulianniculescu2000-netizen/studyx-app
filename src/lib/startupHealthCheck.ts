@@ -36,13 +36,21 @@ async function probeIndexedDb(): Promise<HealthCheckItem> {
   }
 }
 
+/**
+ * Absence of the Electron bridge is the normal state for every web/PWA user —
+ * it's only present in the packaged desktop app — so it must never fail this
+ * check on its own (that turned into a false "Atenție moderată" toast on every
+ * single web load, since `safeStartup` defaults to on). Same reasoning the
+ * `UpdateButton` already applies: a missing bridge means "not applicable", not
+ * "degraded".
+ */
 function probeElectronBridge(): HealthCheckItem {
   const available = typeof window !== 'undefined' && !!window.electronAPI;
   return {
     id: 'electron-bridge',
     label: 'Electron bridge',
-    status: available ? 'ok' : 'warning',
-    detail: available ? 'Bridge-ul nativ este disponibil.' : 'Rulezi fără bridge nativ complet.',
+    status: 'ok',
+    detail: available ? 'Bridge-ul nativ este disponibil.' : 'Rulezi în browser — normal pentru versiunea web.',
   };
 }
 

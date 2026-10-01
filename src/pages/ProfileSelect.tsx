@@ -1,9 +1,10 @@
+import ThemeModeSwitcher from '../components/ThemeModeSwitcher';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { Plus, X, Sparkles } from 'lucide-react';
 import { useUserStore, type Profile } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
-import { THEMES, type Theme } from '../theme/themes';
+import type { Theme } from '../theme/themes';
 
 interface Props {
   onAddNew: () => void;
@@ -15,6 +16,7 @@ export default function ProfileSelect({ onAddNew }: Props) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
   // Auto-select first profile on Enter if only one
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -25,12 +27,21 @@ export default function ProfileSelect({ onAddNew }: Props) {
 
   const handleSelect = (id: string) => {
     if (selectedId) return;
+    if (confirmRemoveId === id) {
+      setConfirmRemoveId(null);
+      return;
+    }
     setSelectedId(id);
     setTimeout(() => switchProfile(id), 380);
   };
 
   const handleRemove = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    if (confirmRemoveId !== id) {
+      setConfirmRemoveId(id);
+      return;
+    }
+    setConfirmRemoveId(null);
     setRemovingId(id);
     setTimeout(() => removeProfile(id), 280);
   };
@@ -42,6 +53,10 @@ export default function ProfileSelect({ onAddNew }: Props) {
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
+      {/* In the frameless Electron window the minimize/maximize/close buttons float at the top-right: sit to their left. */}
+      <div className={`absolute top-5 z-20 ${window.electronAPI ? 'right-[156px]' : 'right-5'}`}>
+        <ThemeModeSwitcher variant="compact" />
+      </div>
       {/* Ambient orbs */}
       <motion.div className="absolute rounded-full pointer-events-none"
         style={{ width: 700, height: 700, top: '-20%', left: '-15%', background: `radial-gradient(circle, ${theme.orb1}, transparent 65%)`, filter: 'blur(90px)', opacity: 0.7 }}
@@ -69,7 +84,7 @@ export default function ProfileSelect({ onAddNew }: Props) {
             transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.1 }}
             className="w-14 h-14 rounded-2xl mx-auto mb-5 flex items-center justify-center text-2xl"
             style={{
-              background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+              background: theme.accent,
               boxShadow: `0 16px 48px ${theme.accent}40`,
             }}>
             📚
@@ -90,7 +105,11 @@ export default function ProfileSelect({ onAddNew }: Props) {
               isHovered={hovered === profile.id}
               isSelected={selectedId === profile.id}
               isRemoving={removingId === profile.id}
-              onHover={(id) => setHovered(id)}
+              isConfirmingRemove={confirmRemoveId === profile.id}
+              onHover={(id) => {
+                setHovered(id);
+                if (id === null) setConfirmRemoveId(null);
+              }}
               onSelect={handleSelect}
               onRemove={handleRemove}
               theme={theme}
@@ -146,19 +165,19 @@ export default function ProfileSelect({ onAddNew }: Props) {
   );
 }
 
-function ProfileAvatar({ profile, index, isHovered, isSelected, isRemoving, onHover, onSelect, onRemove, theme }: {
+function ProfileAvatar({ profile, index, isHovered, isSelected, isRemoving, isConfirmingRemove, onHover, onSelect, onRemove, theme }: {
   profile: Profile;
   index: number;
   isHovered: boolean;
   isSelected: boolean;
   isRemoving: boolean;
+  isConfirmingRemove: boolean;
   onHover: (id: string | null) => void;
   onSelect: (id: string) => void;
   onRemove: (e: React.MouseEvent, id: string) => void;
   theme: Theme;
 }) {
-  const profileTheme = THEMES[profile.themeId as keyof typeof THEMES] ?? THEMES.obsidian;
-  const accentColor = profileTheme.accent;
+  const accentColor = theme.accent;
 
   return (
     <motion.div
@@ -176,16 +195,30 @@ function ProfileAvatar({ profile, index, isHovered, isSelected, isRemoving, onHo
     >
       {/* Remove button */}
       <AnimatePresence>
-        {isHovered && !isSelected && (
+        {(isHovered || isConfirmingRemove) && !isSelected && (
           <motion.button
             initial={{ opacity: 0, scale: 0 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0 }}
             transition={{ duration: 0.15 }}
             onClick={(e) => onRemove(e, profile.id)}
-            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center z-20"
-            style={{ background: theme.danger, color: 'white', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
-            <X size={10} strokeWidth={3} />
+            title={isConfirmingRemove ? 'Confirmă ștergerea profilului' : 'Șterge profilul'}
+            className="absolute -top-2 z-20 flex items-center justify-center rounded-full"
+            style={{
+              right: isConfirmingRemove ? -12 : -6,
+              height: 20,
+              minWidth: isConfirmingRemove ? undefined : 20,
+              padding: isConfirmingRemove ? '0 10px' : 0,
+              background: theme.danger,
+              color: 'white',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              fontSize: 10,
+              fontWeight: 900,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              whiteSpace: 'nowrap',
+            }}>
+            {isConfirmingRemove ? 'Șterge?' : <X size={10} strokeWidth={3} />}
           </motion.button>
         )}
       </AnimatePresence>

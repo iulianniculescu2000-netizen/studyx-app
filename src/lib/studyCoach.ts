@@ -1,5 +1,6 @@
 import type { PerformanceSummary } from './aiContext';
 import type { AIKnowledgeSource } from '../store/aiStore';
+import type { DueExamSession } from './studyPlan';
 
 export interface StudyCoachAction {
   title: string;
@@ -25,6 +26,7 @@ const SOURCE_QUALITY_GOOD = 65;
 export function buildStudyCoachPlan(
   summary: PerformanceSummary,
   sources: AIKnowledgeSource[],
+  dueExamSession: DueExamSession | null = null,
 ): StudyCoachPlan {
   const focusTopic = summary.weakTopics[0]?.tag ?? summary.strongTopics[0]?.tag ?? 'Consolidare generală';
   const avgSourceQuality = Math.round(
@@ -47,6 +49,20 @@ export function buildStudyCoachPlan(
       detail: 'Pornește o sesiune scurtă de recovery și închide întâi restanța de azi.',
       tone: 'accent',
       route: '/daily-review',
+    });
+  }
+
+  if (dueExamSession) {
+    const { session, folderId, folderName } = dueExamSession;
+    const chapterLabel = session.chapters.length === 1
+      ? session.chapters[0].label
+      : `${session.chapters.length} capitole`;
+    const passLabel = session.kind === 'first-pass' ? 'Prima trecere' : `Recapitulare ${session.passIndex}`;
+    actions.push({
+      title: `Plan de examen: ${chapterLabel}`,
+      detail: `${passLabel} din planul tău pentru „${folderName}" e programată acum.`,
+      tone: 'accent',
+      route: `/vault?folder=${folderId}`,
     });
   }
 

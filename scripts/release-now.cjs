@@ -189,6 +189,19 @@ async function main() {
   const asset = await uploadAsset(release.upload_url, installer.abs, installer.name);
   console.log(`\n✓ Installer urcat: ${asset.browser_download_url}`);
 
+  // 3b. Metadata electron-updater. Without latest.yml the app's native update
+  // check fails with a 404 on every launch and only the fallback updater works;
+  // the blockmap is what lets a future release download just the changed blocks.
+  for (const extra of ['latest.yml', `${installer.name}.blockmap`]) {
+    const abs = path.join(ROOT, 'release', extra);
+    if (!fs.existsSync(abs)) {
+      console.warn(`  ⚠ ${extra} lipsește din release/ — îl sar (updater-ul nativ va cădea pe fallback).`);
+      continue;
+    }
+    await uploadAsset(release.upload_url, abs, extra);
+    console.log(`✓ ${extra} urcat`);
+  }
+
   // 4. Build manifest (metadata-only — no dist files)
   const installerUrl = `${RELEASE_BASE}/${TAG}/${installer.name}`;
   const manifest = {

@@ -1,3 +1,4 @@
+import { folderHref } from '../lib/rezidentiatRoutes';
 import { motion } from 'framer-motion';
 import { lazy, Suspense, useEffect, useState, type CSSProperties } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -24,6 +25,7 @@ import {
 import QuizImage from '../components/QuizImage';
 import { useAIStore } from '../store/aiStore';
 import { useQuizStore } from '../store/quizStore';
+import { useFolderStore } from '../store/folderStore';
 import { useStatsStore } from '../store/statsStore';
 import { useUIStore } from '../store/uiStore';
 import { HERO_COLOR_MAP } from '../theme/colorMaps';
@@ -69,6 +71,14 @@ export default function QuizDetail() {
   const unlockFloatingUI = useUIStore((state) => state.unlockFloatingUI);
 
   const quiz = quizzes.find((candidate) => candidate.id === id);
+  const folders = useFolderStore((state) => state.folders);
+  // "Back" goes to wherever this quiz actually lives, not always the flat
+  // list — a quiz opened from deep in a nested folder (Rezidențiat and its
+  // subfolders, or any user-made subfolder) used to always bounce to "Toate
+  // grilele", losing the user's place in the tree.
+  const backFolder = quiz?.folderId ? folders.find((f) => f.id === quiz.folderId) : null;
+  const backHref = backFolder ? folderHref(backFolder.id, folders) : '/quizzes';
+  const backLabel = backFolder ? backFolder.name : 'Toate grilele';
 
   // A flashcard deck must always study as flashcards — if one is opened via the
   // quiz-detail route (old links, search), send it to its real session.
@@ -94,7 +104,7 @@ export default function QuizDetail() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="mb-4" style={{ color: theme.text2 }}>Grila nu a fost găsită.</p>
-          <Link to="/quizzes" style={{ color: theme.accent }}>Înapoi</Link>
+          <Link to="/quizzes" style={{ color: theme.accentText }}>Înapoi</Link>
         </div>
       </div>
     );
@@ -282,12 +292,12 @@ export default function QuizDetail() {
         <div className="max-w-2xl mx-auto">
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
             <Link
-              to="/quizzes"
-              className="flex items-center gap-1.5 text-sm hover:opacity-80 transition-all"
-              style={{ color: theme.text3 }}
+              to={backHref}
+              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition-all hover:opacity-80"
+              style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}
             >
               <ChevronLeft size={15} />
-              Toate grilele
+              {backLabel}
             </Link>
           </motion.div>
 
@@ -358,7 +368,7 @@ export default function QuizDetail() {
           >
             <Link
               to={`/play/${quiz.id}`}
-              className="flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-white text-lg shadow-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
+              className="press-feedback accent-shadow-hover flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-white text-lg shadow-2xl"
               style={{ background: colors.gradient, boxShadow: `0 12px 32px ${colors.glow}` }}
             >
               <Play size={22} fill="white" />
@@ -367,7 +377,7 @@ export default function QuizDetail() {
             <Link
               to={`/play/${quiz.id}`}
               state={{ mode: 'exam' }}
-              className="flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-lg transition-all hover:scale-[1.03] active:scale-[0.97] shadow-lg"
+              className="press-feedback flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-lg shadow-lg"
               style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.text }}
             >
               <GraduationCap size={22} />
@@ -380,8 +390,7 @@ export default function QuizDetail() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.16 }}
-              className="rounded-3xl p-5 mb-8"
-              style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+              className="glass-panel premium-shadow rounded-3xl p-5 mb-8"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -409,7 +418,7 @@ export default function QuizDetail() {
                     to={`/play/${quiz.id}`}
                     state={{ practiceCount: effectiveQuickCount }}
                     className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                    style={{ background: theme.accent }}
                   >
                     <Play size={14} fill="white" />
                     Pornește {effectiveQuickCount}
@@ -428,12 +437,12 @@ export default function QuizDetail() {
             <Link
               to={`/play/${quiz.id}`}
               state={{ mode: 'timed' }}
-              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-white/5 active:scale-[0.98]"
+              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-[var(--hover-fill)] active:scale-[0.98] outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
               style={{
                 background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                 border: `1px solid ${theme.border}`,
                 color: theme.text2,
-                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)',
               }}
             >
               <Timer size={16} />
@@ -441,12 +450,12 @@ export default function QuizDetail() {
             </Link>
             <Link
               to={`/flashcards/session/${quiz.id}?mode=all`}
-              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-white/5 active:scale-[0.98]"
+              className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all hover:bg-[var(--hover-fill)] active:scale-[0.98] outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
               style={{
                 background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                 border: `1px solid ${theme.border}`,
                 color: theme.text2,
-                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)',
               }}
             >
               <CreditCard size={16} />
@@ -467,7 +476,7 @@ export default function QuizDetail() {
                 background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                 border: `1px solid ${wrongCount > 0 ? `${theme.danger}40` : theme.border}`,
                 color: wrongCount > 0 ? theme.danger : theme.text3,
-                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)',
               }}
             >
               <RotateCcw size={16} />
@@ -492,7 +501,7 @@ export default function QuizDetail() {
               <div className="flex items-center gap-3">
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110"
-                  style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                  style={{ background: theme.accent }}
                 >
                   <Bot size={20} className="text-white" />
                 </div>
@@ -505,15 +514,14 @@ export default function QuizDetail() {
               </div>
               <div
                 className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all group-hover:translate-x-1"
-                style={{ background: `${theme.accent}20`, color: theme.accent }}
+                style={{ background: `${theme.accent}20`, color: theme.accentText }}
               >
                 Deschide chat
               </div>
             </motion.button>
           ) : (
             <div
-              className="w-full flex items-center gap-3 p-4 rounded-2xl mb-8"
-              style={{ background: theme.surface2, border: `1px solid ${theme.border}` }}
+              className="glass-panel w-full flex items-center gap-3 p-4 rounded-2xl mb-8"
             >
               <Bot size={18} style={{ color: theme.text3 }} />
               <span className="text-xs font-medium flex-1" style={{ color: theme.text3 }}>
@@ -521,8 +529,8 @@ export default function QuizDetail() {
               </span>
               <button
                 onClick={() => window.dispatchEvent(new CustomEvent('studyx:open-ai-settings'))}
-                className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg transition-all hover:bg-white/5"
-                style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.accent }}
+                className="press-feedback text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg"
+                style={{ background: theme.surface, border: `1px solid ${theme.border}`, color: theme.accentText }}
               >
                 Configurare
               </button>
@@ -531,7 +539,7 @@ export default function QuizDetail() {
 
           <div className="grid grid-cols-3 gap-2 mb-8 sm:grid-cols-6">
             {[
-              { label: 'Editează', icon: Pencil, action: () => navigate(`/create?edit=${quiz.id}`), color: theme.accent },
+              { label: 'Editează', icon: Pencil, action: () => navigate(`/create?edit=${quiz.id}`), color: theme.accentText },
               { label: 'Copiază', icon: Copy, action: handleDuplicate, color: theme.text2 },
               { label: 'JSON', icon: Download, action: exportQuiz, color: theme.text2 },
               { label: 'PDF', icon: FileText, action: exportPDF, color: theme.text2 },
@@ -546,11 +554,11 @@ export default function QuizDetail() {
               <button
                 key={button.label}
                 onClick={button.action}
-                className="flex flex-col items-center gap-1.5 py-3 rounded-2xl transition-all hover:scale-[1.05] active:scale-[0.95]"
+                className="press-feedback flex flex-col items-center gap-1.5 py-3 rounded-2xl"
                 style={{
                   background: `linear-gradient(180deg, ${theme.surface}, ${theme.surface2})`,
                   border: `1px solid ${theme.border}`,
-                  boxShadow: '0 12px 26px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.08)',
+                  boxShadow: '0 12px 26px rgba(0,0,0,0.05), inset 0 1px 0 var(--glass-highlight)',
                 }}
               >
                 <button.icon size={16} style={{ color: button.color }} />
@@ -565,12 +573,7 @@ export default function QuizDetail() {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="rounded-3xl p-6 mb-8"
-            style={{
-              background: theme.surface,
-              border: `1px solid ${theme.border}`,
-              boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
-            }}
+            className="glass-panel premium-shadow rounded-3xl p-6 mb-8"
           >
             <div className="flex items-center justify-between mb-6 gap-4">
               <div>
@@ -604,8 +607,7 @@ export default function QuizDetail() {
                 .map(({ question, actualIndex }) => (
                   <div
                     key={question.id}
-                    className="p-4 rounded-2xl transition-all hover:bg-white/5 border border-transparent hover:border-white/10"
-                    style={{ background: theme.surface2 }}
+                    className="glass-panel p-4 rounded-2xl transition-all hover:bg-[var(--hover-fill)] border border-transparent hover:border-[var(--border2)]"
                   >
                     <div className="flex items-start gap-3">
                       <span className="text-[10px] font-black opacity-30 mt-1" style={{ color: theme.text }}>

@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ThemeId } from '../theme/themes';
 
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #0A84FF, #5E5CE6)',
@@ -11,10 +10,14 @@ const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #5AC8FA, #5E5CE6)',
 ];
 
+/**
+ * A study profile. It no longer carries a theme: Luminos / Întunecat / Automat is a
+ * per-device preference (store/themeStore.ts). Older saves and backups may still have a
+ * `themeId` on each profile — it is simply ignored.
+ */
 export interface Profile {
   id: string;
   username: string;
-  themeId: ThemeId;
   gradient: string;
   createdAt: number;
 }
@@ -25,16 +28,23 @@ interface UserStore {
   pendingTutorialProfileId: string | null;
   // Synced from active profile — kept for backward compat across all components
   username: string | null;
-  themeId: ThemeId;
   // Actions
-  addProfile: (name: string, themeId: ThemeId) => string;
+  addProfile: (name: string) => string;
   setUsername: (name: string) => void; // legacy: used by Welcome, creates + activates profile
-  setTheme: (id: ThemeId) => void;
   switchProfile: (id: string) => void;
   removeProfile: (id: string) => void;
   logout: () => void;
   clearPendingTutorialProfile: (id?: string) => void;
   reset: () => void;
+}
+
+function newProfile(name: string, existingCount: number): Profile {
+  return {
+    id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+    username: name.trim(),
+    gradient: AVATAR_GRADIENTS[existingCount % AVATAR_GRADIENTS.length],
+    createdAt: Date.now(),
+  };
 }
 
 export const useUserStore = create<UserStore>()(
@@ -44,45 +54,28 @@ export const useUserStore = create<UserStore>()(
       activeProfileId: null,
       pendingTutorialProfileId: null,
       username: null,
-      themeId: 'obsidian',
 
-      addProfile: (name, themeId) => {
-        const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-        const gradient = AVATAR_GRADIENTS[get().profiles.length % AVATAR_GRADIENTS.length];
-        const profile: Profile = { id, username: name.trim(), themeId, gradient, createdAt: Date.now() };
+      addProfile: (name) => {
+        const profile = newProfile(name, get().profiles.length);
         set((s) => ({ profiles: [...s.profiles, profile] }));
-        return id;
+        return profile.id;
       },
 
       setUsername: (name) => {
-        // Creates a new profile from the current temp themeId and activates it
-        const themeId = get().themeId;
-        const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-        const gradient = AVATAR_GRADIENTS[get().profiles.length % AVATAR_GRADIENTS.length];
-        const profile: Profile = { id, username: name.trim(), themeId, gradient, createdAt: Date.now() };
-        
-        set((s) => ({ 
-          profiles: [...s.profiles, profile],
-          activeProfileId: id,
-          pendingTutorialProfileId: id,
-          username: profile.username,
-          themeId: profile.themeId
-        }));
-      },
-
-      setTheme: (id) => {
+        // Creates a new profile and activates it
+        const profile = newProfile(name, get().profiles.length);
         set((s) => ({
-          themeId: id,
-          profiles: s.activeProfileId
-            ? s.profiles.map((p) => (p.id === s.activeProfileId ? { ...p, themeId: id } : p))
-            : s.profiles,
+          profiles: [...s.profiles, profile],
+          activeProfileId: profile.id,
+          pendingTutorialProfileId: profile.id,
+          username: profile.username,
         }));
       },
 
       switchProfile: (id) => {
         const profile = get().profiles.find((p) => p.id === id);
         if (!profile) return;
-        set({ activeProfileId: id, username: profile.username, themeId: profile.themeId });
+        set({ activeProfileId: id, username: profile.username });
       },
 
       removeProfile: (id) => {
@@ -103,35 +96,39 @@ export const useUserStore = create<UserStore>()(
         activeProfileId: null,
         pendingTutorialProfileId: null,
         username: null,
-        themeId: 'obsidian',
       }),
     }),
     {
       name: 'studyx-user',
-      version: 2,
-      migrate: (persisted) => persisted as unknown,
+      version: 4,
+      // v4: themes left the profile. Drop the old per-profile / global theme fields; the
+      // theme now lives in store/themeStore.ts (new installs and upgrades start on "Automat").
+      migrate: (persisted) => {
+        const state = persisted as (Partial<UserStore> & { themeId?: unknown }) | null;
+        if (!state || typeof state !== 'object') return persisted as unknown;
+        const { themeId: _legacyTheme, ...rest } = state;
+        void _legacyTheme;
+        return {
+          ...rest,
+          profiles: (state.profiles ?? []).map((profile) => {
+            const { themeId: _profileTheme, ...profileRest } = profile as Profile & { themeId?: unknown };
+            void _profileTheme;
+            return profileRest;
+          }),
+        } as unknown;
+      },
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         // Migrate old single-user format to profiles array
         if (state.username && (!state.profiles || state.profiles.length === 0)) {
-          const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-          const profile: Profile = {
-            id,
-            username: state.username,
-            themeId: state.themeId ?? 'obsidian',
-            gradient: AVATAR_GRADIENTS[0],
-            createdAt: Date.now(),
-          };
+          const profile = newProfile(state.username, 0);
           state.profiles = [profile];
-          state.activeProfileId = id;
+          state.activeProfileId = profile.id;
         }
-        // Sync username/themeId from active profile
+        // Sync username from active profile
         if (state.activeProfileId && state.profiles) {
           const active = state.profiles.find((p) => p.id === state.activeProfileId);
-          if (active) {
-            state.username = active.username;
-            state.themeId = active.themeId;
-          }
+          if (active) state.username = active.username;
         }
       },
     }

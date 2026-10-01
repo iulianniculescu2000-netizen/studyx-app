@@ -20,6 +20,8 @@ import {
 import { SortableQuestionTab } from './quiz-create/ui';
 import ImportFromDocument from '../components/ImportFromDocument';
 import Portal from '../components/Portal';
+import { isUnderRezidentiatRoot } from '../lib/rezidentiatRoot';
+import { REZIDENTIAT_TAG } from '../lib/rezidentiatBank';
 import type { ParsedQuestion } from '../lib/ai/grileParser';
 
 let quizCreateAIPromise: Promise<typeof import('../lib/groq')> | null = null;
@@ -175,7 +177,10 @@ export default function QuizCreate() {
         updateQuestion(qId, { imageUrl: compressed });
       }
     };
-    reader.onerror = () => {};
+    reader.onerror = () => {
+      console.error("[QuizCreate] Nu s-a putut citi imaginea", reader.error);
+      setAiError("Nu s-a putut citi imaginea selectată. Încearcă alt fișier.");
+    };
     reader.readAsDataURL(file);
     uploadTargetQId.current = null;
   };
@@ -261,6 +266,13 @@ export default function QuizCreate() {
     const finalTags = pendingTag && !tags.includes(pendingTag)
       ? [...tags, pendingTag]
       : tags;
+    // A test saved into the Rezidențiat tree belongs to that section like the imported ones
+    // (kept out of "Toate grilele"); without the tag it showed up in both places.
+    const tagsForFolder = (list: string[]) => (
+      selectedFolderId !== '__uncategorized__' && isUnderRezidentiatRoot(selectedFolderId, useFolderStore.getState().folders)
+        ? [...new Set([...list, REZIDENTIAT_TAG])]
+        : list
+    );
     if (editId && existingQuiz) {
       updateQuiz(editId, {
         title: title.trim(),
@@ -268,7 +280,7 @@ export default function QuizCreate() {
         emoji, color, category,
         folderId: selectedFolderId === '__uncategorized__' ? null : selectedFolderId,
         shuffleQuestions, shuffleAnswers, penaltyMode,
-        tags: finalTags,
+        tags: tagsForFolder(finalTags),
         questions,
       });
       navigate(`/quiz/${editId}`);
@@ -281,7 +293,7 @@ export default function QuizCreate() {
         kind: 'quiz',
         folderId: selectedFolderId === '__uncategorized__' ? null : selectedFolderId,
         shuffleQuestions, shuffleAnswers, penaltyMode,
-        tags: finalTags,
+        tags: tagsForFolder(finalTags),
         questions,
         createdAt: Date.now(),
       });
@@ -379,7 +391,7 @@ export default function QuizCreate() {
               exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
 
               {/* Tab switcher: Manual / AI */}
-              <div className="flex gap-1 mb-5 p-1.5 rounded-2xl glass-panel" style={{ background: theme.surface }}>
+              <div className="flex gap-1 mb-5 p-1.5 rounded-2xl glass-panel">
                 {[
                   { id: 'manual' as const, label: 'Manual', icon: <Pencil size={13} /> },
                   { id: 'ai' as const, label: 'Generează cu AI', icon: <Bot size={13} /> },
@@ -506,7 +518,7 @@ export default function QuizCreate() {
 
       {showImportDoc && (
         <Portal>
-          <div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }} onClick={() => setShowImportDoc(false)} />
+          <div className="fixed inset-0 z-50" style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }} onClick={() => setShowImportDoc(false)} />
           <div className="fixed top-[6%] left-1/2 z-50 w-full max-w-lg -translate-x-1/2 px-4">
             <div className="rounded-3xl p-6 shadow-2xl max-h-[86vh] overflow-y-auto"
               style={{ background: theme.isDark ? 'rgba(22,22,26,0.98)' : 'rgba(255,255,255,0.98)', border: `1px solid ${theme.border}` }}>

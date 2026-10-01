@@ -1,3 +1,6 @@
+import Portal from '../Portal';
+import AIRichText from '../ai-chat/AIRichText';
+import { friendlyAIError } from '../../lib/ai/friendlyError';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { Bot, SendHorizonal, Loader2, X } from 'lucide-react';
@@ -83,7 +86,7 @@ Comportament:
       const errorMessage = error instanceof Error ? error.message : 'Eroare necunoscută.';
       setChatMessages((messages) => {
         const updated = [...messages];
-        updated[updated.length - 1] = { role: 'assistant', content: `Eroare: ${errorMessage}` };
+        updated[updated.length - 1] = { role: 'assistant', content: `Eroare: ${friendlyAIError(errorMessage)}` };
         return updated;
       });
     } finally {
@@ -92,6 +95,7 @@ Comportament:
   };
 
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <>
@@ -109,16 +113,16 @@ Comportament:
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 350, damping: 32 }}
             className="fixed right-0 top-0 bottom-0 z-[101] flex flex-col"
-            style={{ width: 380, background: theme.modalBg, borderLeft: `1px solid ${theme.border}` }}
+            style={{ width: 'min(380px, 100vw)', background: theme.modalBg, borderLeft: `1px solid ${theme.border}` }}
           >
             <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ borderBottom: `1px solid ${theme.border}` }}>
               <div
                 className="w-8 h-8 rounded-xl flex items-center justify-center"
-                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+                style={{ background: theme.accent }}
               >
                 <Bot size={15} className="text-white" />
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold" style={{ color: theme.text }}>Chat AI</p>
                 <p className="text-xs truncate" style={{ color: theme.text3 }}>{quiz.title}</p>
               </div>
@@ -126,6 +130,8 @@ Comportament:
                 whileHover={{ rotate: 90 }}
                 whileTap={{ scale: 0.88 }}
                 onClick={onClose}
+                aria-label="Închide chatul"
+                className="flex-shrink-0 p-2"
                 style={{ color: theme.text3, cursor: 'pointer' }}
               >
                 <X size={16} />
@@ -164,7 +170,7 @@ Comportament:
                     className="max-w-[88%] px-3.5 py-2.5 text-sm leading-relaxed"
                     style={{
                       background: message.role === 'user'
-                        ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`
+                        ? theme.accent
                         : theme.surface2,
                       color: message.role === 'user' ? '#fff' : theme.text,
                       borderRadius: message.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
@@ -172,19 +178,7 @@ Comportament:
                   >
                     {message.content
                       ? message.role === 'assistant'
-                        ? (
-                          <span
-                            dangerouslySetInnerHTML={{
-                              __html: message.content
-                                .replace(/&/g, '&amp;')
-                                .replace(/</g, '&lt;')
-                                .replace(/>/g, '&gt;')
-                                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                                .replace(/\*(.+?)\*/g, '<em>$1</em>')
-                                .replace(/\n/g, '<br/>'),
-                            }}
-                          />
-                        )
+                        ? <AIRichText text={message.content} />
                         : message.content
                       : <span style={{ opacity: 0.4 }}>...</span>}
                   </div>
@@ -209,13 +203,14 @@ Comportament:
                   style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text, outline: 'none' }}
                 />
                 <motion.button
-                  whileTap={{ scale: 0.9 }}
+                  whileTap={{ scale: 0.94 }}
                   onClick={() => void sendChat()}
+                  aria-label="Trimite"
                   disabled={!chatInput.trim() || chatLoading}
                   className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                   style={{
                     background: chatInput.trim() && !chatLoading
-                      ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`
+                      ? theme.accent
                       : theme.surface2,
                     color: chatInput.trim() && !chatLoading ? '#fff' : theme.text3,
                   }}
@@ -228,5 +223,6 @@ Comportament:
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }

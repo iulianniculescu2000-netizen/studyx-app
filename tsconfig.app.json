@@ -8,6 +8,16 @@
     "types": ["vite/client"],
     "skipLibCheck": true,
 
+    /* jszip's own shipped .d.ts unconditionally does `/// <reference types="node" />`,
+       which leaks Node's ambient setTimeout/Timeout globals into this browser-only
+       project (confirmed conflict, not theoretical — breaks window.setTimeout typing
+       app-wide). Type-check against a local stub instead; Vite's runtime bundling is
+       unaffected since `paths` only changes TypeScript's type resolution. */
+    "baseUrl": ".",
+    "paths": {
+      "jszip": ["./src/types/jszip-stub.d.ts"]
+    },
+
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -25,38 +35,10 @@
     "noUncheckedSideEffectImports": true
   },
   "include": ["src"],
+  /* Everything else that used to sit here pointed at orphaned files, now deleted.
+     Only genuinely non-app sources stay excluded. */
   "exclude": [
     "src/test/**/*",
-    "src/**/*.stories.tsx",
-    "src/components/accessibility/**/*",
-    "src/components/ai/**/*",
-    "src/components/chat/**/*",
-    "src/components/collaboration/**/*",
-    "src/components/content/**/*",
-    "src/components/gamification/**/*",
-    "src/components/offline/**/*",
-    "src/components/performance/**/*",
-    "src/components/personalization/**/*",
-    "src/components/update/**/*",
-    "src/components/sidebar/SidebarNavigation.tsx",
-    "src/components/stats/ActivityHeatmap.tsx",
-    "src/components/stats/StatsOverview.tsx",
-    "src/components/quiz/QuizPlayControls.tsx",
-    "src/components/quiz/QuizPlayHeader.tsx",
-    "src/components/quiz/QuizPlayKeyboardShortcuts.tsx",
-    "src/components/quiz/QuizPlayNotePanel.tsx",
-    "src/components/quiz/QuizPlayQuestion.tsx",
-    "src/components/quiz/QuizPlayRefactored.tsx",
-    "src/hooks/useUIManager.ts",
-    "src/lib/ai/**/*",
-    "src/lib/content/**/*",
-    "src/lib/gamification/**/*",
-    "src/lib/offline/**/*",
-    "src/lib/personalization/**/*",
-    "src/types/gamification.ts",
-    "src/utils/lazyLoad.tsx",
-    "src/utils/memoryProfiler.ts",
-    "src/utils/serviceWorker.ts",
-    "src/components/StabilityTimelineSimple.tsx"
+    "src/**/*.stories.tsx"
   ]
 }

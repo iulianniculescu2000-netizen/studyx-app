@@ -11,7 +11,7 @@ import { groqVisionRequest } from '../groq';
 import { extractJsonFromText } from '../quizImport';
 import type { ParsedQuestion } from './grileParser';
 
-const MAX_SCANNED_PAGES = 20; // bound cost/time on huge scanned PDFs
+const MAX_SCANNED_PAGES = 25; // bound cost/time on huge scanned PDFs
 
 const VISION_PROMPT = [
   'Ești examinator de Medicină. Imaginea conține una sau mai multe întrebări grilă.',
@@ -98,7 +98,8 @@ export async function extractGrileFromScannedPdf(
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
   const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const pdf = await loadingTask.promise;
   const pagesTotal = pdf.numPages;
   const pagesToDo = Math.min(pagesTotal, MAX_SCANNED_PAGES);
   const questions: ParsedQuestion[] = [];
@@ -132,7 +133,7 @@ export async function extractGrileFromScannedPdf(
       onProgress?.(p, pagesToDo);
     }
   } finally {
-    await pdf.destroy();
+    await loadingTask.destroy();
   }
 
   return { questions, pagesProcessed: pagesToDo, pagesTotal };

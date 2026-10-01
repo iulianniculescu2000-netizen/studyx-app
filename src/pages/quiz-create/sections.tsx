@@ -1,3 +1,4 @@
+import Portal from '../../components/Portal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -122,9 +123,9 @@ function FolderTargetPicker({
                     onChange(option.id);
                     setOpen(false);
                   }}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all"
+                  className="fine-row press-feedback flex w-full items-center gap-3 px-3 py-2.5 text-left"
                   style={{
-                    background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : 'transparent',
+                    ...(active ? { background: theme.accent, boxShadow: 'none' } : {}),
                     color: active ? '#fff' : theme.text,
                   }}
                 >
@@ -325,7 +326,7 @@ export function QuizInfoStep({
             <span
               key={tag}
               className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
-              style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}30` }}
+              style={{ background: `${theme.accent}18`, color: theme.accentText, border: `1px solid ${theme.accent}30` }}
             >
               {tag}
               <button onClick={() => onRemoveTag(tag)}>
@@ -405,10 +406,10 @@ export function QuizInfoStep({
       <motion.button
         onClick={onContinue}
         whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.98 }}
+        whileTap={{ scale: 0.97 }}
         className="w-full py-3.5 rounded-2xl font-semibold text-white"
         style={{
-          background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
+          background: theme.accent,
           opacity: canProceed ? 1 : 0.6,
         }}
       >
@@ -482,7 +483,7 @@ export function QuizAIGenerationPanel({
           <div className="flex items-center gap-2">
             <div
               className="w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+              style={{ background: theme.accent }}
             >
               <Bot size={15} className="text-white" />
             </div>
@@ -512,7 +513,7 @@ export function QuizAIGenerationPanel({
                 <button
                   onClick={onImportPdf}
                   className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg"
-                  style={{ background: theme.surface2, color: theme.accent, border: `1px solid ${theme.accent}30` }}
+                  style={{ background: theme.surface2, color: theme.accentText, border: `1px solid ${theme.accent}30` }}
                 >
                   <FileText size={11} />
                   Import PDF
@@ -549,7 +550,7 @@ export function QuizAIGenerationPanel({
                   onClick={() => onModeChange(m.id)}
                   className="flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-1.5"
                   style={{
-                    background: aiMode === m.id ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                    background: aiMode === m.id ? theme.accent : theme.surface2,
                     color: aiMode === m.id ? '#fff' : theme.text3,
                     border: `1px solid ${aiMode === m.id ? `${theme.accent}50` : 'transparent'}`,
                   }}
@@ -583,7 +584,7 @@ export function QuizAIGenerationPanel({
                     onClick={() => onDifficultyChange(d.level)}
                     className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all"
                     style={{
-                      background: aiDifficulty === d.level ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                      background: aiDifficulty === d.level ? theme.accent : theme.surface2,
                       color: aiDifficulty === d.level ? '#fff' : theme.text3,
                       border: `1px solid ${aiDifficulty === d.level ? `${theme.accent}50` : 'transparent'}`,
                     }}
@@ -610,7 +611,7 @@ export function QuizAIGenerationPanel({
                       onClick={() => toggleQuestionType(type)}
                       className="flex items-center gap-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all"
                       style={{
-                        background: active ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                        background: active ? theme.accent : theme.surface2,
                         color: active ? '#fff' : theme.text3,
                         border: `1px solid ${active ? `${theme.accent}50` : 'transparent'}`,
                       }}
@@ -638,7 +639,7 @@ export function QuizAIGenerationPanel({
                   onClick={() => onCountChange(count)}
                   className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
                   style={{
-                    background: aiCount === count ? `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` : theme.surface2,
+                    background: aiCount === count ? theme.accent : theme.surface2,
                     color: aiCount === count ? '#fff' : theme.text3,
                     border: `1px solid ${aiCount === count ? `${theme.accent}50` : 'transparent'}`,
                   }}
@@ -656,14 +657,14 @@ export function QuizAIGenerationPanel({
                 <span className="text-xs font-medium" style={{ color: theme.text3 }}>
                   Generez...
                 </span>
-                <span className="text-xs font-semibold tabular-nums" style={{ color: theme.accent }}>
+                <span className="text-xs font-semibold tabular-nums" style={{ color: theme.accentText }}>
                   {aiProgress.generated}/{aiProgress.total}
                 </span>
               </div>
               <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: theme.surface2 }}>
                 <motion.div
                   className="h-full rounded-full"
-                  style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent2})` }}
+                  style={{ background: theme.accent }}
                   initial={{ width: 0 }}
                   animate={{ width: `${Math.round((aiProgress.generated / aiProgress.total) * 100)}%` }}
                   transition={{ duration: 0.4, ease: 'easeOut' }}
@@ -680,7 +681,7 @@ export function QuizAIGenerationPanel({
             style={{
               background: aiLoading || !hasKey || !aiText.trim()
                 ? theme.surface2
-                : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
+                : theme.accent,
               color: aiLoading || !hasKey || !aiText.trim() ? theme.text3 : 'white',
             }}
           >
@@ -764,20 +765,18 @@ export function QuizQuestionEditor({
             <div className="flex items-center gap-2">
               <button
                 onClick={onPreview}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-all hover:opacity-80"
-                style={{ background: theme.surface2, color: theme.text3 }}
+                className="fine-chip press-feedback flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
+                style={{ color: theme.text3 }}
               >
                 <Eye size={11} />
                 Previzualizare
               </button>
               <button
                 onClick={onToggleMultiple}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-all"
-                style={{
-                  background: currentQ.multipleCorrect ? `${theme.accent2}20` : theme.surface2,
-                  color: currentQ.multipleCorrect ? theme.accent2 : theme.text3,
-                  border: `1px solid ${currentQ.multipleCorrect ? `${theme.accent2}40` : 'transparent'}`,
-                }}
+                className="fine-chip press-feedback flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
+                data-active={!!currentQ.multipleCorrect}
+                aria-pressed={!!currentQ.multipleCorrect}
+                style={{ color: currentQ.multipleCorrect ? undefined : theme.text3 }}
               >
                 <Layers size={11} />
                 Multi
@@ -785,7 +784,7 @@ export function QuizQuestionEditor({
               {canRemoveQuestion && (
                 <button
                   onClick={onQuestionRemove}
-                  className="p-1 rounded-lg transition-all hover:opacity-80"
+                  className="fine-row press-feedback p-1"
                   style={{ color: theme.danger }}
                 >
                   <Trash2 size={14} />
@@ -821,8 +820,8 @@ export function QuizQuestionEditor({
           ) : (
             <button
               onClick={onImageUpload}
-              className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all hover:opacity-80"
-              style={{ background: theme.surface2, color: theme.text3, border: `1px dashed ${theme.border2}` }}
+              className="fine-chip press-feedback mt-3 flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
+              style={{ color: theme.text3, borderStyle: 'dashed', borderColor: theme.border2 }}
             >
               <ImagePlus size={14} />
               Adaugă imagine opțională
@@ -902,8 +901,8 @@ export function QuizQuestionEditor({
           {currentQ.options.length < OPTION_IDS.length && (
             <button
               onClick={onAddOption}
-              className="w-full py-2.5 rounded-2xl text-sm transition-all hover:opacity-80 flex items-center justify-center gap-1.5"
-              style={{ background: theme.surface2, border: `1px dashed ${theme.border2}`, color: theme.text3 }}
+              className="fine-chip press-feedback w-full py-2.5 rounded-2xl text-sm flex items-center justify-center gap-1.5"
+              style={{ color: theme.text3, borderStyle: 'dashed', borderColor: theme.border2 }}
             >
               <Plus size={13} />
               Adaugă opțiune
@@ -935,6 +934,7 @@ interface QuestionPreviewModalProps {
 
 export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPreviewModalProps) {
   return (
+    <Portal>
     <AnimatePresence>
       {previewQ && (
         <>
@@ -943,14 +943,14 @@ export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPrevi
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-50"
-            style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+            className="fixed inset-0 z-[200]"
+            style={{ background: 'var(--overlay)', backdropFilter: 'blur(6px)' }}
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: -20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed top-[8%] left-1/2 z-50 w-full max-w-xl -translate-x-1/2 px-4"
+            className="fixed top-[8%] left-1/2 z-[201] w-full max-w-xl -translate-x-1/2 px-4"
           >
             <div
               className="rounded-3xl p-6 shadow-2xl"
@@ -960,7 +960,7 @@ export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPrevi
               }}
             >
               <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accent }}>
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.accentText }}>
                   Previzualizare
                 </span>
                 <button onClick={onClose} style={{ color: theme.text3 }}>
@@ -1008,7 +1008,7 @@ export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPrevi
               {previewQ.explanation && (
                 <div className="mt-4 p-3 rounded-xl" style={{ background: `${theme.accent}0C`, border: `1px solid ${theme.accent}20` }}>
                   <p className="text-xs" style={{ color: theme.text2 }}>
-                    <span className="font-semibold" style={{ color: theme.accent }}>Explicație: </span>
+                    <span className="font-semibold" style={{ color: theme.accentText }}>Explicație: </span>
                     {previewQ.explanation}
                   </p>
                 </div>
@@ -1018,5 +1018,6 @@ export function QuestionPreviewModal({ previewQ, theme, onClose }: QuestionPrevi
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }

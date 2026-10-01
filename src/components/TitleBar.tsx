@@ -172,7 +172,7 @@ export default function TitleBar() {
                       ? `${theme.warning}35`
                       : `${theme.success}35`}`,
                   maxWidth: ultraCompact ? 112 : compact ? 132 : 168,
-                  boxShadow: `inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 18px ${theme.isDark ? 'rgba(0,0,0,0.16)' : 'rgba(26,33,56,0.08)'}`,
+                  boxShadow: `inset 0 1px 0 var(--glass-highlight), 0 10px 18px ${theme.isDark ? 'rgba(0,0,0,0.16)' : 'rgba(26,33,56,0.08)'}`,
                 }}
                 title={message}
               >

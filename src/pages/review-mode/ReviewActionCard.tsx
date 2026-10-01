@@ -38,7 +38,7 @@ export default function ReviewActionCard({
       style={{
         background: theme.surface,
         border: `1px solid ${disabled ? theme.border : `${accent}33`}`,
-        boxShadow: `0 18px 44px ${theme.isDark ? 'rgba(0,0,0,0.22)' : 'rgba(20,24,36,0.08)'}, inset 0 1px 0 rgba(255,255,255,0.08)`,
+        boxShadow: `0 18px 44px ${theme.isDark ? 'rgba(0,0,0,0.22)' : 'rgba(20,24,36,0.08)'}, inset 0 1px 0 var(--glass-highlight)`,
       }}
     >
       <div

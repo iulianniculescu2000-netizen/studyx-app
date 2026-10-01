@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   close: () => ipcRenderer.send('win:close'),
   destroy: () => ipcRenderer.send('win:destroy'),
   isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
+  // Theme: renderer -> main only (window background + nativeTheme)
+  setTheme: (payload) => ipcRenderer.send('theme:set', payload),
   onMaximized: (cb) => {
     const handler = (_, v) => cb(v);
     ipcRenderer.on('win:maximized', handler);

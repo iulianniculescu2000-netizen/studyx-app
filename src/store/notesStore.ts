@@ -48,7 +48,11 @@ export const useNotesStore = create<NotesStore>()(
       set(s => {
         const n = { ...s.notes };
         delete n[questionId];
-        return { notes: n };
+        // Drop the undo stack too: leaving it behind let a deleted note be
+        // resurrected by an undo, which reads as the deletion silently failing.
+        const history = { ...s.history };
+        delete history[questionId];
+        return { notes: n, history };
       }),
 
     _hydrate: (data) => set({ notes: data.notes ?? {}, history: {} }),

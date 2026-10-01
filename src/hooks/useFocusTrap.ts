@@ -9,76 +9,75 @@ const FOCUSABLE_SELECTORS = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
+function isVisible(el: HTMLElement): boolean {
+  if (el.closest('[aria-hidden="true"], [hidden]')) return false;
+  // Not `offsetParent`: it is null for position: fixed elements and always null in jsdom.
+  if (typeof el.checkVisibility === 'function') return el.checkVisibility();
+  const style = getComputedStyle(el);
+  return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
+function visibleFocusables(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS)).filter(isVisible);
+}
+
 /**
- * Traps keyboard focus within a container when `active` is true.
- * Tab cycles through focusable elements; Shift+Tab cycles in reverse.
- * Esc key calls the optional onEscape callback.
+ * Dialog keyboard behaviour: while `active`, focus moves into the container
+ * (to the element marked `data-autofocus`, else the first focusable one), Tab /
+ * Shift+Tab stay inside it, Esc calls `onEscape`, and focus returns to whatever
+ * had it before when the dialog closes.
+ *
+ * `onEscape` may be an inline function: it is read through a ref, so a new
+ * closure on every render does not restart the trap (which would steal focus
+ * from the field being typed in).
  *
  * Usage:
  *   const ref = useFocusTrap(isOpen, () => setIsOpen(false));
- *   return <div ref={ref}>...</div>;
+ *   return <div ref={ref} role="dialog" aria-modal="true">...</div>;
  */
-export function useFocusTrap(
-  active: boolean,
-  onEscape?: () => void,
-) {
+export function useFocusTrap(active: boolean, onEscape?: () => void) {
   const ref = useRef<HTMLDivElement>(null);
-  // Remember what was focused before the trap activated
-  const prevFocusRef = useRef<Element | null>(null);
+  const escapeRef = useRef(onEscape);
+  useEffect(() => {
+    escapeRef.current = onEscape;
+  });
 
   useEffect(() => {
-    if (!active || !ref.current) return;
+    const container = ref.current;
+    if (!active || !container) return undefined;
 
-    prevFocusRef.current = document.activeElement;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const preferred = container.querySelector<HTMLElement>('[data-autofocus]');
+    (preferred ?? visibleFocusables(container)[0])?.focus();
 
-    // Focus the first focusable element inside the container
-    const focusable = ref.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
-    const visible = Array.from(focusable).filter(
-      (el) => el.offsetParent !== null && !el.closest('[aria-hidden="true"]'),
-    );
-    if (visible.length) visible[0].focus();
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onEscape?.();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        escapeRef.current?.();
         return;
       }
+      if (event.key !== 'Tab') return;
 
-      if (e.key !== 'Tab' || !ref.current) return;
+      const items = visibleFocusables(container);
+      if (items.length === 0) { event.preventDefault(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const inside = container.contains(document.activeElement);
 
-      const focusable = ref.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
-      const visible = Array.from(focusable).filter(
-        (el) => el.offsetParent !== null && !el.closest('[aria-hidden="true"]'),
-      );
-      if (visible.length === 0) { e.preventDefault(); return; }
-
-      const first = visible[0];
-      const last = visible[visible.length - 1];
-
-      if (e.shiftKey) {
-        if (document.activeElement === first || !ref.current.contains(document.activeElement)) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last || !ref.current.contains(document.activeElement)) {
-          e.preventDefault();
-          first.focus();
-        }
+      if (event.shiftKey) {
+        if (document.activeElement === first || !inside) { event.preventDefault(); last.focus(); }
+      } else if (document.activeElement === last || !inside) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
-
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      // Restore focus to the previously focused element when trap deactivates
-      if (prevFocusRef.current && (prevFocusRef.current as HTMLElement).focus) {
-        (prevFocusRef.current as HTMLElement).focus();
-      }
+      previouslyFocused?.focus?.();
     };
-  }, [active, onEscape]);
+  }, [active]);
 
   return ref;
 }

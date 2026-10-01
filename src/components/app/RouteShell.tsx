@@ -55,7 +55,7 @@ function RouteFallback() {
         style={{ color: 'var(--text-secondary)' }}
       >
         <div
-          className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/12 border-t-[var(--accent)]"
+          className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[var(--hairline)] border-t-[var(--accent)]"
           aria-hidden="true"
         />
         <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>

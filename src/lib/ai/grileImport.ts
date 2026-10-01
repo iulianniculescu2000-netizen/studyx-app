@@ -140,3 +140,40 @@ export function toQuizImportData(
     })),
   };
 }
+
+/** Groups reviewed questions by their detected specialty, preserving first-seen order
+ *  (questions with no detected specialty are kept together under a `null` key). */
+function groupQuestionsBySpecialty(questions: ParsedQuestion[]): Array<{ specialty: string | null; questions: ParsedQuestion[] }> {
+  const order: Array<string | null> = [];
+  const groups = new Map<string | null, ParsedQuestion[]>();
+  for (const q of questions) {
+    const key = q.specialty ?? null;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      order.push(key);
+    }
+    groups.get(key)!.push(q);
+  }
+  return order.map((specialty) => ({ specialty, questions: groups.get(specialty)! }));
+}
+
+/**
+ * Convert reviewed questions into one or more `QuizImportData`, split by detected
+ * specialty (e.g. "CARDIOLOGIE") when the source bank organizes itself that way — a
+ * single 900-question dump isn't usable. Falls back to one quiz (same as
+ * `toQuizImportData`) when no specialties were detected — same "no structure found,
+ * don't block" fallback already used for chapter detection.
+ */
+export function toQuizImportDataBySpecialty(
+  title: string,
+  questions: ParsedQuestion[],
+  meta?: Partial<Pick<QuizImportData, 'description' | 'emoji' | 'category' | 'color'>>,
+): QuizImportData[] {
+  const groups = groupQuestionsBySpecialty(questions);
+  if (groups.length <= 1) {
+    return [toQuizImportData(title, questions, meta)];
+  }
+  return groups.map(({ specialty, questions: groupQuestions }) =>
+    toQuizImportData(specialty ? `${title} · ${specialty}` : title, groupQuestions, meta),
+  );
+}

@@ -31,7 +31,7 @@ export function useAutoBackup(activeProfileId: string | null) {
     const { folders } = useFolderStore.getState();
     const { questionStats, streak, totalStudyTime } = useStatsStore.getState();
     const { notes } = useNotesStore.getState();
-    const { profiles, activeProfileId: currentProfileId, username, themeId } = useUserStore.getState();
+    const { profiles, activeProfileId: currentProfileId, username } = useUserStore.getState();
 
     const payload = JSON.stringify({
       exportedAt: new Date().toISOString(),
@@ -41,7 +41,6 @@ export function useAutoBackup(activeProfileId: string | null) {
         profiles,
         activeProfileId: currentProfileId,
         username,
-        themeId,
       },
       stores: {
         quizzes: { quizzes, sessions },

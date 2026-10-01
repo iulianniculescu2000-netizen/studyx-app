@@ -99,8 +99,8 @@ export default function WindowControls() {
         borderRadius: isMax ? 16 : 18,
         border: `1px solid ${theme.border}`,
         boxShadow: theme.isDark
-          ? '0 12px 28px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.06)'
-          : '0 12px 28px rgba(15,23,42,0.08), inset 0 1px 0 rgba(255,255,255,0.7)',
+          ? '0 12px 28px rgba(0,0,0,0.22), inset 0 1px 0 var(--glass-highlight)'
+          : '0 12px 28px rgba(15,23,42,0.08), inset 0 1px 0 var(--glass-highlight)',
         WebkitAppRegion: 'no-drag',
         overflow: 'hidden',
       } as React.CSSProperties & { WebkitAppRegion: string }}
@@ -108,7 +108,7 @@ export default function WindowControls() {
       <WinBtn
         label="Minimizeaza"
         icon={<Minus size={14} strokeWidth={2.4} />}
-        hoverBg={theme.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.05)'}
+        hoverBg={'var(--hover-fill)'}
         hoverColor={theme.text}
         width={46}
         onClick={() => api.minimize()}
@@ -116,7 +116,7 @@ export default function WindowControls() {
       <WinBtn
         label={isMax ? 'Restaureaza' : 'Maximizeaza'}
         icon={isMax ? <Minimize2 size={13} strokeWidth={2.4} /> : <Maximize2 size={13} strokeWidth={2.4} />}
-        hoverBg={theme.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.05)'}
+        hoverBg={'var(--hover-fill)'}
         hoverColor={theme.text}
         width={46}
         onClick={() => api.maximize()}

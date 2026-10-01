@@ -11,7 +11,7 @@ import { useQuizStore } from '../store/quizStore';
 import { useFolderStore } from '../store/folderStore';
 import { useAIStore } from '../store/aiStore';
 import { useToastStore } from '../store/toastStore';
-import { extractGrileFromFiles, toQuizImportData, type GrileExtractionResult } from '../lib/ai/grileImport';
+import { extractGrileFromFiles, toQuizImportData, toQuizImportDataBySpecialty, type GrileExtractionResult } from '../lib/ai/grileImport';
 import { inferAnswersWithAI } from '../lib/ai/grileAIFallback';
 import type { ParsedQuestion } from '../lib/ai/grileParser';
 import { parseImportedQuiz } from '../lib/quizImport';
@@ -157,13 +157,25 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
       return;
     }
 
-    const data = toQuizImportData(title.trim() || 'Grile importate', importable);
-
     if (dest === 'new') {
-      const quiz = parseImportedQuiz(data, resolveFolderId());
-      addQuiz(quiz);
-      addToast(`${importable.length} grile importate în „${quiz.title}".`, 'success', 4000);
+      // Split by detected specialty (e.g. "CARDIOLOGIE") when the bank organizes
+      // itself that way — resolveFolderId() runs once so a "new folder" choice
+      // isn't created again for every group.
+      const groups = toQuizImportDataBySpecialty(title.trim() || 'Grile importate', importable);
+      const folderId = resolveFolderId();
+      const createdTitles = groups.map((groupData) => {
+        const quiz = parseImportedQuiz(groupData, folderId);
+        addQuiz(quiz);
+        return quiz.title;
+      });
+      addToast(
+        groups.length > 1
+          ? `${importable.length} grile importate în ${groups.length} seturi, pe specialități.`
+          : `${importable.length} grile importate în „${createdTitles[0]}".`,
+        'success', 4000,
+      );
     } else {
+      const data = toQuizImportData(title.trim() || 'Grile importate', importable);
       const target = quizzes.find((q) => q.id === dest);
       if (!target) {
         addToast('Grila țintă nu mai există.', 'error', 4000);
@@ -212,16 +224,16 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
         <motion.button
           onClick={() => cameraRef.current?.click()}
           whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.97 }}
           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold text-white"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+          style={{ background: theme.accent }}
         >
           <Camera size={17} /> Fă o poză grilelor
         </motion.button>
         <motion.button
           onClick={() => inputRef.current?.click()}
           whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.97 }}
           className="w-full flex flex-col items-center justify-center gap-2 py-6 rounded-2xl text-sm font-semibold"
           style={{
             border: `2px dashed ${theme.border2}`,
@@ -229,7 +241,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
             background: theme.surface2,
           }}
         >
-          <Upload size={20} style={{ color: theme.accent }} />
+          <Upload size={20} style={{ color: theme.accentText }} />
           …sau alege fișiere (PDF / Word / text / poză)
           <span className="text-[11px] font-normal" style={{ color: theme.text3 }}>
             Poți selecta mai multe deodată
@@ -247,7 +259,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
   if (phase === 'extracting') {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-12">
-        <Loader2 size={26} className="animate-spin" style={{ color: theme.accent }} />
+        <Loader2 size={26} className="animate-spin" style={{ color: theme.accentText }} />
         <p className="text-sm" style={{ color: theme.text2 }}>
           Extrag grilele și elimin duplicatele…
         </p>
@@ -288,7 +300,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
           disabled={aiRunning}
           whileTap={{ scale: aiRunning ? 1 : 0.98 }}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold"
-          style={{ background: `${theme.accent}18`, color: theme.accent, border: `1px solid ${theme.accent}40` }}
+          style={{ background: `${theme.accent}18`, color: theme.accentText, border: `1px solid ${theme.accent}40` }}
         >
           {aiRunning ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
           {aiRunning ? 'AI completează…' : `Completează cu AI ${unanswered} răspunsuri lipsă`}
@@ -377,7 +389,7 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
                   <p className="text-xs font-semibold" style={{ color: theme.text }}>
                     {qi + 1}. {q.text}
                     {q.answerSource === 'ai' && (
-                      <span className="ml-1 text-[9px] font-bold" style={{ color: theme.accent }}>AI</span>
+                      <span className="ml-1 text-[9px] font-bold" style={{ color: theme.accentText }}>AI</span>
                     )}
                   </p>
                   {q.imageUrl && (
@@ -435,9 +447,9 @@ export default function ImportFromDocument({ targetFolderId, onDone, onImportQue
         </button>
         <motion.button
           onClick={doImport}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.97 }}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-          style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}
+          style={{ background: theme.accent }}
         >
           <FileText size={14} />
           {wizardMode ? `Adaugă ${importable.length} în wizard` : `Importă ${importable.length} grile`}

@@ -1,32 +1,45 @@
+import ThemeModeSwitcher from '../components/ThemeModeSwitcher';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
-import { ArrowRight, Sparkles, Check, ChevronLeft } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, ChevronLeft } from 'lucide-react';
 import { useUserStore } from '../store/userStore';
 import { useTheme } from '../theme/ThemeContext';
-import { THEME_LIST, type ThemeId } from '../theme/themes';
 import Logo from '../components/Logo';
 
 interface Props {
   onBack?: () => void;
 }
 
+// A few real first names to cycle through as the placeholder — a static
+// "ex: Alexandru" read as a form field; a name that quietly changes every
+// few seconds reads as an invitation, without ever competing with what the
+// user is actually typing (only runs while the field is empty AND unfocused).
+const NAME_EXAMPLES = ['Alexandru', 'Maria', 'Andrei', 'Ioana', 'Ștefan', 'Elena'];
+
 export default function Welcome({ onBack }: Props) {
-  const { setUsername, setTheme, themeId } = useUserStore();
+  const { setUsername } = useUserStore();
   const theme = useTheme();
   const [name, setName] = useState('');
-  const [step, setStep] = useState<'name' | 'theme'>('name');
   const [error, setError] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
+  const [shake, setShake] = useState(false);
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
+  useEffect(() => {
+    if (name || inputFocused) return undefined;
+    const id = window.setInterval(() => setPlaceholderIndex((i) => (i + 1) % NAME_EXAMPLES.length), 2200);
+    return () => window.clearInterval(id);
+  }, [name, inputFocused]);
   const handleNameSubmit = () => {
     const trimmed = name.trim();
-    if (trimmed.length < 2) { setError('Cel puțin 2 caractere.'); return; }
-    if (trimmed.length > 30) { setError('Maxim 30 de caractere.'); return; }
+    if (trimmed.length < 2 || trimmed.length > 30) {
+      setError(trimmed.length < 2 ? 'Cel puțin 2 caractere.' : 'Maxim 30 de caractere.');
+      setShake(true);
+      window.setTimeout(() => setShake(false), 420);
+      return;
+    }
     setError('');
-    setStep('theme');
-  };
-
-  const handleFinish = () => {
-    setUsername(name.trim());
+    setUsername(trimmed);
   };
 
   const avatarLetter = name.trim().charAt(0).toUpperCase() || '?';
@@ -35,6 +48,10 @@ export default function Welcome({ onBack }: Props) {
   return (
     <div className="min-h-screen flex flex-col items-center px-6 pt-12 pb-10 relative"
       style={{ background: theme.bg, overflowX: 'hidden' }}>
+      {/* In the frameless Electron window the minimize/maximize/close buttons float at the top-right: sit to their left. */}
+      <div className={`absolute top-5 z-20 ${window.electronAPI ? 'right-[156px]' : 'right-5'}`}>
+        <ThemeModeSwitcher variant="compact" />
+      </div>
 
       {/* Ambient orbs */}
       <motion.div className="absolute rounded-full pointer-events-none"
@@ -57,7 +74,7 @@ export default function Welcome({ onBack }: Props) {
         <AnimatePresence mode="wait">
 
           {/* ── Step 1: Name ──────────────────────────────────── */}
-          {step === 'name' && (
+          {(
             <motion.div key="name"
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
@@ -70,8 +87,8 @@ export default function Welcome({ onBack }: Props) {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   onClick={onBack}
-                  className="flex items-center gap-1.5 text-sm mb-6 transition-opacity hover:opacity-80"
-                  style={{ color: theme.text3 }}>
+                  className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold mb-6 transition-all hover:opacity-80"
+                  style={{ background: theme.surface2, border: `1px solid ${theme.border}`, color: theme.text2 }}>
                   <ChevronLeft size={15} />Înapoi la profiluri
                 </motion.button>
               )}
@@ -92,7 +109,7 @@ export default function Welcome({ onBack }: Props) {
                   transition={{ delay: 0.2 }}
                   className="text-4xl font-bold tracking-tight mb-1.5"
                   style={{ color: theme.text }}>
-                  Bun venit la <span style={{ color: theme.accent }}>StudyX</span>
+                  Bun venit la <span style={{ color: theme.accentText }}>StudyX</span>
                 </motion.h1>
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
                   style={{ color: theme.text2 }}>
@@ -103,25 +120,30 @@ export default function Welcome({ onBack }: Props) {
               {/* Card */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
-                className="rounded-3xl p-6 mb-4"
-                style={{ background: theme.surface, border: `1px solid ${theme.border}`, backdropFilter: 'blur(20px)' }}>
+                animate={{ opacity: 1, y: 0, x: shake ? [0, -8, 8, -6, 6, -3, 3, 0] : 0 }}
+                transition={shake ? { duration: 0.42, ease: 'easeInOut' } : { delay: 0.25 }}
+                className="glass-panel rounded-3xl p-6 mb-4"
+                style={{
+                  boxShadow: inputFocused
+                    ? `0 0 0 1.5px ${theme.accent}55, 0 20px 50px ${theme.accent}1f`
+                    : undefined,
+                  transition: 'box-shadow 0.35s ease',
+                }}>
 
                 {/* Live avatar preview */}
                 <div className="flex items-center gap-4 mb-5">
                   <div className="relative flex-shrink-0">
-                    <AnimatePresence>
+                    <AnimatePresence mode="wait">
                       {hasLetter ? (
                         <motion.div
-                          key="avatar"
-                          initial={{ scale: 0, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          exit={{ scale: 0, opacity: 0 }}
-                          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                          key={avatarLetter}
+                          initial={{ scale: 0.5, opacity: 0, rotate: -8 }}
+                          animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                          exit={{ scale: 0.5, opacity: 0 }}
+                          transition={{ type: 'spring', stiffness: 420, damping: 16 }}
                           className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold text-white"
                           style={{
-                            background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
+                            background: theme.accent,
                             boxShadow: `0 6px 20px ${theme.accent}35`,
                           }}>
                           {avatarLetter}
@@ -130,35 +152,73 @@ export default function Welcome({ onBack }: Props) {
                         <motion.div
                           key="placeholder"
                           initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
+                          animate={{ opacity: 1, scale: inputFocused ? 1.05 : 1 }}
                           exit={{ opacity: 0 }}
+                          transition={{ scale: { type: 'spring', stiffness: 300, damping: 20 } }}
                           className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                          style={{ background: theme.surface2, border: `2px dashed ${theme.border2}` }}>
+                          style={{
+                            background: theme.surface2,
+                            border: `2px dashed ${inputFocused ? theme.accent : theme.border2}`,
+                            transition: 'border-color 0.3s ease',
+                          }}>
                           <span className="text-xl" style={{ opacity: 0.3 }}>?</span>
                         </motion.div>
                       )}
                     </AnimatePresence>
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <label className="text-xs font-semibold uppercase tracking-widest block mb-1.5"
-                      style={{ color: theme.text3 }}>
+                      style={{ color: inputFocused ? theme.accent : theme.text3, transition: 'color 0.25s ease' }}>
                       Cum te cheamă?
                     </label>
-                    <input
-                      type="text"
-                      placeholder="ex: Alexandru"
-                      value={name}
-                      onChange={(e) => { setName(e.target.value); setError(''); }}
-                      onKeyDown={(e) => e.key === 'Enter' && handleNameSubmit()}
-                      autoFocus
-                      className="w-full text-xl font-semibold bg-transparent"
-                      style={{ color: theme.text, outline: 'none', border: 'none' }}
-                    />
+                    <div className="relative">
+                      {/* Plain input, deliberately NOT remounted on placeholder cycling —
+                          `autoFocus` re-fires on every mount, so swapping key here would
+                          have stolen focus back every 2.2s even while the user was doing
+                          something else entirely. The placeholder text just swaps in place. */}
+                      <input
+                        type="text"
+                        placeholder={`ex: ${NAME_EXAMPLES[placeholderIndex]}`}
+                        value={name}
+                        onChange={(e) => { setName(e.target.value); setError(''); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleNameSubmit()}
+                        onFocus={() => setInputFocused(true)}
+                        onBlur={() => setInputFocused(false)}
+                        autoFocus
+                        className="w-full text-xl font-semibold bg-transparent"
+                        style={{ color: theme.text, outline: 'none', border: 'none' }}
+                      />
+                      {/* Focus glow — grows from the center instead of a static line, so
+                          typing reads as a live conversation with the field, not a form. */}
+                      <motion.div
+                        className="absolute -bottom-1 left-0 right-0 origin-center rounded-full"
+                        style={{ height: 2, background: theme.accent }}
+                        initial={false}
+                        animate={{ scaleX: inputFocused ? 1 : 0, opacity: inputFocused ? 1 : 0 }}
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Divider */}
                 <div style={{ height: 1, background: theme.border, marginBottom: 16 }} />
+
+                {/* Instant "this is really you" feedback, before the next screen even says it. */}
+                <AnimatePresence mode="wait">
+                  {name.trim().length >= 2 && !error && (
+                    <motion.p
+                      key="live-greeting"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="text-sm font-semibold mb-2"
+                      style={{ color: theme.accentText }}>
+                      Salut, {name.trim()}! 👋 Arată bine.
+                    </motion.p>
+                  )}
+                </AnimatePresence>
 
                 {/* Hint text */}
                 <p className="text-xs" style={{ color: theme.text3 }}>
@@ -182,160 +242,16 @@ export default function Welcome({ onBack }: Props) {
                 whileTap={{ scale: 0.97 }}
                 className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-opacity"
                 style={{
-                  background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
+                  background: theme.accent,
                   boxShadow: `0 10px 30px ${theme.accent}35`,
                   opacity: name.trim().length < 2 ? 0.45 : 1,
                 }}>
-                Continuă <ArrowRight size={18} />
+                Intră în aplicație <ArrowRight size={18} />
               </motion.button>
             </motion.div>
           )}
 
           {/* ── Step 2: Theme ────────────────────────────────── */}
-          {step === 'theme' && (
-            <motion.div key="theme"
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -40 }}
-              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            >
-              {/* ── Big Avatar Hero ── */}
-              <div className="flex flex-col items-center mb-5">
-                <div className="relative mb-4 mt-2">
-                  {/* Rotating ring */}
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-                    className="absolute rounded-full pointer-events-none"
-                    style={{ inset: -10, border: `1.5px solid ${theme.accent}30`, borderRadius: '50%' }}
-                  />
-                  {/* Inner dashed ring */}
-                  <motion.div
-                    animate={{ rotate: -360 }}
-                    transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
-                    className="absolute rounded-full pointer-events-none"
-                    style={{ inset: -4, border: `1px dashed ${theme.accent2}40`, borderRadius: '50%' }}
-                  />
-
-                  {/* Avatar bubble */}
-                  <motion.div
-                    initial={{ scale: 0, rotate: -10 }}
-                    animate={{ scale: 1, rotate: 0, y: [0, -5, 0] }}
-                    transition={{
-                      scale: { type: 'spring', stiffness: 280, damping: 18 },
-                      rotate: { type: 'spring', stiffness: 280, damping: 18 },
-                      y: { duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 },
-                    }}
-                    className="relative w-24 h-24 rounded-full flex items-center justify-center"
-                    style={{
-                      background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
-                      boxShadow: `0 16px 48px ${theme.accent}45, 0 0 0 4px ${theme.accent}18`,
-                    }}>
-                    <span className="text-4xl font-black text-white select-none"
-                      style={{ textShadow: '0 2px 10px rgba(0,0,0,0.25)' }}>
-                      {avatarLetter}
-                    </span>
-                  </motion.div>
-
-                  {/* Bottom glow */}
-                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-16 h-5 rounded-full pointer-events-none"
-                    style={{ background: theme.accent, filter: 'blur(14px)', opacity: 0.3 }}
-                  />
-                </div>
-
-                <motion.h2
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-2xl font-bold mb-0.5 tracking-tight"
-                  style={{ color: theme.text }}>
-                  Salut, {name.trim()}! 👋
-                </motion.h2>
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.4 }}
-                  className="text-sm"
-                  style={{ color: theme.text2 }}>
-                  Alege tema care ți se potrivește
-                </motion.p>
-              </div>
-
-              {/* Theme grid */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.35 }}
-                className="grid grid-cols-2 gap-2.5 mb-5">
-                {THEME_LIST.map((t, i) => {
-                  const isActive = themeId === t.id;
-                  return (
-                    <motion.button
-                      key={t.id}
-                      initial={{ opacity: 0, scale: 0.88 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.4 + i * 0.05, duration: 0.3 }}
-                      onClick={() => setTheme(t.id as ThemeId)}
-                      whileHover={{ scale: 1.025, y: -1 }}
-                      whileTap={{ scale: 0.97 }}
-                      className="p-3.5 rounded-2xl text-left transition-all relative overflow-hidden"
-                      style={{
-                        background: t.modalBg,
-                        border: `2px solid ${isActive ? t.accent : t.border}`,
-                        boxShadow: isActive ? `0 4px 20px ${t.accent}35` : '0 2px 8px rgba(0,0,0,0.10)',
-                      }}>
-                      {/* Mini preview */}
-                      <div className="w-full h-8 rounded-xl mb-2.5 relative overflow-hidden"
-                        style={{ background: t.bg }}>
-                        <div className="absolute inset-0"
-                          style={{ background: `radial-gradient(circle at 30% 50%, ${t.orb1}, transparent 60%), radial-gradient(circle at 70% 50%, ${t.orb2}, transparent 60%)`, opacity: 0.6 }} />
-                        <div className="absolute bottom-1 left-2 right-6 h-1.5 rounded-full"
-                          style={{ background: t.surface2 }} />
-                        <div className="absolute bottom-1 right-2 w-4 h-1.5 rounded-full"
-                          style={{ background: t.accent, opacity: 0.8 }} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">{t.emoji}</span>
-                        <span className="font-semibold text-sm" style={{ color: t.text }}>{t.name}</span>
-                      </div>
-
-                      {/* Check indicator */}
-                      <AnimatePresence>
-                        {isActive && (
-                          <motion.div
-                            key="check"
-                            layoutId="theme-check"
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            exit={{ scale: 0 }}
-                            className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center"
-                            style={{ background: t.accent }}>
-                            <Check size={11} color="white" strokeWidth={3} />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.button>
-                  );
-                })}
-              </motion.div>
-
-              <motion.button
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7 }}
-                onClick={handleFinish}
-                whileHover={{ scale: 1.02, y: -1 }}
-                whileTap={{ scale: 0.97 }}
-                className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
-                style={{
-                  background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accent2} 100%)`,
-                  boxShadow: `0 10px 30px ${theme.accent}40`,
-                }}>
-                <Sparkles size={17} />
-                Intră în StudyX
-              </motion.button>
-            </motion.div>
-          )}
 
         </AnimatePresence>
       </div>

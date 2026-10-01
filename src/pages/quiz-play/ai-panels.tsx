@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, Sparkles, Zap } from 'lucide-react';
 import type { AIAnalysisResult, HintResult } from '../../ai/types';
 import type { Theme } from '../../theme/themes';
+import AIRichText from '../../components/ai-chat/AIRichText';
 
 interface HintPanelProps {
   calmMotion: boolean;
@@ -51,7 +52,7 @@ export function HintPanel({
             style={{
               background: theme.surface,
               border: `1px solid ${showSmartNudge ? theme.accent : theme.border}`,
-              color: theme.accent,
+              color: theme.accentText,
               boxShadow: showSmartNudge ? `0 0 20px ${theme.accent}30` : `0 4px 12px ${theme.accent}10`,
             }}
             whileHover={calmMotion ? undefined : { scale: 1.02, boxShadow: `0 6px 20px ${theme.accent}30` }}
@@ -92,8 +93,8 @@ export function HintPanel({
           >
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles size={14} style={{ color: theme.accent }} />
-                <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accent }}>
+                <Sparkles size={14} style={{ color: theme.accentText }} />
+                <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accentText }}>
                   {usesRemoteAI ? 'Indiciu AI' : 'Indiciu ghidat'} • Nivel {hintLevel}/3
                 </span>
               </div>
@@ -101,7 +102,7 @@ export function HintPanel({
                 <button
                   onClick={onGetHint}
                   className="rounded-lg px-2 py-1 text-[10px] font-bold transition-all hover:opacity-80"
-                  style={{ background: `${theme.accent}15`, color: theme.accent }}
+                  style={{ background: `${theme.accent}15`, color: theme.accentText }}
                 >
                   + Mai mult
                 </button>
@@ -191,10 +192,10 @@ export function AIExplanationPanel({
                 />
               )}
             </div>
-            <p className="whitespace-pre-wrap text-sm leading-generous" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
-              {aiText}
+            <div className="text-sm leading-generous" style={{ color: theme.text2, lineHeight: '1.7', fontSize: '15px' }}>
+              <AIRichText text={aiText} />
               {aiLoading && <span className="animate-pulse">...</span>}
-            </p>
+            </div>
             {analysisResult?.mistakeType && (
               <div className="mt-4 border-t border-dashed pt-4 opacity-60" style={{ borderColor: `${theme.accent2}30` }}>
                 <div className="mb-1 text-[10px] font-black uppercase tracking-widest" style={{ color: theme.accent2 }}>Analiză eroare</div>
@@ -207,7 +208,7 @@ export function AIExplanationPanel({
               </div>
             )}
             {nextTopicHint && (
-              <div className="mt-2 text-xs font-bold" style={{ color: theme.accent }}>
+              <div className="mt-2 text-xs font-bold" style={{ color: theme.accentText }}>
                 Focus AI recomandat: {nextTopicHint}
               </div>
             )}

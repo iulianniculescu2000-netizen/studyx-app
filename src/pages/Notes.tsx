@@ -6,7 +6,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useNotesStore } from '../store/notesStore';
 import { useQuizStore } from '../store/quizStore';
 import { useAIStore } from '../store/aiStore';
-import { notesToFlashcards } from '../lib/groq';
+import { notesToFlashcards, generateQuestionsFromText } from '../lib/groq';
 
 export default function Notes() {
   const theme = useTheme();
@@ -72,58 +72,109 @@ export default function Notes() {
               </h1>
             </div>
             {enriched.length > 0 && hasKey && (
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                disabled={aiConverting}
-                onClick={async () => {
-                  setAiError(null);
-                  setAiConverting(true);
-                  try {
-                    const allText = enriched
-                      .map(n => `Q: ${n.question?.text ?? 'Întrebare'}\nNotiță: ${n.text}`)
-                      .join('\n\n');
-                    const pairs = await notesToFlashcards(allText);
-                    if (pairs.length === 0) throw new Error('Nu s-au generat flashcarduri.');
+              <div className="flex flex-wrap gap-2">
+                <button
+                  disabled={aiConverting}
+                  onClick={async () => {
+                    setAiError(null);
+                    setAiConverting(true);
+                    try {
+                      const allText = enriched
+                        .map(n => `Q: ${n.question?.text ?? 'Întrebare'}\nNotiță: ${n.text}`)
+                        .join('\n\n');
+                      const questions = await generateQuestionsFromText(allText, 10, 3, []);
+                      if (questions.length === 0) throw new Error('Nu s-au generat întrebări.');
 
-                    const newQuiz = {
-                      id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
-                      title: 'Flashcarduri din notițe',
-                      description: `Generat automat din ${enriched.length} notițe`,
-                      emoji: '🃏',
-                      color: 'purple' as const,
-                      category: 'Notițe',
-                      kind: 'flashcard' as const,
-                      tags: ['flashcard', 'notițe'],
-                      questions: pairs.map((p, i) => ({
-                        id: `fc-${i}-${Date.now()}`,
-                        text: p.front,
-                        options: [
-                          { id: 'a', text: p.back, isCorrect: true },
-                        ],
-                        explanation: p.back,
+                      const newQuiz = {
+                        id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+                        title: 'Quiz din Notițe',
+                        description: `Generat automat din ${enriched.length} notițe`,
+                        emoji: '📝',
+                        color: 'blue' as const,
+                        category: 'Notițe',
+                        kind: 'quiz' as const,
+                        tags: ['ai-quiz', 'notițe'],
+                        questions: questions.map(q => ({
+                          ...q,
+                          id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                          options: q.options.map((o, i) => ({
+                            ...o,
+                            id: `o-${Math.random().toString(36).slice(2, 7)}-${i}`,
+                          })),
+                        })),
+                        createdAt: Date.now(),
+                      };
+                      addQuiz(newQuiz);
+                      navigate(`/quiz/${newQuiz.id}`);
+                    } catch (e: unknown) {
+                      const error = e instanceof Error ? e : new Error('Eroare necunoscută.');
+                      setAiError(error.message);
+                    } finally {
+                      setAiConverting(false);
+                    }
+                  }}
+                  className="press-feedback flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold flex-shrink-0"
+                  style={{
+                    background: aiConverting ? theme.surface2 : `${theme.accent}15`,
+                    color: aiConverting ? theme.text3 : theme.accent,
+                    border: `1px solid ${aiConverting ? theme.border : `${theme.accent}30`}`,
+                  }}>
+                  {aiConverting
+                    ? <><Loader2 size={13} className="animate-spin" />Generez...</>
+                    : <><Sparkles size={13} /> AI Quiz</>}
+                </button>
+                <button
+                  disabled={aiConverting}
+                  onClick={async () => {
+                    setAiError(null);
+                    setAiConverting(true);
+                    try {
+                      const allText = enriched
+                        .map(n => `Q: ${n.question?.text ?? 'Întrebare'}\nNotiță: ${n.text}`)
+                        .join('\n\n');
+                      const pairs = await notesToFlashcards(allText);
+                      if (pairs.length === 0) throw new Error('Nu s-au generat flashcarduri.');
+
+                      const newQuiz = {
+                        id: crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+                        title: 'Flashcarduri din notițe',
+                        description: `Generat automat din ${enriched.length} notițe`,
+                        emoji: '🃏',
+                        color: 'purple' as const,
+                        category: 'Notițe',
+                        kind: 'flashcard' as const,
                         tags: ['flashcard', 'notițe'],
-                      })),
-                      createdAt: Date.now(),
-                    };
-                    addQuiz(newQuiz);
-                    navigate(`/flashcards/session/${newQuiz.id}?mode=all`);
-                  } catch (e: unknown) {
-                    const error = e instanceof Error ? e : new Error('Eroare necunoscută.');
-                    setAiError(error.message);
-                  } finally {
-                    setAiConverting(false);
-                  }
-                }}
-                className="flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold flex-shrink-0"
-                style={{
-                  background: aiConverting ? theme.surface2 : `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})`,
-                  color: aiConverting ? theme.text3 : '#fff',
-                  border: `1px solid ${aiConverting ? theme.border : 'transparent'}`,
-                }}>
-                {aiConverting
-                  ? <><Loader2 size={13} className="animate-spin" />Generez...</>
-                  : <><Sparkles size={13} /><CreditCard size={13} />AI Flashcarduri</>}
-              </motion.button>
+                        questions: pairs.map((p, i) => ({
+                          id: `fc-${i}-${Date.now()}`,
+                          text: p.front,
+                          options: [
+                            { id: 'a', text: p.back, isCorrect: true },
+                          ],
+                          explanation: p.back,
+                          tags: ['flashcard', 'notițe'],
+                        })),
+                        createdAt: Date.now(),
+                      };
+                      addQuiz(newQuiz);
+                      navigate(`/flashcards/session/${newQuiz.id}?mode=all`);
+                    } catch (e: unknown) {
+                      const error = e instanceof Error ? e : new Error('Eroare necunoscută.');
+                      setAiError(error.message);
+                    } finally {
+                      setAiConverting(false);
+                    }
+                  }}
+                  className="press-feedback flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold flex-shrink-0 hover:opacity-90"
+                  style={{
+                    background: aiConverting ? theme.surface2 : theme.accent,
+                    color: aiConverting ? theme.text3 : '#fff',
+                    border: `1px solid ${aiConverting ? theme.border : 'transparent'}`,
+                  }}>
+                  {aiConverting
+                    ? <><Loader2 size={13} className="animate-spin" />Generez...</>
+                    : <><CreditCard size={13} />AI Flashcarduri</>}
+                </button>
+              </div>
             )}
           </div>
           <p className="text-sm ml-12" style={{ color: theme.text3 }}>
@@ -154,7 +205,7 @@ export default function Notes() {
             />
             {search && (
               <button onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg"
+                className="fine-row press-feedback absolute right-3 top-1/2 -translate-y-1/2 p-1"
                 style={{ color: theme.text3 }}>
                 <X size={14} />
               </button>
@@ -166,8 +217,7 @@ export default function Notes() {
         {enriched.length === 0 && (
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.15 }}
-            className="text-center py-20 rounded-3xl"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+            className="glass-panel premium-shadow text-center py-20 rounded-3xl">
             <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center"
               style={{ background: `${theme.warning}15` }}>
               <StickyNote size={28} style={{ color: theme.warning }} />
@@ -179,8 +229,8 @@ export default function Notes() {
               Adaugă notițe personale în timp ce rezolvi grile. Apar după ce răspunzi la o întrebare.
             </p>
             <Link to="/quizzes"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white"
-              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent2})` }}>
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white press-feedback transition-[filter] duration-300 hover:brightness-110"
+              style={{ background: theme.accent }}>
               <BookOpen size={15} /> Deschide o grilă
             </Link>
           </motion.div>
@@ -189,8 +239,7 @@ export default function Notes() {
         {/* No search results */}
         {enriched.length > 0 && filtered.length === 0 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="text-center py-16 rounded-3xl"
-            style={{ background: theme.surface, border: `1px solid ${theme.border}` }}>
+            className="glass-panel premium-shadow text-center py-16 rounded-3xl">
             <div className="text-4xl mb-3">🔍</div>
             <p style={{ color: theme.text3 }}>Nicio notiță nu corespunde căutării.</p>
           </motion.div>
@@ -212,7 +261,7 @@ export default function Notes() {
                   {quiz ? (
                     <Link to={`/quiz/${quiz.id}`}
                       className="flex items-center gap-2 hover:underline"
-                      style={{ color: theme.accent }}>
+                      style={{ color: theme.accentText }}>
                       <span className="text-lg">{quiz.emoji}</span>
                       <span className="font-semibold text-sm">{quiz.title}</span>
                     </Link>
@@ -236,8 +285,7 @@ export default function Notes() {
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.15 + gi * 0.06 + ni * 0.04 }}
-                      className="group rounded-2xl p-4 relative"
-                      style={{ background: theme.surface, border: `1px solid ${theme.border}` }}
+                      className="group glass-panel rounded-2xl p-4 relative"
                     >
                       {/* Question text + link to quiz detail */}
                       {n.question && (
@@ -251,7 +299,7 @@ export default function Notes() {
                               to={`/quiz/${n.quiz.id}`}
                               title="Deschide grila"
                               className="flex-shrink-0 p-1 rounded-lg opacity-60 hover:opacity-100 transition-opacity"
-                              style={{ color: theme.accent }}
+                              style={{ color: theme.accentText }}
                             >
                               <ExternalLink size={11} />
                             </Link>
@@ -278,14 +326,14 @@ export default function Notes() {
                           >
                             <button
                               onClick={() => { deleteNote(n.questionId); setConfirmDelete(null); }}
-                              className="px-2 py-1 rounded-lg text-xs font-semibold text-white"
+                              className="press-feedback px-2 py-1 rounded-lg text-xs font-semibold text-white transition-[filter] duration-300 hover:brightness-110"
                               style={{ background: theme.danger }}>
                               Șterge
                             </button>
                             <button
                               onClick={() => setConfirmDelete(null)}
-                              className="px-2 py-1 rounded-lg text-xs"
-                              style={{ background: theme.surface2, color: theme.text3 }}>
+                              className="fine-chip press-feedback px-2 py-1 rounded-lg text-xs"
+                              style={{ color: theme.text3 }}>
                               Nu
                             </button>
                           </motion.div>
@@ -295,7 +343,8 @@ export default function Notes() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setConfirmDelete(n.questionId)}
-                            className="absolute top-3 right-3 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Șterge notița"
+                            className="absolute top-3 right-3 p-1.5 rounded-lg opacity-40 hover:opacity-100 group-hover:opacity-100 transition-opacity"
                             style={{ color: theme.text3 }}>
                             <Trash2 size={13} />
                           </motion.button>

@@ -86,7 +86,7 @@ export function LoadingSpinner({
           animate={{ rotate: 360 }}
           transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
         >
-          <Brain size={currentSize.width} style={{ color: theme.accent }} />
+          <Brain size={currentSize.width} style={{ color: theme.accentText }} />
         </motion.div>
         <motion.div
           animate={{ rotate: -360 }}
@@ -105,7 +105,7 @@ export function LoadingSpinner({
         animate={{ rotate: 360 }}
         transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
       >
-        <Loader2 size={currentSize.width} style={{ color: theme.accent }} />
+        <Loader2 size={currentSize.width} style={{ color: theme.accentText }} />
       </motion.div>
       {text && <span className="ml-2 text-sm" style={{ color: theme.text3 }}>{text}</span>}
     </div>

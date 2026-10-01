@@ -13,6 +13,8 @@ export interface Theme {
   text3: string;
   accent: string;
   accent2: string;
+  /** The accent as small text: darker in the light theme, where #007AFF on white is under 4.5:1. */
+  accentText: string;
   success: string;
   danger: string;
   warning: string;
@@ -23,167 +25,150 @@ export interface Theme {
   inputBg: string;
   gridColor: string;
   isDark: boolean;
+  /**
+   * Neutral "ink" tokens that used to be written as `white/5`, `white/10`… in
+   * components — invisible on a light surface. They flip with the theme:
+   * a faint wash for hovered rows/buttons, a subtle fill for placeholders and
+   * switches, a hairline for separators, the scrim behind dialogs, and the
+   * base tone of skeleton shimmers.
+   */
+  hoverFill: string;
+  fillSubtle: string;
+  hairline: string;
+  overlay: string;
+  skeleton: string;
+  /**
+   * Optional overrides for the `--glass-panel`/`--glass-panel-strong`/`--glass-border`
+   * CSS variables ThemeContext computes.
+   */
+  glassPanel?: string;
+  glassPanelStrong?: string;
+  glassBorder?: string;
+  glassHighlight?: string;
 }
 
-export const THEMES: Record<string, Theme> = {
-  bigsur: {
-    id: 'bigsur',
-    name: 'Big Sur Glow',
-    emoji: '\u{1F304}',
-    bg: '#F2F2F7',
-    surface: 'rgba(255, 255, 255, 0.72)',      // alb semi-transparent — mai curat decât negru
-    surface2: 'rgba(0, 0, 0, 0.055)',
-    modalBg: 'rgba(255, 255, 255, 0.96)',
-    border: 'rgba(0, 0, 0, 0.09)',             // border mai fin
-    border2: 'rgba(0, 0, 0, 0.16)',
-    text: '#1D1D1F',                           // nu pur negru — mai plăcut la citit
-    text2: '#3A3A3C',
+/**
+ * StudyX has two looks, both in the Apple idiom: system-blue accent, hairline
+ * separators, translucent chrome over a calm canvas.
+ *  - `light` ("Luminos"): macOS — grey canvas, white cards.
+ *  - `dark`  ("Întunecat"): near-black canvas, graphite cards.
+ * The user picks Luminos / Întunecat / Automat (follow the system); see
+ * `ThemeMode` and store/themeStore.ts.
+ */
+export const THEMES = {
+  light: {
+    id: 'light',
+    name: 'Luminos',
+    emoji: '\u{2600}\u{FE0F}',
+    bg: '#F5F5F7',
+    surface: '#FFFFFF',
+    surface2: 'rgba(60, 60, 67, 0.07)',
+    modalBg: '#FFFFFF',
+    border: 'rgba(60, 60, 67, 0.15)',
+    border2: 'rgba(60, 60, 67, 0.26)',
+    text: '#1D1D1F',
+    text2: '#48484A',
     text3: '#6E6E73',
-    accent: '#0A84FF',                         // mai viu față de #007AFF
+    accent: '#007AFF',
     accent2: '#5E5CE6',
-    success: '#30D158',
-    danger: '#FF453A',
-    warning: '#FF9F0A',
-    navBg: 'rgba(242, 242, 247, 0.78)',
-    orb1: 'rgba(10, 132, 255, 0.12)',
-    orb2: 'rgba(94, 92, 230, 0.10)',
-    orb3: 'rgba(48, 209, 88, 0.08)',
-    inputBg: 'rgba(255, 255, 255, 0.96)',
-    gridColor: 'rgba(0, 0, 0, 0.025)',
+    accentText: '#0062CC',
+    success: '#238636',
+    danger: '#D70015',
+    warning: '#B25000',
+    navBg: 'rgba(236, 236, 241, 0.86)',
+    orb1: 'rgba(0, 122, 255, 0.05)',
+    orb2: 'rgba(94, 92, 230, 0.04)',
+    orb3: 'rgba(52, 199, 89, 0.03)',
+    inputBg: '#FFFFFF',
+    gridColor: 'rgba(60, 60, 67, 0.03)',
     isDark: false,
+    hoverFill: 'rgba(60, 60, 67, 0.06)',
+    fillSubtle: 'rgba(60, 60, 67, 0.07)',
+    hairline: 'rgba(60, 60, 67, 0.15)',
+    overlay: 'rgba(0, 0, 0, 0.34)',
+    skeleton: 'rgba(60, 60, 67, 0.08)',
+    glassPanel: 'linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.90))',
+    glassPanelStrong: 'linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(250, 250, 252, 0.97))',
+    glassBorder: 'rgba(60, 60, 67, 0.15)',
+    glassHighlight: 'rgba(255, 255, 255, 0.9)',
   },
-  obsidian: {
-    id: 'obsidian',
-    name: 'Obsidian Glow',
-    emoji: '\u{1F311}',
-    bg: '#161618',                            // mai adânc → orbii și glow-urile ies mai frumos
-    surface: 'rgba(255, 255, 255, 0.08)',     // mai întunecată → carduri mai subtile
-    surface2: 'rgba(255, 255, 255, 0.14)',    // mai clară față de surface → ierarhie mai bună
-    modalBg: 'rgba(24, 24, 26, 0.97)',
-    border: 'rgba(255, 255, 255, 0.11)',      // mai fin, fără să taie în ochi
-    border2: 'rgba(255, 255, 255, 0.24)',
-    text: '#FFFFFF',
-    text2: '#E5E5EA',
-    text3: '#8E8E93',                         // Apple gray — mai bun contrast față de #AEAEB2
-    accent: '#0A84FF',                        // iOS accent mai viu
+  dark: {
+    id: 'dark',
+    name: 'Întunecat',
+    emoji: '\u{1F319}',
+    bg: '#0B0B0E',
+    surface: '#161618',
+    surface2: 'rgba(255, 255, 255, 0.07)',
+    modalBg: '#1C1C1F',
+    border: 'rgba(255, 255, 255, 0.10)',
+    border2: 'rgba(255, 255, 255, 0.18)',
+    text: '#F5F5F7',
+    text2: '#C7C7CC',
+    text3: '#8E8E93',
+    accent: '#0A84FF',
     accent2: '#5E5CE6',
+    accentText: '#0A84FF',
     success: '#30D158',
     danger: '#FF453A',
     warning: '#FF9F0A',
-    navBg: 'rgba(22, 22, 24, 0.88)',
-    orb1: 'rgba(10, 132, 255, 0.26)',
-    orb2: 'rgba(94, 92, 230, 0.20)',
-    orb3: 'rgba(48, 209, 88, 0.14)',
-    inputBg: 'rgba(255, 255, 255, 0.08)',
+    navBg: 'rgba(20, 20, 23, 0.82)',
+    orb1: 'rgba(10, 132, 255, 0.10)',
+    orb2: 'rgba(94, 92, 230, 0.08)',
+    orb3: 'rgba(48, 209, 88, 0.04)',
+    inputBg: '#1C1C1F',
     gridColor: 'rgba(255, 255, 255, 0.03)',
     isDark: true,
+    hoverFill: 'rgba(255, 255, 255, 0.06)',
+    fillSubtle: 'rgba(255, 255, 255, 0.07)',
+    hairline: 'rgba(255, 255, 255, 0.12)',
+    overlay: 'rgba(0, 0, 0, 0.55)',
+    skeleton: 'rgba(255, 255, 255, 0.08)',
+    glassPanel: 'linear-gradient(180deg, rgba(38, 38, 42, 0.72), rgba(24, 24, 27, 0.66))',
+    glassPanelStrong: 'linear-gradient(180deg, rgba(44, 44, 48, 0.90), rgba(28, 28, 31, 0.86))',
+    glassBorder: 'rgba(255, 255, 255, 0.10)',
+    glassHighlight: 'rgba(255, 255, 255, 0.08)',
   },
-  pearl: {
-    id: 'pearl',
-    name: 'Pearl Glow',
-    emoji: '\u{1F9AA}',
-    bg: '#F8F7F4',                            // ușor mai cald, mai cream
-    surface: 'rgba(255, 255, 255, 0.68)',     // alb semi-transparent → carduri clar definite
-    surface2: 'rgba(0, 0, 0, 0.05)',
-    modalBg: 'rgba(255, 255, 255, 0.97)',
-    border: 'rgba(0, 0, 0, 0.08)',
-    border2: 'rgba(0, 0, 0, 0.15)',
-    text: '#1C1C1E',
-    text2: '#3A3A3C',
-    text3: '#6C6C70',
-    accent: '#E05C3A',                        // terracotta — mai cald, mai premium decât roșu
-    accent2: '#2A9D8F',                       // verde-teal profund
-    success: '#2DB55D',
-    danger: '#E63946',
-    warning: '#F4A261',
-    navBg: 'rgba(248, 247, 244, 0.82)',
-    orb1: 'rgba(224, 92, 58, 0.14)',
-    orb2: 'rgba(42, 157, 143, 0.12)',
-    orb3: 'rgba(45, 181, 93, 0.08)',
-    inputBg: 'rgba(255, 255, 255, 0.94)',
-    gridColor: 'rgba(0, 0, 0, 0.018)',
-    isDark: false,
-  },
-  aurora: {
-    id: 'aurora',
-    name: 'Aurora Glow',
-    emoji: '\u{1F30C}',
-    bg: '#16102A',                            // mai adânc, mai puțin navy generic
-    surface: 'rgba(168, 85, 247, 0.10)',      // violet mai modern (purple-500)
-    surface2: 'rgba(168, 85, 247, 0.18)',
-    modalBg: 'rgba(22, 16, 42, 0.97)',
-    border: 'rgba(168, 85, 247, 0.22)',       // de la 0.35 → mult mai subtil
-    border2: 'rgba(168, 85, 247, 0.40)',      // de la 0.55
-    text: '#F5F0FF',                          // alb cu nuanță violet — mai blând
-    text2: '#D8B4FE',                         // violet deschis elegant
-    text3: '#A78BCA',
-    accent: '#A855F7',                        // purple-500 modern față de BlueViolet
-    accent2: '#F472B6',                       // pink-400 — mai pastelat față de HotPink
-    success: '#4ADE80',
-    danger: '#F87171',
-    warning: '#FBBF24',
-    navBg: 'rgba(22, 16, 42, 0.92)',
-    orb1: 'rgba(168, 85, 247, 0.28)',
-    orb2: 'rgba(244, 114, 182, 0.20)',
-    orb3: 'rgba(56, 189, 248, 0.14)',         // cyan — armonizează cu violet/roz, verdele tăia paleta
-    inputBg: 'rgba(22, 16, 42, 0.65)',
-    gridColor: 'rgba(168, 85, 247, 0.05)',
-    isDark: true,
-  },
-  midnight: {
-    id: 'midnight',
-    name: 'Midnight Glow',
-    emoji: '\u{1F319}',
-    bg: '#0D1117',                            // GitHub dark — mai profund și neutru
-    surface: 'rgba(56, 139, 253, 0.10)',      // albastru mai luminos (GitHub blue)
-    surface2: 'rgba(56, 139, 253, 0.17)',
-    modalBg: 'rgba(13, 17, 23, 0.97)',
-    border: 'rgba(56, 139, 253, 0.20)',       // de la 0.40 → subtle
-    border2: 'rgba(56, 139, 253, 0.38)',      // de la 0.65
-    text: '#F0F6FC',
-    text2: '#B1BAC4',                         // GitHub secondary text
-    text3: '#6E7681',                         // GitHub muted
-    accent: '#2F81F7',                        // GitHub accent blue
-    accent2: '#3DCBAB',                       // teal mai vibrant
-    success: '#3FB950',
-    danger: '#F85149',
-    warning: '#D29922',
-    navBg: 'rgba(13, 17, 23, 0.94)',
-    orb1: 'rgba(47, 129, 247, 0.28)',
-    orb2: 'rgba(61, 203, 171, 0.22)',
-    orb3: 'rgba(63, 185, 80, 0.14)',
-    inputBg: 'rgba(13, 17, 23, 0.72)',
-    gridColor: 'rgba(47, 129, 247, 0.06)',
-    isDark: true,
-  },
-};
+} satisfies Record<string, Theme>;
 
-export const AUTO_THEME_ENTRY = {
-  id: 'auto',
-  name: 'Sistem',
-  emoji: '\u{1F313}',
-  bg: '#F2F2F7',
-  surface: 'rgba(255, 255, 255, 0.70)',
-  surface2: 'rgba(0, 0, 0, 0.05)',
-  modalBg: 'rgba(255, 255, 255, 0.97)',
-  border: 'rgba(0, 0, 0, 0.09)',
-  border2: 'rgba(0, 0, 0, 0.16)',
-  text: '#1D1D1F',
-  text2: '#3A3A3C',
-  text3: '#6E6E73',
-  accent: '#0A84FF',
-  accent2: '#5E5CE6',
-  success: '#30D158',
-  danger: '#FF453A',
-  warning: '#FF9F0A',
-  navBg: 'rgba(242, 242, 247, 0.78)',
-  orb1: 'rgba(10, 132, 255, 0.10)',
-  orb2: 'rgba(94, 92, 230, 0.08)',
-  orb3: 'rgba(48, 209, 88, 0.06)',
-  inputBg: 'rgba(255, 255, 255, 0.96)',
-  gridColor: 'rgba(0, 0, 0, 0.02)',
-  isDark: false,
-} satisfies Theme & { id: 'auto' };
+export type ThemeId = keyof typeof THEMES;
 
-export const THEME_LIST = [...Object.values(THEMES), AUTO_THEME_ENTRY];
-export type ThemeId = keyof typeof THEMES | 'auto';
+/** What the user picks. `auto` follows the operating system. */
+export type ThemeMode = ThemeId | 'auto';
+
+export const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'auto'];
+
+export const DEFAULT_THEME_MODE: ThemeMode = 'auto';
+
+export function isThemeMode(value: unknown): value is ThemeMode {
+  return typeof value === 'string' && (THEME_MODES as readonly string[]).includes(value);
+}
+
+/** Anything unreadable — including the retired theme ids ('glass', 'obsidian', …) — becomes "follow the system". */
+export function normalizeThemeMode(value: unknown): ThemeMode {
+  return isThemeMode(value) ? value : DEFAULT_THEME_MODE;
+}
+
+/** Next mode when a single button cycles them: Luminos → Întunecat → Automat → Luminos. */
+export function nextThemeMode(mode: ThemeMode): ThemeMode {
+  return THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length];
+}
+
+/**
+ * Next mode for a single cycling button, skipping any step that would look the
+ * same as now. With "Automat" on a light OS, "Luminos" is the same picture — a
+ * plain cycle made that click look broken, so it took 2–3 presses to see a change.
+ */
+export function nextVisibleThemeMode(mode: ThemeMode, systemPrefersDark: boolean): ThemeMode {
+  const current = resolveThemeMode(mode, systemPrefersDark);
+  let candidate = mode;
+  for (let step = 0; step < THEME_MODES.length; step += 1) {
+    candidate = nextThemeMode(candidate);
+    if (resolveThemeMode(candidate, systemPrefersDark) !== current) return candidate;
+  }
+  return nextThemeMode(mode);
+}
+
+export function resolveThemeMode(mode: ThemeMode, systemPrefersDark: boolean): ThemeId {
+  if (mode === 'auto') return systemPrefersDark ? 'dark' : 'light';
+  return mode;
+}
