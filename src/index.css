@@ -947,7 +947,7 @@ button.press-feedback:not(:disabled):active {
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 639px) {
   .studyx-sidebar {
     display: none !important;
   }

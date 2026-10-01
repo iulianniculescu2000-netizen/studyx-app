@@ -85,15 +85,15 @@ function DashboardActions({ compact }: { compact: boolean }) {
       transition={{ delay: 0.35 }}
       className={`flex flex-wrap items-center ${compact ? 'mb-8 gap-3' : 'mb-12 gap-4'}`}
     >
+      <span data-tutorial="btn-new-quiz" className="inline-flex">
       <MagneticButton
         to="/create"
         className={`press-feedback flex items-center gap-2.5 ${compact ? 'rounded-[20px] px-6 py-3.5' : 'rounded-[24px] px-8 py-4'} text-[11px] font-black uppercase tracking-wider text-white shadow-2xl transition-all`}
         style={{ background: theme.accent, boxShadow: `0 12px 30px ${theme.accent}40` }}
       >
-        <span data-tutorial="btn-new-quiz" className="contents">
-          <Plus size={18} strokeWidth={3} /> Creează grilă
-        </span>
+        <Plus size={18} strokeWidth={3} /> Creează grilă
       </MagneticButton>
+      </span>
       <div data-tutorial="btn-import"><ImportQuizButton /></div>
       <MagneticButton
         to="/quizzes"

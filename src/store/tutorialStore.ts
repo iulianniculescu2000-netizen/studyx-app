@@ -1,45 +1,20 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type TutorialStepId =
-  | 'welcome'
-  | 'sidebar'
-  | 'create_quiz'
-  | 'import_quiz'
-  | 'folders'
-  | 'play_modes'
-  | 'flashcards'
-  | 'flashcard_session'
-  | 'quiz_management'
-  | 'review'
-  | 'daily_review'
-  | 'vault'
-  | 'ai_chat'
-  | 'ai_setup'
-  | 'stats'
-  | 'analytics_gamification'
-  | 'notes'
-  | 'search'
-  | 'focus_pomodoro'
-  | 'profiles'
-  | 'backup'
-  | 'shortcuts';
-
 interface TutorialStore {
   active: boolean;
   currentStep: number;
   completedProfiles: string[]; // profileIds that completed the tutorial
   _hasHydrated: boolean;
   startTutorial: () => void;
-  nextStep: () => void;
+  /** `total` is the number of steps in the tour being shown; the tour owns that count, not the store. */
+  nextStep: (total: number) => void;
   prevStep: () => void;
   skipTutorial: (profileId: string) => void;
   completeTutorial: (profileId: string) => void;
   resetTutorial: () => void;
   isCompleted: (profileId: string) => boolean;
 }
-
-export const TOTAL_STEPS = 22;
 
 export const useTutorialStore = create<TutorialStore>()(
   persist(
@@ -51,9 +26,9 @@ export const useTutorialStore = create<TutorialStore>()(
 
       startTutorial: () => set({ active: true, currentStep: 0 }),
 
-      nextStep: () => {
+      nextStep: (total) => {
         const next = get().currentStep + 1;
-        if (next >= TOTAL_STEPS) {
+        if (next >= total) {
           set({ active: false, currentStep: 0 });
         } else {
           set({ currentStep: next });

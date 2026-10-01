@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, X, Sparkles, BookOpen, FolderOpen,
   Keyboard, Check, ArrowRight, Bot, Database, Brain,
   TrendingUp, Timer } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
-import { useTutorialStore, TOTAL_STEPS } from '../store/tutorialStore';
+import { useTutorialStore } from '../store/tutorialStore';
 import { useNavigate } from 'react-router-dom';
 import { useViewportProfile } from '../hooks/useViewportProfile';
 import { useOverlayFlag } from '../hooks/useOverlayFlag';
@@ -160,8 +160,8 @@ const STEPS: TutorialStep[] = [
   },
   {
     id: 'ai_setup',
-    title: 'Activează AI-ul — gratuit, cu toate cele trei chei',
-    description: 'StudyX merge pe patru provideri gratuiți: Groq (foarte rapid), Google Gemini, Cerebras (1.000.000 tokeni/zi) și Mistral AI (~1 miliard tokeni/lună). Din Setări → AI lipești cheile — fără card, doar cu un cont. Pune-le pe toate patru: fiecare are limita ei, iar când una se termină aplicația trece automat pe următoarea și continuă de unde ai rămas.',
+    title: 'Activează AI-ul — gratuit, cu mai multe chei',
+    description: 'StudyX merge cu patru furnizori cu plan gratuit: Groq, Google Gemini, Cerebras și Mistral AI. Din Setări → Asistent AI lipești o cheie — fără card, doar cu un cont (limitele gratuite le vezi pe pagina fiecărui furnizor). Una e de ajuns ca să începi; cu două sau mai multe, când limita unuia se atinge aplicația trece singură pe următorul. Iar la generarea de flashcarduri, dacă se oprește pe drum, cardurile deja făcute rămân și poți continua.',
     icon: <Bot size={22} />,
     target: '[data-tutorial="nav-settings"]',
     targetPadding: 6,
@@ -243,12 +243,15 @@ const STEPS: TutorialStep[] = [
   {
     id: 'shortcuts',
     title: 'Scurtături & finalizare 🚀',
-    description: 'Apasă ? oricând pentru scurtăturile de tastatură. G+H=Dashboard, G+Q=Grile, N=Grilă nouă. StudyX e gata de folosit — succes la studiu!',
+    description: 'Apasă ? oricând pentru scurtăturile de tastatură, iar Ctrl+K deschide căutarea. În tur poți folosi ← și → ca să treci între pași, Esc ca să-l închizi. StudyX e gata de folosit — succes la studiu!',
     icon: <Keyboard size={22} />,
     tooltipPosition: 'center',
     accentColor: '#0A84FF',
   },
 ];
+
+/** Derived from the steps themselves, so adding or removing a step cannot desync the counter or the last-step check. */
+const TOTAL_STEPS = STEPS.length;
 
 interface SpotlightRect {
   top: number; left: number; width: number; height: number;
@@ -276,7 +279,8 @@ function useSpotlight(selector: string | undefined, padding = 8) {
 
     // Remember the last committed rect so snap() only calls setRect when the geometry actually
     // moved. Without this guard, every re-measure pushed a new object and re-rendered.
-    let lastRect: SpotlightRect | null = null;
+    // `undefined` = nothing committed yet, so the first "no target" still clears the previous step's ring.
+    let lastRect: SpotlightRect | null | undefined;
     const nearlyEqual = (a: SpotlightRect | null, b: SpotlightRect | null) => {
       if (a === b) return true;
       if (!a || !b) return false;
@@ -289,7 +293,7 @@ function useSpotlight(selector: string | undefined, padding = 8) {
     };
 
     const commit = (next: SpotlightRect | null) => {
-      if (nearlyEqual(next, lastRect)) return;
+      if (lastRect !== undefined && nearlyEqual(next, lastRect)) return;
       lastRect = next;
       setRect(next);
     };
@@ -350,8 +354,8 @@ function useSpotlight(selector: string | undefined, padding = 8) {
     };
 
     resolveTarget();
-    requestAnimationFrame(resolveTarget);
-    setTimeout(resolveTarget, 180);
+    const frame = requestAnimationFrame(resolveTarget);
+    const settle = setTimeout(resolveTarget, 180);
     // Watch only for elements being added/removed (so a target appears after navigation).
     // NOT attributes: framer-motion mutates inline styles every animation frame, which turned
     // this observer into a per-frame re-render loop — the "trembling" the user saw.
@@ -361,6 +365,8 @@ function useSpotlight(selector: string | undefined, padding = 8) {
     window.addEventListener('scroll', snap, true);
 
     return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(settle);
       detach();
       window.removeEventListener('resize', snap);
       window.removeEventListener('scroll', snap, true);
@@ -491,6 +497,20 @@ export default function Tutorial({ profileId }: { profileId: string }) {
   const { mobile, crampedHeight } = useViewportProfile();
   const compact = mobile || crampedHeight;
 
+  // ← / → move through the tour, Esc closes it. Not while typing in a field.
+  useEffect(() => {
+    if (!active) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.key === 'Escape') { event.preventDefault(); skipTutorial(profileId); }
+      else if (event.key === 'ArrowRight') { event.preventDefault(); if (currentStep === TOTAL_STEPS - 1) completeTutorial(profileId); else nextStep(TOTAL_STEPS); }
+      else if (event.key === 'ArrowLeft') { event.preventDefault(); prevStep(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, currentStep, profileId, nextStep, prevStep, skipTutorial, completeTutorial]);
+
   if (!active || !step) return null;
 
   const tooltipPos = step.tooltipPosition ?? 'right';
@@ -502,10 +522,9 @@ export default function Tutorial({ profileId }: { profileId: string }) {
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[500] pointer-events-none">
-        {/* Click blocker — clicking dark area advances tutorial */}
+        {/* Click blocker — swallows clicks on the dark area; only the buttons move the tour, so a stray click cannot skip it. */}
         <div
           className="absolute inset-0 pointer-events-auto"
-          onClick={isLast ? complete : nextStep}
           style={{ cursor: 'default' }}
         />
 
@@ -576,6 +595,9 @@ export default function Tutorial({ profileId }: { profileId: string }) {
             and the enter/exit animation on a plain inner element, avoids that. */}
         <div
           key={`tooltip-pos-${step.id}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={step.title}
           style={{
             ...tooltipStyle,
             // Frosted glass card (same recipe as the rest of the app's modals/panels)
@@ -660,7 +682,7 @@ export default function Tutorial({ profileId }: { profileId: string }) {
                 </button>
               )}
               <motion.button
-                onClick={isLast ? complete : nextStep}
+                onClick={isLast ? complete : () => nextStep(TOTAL_STEPS)}
                 whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.97 }}
                 className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black uppercase tracking-[0.15em] text-white shadow-2xl"

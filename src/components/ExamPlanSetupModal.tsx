@@ -1,5 +1,5 @@
 /** Set an exam date + target grade for a Knowledge Vault folder and preview/confirm the generated study plan — mirrors ExamSplitModal.tsx's chrome and date-input pattern. */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useId } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CalendarDays, Check, Trash2, X } from 'lucide-react';
 import { useTheme } from '../theme/ThemeContext';
@@ -7,6 +7,7 @@ import { useAIStore, type AILibraryFolder } from '../store/aiStore';
 import { useToastStore } from '../store/toastStore';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 import Portal from './Portal';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { daysUntil } from '../lib/examSplit';
 import { buildStudyPlan, toExamPlan, mergeExamPlanProgress, localDateStr } from '../lib/studyPlan';
 import type { AggregatedChapter } from '../lib/ai/folderChapters';
@@ -33,6 +34,9 @@ function passLabel(kind: 'first-pass' | 'recap', passIndex: number): string {
 export default function ExamPlanSetupModal({ folder, chapters, onClose }: Props) {
   const theme = useTheme();
   const { calmMotion } = useAdaptiveMotion();
+  const dialogRef = useFocusTrap(true, onClose);
+  const titleId = useId();
+  const dateInputId = useId();
   const setFolderExamPlan = useAIStore((state) => state.setFolderExamPlan);
   const addToast = useToastStore((state) => state.addToast);
 
@@ -74,6 +78,10 @@ export default function ExamPlanSetupModal({ folder, chapters, onClose }: Props)
 
       {/* Panel */}
       <motion.div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         initial={{ opacity: 0, scale: 0.95, y: -16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: -8 }}
@@ -92,16 +100,17 @@ export default function ExamPlanSetupModal({ folder, chapters, onClose }: Props)
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CalendarDays size={16} style={{ color: theme.accent }} />
-              <span className="text-sm font-bold" style={{ color: theme.text }}>Plan de examen — {folder.name}</span>
+              <span id={titleId} className="text-sm font-bold" style={{ color: theme.text }}>Plan de examen — {folder.name}</span>
             </div>
             <motion.button
-              whileHover={calmMotion ? undefined : { scale: 1.12, rotate: 90 }}
-              whileTap={calmMotion ? undefined : { scale: 0.9 }}
+              type="button"
+              aria-label="Închide"
+              whileTap={calmMotion ? undefined : { scale: 0.92 }}
               onClick={onClose}
-              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              style={{ color: theme.text3 }}
+              className="press-feedback flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
+              style={{ background: theme.surface2, color: theme.text2 }}
             >
-              <X size={16} />
+              <X size={15} />
             </motion.button>
           </div>
 
@@ -118,8 +127,9 @@ export default function ExamPlanSetupModal({ folder, chapters, onClose }: Props)
 
               {/* Data examenului */}
               <div>
-                <label className="mb-1 block text-xs font-medium" style={{ color: theme.text2 }}>Data examenului</label>
+                <label htmlFor={dateInputId} className="mb-1 block text-xs font-medium" style={{ color: theme.text2 }}>Data examenului</label>
                 <input
+                  id={dateInputId}
                   type="date"
                   lang="ro-RO"
                   value={examDateStr}

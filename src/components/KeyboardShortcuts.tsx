@@ -8,15 +8,9 @@ import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 const SHORTCUTS = [
   { category: 'Navigare', items: [
     { keys: ['?'], description: 'Arată scurtăturile' },
-    { keys: ['G', 'H'], description: 'Dashboard (go home)' },
-    { keys: ['G', 'Q'], description: 'Toate grilele' },
-    { keys: ['G', 'S'], description: 'Statistici' },
-    { keys: ['G', 'R'], description: 'Recapitulare' },
-    { keys: ['G', 'N'], description: 'Notițele mele' },
   ]},
   { category: 'Acțiuni', items: [
     { keys: ['Ctrl', 'K'], description: 'Caută (global search)' },
-    { keys: ['N'], description: 'Grilă nouă' },
     { keys: ['Esc'], description: 'Închide / Anulează' },
   ]},
 ];

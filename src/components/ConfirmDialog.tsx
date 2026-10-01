@@ -1,6 +1,8 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, Trash2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { useId } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useTheme } from '../theme/ThemeContext';
 import { useAdaptiveMotion } from '../hooks/useAdaptiveMotion';
 
@@ -27,6 +29,9 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
   const theme = useTheme();
   const { performanceLite, calmMotion } = useAdaptiveMotion();
+  const dialogRef = useFocusTrap(open, onCancel);
+  const titleId = useId();
+  const descriptionId = useId();
 
   const variantColor = variant === 'danger' ? theme.danger : variant === 'warning' ? theme.warning : theme.accent;
   const Icon = variant === 'danger' ? Trash2 : AlertTriangle;
@@ -48,6 +53,11 @@ export default function ConfirmDialog({
 
           {/* Dialog */}
           <motion.div
+            ref={dialogRef}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={description ? descriptionId : undefined}
             initial={{ opacity: 0, scale: 0.92, y: -12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: -12 }}
@@ -73,13 +83,13 @@ export default function ConfirmDialog({
               </div>
 
               {/* Title */}
-              <h3 className="text-base font-semibold mb-1.5 leading-snug" style={{ color: theme.text }}>
+              <h3 id={titleId} className="text-base font-semibold mb-1.5 leading-snug" style={{ color: theme.text }}>
                 {title}
               </h3>
 
               {/* Description */}
               {description && (
-                <p className="text-sm leading-relaxed mb-5" style={{ color: theme.text2 }}>
+                <p id={descriptionId} className="text-sm leading-relaxed mb-5" style={{ color: theme.text2 }}>
                   {description}
                 </p>
               )}
@@ -90,6 +100,7 @@ export default function ConfirmDialog({
                   whileHover={calmMotion ? undefined : { scale: 1.02 }}
                   whileTap={calmMotion ? undefined : { scale: 0.97 }}
                   onClick={onCancel}
+                  data-autofocus
                   className="flex-1 py-3 rounded-2xl text-sm font-bold transition-all press-feedback"
                   style={{ background: theme.surface2, color: theme.text2, border: `1px solid ${theme.border2}` }}
                 >
@@ -108,6 +119,8 @@ export default function ConfirmDialog({
 
               {/* Close X button */}
               <motion.button
+                type="button"
+                aria-label="Închide"
                 onClick={onCancel}
                 whileHover={calmMotion ? undefined : { scale: 1.08, background: 'var(--hover-fill)' }}
                 whileTap={calmMotion ? undefined : { scale: 0.88 }}

@@ -1,5 +1,6 @@
 import ThemeModeSwitcher from './ThemeModeSwitcher';
-import { lazy, Suspense, useState, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useId, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import type { DragEvent } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -98,32 +99,46 @@ function useCollapsed() {
   return [collapsed, toggle] as const;
 }
 
-/** Tooltip shown on collapsed sidebar items */
+/** Tooltip shown on collapsed sidebar items. Drawn in a portal: the sidebar is overflow-hidden and would clip it. */
 function Tip({ label, children }: { label: string; children: React.ReactNode }) {
-  const [show, setShow] = useState(false);
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const theme = useTheme();
   const { calmMotion } = useAdaptiveMotion();
+  const show = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setAnchor({ x: rect.right + 12, y: rect.top + rect.height / 2 });
+  };
   return (
-    <div className="relative" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <div className="relative" onMouseEnter={show} onMouseLeave={() => setAnchor(null)}>
       {children}
-      <AnimatePresence>
-        {show && (
-          <motion.div
-            initial={calmMotion ? { opacity: 0 } : { opacity: 0, x: -4, scale: 0.96 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={calmMotion ? { opacity: 0 } : { opacity: 0, x: -2, scale: 0.98 }}
-            transition={calmMotion ? { duration: 0.12 } : { duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap z-50 pointer-events-none"
-            style={{
-              background: theme.isDark ? 'rgba(30,30,36,0.98)' : 'rgba(255,255,255,0.98)',
-              border: `1px solid ${theme.border2}`,
-              color: theme.text,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-            }}>
-            {label}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {label && (
+        <Portal>
+          <AnimatePresence>
+            {anchor && (
+              <motion.div
+                initial={calmMotion ? { opacity: 0 } : { opacity: 0, x: -4, scale: 0.96 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={calmMotion ? { opacity: 0 } : { opacity: 0, x: -2, scale: 0.98 }}
+                transition={calmMotion ? { duration: 0.12 } : { duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                className="fixed rounded-xl px-3 py-1.5 text-xs font-medium whitespace-nowrap pointer-events-none"
+                role="tooltip"
+                style={{
+                  left: anchor.x,
+                  top: anchor.y,
+                  transform: 'translateY(-50%)',
+                  zIndex: 600,
+                  background: theme.isDark ? 'rgba(30,30,36,0.98)' : 'rgba(255,255,255,0.98)',
+                  border: `1px solid ${theme.border2}`,
+                  color: theme.text,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+                }}
+              >
+                {label}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </Portal>
+      )}
     </div>
   );
 }
@@ -242,6 +257,10 @@ function NewFolderModal({
   onAdd: (name: string, emoji: string, color: QuizColor, parentId?: string | null) => void;
 }) {
   const theme = useTheme();
+  const dialogRef = useFocusTrap(true, onClose);
+  const titleId = useId();
+  // A drag that starts inside the panel (selecting the typed name) and ends on the backdrop is not a click on it.
+  const pressStartedOnBackdrop = useRef(false);
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('\u{1F4C1}');
   const [color, setColor] = useState<QuizColor>('blue');
@@ -274,7 +293,8 @@ function NewFolderModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onClose}
+      onMouseDown={(e) => { pressStartedOnBackdrop.current = e.target === e.currentTarget; }}
+      onClick={(e) => { if (e.target === e.currentTarget && pressStartedOnBackdrop.current) onClose(); }}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -288,6 +308,10 @@ function NewFolderModal({
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: 8 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
         className="premium-modal"
         style={{
@@ -303,7 +327,7 @@ function NewFolderModal({
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px 28px 18px', borderBottom: `1px solid ${theme.border}` }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: theme.text }}>Folder nou</h3>
+            <h3 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 800, color: theme.text }}>Folder nou</h3>
             <p style={{ margin: '3px 0 0', fontSize: 12, color: theme.text3 }}>Organizează-ți grilele în foldere</p>
           </div>
           <button 
@@ -360,7 +384,7 @@ function NewFolderModal({
 
           <div style={{ marginBottom: 28 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: theme.text3, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Nume folder</div>
-            <input autoFocus value={name} onChange={(e) => handleNameChange(e.target.value)}
+            <input autoFocus data-autofocus value={name} onChange={(e) => handleNameChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               placeholder="Ex: Anatomie, Cardiologie..."
               className="focus-ring-premium"
@@ -417,6 +441,7 @@ function NavItem({
     <NavLink
       to={to}
       end={end}
+      aria-label={collapsed ? label : undefined}
       className="rounded-[14px] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--focus-ring)]"
       style={{ textDecoration: 'none', display: 'block' }}
     >
@@ -519,6 +544,26 @@ export default function Sidebar() {
   const [editName, setEditName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  // The two layouts (icons only / full) are separate trees, so the width alone
+  // glides while the content pops. Fade the content in as the width settles.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const lastCollapsedRef = useRef(collapsed);
+  useLayoutEffect(() => {
+    if (lastCollapsedRef.current === collapsed) return;
+    lastCollapsedRef.current = collapsed;
+    const root = rootRef.current;
+    if (!root || typeof root.animate !== 'function') return;
+    const targets = root.querySelectorAll<HTMLElement>(':scope > :not(:first-child), [data-sidebar-fade]');
+    targets.forEach((el) => {
+      el.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: calmMotion ? 160 : 300,
+        delay: calmMotion ? 0 : collapsed ? 140 : 80,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'backwards',
+      });
+    });
+  }, [collapsed, calmMotion]);
 
   const dueCount = getDueQuestions().length;
   const avatarLetter = username?.charAt(0).toUpperCase() ?? '?';
@@ -661,8 +706,9 @@ export default function Sidebar() {
 
   return (
     <motion.div
+      ref={rootRef}
       animate={{ width: collapsed ? 64 : compact ? 242 : 260 }}
-      transition={calmMotion ? { duration: 0 } : { duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      transition={calmMotion ? { duration: 0.18, ease: 'easeOut' } : { duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className="studyx-sidebar flex flex-col flex-shrink-0 select-none overflow-hidden glass-panel"
       style={{
         height: '100dvh',
@@ -689,6 +735,7 @@ export default function Sidebar() {
         <Logo size={24} className="flex-shrink-0" />
         {!collapsed && (
           <span
+            data-sidebar-fade
             className="text-base font-black ml-3 tracking-tighter"
             style={{ color: theme.text, WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: string }}
           >
